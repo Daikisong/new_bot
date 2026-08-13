@@ -69,7 +69,10 @@ from news_scalping_lab.prices.base import (
     PriceSource,
 )
 from news_scalping_lab.prices.factory import create_price_source
-from news_scalping_lab.records.models import CANDIDATE_ERROR_RECORD_TYPES
+from news_scalping_lab.records.routing import (
+    MEMORY_RETRIEVAL_LANES,
+    NEWSLESS_OR_UNEXPLAINED_LANE,
+)
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.reporting.render import render_preopen_report
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
@@ -112,18 +115,10 @@ class FutureContextLeakError(RuntimeError):
 DAILY_BLIND_PROMPT_VERSION = "daily_blind_analysis.v1"
 OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION = "open_world_first_analysis.v1"
 NEWS_NOVELTY_REVIEW_PROMPT_VERSION = "news_novelty_review.v1"
-SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION = "semantic_retrieval_plan.v1"
+SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION = "semantic_retrieval_plan.v2"
 CANDIDATE_EXPANSION_PROMPT_VERSION = "candidate_expansion.v1"
 FINAL_SYNTHESIS_PROMPT_VERSION = "synthesis.final.v1"
-SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES = (
-    "positive_analogs",
-    "negative_controls",
-    "near_misses",
-    "counterexamples",
-    "leader_selection_pairs",
-    "theme_formation_failures",
-    "candidate_generation_errors",
-)
+SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES = MEMORY_RETRIEVAL_LANES
 CANDIDATE_EXPANSION_REQUIRED_PATHS = (
     CandidateExpansionPath.SINGLE_EVENT,
     CandidateExpansionPath.THEME_FORMATION,
@@ -1408,9 +1403,9 @@ class DailyAnalyzer:
             "Create additional semantic retrieval queries as SemanticRetrievalPlan. "
             "Queries must be mechanism-oriented and must cover every required category: "
             "positive analogs, negative controls, near misses, counterexamples, "
-            "leader-selection pairs, theme-formation failures, and candidate-generation "
-            "errors. Do not use exact keyword matching as a gate and do not request "
-            "cutoff-after evidence.\n"
+            "leader-selection pairs, theme-formation failures, candidate-generation "
+            "errors, and newsless or unexplained outcomes. Do not use exact keyword "
+            "matching as a gate and do not request cutoff-after evidence.\n"
             "---SEMANTIC_RETRIEVAL_PLAN_PAYLOAD---\n"
             f"{canonical_json(payload)}"
         )
@@ -4680,24 +4675,16 @@ def _normalize_semantic_retrieval_category(value: str) -> str | None:
         "candidate_generation_errors": "candidate_generation_errors",
         "candidate_generation_failure": "candidate_generation_errors",
         "candidate_generation_failures": "candidate_generation_errors",
+        "newsless": NEWSLESS_OR_UNEXPLAINED_LANE,
+        "unexplained": NEWSLESS_OR_UNEXPLAINED_LANE,
+        "newsless_or_unexplained": NEWSLESS_OR_UNEXPLAINED_LANE,
+        "newsless_or_unexplained_cases": NEWSLESS_OR_UNEXPLAINED_LANE,
     }
     return aliases.get(normalized)
 
 
 def _semantic_record_filters(category: str) -> dict[str, Any]:
-    if category == "positive_analogs":
-        return {"training_eligible": True}
-    if category in {"negative_controls", "near_misses"}:
-        return {"training_eligible": False}
-    if category == "counterexamples":
-        return {"record_type": "counterexample"}
-    if category == "leader_selection_pairs":
-        return {"record_type": "blind_leader_preference_pair"}
-    if category == "theme_formation_failures":
-        return {"record_type": "supervised_theme_formation_case"}
-    if category == "candidate_generation_errors":
-        return {"record_type": sorted(CANDIDATE_ERROR_RECORD_TYPES)}
-    return {}
+    return {"memory_lane": category} if category in MEMORY_RETRIEVAL_LANES else {}
 
 
 def _cluster_coverage_lanes(configured_lanes: Sequence[str]) -> list[str]:
@@ -4722,6 +4709,9 @@ def _cluster_coverage_lane_instruction(lane: str) -> str:
         "theme_formation_failures": "retrieve records where theme formation failed",
         "candidate_generation_errors": (
             "retrieve records about missed, noisy, or wrongly ranked candidates"
+        ),
+        NEWSLESS_OR_UNEXPLAINED_LANE: (
+            "retrieve strong or unusual outcomes with no cutoff-safe explanatory news"
         ),
     }
     return instructions.get(lane, "retrieve balanced historical evidence for this lane")

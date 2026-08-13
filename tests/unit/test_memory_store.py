@@ -914,6 +914,25 @@ def test_record_retrieval_supports_structural_filters(tmp_path) -> None:
     ) == ["BRAIN-REC-DIRECT"]
     assert memory.search_records(
         "unseen wording",
+        memory_lane="positive_analogs",
+        available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        limit=10,
+    ) == ["BRAIN-REC-DIRECT", "BRAIN-REC-THEME-RICH"]
+    assert set(
+        memory.search_records(
+            "unseen wording",
+            memory_lane="candidate_generation_errors",
+            available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            limit=10,
+        )
+    ) == {
+        "BRAIN-REC-ENTITY-ERROR",
+        "BRAIN-REC-GEN-ERROR",
+        "BRAIN-REC-RANK-ERROR",
+        "BRAIN-REC-ROW-ERROR",
+    }
+    assert memory.search_records(
+        "unseen wording",
         record_type="counterexample",
         training_eligible=False,
         available_from=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),

@@ -416,11 +416,13 @@ def test_research_import_bundle_cli_surfaces_record_loss_diagnostics(
         root: Path,
         validate: bool,
         accepted: bool,
+        external_quality_gate_path: Path | None,
     ) -> BundleImportResult:
         assert path == bundle
         assert root == tmp_path
         assert validate is True
         assert accepted is False
+        assert external_quality_gate_path is None
         report_path.parent.mkdir(parents=True)
         write_json(
             report_path,

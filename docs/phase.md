@@ -66,7 +66,7 @@ docs/pilot_repairs/
 
 파일럿 폴더는 비교 기준이다. 실전 누적용으로 계속 쓰지 않는다.
 
-## Phase 3. repair / inspect / import
+## Phase 3. 순차 repair / 격리 inspect
 
 원본 MD는 바로 두뇌에 넣지 않는다. 먼저 repair 후 검증한다.
 
@@ -75,25 +75,33 @@ research/inbox/bundles/raw/*.md
 → research/inbox/bundles/repaired/*.repaired.md
 ```
 
-수행 절차:
+Phase A 수행 절차:
 
 ```text
+날짜순 원본 한 파일 선택
 repair
 inspect-bundle
-import-bundle --validate --accept
-warehouse rebuild
-warehouse verify
-brain rebuild --mode catalog --allow-catalog
-brain audit --deep
+격리 import-bundle --validate --accept
+격리 deep audit 후 삭제
+READY_FOR_IMPORT repaired 파일 확정
+다음 날짜로 이동
 ```
+
+이 단계는 연구를 다시 수행하지 않는다. 별도 independent semantic review를 실행하지 않고,
+후공정에서 BLIND를 다시 판정하지 않는다. 기존 연구 artifact에 명시된 semantic 모순은
+연결된 positive record만 `training_eligible=false`, `sample_weight=0`으로 제외한다.
+
+실제 `research/episodes`, `memory/records`, warehouse, brain 갱신은 모든 Phase A repair가
+끝난 뒤 Phase B에서 수행한다.
 
 Codex에게 요청할 때는 이렇게 말하면 된다.
 
 ```text
-research/inbox/bundles/raw에 있는 연구들 docs/설명서.md대로 진행해줘
+docs/codex_goal_repair_only.md를 목표로 실행해줘.
 ```
 
-통과한 번들은 아래에 누적된다.
+Phase A 통과본은 `research/inbox/bundles/repaired/`에만 누적된다. 아래 production 경로는
+모든 순차 repair가 끝난 뒤 Phase B import를 실행할 때 갱신된다.
 
 ```text
 research/episodes/
@@ -220,4 +228,3 @@ python -m news_scalping_lab.cli doctor --production
 개인 운영 = Codex가 repo brain을 읽어 두뇌처럼 활용
 완전 자동 운영 = real provider를 붙여 프로젝트 자체 production brain으로 승격
 ```
-

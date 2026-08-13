@@ -23,6 +23,23 @@ def known_reference_ids_from_blocks(
             if "row_disposition" in lower_name or "event_ledger" in lower_name:
                 _add_string(known["event"], row.get("event_id"))
                 _add_strings(known["event"], row.get("event_ids"))
+            # Legacy direct-event records use the candidate identifier as a
+            # ``direct_event_id``.  It is an authoritative event definition
+            # when it comes from a direct-event artifact or brain row, not an
+            # unresolved ``EVT-`` reference.  Keep this alias structural and
+            # bundle-driven; do not infer event IDs from candidate_id alone.
+            if "direct_event" in lower_name or "brain_delta" in lower_name:
+                _add_string(known["event"], row.get("direct_event_id"))
+                _add_strings(known["event"], row.get("direct_event_ids"))
+                # Several direct-event bundle versions name the same event
+                # identity after its case/candidate role.  These are still
+                # event definitions when emitted by a direct-event artifact
+                # or brain_delta; do not infer them from ticker/candidate
+                # fields elsewhere.
+                _add_string(known["event"], row.get("direct_event_case_id"))
+                _add_strings(known["event"], row.get("direct_event_case_ids"))
+                _add_string(known["event"], row.get("candidate_event_id"))
+                _add_strings(known["event"], row.get("candidate_event_ids"))
             if "source_ledger" in lower_name:
                 _add_strings(known["event"], row.get("event_ids"))
             if "fact_ledger" in lower_name:

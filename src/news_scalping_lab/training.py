@@ -20,6 +20,8 @@ from news_scalping_lab.contracts.models import (
 )
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
 from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.records.preference import has_sealed_preference_pair
+from news_scalping_lab.records.routing import record_outcome_payload, record_response_class
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import canonical_json, file_sha256, now_kst, stable_id, write_json
@@ -40,6 +42,8 @@ TASK_TRAINING_CATEGORY = {
     "record_supervised_direct_event": "direct_event_supervised_records",
     "record_supervised_theme_formation": "theme_formation_examples",
     "record_beneficiary_discovery": "beneficiary_discovery_examples",
+    "record_negative_control_calibration": "negative_control_calibration_examples",
+    "record_newsless_causal_calibration": "newsless_causal_calibration_examples",
     "record_error_correction": "failure_correction_examples",
     "record_eval": "evaluation_examples",
 }
@@ -68,10 +72,13 @@ KIND_TRAINING_CATEGORIES = {
 RECORD_SFT_TRAINING_CATEGORIES = [
     "issuer_day_supervised_records",
     "direct_event_supervised_records",
+    "negative_control_calibration_examples",
+    "newsless_causal_calibration_examples",
 ]
 
 ERROR_CORRECTION_RECORD_TYPES = {
     "candidate_generation_error_case",
+    "event_thesis_selection_error_case",
     "candidate_ranking_error_case",
     "ranking_error_case",
     "row_disposition_error_case",
@@ -1364,6 +1371,8 @@ def _record_selected_for_kind(kind: str, record: BrainRecordEnvelope) -> bool:
             "supervised_theme_formation_case",
             "theme_formation_case",
             "beneficiary_discovery_case",
+            "negative_control_case",
+            "newsless_or_unexplained_case",
         }
     return record.record_type in {
         "supervised_issuer_day_case",
@@ -1371,22 +1380,14 @@ def _record_selected_for_kind(kind: str, record: BrainRecordEnvelope) -> bool:
         "supervised_theme_formation_case",
         "theme_formation_case",
         "beneficiary_discovery_case",
+        "negative_control_case",
+        "newsless_or_unexplained_case",
         *ERROR_CORRECTION_RECORD_TYPES,
     }
 
 
 def _record_has_sealed_preference_pair(record: BrainRecordEnvelope) -> bool:
-    payload = record.payload
-    preferred = payload.get("blind_preferred_ticker") or payload.get(
-        "blind_preferred_candidate_id"
-    )
-    rejected = payload.get("blind_rejected_ticker") or payload.get(
-        "blind_rejected_candidate_id"
-    )
-    return isinstance(preferred, str) and bool(preferred) and isinstance(
-        rejected,
-        str,
-    ) and bool(rejected)
+    return has_sealed_preference_pair(record.payload)
 
 
 def _unsealed_training_eligible_preference_record_ids(
@@ -1419,8 +1420,8 @@ def _record_sft_row(record: BrainRecordEnvelope) -> dict[str, Any]:
             "payload": record.payload,
         },
         output_payload={
-            "response_class": record.payload.get("response_class"),
-            "outcome": record.payload.get("D_outcome"),
+            "response_class": record_response_class(record.payload),
+            "outcome": record_outcome_payload(record.payload),
             "sample_weight": record.payload.get("sample_weight"),
             "attribution_status": record.payload.get("attribution_status"),
             "eligibility_reason": record.eligibility_reason,
@@ -1515,8 +1516,8 @@ def _record_eval_row(record: BrainRecordEnvelope) -> dict[str, Any]:
             "safe_D1_features": record.payload.get("safe_D1_features"),
         },
         output_payload={
-            "response_class": record.payload.get("response_class"),
-            "outcome": record.payload.get("D_outcome"),
+            "response_class": record_response_class(record.payload),
+            "outcome": record_outcome_payload(record.payload),
             "label_quality": _nested_get(record.payload, "D_outcome", "label_quality"),
         },
         hindsight_safe=False,
@@ -1538,6 +1539,10 @@ def _record_sft_task(record: BrainRecordEnvelope) -> str:
         return "record_supervised_theme_formation"
     if record.record_type == "beneficiary_discovery_case":
         return "record_beneficiary_discovery"
+    if record.record_type == "negative_control_case":
+        return "record_negative_control_calibration"
+    if record.record_type == "newsless_or_unexplained_case":
+        return "record_newsless_causal_calibration"
     return "record_error_correction"
 
 

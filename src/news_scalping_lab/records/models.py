@@ -204,6 +204,40 @@ class ThemeFormationCase(FlexiblePayloadModel):
     sample_weight: float | None = None
 
 
+class RetrospectiveThemeMemberEdgeRecord(FlexiblePayloadModel):
+    """Cutoff-verified member relation for a retrospective theme.
+
+    The research contract treats this as a first-class memory/training lane,
+    not an unknown ad-hoc record.  Optional fields keep older bundles
+    lossless while still giving the importer a typed validation boundary.
+    """
+
+    record_type: Literal["retrospective_theme_member_edge"]
+    edge_id: str | None = None
+    retrospective_theme_id: str | None = None
+    ticker: str | None = None
+    company_name: str | None = None
+    relation_class: str | None = None
+    relation_statement: str | None = None
+    relation_mechanism: list[Any] = Field(default_factory=list)
+    source_ids: list[str] = Field(default_factory=list)
+    fact_ids: list[str] = Field(default_factory=list)
+    inference_ids: list[str] = Field(default_factory=list)
+    source_published_at: list[Any] = Field(default_factory=list)
+    source_time_verified: bool | None = None
+    available_before_cutoff: bool | None = None
+    relation_known_at_cutoff: bool | None = None
+    edge_origin: str | None = None
+    outcome_used_to_discover: bool | None = None
+    outcome_used_as_relation_evidence: bool | None = None
+    semantic_edge_audit: dict[str, Any] = Field(default_factory=dict)
+    training_target: str | None = None
+    training_eligible: bool | None = None
+    eligibility_reason: str | None = None
+    available_from: datetime | None = None
+    provenance_source_ids: list[str] = Field(default_factory=list)
+
+
 class BeneficiaryDiscoveryCase(FlexiblePayloadModel):
     record_type: Literal["beneficiary_discovery_case"]
     case_id: str | None = None
@@ -247,6 +281,22 @@ class CandidateGenerationErrorCase(FlexiblePayloadModel):
     missed_company_name: str | None = None
     missed_theme_id: str | None = None
     missed_path_type: str | None = None
+    source_candidate_ids: list[str] = Field(default_factory=list)
+    correction_record_ids: list[str] = Field(default_factory=list)
+
+
+class EventThesisSelectionErrorCase(FlexiblePayloadModel):
+    """Explicit legacy lane for postmortem event-thesis selection errors.
+
+    These rows are emitted by the research runner as a distinct error lane.
+    Keeping the type explicit lets the importer validate and retain the full
+    payload instead of silently treating it as an unknown, non-training row.
+    """
+
+    record_type: Literal["event_thesis_selection_error_case"]
+    error_id: str | None = None
+    error_type: str | None = None
+    correction_mode: str | None = None
     source_candidate_ids: list[str] = Field(default_factory=list)
     correction_record_ids: list[str] = Field(default_factory=list)
 
@@ -418,9 +468,11 @@ KNOWN_RECORD_PAYLOAD_MODELS: dict[str, type[FlexiblePayloadModel]] = {
     "supervised_direct_event_case": SupervisedDirectEventCase,
     "supervised_theme_formation_case": SupervisedThemeFormationCase,
     "theme_formation_case": ThemeFormationCase,
+    "retrospective_theme_member_edge": RetrospectiveThemeMemberEdgeRecord,
     "beneficiary_discovery_case": BeneficiaryDiscoveryCase,
     "blind_leader_preference_pair": BlindLeaderPreferencePair,
     "candidate_generation_error_case": CandidateGenerationErrorCase,
+    "event_thesis_selection_error_case": EventThesisSelectionErrorCase,
     "candidate_ranking_error_case": CandidateRankingErrorCase,
     "ranking_error_case": RankingErrorCase,
     "newsless_or_unexplained_case": NewslessOrUnexplainedCase,
@@ -441,9 +493,11 @@ TRAINING_RECORD_TYPES = {
     "supervised_direct_event_case",
     "supervised_theme_formation_case",
     "theme_formation_case",
+    "retrospective_theme_member_edge",
     "beneficiary_discovery_case",
     "blind_leader_preference_pair",
     "candidate_generation_error_case",
+    "event_thesis_selection_error_case",
     "candidate_ranking_error_case",
     "ranking_error_case",
     "newsless_or_unexplained_case",
@@ -456,6 +510,7 @@ TRAINING_RECORD_TYPES = {
 CANDIDATE_ERROR_RECORD_TYPES = frozenset(
     {
         "candidate_generation_error_case",
+        "event_thesis_selection_error_case",
         "candidate_ranking_error_case",
         "ranking_error_case",
         "row_disposition_error_case",

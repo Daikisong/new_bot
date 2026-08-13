@@ -111,7 +111,7 @@ class SemanticCounterexampleRetrieval(EmptyRecordRetrieval):
         **filters: object,
     ) -> list[str]:
         self.filters_seen.append(dict(filters))
-        if filters.get("record_type") == "counterexample":
+        if filters.get("memory_lane") == "counterexamples":
             return [self.record_id]
         return []
 
@@ -129,7 +129,7 @@ class SemanticPositiveRecordRetrieval(EmptyRecordRetrieval):
         **filters: object,
     ) -> list[str]:
         self.filters_seen.append(dict(filters))
-        if filters.get("training_eligible") is True:
+        if filters.get("memory_lane") == "positive_analogs":
             return [self.record_id]
         return []
 
@@ -140,9 +140,12 @@ def _brain_record(
     episode_id: str = "NSLAB-20300110-RECORDS",
     record_type: str = "supervised_direct_event_case",
     response_class: str = "positive_high10",
+    training_eligible: bool | None = None,
+    eligibility_reason: str = "unit test record",
     available_from: datetime,
 ) -> BrainRecordEnvelope:
     trade_day = date(2030, 1, 9)
+    eligible = record_type != "counterexample" if training_eligible is None else training_eligible
     payload = {
         "record_id": record_id,
         "record_type": record_type,
@@ -155,7 +158,7 @@ def _brain_record(
         "company_name": "Record Sweep Co",
         "path_type": "single_event",
         "response_class": response_class,
-        "training_eligible": record_type != "counterexample",
+        "training_eligible": eligible,
         "provenance_source_ids": ["SRC-RECORD-SWEEP"],
     }
     payload_hash = sha256_text(canonical_json(payload))
@@ -167,8 +170,8 @@ def _brain_record(
         available_from=available_from,
         training_target="direct_event_response",
         evidence_phase="BLIND_SAFE",
-        training_eligible=record_type != "counterexample",
-        eligibility_reason="unit test record",
+        training_eligible=eligible,
+        eligibility_reason=eligibility_reason,
         status="tentative",
         confidence_label="low",
         provenance_source_ids=["SRC-RECORD-SWEEP"],
@@ -247,10 +250,13 @@ def test_semantic_retrieval_categories_match_record_level_contract() -> None:
         "leader_selection_pairs"
     )
     assert _semantic_record_filters("negative_controls") == {
-        "training_eligible": False
+        "memory_lane": "negative_controls"
     }
     assert _semantic_record_filters("leader_selection_pairs") == {
-        "record_type": "blind_leader_preference_pair"
+        "memory_lane": "leader_selection_pairs"
+    }
+    assert _semantic_record_filters("newsless_or_unexplained") == {
+        "memory_lane": "newsless_or_unexplained"
     }
 
 
@@ -501,12 +507,19 @@ def test_record_memory_sweep_outputs_required_retrieval_bundles(tmp_path) -> Non
             _brain_record(
                 "BRAIN-THEME",
                 record_type="supervised_theme_formation_case",
+                response_class="NO_RESPONSE",
                 available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
             ),
             _brain_record(
                 "BRAIN-CANDIDATE-ERROR",
                 record_type="candidate_generation_error_case",
                 response_class="negative",
+                available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+            ),
+            _brain_record(
+                "BRAIN-SEMANTIC-EXCLUDED",
+                training_eligible=False,
+                eligibility_reason="semantic_contract_failed",
                 available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
             ),
         ],
@@ -526,8 +539,20 @@ def test_record_memory_sweep_outputs_required_retrieval_bundles(tmp_path) -> Non
     assert sweep.record_artifact_paths
     payload = read_json(tmp_path / sweep.record_artifact_paths[0])
     assert [record["record_id"] for record in payload["near_misses"]] == [
-        "BRAIN-NEAR"
+        "BRAIN-CANDIDATE-ERROR",
+        "BRAIN-NEAR",
+        "BRAIN-SEMANTIC-EXCLUDED",
     ]
+    assert "BRAIN-SEMANTIC-EXCLUDED" not in {
+        record["record_id"] for record in payload["positive_analogs"]
+    }
+    semantic_excluded = next(
+        record
+        for record in payload["near_misses"]
+        if record["record_id"] == "BRAIN-SEMANTIC-EXCLUDED"
+    )
+    assert semantic_excluded["training_eligible"] is False
+    assert semantic_excluded["eligibility_reason"] == "semantic_contract_failed"
     assert [record["record_id"] for record in payload["counterexamples"]] == [
         "BRAIN-COUNTER"
     ]
@@ -935,20 +960,16 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     positive_row = next(
         row for row in semantic_rows if row["category"] == "positive_analogs"
     )
-    assert positive_row["record_retrieval_filters"] == {"training_eligible": True}
+    assert positive_row["record_retrieval_filters"] == {
+        "memory_lane": "positive_analogs"
+    }
     assert positive_row["included_record_ids"] == ["BRAIN-AVAILABLE"]
     assert positive_row["excluded_record_ids"] == ["BRAIN-FUTURE"]
     candidate_error_row = next(
         row for row in semantic_rows if row["category"] == "candidate_generation_errors"
     )
     assert candidate_error_row["record_retrieval_filters"] == {
-        "record_type": [
-            "candidate_generation_error_case",
-            "candidate_ranking_error_case",
-            "entity_resolution_error_case",
-            "ranking_error_case",
-            "row_disposition_error_case",
-        ]
+        "memory_lane": "candidate_generation_errors"
     }
     assert candidate_error_row["included_record_ids"] == []
     assert candidate_error_row["excluded_record_ids"] == []
@@ -1574,7 +1595,7 @@ async def test_fast_mode_semantic_counterexamples_reach_final_context(
     synthesis_payload = read_json(
         tmp_path / str(manifest.final_synthesis_context_artifact)
     )["payload"]
-    assert {"record_type": "counterexample"} in retrieval.filters_seen
+    assert {"memory_lane": "counterexamples"} in retrieval.filters_seen
     assert manifest.retrieved_record_ids == []
     assert manifest.semantic_retrieval_record_ids == ["BRAIN-FAST-SEMANTIC-COUNTER"]
     assert manifest.counterexample_record_ids == ["BRAIN-FAST-SEMANTIC-COUNTER"]
@@ -1631,7 +1652,7 @@ async def test_fast_mode_semantic_positive_records_reach_prediction_memory(
     synthesis_payload = read_json(
         tmp_path / str(manifest.final_synthesis_context_artifact)
     )["payload"]
-    assert {"training_eligible": True} in retrieval.filters_seen
+    assert {"memory_lane": "positive_analogs"} in retrieval.filters_seen
     assert manifest.retrieved_record_ids == []
     assert manifest.semantic_retrieval_record_ids == ["BRAIN-FAST-SEMANTIC-POSITIVE"]
     assert manifest.counterexample_record_ids == []

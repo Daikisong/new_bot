@@ -18,15 +18,19 @@ from news_scalping_lab.records.models import (
     CompanyMemoryDeltaRecord,
     CounterexampleRecord,
     EntityResolutionErrorCase,
+    EventThesisSelectionErrorCase,
     EventTickerEdgeRecord,
     MechanismMemoryRecord,
     MemoryClaimRecord,
     ResearchQuestionRecord,
+    RetrospectiveThemeMemberEdgeRecord,
     RowDispositionErrorCase,
     SupervisedDirectEventCase,
     SupervisedIssuerDayCase,
     SupervisedThemeFormationCase,
+    ThemeFormationCase,
 )
+from news_scalping_lab.records.reference_integrity import known_reference_ids_from_blocks
 from news_scalping_lab.records.store import (
     BrainRecordStore,
     audit_record_store,
@@ -34,12 +38,14 @@ from news_scalping_lab.records.store import (
 )
 from news_scalping_lab.research_import.versioned_bundle import (
     VersionedBundleImportError,
+    _payload_has_sealed_preference_pair,
     _record_count_parity_payload,
+    _v23_normalized_payload,
     import_versioned_bundle,
     inspect_versioned_bundle,
 )
 from news_scalping_lab.training import audit_training_exports, export_training
-from news_scalping_lab.utils import KST, canonical_json, sha256_text
+from news_scalping_lab.utils import KST, canonical_json, file_sha256, sha256_text
 from news_scalping_lab.warehouse import WarehouseStore
 
 
@@ -47,16 +53,43 @@ def _payload_block(payload: str, fence: str) -> str:
     return f"```{fence}\n{payload}\n```"
 
 
+def test_direct_event_id_alias_is_known_event_definition() -> None:
+    known = known_reference_ids_from_blocks(
+        {},
+        {
+            "brain_delta.jsonl": [
+                {
+                    "record_type": "supervised_direct_event_case",
+                    "direct_event_id": "CAND-STRUCTURAL-EVENT",
+                }
+            ]
+        },
+    )
+    assert "CAND-STRUCTURAL-EVENT" in known["event"]
+
+
+def test_direct_event_case_aliases_are_known_event_definitions() -> None:
+    known = known_reference_ids_from_blocks(
+        {},
+        {
+            "direct_event_cases.jsonl": [
+                {
+                    "direct_event_case_id": "DEC-1",
+                    "candidate_event_id": "DEC-1",
+                }
+            ]
+        },
+    )
+
+    assert known["event"] == {"DEC-1"}
+
+
 def _rewrite_synthetic_record_payloads(
     root: Path,
     mutator: object,
 ) -> None:
     record_path = root / "memory" / "records" / "NSLAB-20300110-SYNTH.jsonl"
-    rows = [
-        json.loads(line)
-        for line in record_path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    rows = [json.loads(line) for line in record_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     for row in rows:
         payload = row.get("payload")
         if isinstance(payload, dict) and callable(mutator):
@@ -127,6 +160,28 @@ def test_known_payload_models_expose_v11_contract_fields() -> None:
             "rejected_candidate_tickers": ["000002"],
         }
     )
+    member_edge = RetrospectiveThemeMemberEdgeRecord.model_validate(
+        {
+            "record_type": "retrospective_theme_member_edge",
+            "edge_id": "EDGE-1",
+            "retrospective_theme_id": "RETRO-1",
+            "ticker": "000005",
+            "company_name": "Member Co",
+            "relation_class": "MARKET_MEMORY",
+            "source_ids": ["SRC-1"],
+            "fact_ids": ["FACT-1"],
+            "inference_ids": ["INF-1"],
+            "source_time_verified": True,
+            "available_before_cutoff": True,
+            "relation_known_at_cutoff": True,
+            "semantic_edge_audit": {"verdict": "PASS"},
+            "training_target": "beneficiary_or_theme_member_edge_discovery",
+            "training_eligible": True,
+            "provenance_source_ids": ["SRC-1"],
+        }
+    )
+    assert member_edge.record_type == "retrospective_theme_member_edge"
+    assert member_edge.training_eligible is True
     beneficiary = BeneficiaryDiscoveryCase.model_validate(
         {
             "record_type": "beneficiary_discovery_case",
@@ -161,6 +216,16 @@ def test_known_payload_models_expose_v11_contract_fields() -> None:
             "correction_record_ids": ["BRAIN-1"],
         }
     )
+    event_thesis_error = EventThesisSelectionErrorCase.model_validate(
+        {
+            "record_type": "event_thesis_selection_error_case",
+            "error_id": "EVENT-ERR-1",
+            "error_type": "MARKET_STATE_OR_CONTINUATION_CASE",
+            "correction_mode": "postmortem",
+            "source_candidate_ids": ["SRC-1"],
+        }
+    )
+    assert event_thesis_error.record_type == "event_thesis_selection_error_case"
     ranking_error = CandidateRankingErrorCase.model_validate(
         {
             "record_type": "candidate_ranking_error_case",
@@ -338,11 +403,7 @@ def _synthetic_v11_bundle(
             "training_eligible": True,
             "eligibility_reason": "synthetic verified label",
             "provenance_source_ids": ["SRC-SYNTH-1"],
-            **(
-                {"event_level_weights": issuer_event_level_weights}
-                if issuer_event_level_weights is not None
-                else {}
-            ),
+            **({"event_level_weights": issuer_event_level_weights} if issuer_event_level_weights is not None else {}),
             **(
                 {
                     "D_outcome": {"label_quality": issuer_label_quality},
@@ -468,9 +529,7 @@ def _synthetic_v11_bundle(
                 "available_from": available_from,
                 "training_target": "company_memory",
                 "known_at": (
-                    available_from
-                    if company_memory_delta_known_at is None
-                    else company_memory_delta_known_at
+                    available_from if company_memory_delta_known_at is None else company_memory_delta_known_at
                 ),
                 "ticker": "000001",
                 "company_name": "Synthetic Issuer",
@@ -518,9 +577,7 @@ def _synthetic_v11_bundle(
         "time_verified": source_ledger_time_verified,
         "available_before_cutoff": source_ledger_available_before_cutoff,
     }
-    effective_source_event_ids = (
-        inferred_source_event_ids if source_event_ids is None else source_event_ids
-    )
+    effective_source_event_ids = inferred_source_event_ids if source_event_ids is None else source_event_ids
     if effective_source_event_ids:
         source_ledger_payload["event_ids"] = effective_source_event_ids
     source_ledger = json.dumps(
@@ -543,9 +600,7 @@ def _synthetic_v11_bundle(
         "critical_error_count": validation_critical_error_count,
         "computed_counts": {
             "brain_delta_record_count": len(records),
-            "training_eligible_record_count": sum(
-                1 for record in records if record.get("training_eligible") is True
-            ),
+            "training_eligible_record_count": sum(1 for record in records if record.get("training_eligible") is True),
         },
     }
     if validation_validator_exit_code is not None:
@@ -568,14 +623,8 @@ def _synthetic_v11_bundle(
             "validator_exit_code": manifest_validator_exit_code,
             "critical_error_count": manifest_critical_error_count,
             "brain_delta_record_count": len(records),
-            "training_eligible_record_count": sum(
-                1 for record in records if record.get("training_eligible") is True
-            ),
-            **(
-                {"available_from": manifest_available_from}
-                if manifest_available_from is not None
-                else {}
-            ),
+            "training_eligible_record_count": sum(1 for record in records if record.get("training_eligible") is True),
+            **({"available_from": manifest_available_from} if manifest_available_from is not None else {}),
             "embedded_blocks": {
                 "brain_delta.jsonl": {"sha256": sha256_text(brain_delta)},
                 "source_ledger.jsonl": {"sha256": sha256_text(source_ledger)},
@@ -685,10 +734,7 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert unknown.eligibility_reason is not None
     assert "unknown record_type preserved as raw payload" in unknown.eligibility_reason
     assert unknown.payload["training_eligible"] is False
-    assert (
-        unknown.payload["eligibility_reason"]
-        == "unknown record_type preserved as raw payload"
-    )
+    assert unknown.payload["eligibility_reason"] == "unknown record_type preserved as raw payload"
     audit = audit_record_store(tmp_path)
     report = record_store_report_payload(tmp_path, audit)
     assert audit["stats"]["record_counts_by_typed_payload_status"] == {
@@ -714,9 +760,7 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert report["raw_record_count"] == 3
     assert report["normalized_record_count"] == 3
     assert report["raw_normalized_record_count_matches"] is True
-    assert report["raw_record_counts_by_episode"] == {
-        "NSLAB-20300110-SYNTH": 3
-    }
+    assert report["raw_record_counts_by_episode"] == {"NSLAB-20300110-SYNTH": 3}
     assert report["dropped_record_count"] == 0
     assert report["extra_normalized_record_count"] == 0
     assert report["all_unknown_typed_payload_count"] == 1
@@ -725,9 +769,7 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert report["staged_raw_only_record_count"] == 0
     assert report["unknown_typed_payload_record_ids"] == ["BRAIN-SYNTH-UNKNOWN"]
     assert report["raw_only_record_ids"] == []
-    assert report["all_unknown_typed_payload_record_ids"] == [
-        "BRAIN-SYNTH-UNKNOWN"
-    ]
+    assert report["all_unknown_typed_payload_record_ids"] == ["BRAIN-SYNTH-UNKNOWN"]
     assert report["all_raw_only_record_ids"] == []
     assert report["staged_unknown_typed_payload_record_ids"] == []
     assert report["staged_raw_only_record_ids"] == []
@@ -741,13 +783,7 @@ def test_v11_bundle_import_preserves_brain_delta_records(tmp_path: Path) -> None
     assert import_report["raw_payload_hashes_match"] is True
     assert import_report["record_type_counts_match_raw"] is True
     assert import_report["training_eligible_count_matches_raw"] is True
-    original_bundle = (
-        tmp_path
-        / "research"
-        / "episodes"
-        / "NSLAB-20300110-SYNTH"
-        / "original_bundle.md"
-    )
+    original_bundle = tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "original_bundle.md"
     assert original_bundle.exists()
     assert (tmp_path / "memory" / "records" / "NSLAB-20300110-SYNTH.jsonl").exists()
     assert import_versioned_bundle(original_bundle, root=tmp_path).record_count == 3
@@ -771,9 +807,7 @@ def test_unsealed_preference_pair_is_preserved_but_training_ineligible(
 
     pair = next(
         record
-        for record in BrainRecordStore(tmp_path).read_episode_records(
-            "NSLAB-20300110-SYNTH"
-        )
+        for record in BrainRecordStore(tmp_path).read_episode_records("NSLAB-20300110-SYNTH")
         if record.record_id == "BRAIN-SYNTH-PAIR"
     )
     assert inspection["record_count"] == 3
@@ -785,15 +819,21 @@ def test_unsealed_preference_pair_is_preserved_but_training_ineligible(
     assert result.training_eligible_record_count == 1
     assert pair.training_eligible is False
     assert pair.payload["training_eligible"] is False
-    assert pair.eligibility_reason == (
-        "synthetic sealed pair; sealed_preference_pair_missing"
+    assert pair.eligibility_reason == ("synthetic sealed pair; sealed_preference_pair_missing")
+    assert pair.payload["eligibility_reason"] == ("synthetic sealed pair; sealed_preference_pair_missing")
+    assert audit_record_store(tmp_path, deep=True)["brain_delta_training_eligible_mismatch_episode_ids"] == []
+
+
+def test_selected_comparator_pair_alias_is_sealed() -> None:
+    assert _payload_has_sealed_preference_pair(
+        {
+            "payload": {
+                "blind_preference": "selected",
+                "selected_candidate_id": "CAND-A",
+                "comparator_candidate_id": "CAND-B",
+            }
+        }
     )
-    assert pair.payload["eligibility_reason"] == (
-        "synthetic sealed pair; sealed_preference_pair_missing"
-    )
-    assert audit_record_store(tmp_path, deep=True)[
-        "brain_delta_training_eligible_mismatch_episode_ids"
-    ] == []
 
 
 def test_v11_bundle_imports_without_legacy_schema_failure(tmp_path: Path) -> None:
@@ -801,13 +841,7 @@ def test_v11_bundle_imports_without_legacy_schema_failure(tmp_path: Path) -> Non
 
     result = import_versioned_bundle(bundle, root=tmp_path, accepted=True)
     envelope = _read_json(result.envelope_path)
-    index = _read_json(
-        tmp_path
-        / "research"
-        / "episodes"
-        / "NSLAB-20300110-SYNTH"
-        / "normalized_episode_index.json"
-    )
+    index = _read_json(tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "normalized_episode_index.json")
 
     assert result.status == "imported"
     assert result.adapter_name == "v11"
@@ -820,6 +854,48 @@ def test_v11_bundle_imports_without_legacy_schema_failure(tmp_path: Path) -> Non
         "future_record_type": 1,
         "supervised_issuer_day_case": 1,
     }
+
+
+def test_accepted_repaired_bundle_accepts_repair_quality_gate_without_review(
+    tmp_path: Path,
+) -> None:
+    bundle = _write_synthetic_bundle_file(
+        tmp_path,
+        text=_synthetic_v11_bundle().replace(
+            "blind_valid: true",
+            "blind_valid: true\nexternal_quality_gate_required: true",
+            1,
+        ),
+    )
+
+    with pytest.raises(VersionedBundleImportError, match="requires --quality-gate"):
+        import_versioned_bundle(bundle, root=tmp_path, accepted=True)
+
+    repaired_sha256 = file_sha256(bundle)
+    quality_gate = tmp_path / "repair-quality.json"
+    quality_gate.write_text(
+        json.dumps(
+            {
+                "schema_version": "nslab.repair_gate.v1",
+                "passed": True,
+                "ready_for_import_pass": True,
+                "current_gold_pass": False,
+                "final_status": "REPAIRED_PASS",
+                "repaired_sha256": repaired_sha256,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    result = import_versioned_bundle(
+        bundle,
+        root=tmp_path,
+        accepted=True,
+        external_quality_gate_path=quality_gate,
+    )
+
+    assert result.accepted is True
 
 
 def test_v11_brain_delta_is_not_discarded(tmp_path: Path) -> None:
@@ -865,9 +941,7 @@ def test_training_eligible_count_parity(tmp_path: Path) -> None:
     inspection = inspect_versioned_bundle(bundle)
     import_versioned_bundle(bundle, root=tmp_path, accepted=True)
     report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
-    manifest = _read_json(
-        tmp_path / "memory" / "record_manifests" / "NSLAB-20300110-SYNTH.json"
-    )
+    manifest = _read_json(tmp_path / "memory" / "record_manifests" / "NSLAB-20300110-SYNTH.json")
 
     assert inspection["raw_training_eligible_record_count"] == 2
     assert inspection["training_eligible_record_count"] == 2
@@ -883,9 +957,7 @@ def test_unknown_record_type_raw_payload_preserved(tmp_path: Path) -> None:
 
     import_versioned_bundle(bundle, root=tmp_path, accepted=True)
     unknown = next(
-        record
-        for record in BrainRecordStore(tmp_path).list_records()
-        if record.record_id == "BRAIN-SYNTH-UNKNOWN"
+        record for record in BrainRecordStore(tmp_path).list_records() if record.record_id == "BRAIN-SYNTH-UNKNOWN"
     )
 
     assert unknown.record_type == "future_record_type"
@@ -893,9 +965,7 @@ def test_unknown_record_type_raw_payload_preserved(tmp_path: Path) -> None:
     assert unknown.training_eligible is False
     assert unknown.payload["record_type"] == "future_record_type"
     assert unknown.payload["training_eligible"] is False
-    assert "unknown record_type preserved as raw payload" in (
-        unknown.eligibility_reason or ""
-    )
+    assert "unknown record_type preserved as raw payload" in (unknown.eligibility_reason or "")
 
 
 def test_record_store_idempotent(tmp_path: Path) -> None:
@@ -932,9 +1002,7 @@ def test_episode_hash_conflict_quarantined(tmp_path: Path) -> None:
     assert report["status"] == "EPISODE_HASH_CONFLICT"
     assert report["quarantined_record_count"] == 1
     assert (quarantine / "original_bundle.md").exists()
-    assert _read_json(quarantine / "quarantine.json")["reason"] == (
-        "EPISODE_HASH_CONFLICT"
-    )
+    assert _read_json(quarantine / "quarantine.json")["reason"] == ("EPISODE_HASH_CONFLICT")
 
 
 def test_unknown_bundle_version_quarantined_without_data_loss(
@@ -958,9 +1026,7 @@ def test_unknown_bundle_version_quarantined_without_data_loss(
         "BRAIN-SYNTH-UNKNOWN",
     ]
     assert all(record.training_eligible is False for record in records)
-    assert all(
-        record.typed_payload_status == "UNKNOWN_TYPED_PAYLOAD" for record in records
-    )
+    assert all(record.typed_payload_status == "UNKNOWN_TYPED_PAYLOAD" for record in records)
     assert report["raw_record_count"] == 3
     assert report["raw_only_record_count"] == 3
     assert report["dropped_record_count"] == 0
@@ -1020,10 +1086,7 @@ def test_v11_bundle_inspection_exposes_direct_ingest_contract(
     inspection = inspect_versioned_bundle(bundle)
 
     assert inspection["direct_ingest_contract_present"] is True
-    assert (
-        inspection["direct_ingest_contract_schema_version"]
-        == "nslab.direct_ingest_contract.v1"
-    )
+    assert inspection["direct_ingest_contract_schema_version"] == "nslab.direct_ingest_contract.v1"
     assert inspection["direct_brain_ingest_ready"] is True
     assert inspection["brain_eligible"] is True
     assert inspection["requires_human_semantic_review"] is False
@@ -1036,12 +1099,7 @@ def test_v11_bundle_inspection_exposes_direct_ingest_contract(
 
 
 def test_checked_in_synthetic_v11_fixture_has_direct_ingest_contract() -> None:
-    bundle = (
-        Path(__file__).resolve().parents[1]
-        / "fixtures"
-        / "research_bundles"
-        / "synthetic_v11_bundle.md"
-    )
+    bundle = Path(__file__).resolve().parents[1] / "fixtures" / "research_bundles" / "synthetic_v11_bundle.md"
 
     inspection = inspect_versioned_bundle(bundle)
 
@@ -1049,10 +1107,7 @@ def test_checked_in_synthetic_v11_fixture_has_direct_ingest_contract() -> None:
     assert inspection["hash_mismatch_count"] == 0
     assert inspection["hash_expectation_conflict_count"] == 0
     assert inspection["direct_ingest_contract_present"] is True
-    assert (
-        inspection["direct_ingest_contract_schema_version"]
-        == "nslab.direct_ingest_contract.v1"
-    )
+    assert inspection["direct_ingest_contract_schema_version"] == "nslab.direct_ingest_contract.v1"
     assert inspection["direct_brain_ingest_ready"] is True
     assert inspection["brain_eligible"] is True
     assert inspection["requires_human_semantic_review"] is False
@@ -1141,10 +1196,7 @@ def test_v11_import_loss_audit_blocks_unknown_training_eligible_record(
     assert inspection["training_eligible_count_matches_manifest"] is True
     assert inspection["training_eligible_count_matches_raw"] is False
     assert inspection["validation"]["import_loss_audit_passed"] is False
-    assert (
-        inspection["validation"]["training_eligible_count_matches_raw"]
-        is False
-    )
+    assert inspection["validation"]["training_eligible_count_matches_raw"] is False
 
     with pytest.raises(VersionedBundleImportError):
         import_versioned_bundle(bundle, root=tmp_path, accepted=True)
@@ -1197,13 +1249,7 @@ def test_v10_bundle_uses_version_adapter_without_legacy_schema_loss(
     inspection = inspect_versioned_bundle(bundle)
     result = import_versioned_bundle(bundle, root=tmp_path)
     records = BrainRecordStore(tmp_path).read_episode_records("NSLAB-20300110-SYNTH")
-    envelope = _read_json(
-        tmp_path
-        / "research"
-        / "episodes"
-        / "NSLAB-20300110-SYNTH"
-        / "bundle_envelope.json"
-    )
+    envelope = _read_json(tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "bundle_envelope.json")
 
     assert inspection["adapter"] == "v10"
     assert inspection["supported"] is True
@@ -1242,13 +1288,7 @@ def test_legacy_v1_bundle_adapter_preserves_records_without_schema_loss(
     inspection = inspect_versioned_bundle(bundle)
     result = import_versioned_bundle(bundle, root=tmp_path)
     records = BrainRecordStore(tmp_path).read_episode_records("NSLAB-20300110-SYNTH")
-    envelope = _read_json(
-        tmp_path
-        / "research"
-        / "episodes"
-        / "NSLAB-20300110-SYNTH"
-        / "bundle_envelope.json"
-    )
+    envelope = _read_json(tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "bundle_envelope.json")
 
     assert inspection["adapter"] == "legacy-v1"
     assert inspection["supported"] is True
@@ -1277,13 +1317,7 @@ def test_legacy_v1_episode_still_supported(tmp_path: Path) -> None:
     inspection = inspect_versioned_bundle(bundle)
     result = import_versioned_bundle(bundle, root=tmp_path, accepted=True)
     records = BrainRecordStore(tmp_path).list_records()
-    index = _read_json(
-        tmp_path
-        / "research"
-        / "episodes"
-        / "NSLAB-20300110-SYNTH"
-        / "normalized_episode_index.json"
-    )
+    index = _read_json(tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "normalized_episode_index.json")
 
     assert inspection["adapter"] == "legacy-v1"
     assert inspection["supported"] is True
@@ -1339,9 +1373,7 @@ def test_record_store_deep_audit_rejects_absolute_manifest_records_file(
     audit = audit_record_store(tmp_path, deep=True)
 
     assert audit["passed"] is False
-    assert audit["manifest_records_file_absolute_episode_ids"] == [
-        "NSLAB-20300110-SYNTH"
-    ]
+    assert audit["manifest_records_file_absolute_episode_ids"] == ["NSLAB-20300110-SYNTH"]
     assert audit["manifest_records_file_escape_episode_ids"] == []
     assert "record manifest records_file must be project-relative" in audit["findings"]
 
@@ -1364,9 +1396,7 @@ def test_record_store_deep_audit_rejects_escaping_manifest_records_file(
 
     assert audit["passed"] is False
     assert audit["manifest_records_file_absolute_episode_ids"] == []
-    assert audit["manifest_records_file_escape_episode_ids"] == [
-        "NSLAB-20300110-SYNTH"
-    ]
+    assert audit["manifest_records_file_escape_episode_ids"] == ["NSLAB-20300110-SYNTH"]
     assert "record manifest records_file escapes project root" in audit["findings"]
 
 
@@ -1394,13 +1424,7 @@ def test_record_store_deep_audit_rejects_brain_delta_record_id_gap(
     manifest["records_sha256"] = sha256_text(record_path.read_text(encoding="utf-8"))
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
 
-    index_path = (
-        tmp_path
-        / "research"
-        / "episodes"
-        / "NSLAB-20300110-SYNTH"
-        / "normalized_episode_index.json"
-    )
+    index_path = tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "normalized_episode_index.json"
     index = _read_json(index_path)
     index["record_ids"] = record_ids
     index_path.write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
@@ -1412,9 +1436,7 @@ def test_record_store_deep_audit_rejects_brain_delta_record_id_gap(
     assert audit["index_record_id_mismatch_episode_ids"] == []
     assert audit["manifest_hash_mismatch_episode_ids"] == []
     assert audit["records_with_raw_payload_hash_mismatch"] == []
-    assert audit["brain_delta_record_id_mismatch_episode_ids"] == [
-        "NSLAB-20300110-SYNTH"
-    ]
+    assert audit["brain_delta_record_id_mismatch_episode_ids"] == ["NSLAB-20300110-SYNTH"]
 
 
 def test_record_store_deep_audit_reports_duplicate_raw_brain_delta_ids(
@@ -1426,13 +1448,7 @@ def test_record_store_deep_audit_reports_duplicate_raw_brain_delta_ids(
     bundle.write_text(_synthetic_v11_bundle(include_unknown=False), encoding="utf-8")
     import_versioned_bundle(bundle, root=tmp_path)
 
-    envelope_path = (
-        tmp_path
-        / "research"
-        / "episodes"
-        / "NSLAB-20300110-SYNTH"
-        / "bundle_envelope.json"
-    )
+    envelope_path = tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "bundle_envelope.json"
     envelope = _read_json(envelope_path)
     raw_path = tmp_path / str(envelope["raw_block_paths"]["brain_delta.jsonl"])
     raw_rows = _jsonl(raw_path)
@@ -1447,9 +1463,7 @@ def test_record_store_deep_audit_reports_duplicate_raw_brain_delta_ids(
 
     assert audit["passed"] is False
     assert audit["brain_delta_duplicate_record_ids"] == ["BRAIN-SYNTH-ISSUER"]
-    assert audit["brain_delta_record_id_mismatch_episode_ids"] == [
-        "NSLAB-20300110-SYNTH"
-    ]
+    assert audit["brain_delta_record_id_mismatch_episode_ids"] == ["NSLAB-20300110-SYNTH"]
     assert "brain_delta raw record IDs are duplicated" in audit["findings"]
     assert report["brain_delta_duplicate_record_ids"] == ["BRAIN-SYNTH-ISSUER"]
 
@@ -1483,13 +1497,7 @@ def test_record_store_deep_audit_rejects_brain_delta_population_gap(
     manifest["records_sha256"] = sha256_text(record_path.read_text(encoding="utf-8"))
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
 
-    index_path = (
-        tmp_path
-        / "research"
-        / "episodes"
-        / "NSLAB-20300110-SYNTH"
-        / "normalized_episode_index.json"
-    )
+    index_path = tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "normalized_episode_index.json"
     index = _read_json(index_path)
     index["training_eligible_record_count"] = 1
     index["record_count_by_type"] = record_counts_by_type
@@ -1503,12 +1511,8 @@ def test_record_store_deep_audit_rejects_brain_delta_population_gap(
     assert audit["index_training_eligible_mismatch_episode_ids"] == []
     assert audit["index_type_count_mismatch_episode_ids"] == []
     assert audit["records_with_raw_payload_hash_mismatch"] == []
-    assert audit["brain_delta_training_eligible_mismatch_episode_ids"] == [
-        "NSLAB-20300110-SYNTH"
-    ]
-    assert audit["brain_delta_type_count_mismatch_episode_ids"] == [
-        "NSLAB-20300110-SYNTH"
-    ]
+    assert audit["brain_delta_training_eligible_mismatch_episode_ids"] == ["NSLAB-20300110-SYNTH"]
+    assert audit["brain_delta_type_count_mismatch_episode_ids"] == ["NSLAB-20300110-SYNTH"]
 
 
 def test_record_store_deep_audit_rejects_tampered_import_parity(
@@ -1525,13 +1529,7 @@ def test_record_store_deep_audit_rejects_tampered_import_parity(
     manifest["record_count"] = 999
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
 
-    index_path = (
-        tmp_path
-        / "research"
-        / "episodes"
-        / "NSLAB-20300110-SYNTH"
-        / "normalized_episode_index.json"
-    )
+    index_path = tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "normalized_episode_index.json"
     index = _read_json(index_path)
     index["source_ids"] = []
     index_path.write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
@@ -1544,14 +1542,7 @@ def test_record_store_deep_audit_rejects_tampered_import_parity(
         encoding="utf-8",
     )
 
-    raw_block_path = (
-        tmp_path
-        / "research"
-        / "episodes"
-        / "NSLAB-20300110-SYNTH"
-        / "raw_blocks"
-        / "brain_delta.jsonl"
-    )
+    raw_block_path = tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "raw_blocks" / "brain_delta.jsonl"
     raw_rows = _jsonl(raw_block_path)
     raw_rows[0]["company_name"] = "Tampered Issuer"
     raw_block_path.write_text(
@@ -1582,13 +1573,7 @@ def test_record_store_deep_audit_rejects_source_ledger_source_id_gap(
     bundle.write_text(_synthetic_v11_bundle(include_unknown=False), encoding="utf-8")
     import_versioned_bundle(bundle, root=tmp_path)
 
-    envelope_path = (
-        tmp_path
-        / "research"
-        / "episodes"
-        / "NSLAB-20300110-SYNTH"
-        / "bundle_envelope.json"
-    )
+    envelope_path = tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "bundle_envelope.json"
     envelope = _read_json(envelope_path)
     source_ledger_path = tmp_path / envelope["raw_block_paths"]["source_ledger.jsonl"]
     tampered_ledger = json.dumps(
@@ -1607,13 +1592,8 @@ def test_record_store_deep_audit_rejects_source_ledger_source_id_gap(
 
     assert audit["passed"] is False
     assert audit["raw_block_hash_mismatch_episode_ids"] == []
-    assert audit["source_ledger_source_id_mismatch_episode_ids"] == [
-        "NSLAB-20300110-SYNTH"
-    ]
-    assert (
-        "source_ledger source IDs do not match normalized episode index"
-        in audit["findings"]
-    )
+    assert audit["source_ledger_source_id_mismatch_episode_ids"] == ["NSLAB-20300110-SYNTH"]
+    assert "source_ledger source IDs do not match normalized episode index" in audit["findings"]
 
 
 def test_missing_record_event_reference_blocks_acceptance(tmp_path: Path) -> None:
@@ -1668,13 +1648,7 @@ def test_record_store_deep_audit_rejects_payload_reference_gap(
     )
     import_versioned_bundle(bundle, root=tmp_path)
 
-    envelope_path = (
-        tmp_path
-        / "research"
-        / "episodes"
-        / "NSLAB-20300110-SYNTH"
-        / "bundle_envelope.json"
-    )
+    envelope_path = tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "bundle_envelope.json"
     envelope = _read_json(envelope_path)
     source_ledger_path = tmp_path / envelope["raw_block_paths"]["source_ledger.jsonl"]
     tampered_ledger = json.dumps(
@@ -1703,10 +1677,7 @@ def test_record_store_deep_audit_rejects_payload_reference_gap(
             "record_ids": ["BRAIN-SYNTH-EDGE"],
         }
     ]
-    assert (
-        "record fact/inference/event references are not closed by source ledgers"
-        in audit["findings"]
-    )
+    assert "record fact/inference/event references are not closed by source ledgers" in audit["findings"]
 
 
 def test_record_warehouse_and_training_use_explicit_records(tmp_path: Path) -> None:
@@ -1875,13 +1846,7 @@ def test_record_provenance_closure(tmp_path: Path) -> None:
     counts = WarehouseStore(tmp_path).rebuild_all()
     audit = audit_record_store(tmp_path, deep=True)
     envelope = _read_json(result.envelope_path)
-    index = _read_json(
-        tmp_path
-        / "research"
-        / "episodes"
-        / "NSLAB-20300110-SYNTH"
-        / "normalized_episode_index.json"
-    )
+    index = _read_json(tmp_path / "research" / "episodes" / "NSLAB-20300110-SYNTH" / "normalized_episode_index.json")
     provenance_rows = duckdb.sql(
         "select record_id, episode_id, record_type, source_id "
         f"from read_parquet('{(tmp_path / 'warehouse' / 'record_provenance.parquet').as_posix()}') "
@@ -1971,9 +1936,7 @@ def test_invalid_event_ticker_edge_relation_class_blocks_bundle_acceptance(
     assert inspection["validation_passed"] is False
     assert inspection["typed_payload_valid"] is False
     assert inspection["invalid_typed_payload_record_count"] == 1
-    assert inspection["validation"]["invalid_typed_payload_record_ids"] == [
-        "BRAIN-SYNTH-EDGE"
-    ]
+    assert inspection["validation"]["invalid_typed_payload_record_ids"] == ["BRAIN-SYNTH-EDGE"]
     assert inspection["raw_record_count"] == inspection["normalized_record_count"]
     assert inspection["dropped_record_count"] == 0
     with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
@@ -1997,12 +1960,8 @@ def test_training_eligible_event_edge_requires_cutoff_provenance_for_acceptance(
     inspection = inspect_versioned_bundle(bundle)
 
     assert inspection["validation_passed"] is False
-    assert inspection["validation"][
-        "event_ticker_edge_cutoff_provenance_valid"
-    ] is False
-    assert inspection["validation"][
-        "invalid_event_ticker_edge_cutoff_provenance_record_ids"
-    ] == ["BRAIN-SYNTH-EDGE"]
+    assert inspection["validation"]["event_ticker_edge_cutoff_provenance_valid"] is False
+    assert inspection["validation"]["invalid_event_ticker_edge_cutoff_provenance_record_ids"] == ["BRAIN-SYNTH-EDGE"]
     with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
         import_versioned_bundle(bundle, root=tmp_path)
 
@@ -2025,15 +1984,9 @@ def test_training_eligible_event_edge_requires_cutoff_safe_source_ledger(
     inspection = inspect_versioned_bundle(bundle)
 
     assert inspection["validation_passed"] is False
-    assert inspection["validation"][
-        "event_ticker_edge_cutoff_provenance_valid"
-    ] is True
-    assert inspection["validation"][
-        "event_ticker_edge_source_ledger_cutoff_valid"
-    ] is False
-    assert inspection["validation"][
-        "invalid_event_ticker_edge_source_ledger_cutoff_record_ids"
-    ] == ["BRAIN-SYNTH-EDGE"]
+    assert inspection["validation"]["event_ticker_edge_cutoff_provenance_valid"] is True
+    assert inspection["validation"]["event_ticker_edge_source_ledger_cutoff_valid"] is False
+    assert inspection["validation"]["invalid_event_ticker_edge_source_ledger_cutoff_record_ids"] == ["BRAIN-SYNTH-EDGE"]
     with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
         import_versioned_bundle(bundle, root=tmp_path)
 
@@ -2105,9 +2058,7 @@ def test_company_memory_delta_requires_timezone_known_at_for_acceptance(
 
     assert inspection["validation_passed"] is False
     assert inspection["validation"]["company_memory_delta_known_at_valid"] is False
-    assert inspection["validation"][
-        "invalid_company_memory_delta_known_at_record_ids"
-    ] == ["BRAIN-SYNTH-COMPANY"]
+    assert inspection["validation"]["invalid_company_memory_delta_known_at_record_ids"] == ["BRAIN-SYNTH-COMPANY"]
     with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
         import_versioned_bundle(bundle, root=tmp_path)
 
@@ -2129,12 +2080,8 @@ def test_company_memory_delta_rejects_backdated_known_at_for_acceptance(
 
     assert inspection["validation_passed"] is False
     assert inspection["validation"]["company_memory_delta_known_at_valid"] is True
-    assert inspection["validation"][
-        "company_memory_delta_known_at_not_backdated"
-    ] is False
-    assert inspection["validation"][
-        "backdated_company_memory_delta_known_at_record_ids"
-    ] == ["BRAIN-SYNTH-COMPANY"]
+    assert inspection["validation"]["company_memory_delta_known_at_not_backdated"] is False
+    assert inspection["validation"]["backdated_company_memory_delta_known_at_record_ids"] == ["BRAIN-SYNTH-COMPANY"]
     with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
         import_versioned_bundle(bundle, root=tmp_path)
 
@@ -2155,9 +2102,7 @@ def test_issuer_day_event_level_weights_must_sum_to_one_for_acceptance(
 
     assert inspection["validation_passed"] is False
     assert inspection["validation"]["issuer_day_event_level_weights_valid"] is False
-    assert inspection["validation"][
-        "invalid_issuer_day_event_level_weight_record_ids"
-    ] == ["BRAIN-SYNTH-ISSUER"]
+    assert inspection["validation"]["invalid_issuer_day_event_level_weight_record_ids"] == ["BRAIN-SYNTH-ISSUER"]
     with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
         import_versioned_bundle(bundle, root=tmp_path)
 
@@ -2178,9 +2123,7 @@ def test_issuer_day_event_level_weights_accept_balanced_weights(
 
     assert inspection["validation_passed"] is True
     assert inspection["validation"]["issuer_day_event_level_weights_valid"] is True
-    assert inspection["validation"][
-        "invalid_issuer_day_event_level_weight_record_ids"
-    ] == []
+    assert inspection["validation"]["invalid_issuer_day_event_level_weight_record_ids"] == []
 
 
 def test_issuer_day_sample_weight_must_sum_to_one_for_acceptance(
@@ -2199,9 +2142,9 @@ def test_issuer_day_sample_weight_must_sum_to_one_for_acceptance(
 
     assert inspection["validation_passed"] is False
     assert inspection["validation"]["sample_weight_validation_status"] == "failed"
-    assert inspection["validation"]["sample_weight_validation"][
-        "issuer_day_weight_sum_mismatches"
-    ] == {"2030-01-10|000001": 0.5}
+    assert inspection["validation"]["sample_weight_validation"]["issuer_day_weight_sum_mismatches"] == {
+        "2030-01-10|000001": 0.5
+    }
     with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
         import_versioned_bundle(bundle, root=tmp_path)
 
@@ -2222,9 +2165,9 @@ def test_direct_event_sample_weight_must_sum_to_one_for_acceptance(
 
     assert inspection["validation_passed"] is False
     assert inspection["validation"]["sample_weight_validation_status"] == "failed"
-    assert inspection["validation"]["sample_weight_validation"][
-        "direct_event_weight_sum_mismatches"
-    ] == {"20300110:000001": 0.5}
+    assert inspection["validation"]["sample_weight_validation"]["direct_event_weight_sum_mismatches"] == {
+        "20300110:000001": 0.5
+    }
     with pytest.raises(VersionedBundleImportError, match="bundle validation failed"):
         import_versioned_bundle(bundle, root=tmp_path)
 
@@ -2281,9 +2224,7 @@ def test_training_export_skip_manifest_keeps_ineligible_record_reason(
     preference = export_training(tmp_path, kind="preference")
 
     manifest = _read_json(preference.manifest_path)
-    skipped_by_id = {
-        item["record_id"]: item for item in manifest["skipped_records"]
-    }
+    skipped_by_id = {item["record_id"]: item for item in manifest["skipped_records"]}
     unknown = skipped_by_id["BRAIN-SYNTH-UNKNOWN"]
     assert unknown["training_eligible"] is False
     assert "unknown record_type preserved as raw payload" in unknown["eligibility_reason"]
@@ -2326,8 +2267,7 @@ def test_coverage_audit_rejects_duplicate_issuer_day_projection_keys(
         ]
     }
     assert (
-        "warehouse: issuer_day_cases.parquet duplicate ids: "
-        "20300110:000001|2030-01-10|000001, BRAIN-SYNTH-ISSUER"
+        "warehouse: issuer_day_cases.parquet duplicate ids: 20300110:000001|2030-01-10|000001, BRAIN-SYNTH-ISSUER"
     ) in audit["findings"]
     assert audit["warehouse_projection_synced"] is False
 
@@ -2362,14 +2302,8 @@ def test_coverage_audit_rejects_warehouse_weight_sum_mismatches(
         "direct_event_cases.parquet": {"20300110:000001": 0.5},
         "issuer_day_cases.parquet": {"2030-01-10|000001": 0.5},
     }
-    assert (
-        "warehouse: issuer_day_cases.parquet weight sum mismatch: "
-        "2030-01-10|000001=0.5"
-    ) in audit["findings"]
-    assert (
-        "warehouse: direct_event_cases.parquet weight sum mismatch: "
-        "20300110:000001=0.5"
-    ) in audit["findings"]
+    assert ("warehouse: issuer_day_cases.parquet weight sum mismatch: 2030-01-10|000001=0.5") in audit["findings"]
+    assert ("warehouse: direct_event_cases.parquet weight sum mismatch: 20300110:000001=0.5") in audit["findings"]
     assert audit["warehouse_projection_synced"] is False
 
 
@@ -2388,9 +2322,9 @@ def test_training_audit_rejects_issuer_day_weight_sum_mismatch(
     import_versioned_bundle(bundle, root=tmp_path)
     _rewrite_synthetic_record_payloads(
         tmp_path,
-        lambda payload: payload.update({"sample_weight": 0.5})
-        if payload.get("record_id") == "BRAIN-SYNTH-ISSUER"
-        else None,
+        lambda payload: (
+            payload.update({"sample_weight": 0.5}) if payload.get("record_id") == "BRAIN-SYNTH-ISSUER" else None
+        ),
     )
 
     sft = export_training(tmp_path, kind="sft")
@@ -2403,20 +2337,14 @@ def test_training_audit_rejects_issuer_day_weight_sum_mismatch(
     assert manifest["weight_validation_status"] == "failed"
     assert manifest["duplicate_issuer_day_count"] == 0
     assert manifest["issuer_day_weight_sum_mismatch_count"] == 1
-    assert manifest["issuer_day_weight_sum_mismatches"] == {
-        "2030-01-10|000001": 0.5
-    }
+    assert manifest["issuer_day_weight_sum_mismatches"] == {"2030-01-10|000001": 0.5}
     assert manifest["direct_event_weight_sum_mismatch_count"] == 0
-    assert manifest["weight_validation"]["issuer_day_weight_sum_mismatches"] == {
-        "2030-01-10|000001": 0.5
-    }
+    assert manifest["weight_validation"]["issuer_day_weight_sum_mismatches"] == {"2030-01-10|000001": 0.5}
     assert audit["passed"] is False
     assert "sft: record weight validation failed" in audit["findings"]
     training_report = _read_json(tmp_path / "diagnostics" / "training_export_report.json")
     assert training_report["issuer_day_weight_sum_mismatch_count"] == 1
-    assert training_report["issuer_day_weight_sum_mismatches"] == {
-        "2030-01-10|000001": 0.5
-    }
+    assert training_report["issuer_day_weight_sum_mismatches"] == {"2030-01-10|000001": 0.5}
 
 
 def test_training_audit_rejects_direct_event_weight_sum_mismatch(
@@ -2435,9 +2363,11 @@ def test_training_audit_rejects_direct_event_weight_sum_mismatch(
     import_versioned_bundle(bundle, root=tmp_path)
     _rewrite_synthetic_record_payloads(
         tmp_path,
-        lambda payload: payload.update({"sample_weight": 0.25})
-        if payload.get("record_type") == "supervised_direct_event_case"
-        else None,
+        lambda payload: (
+            payload.update({"sample_weight": 0.25})
+            if payload.get("record_type") == "supervised_direct_event_case"
+            else None
+        ),
     )
 
     sft = export_training(tmp_path, kind="sft")
@@ -2451,19 +2381,13 @@ def test_training_audit_rejects_direct_event_weight_sum_mismatch(
     assert manifest["duplicate_issuer_day_count"] == 0
     assert manifest["issuer_day_weight_sum_mismatch_count"] == 0
     assert manifest["direct_event_weight_sum_mismatch_count"] == 1
-    assert manifest["direct_event_weight_sum_mismatches"] == {
-        "20300110:000001": 0.5
-    }
-    assert manifest["weight_validation"]["direct_event_weight_sum_mismatches"] == {
-        "20300110:000001": 0.5
-    }
+    assert manifest["direct_event_weight_sum_mismatches"] == {"20300110:000001": 0.5}
+    assert manifest["weight_validation"]["direct_event_weight_sum_mismatches"] == {"20300110:000001": 0.5}
     assert audit["passed"] is False
     assert "sft: record weight validation failed" in audit["findings"]
     training_report = _read_json(tmp_path / "diagnostics" / "training_export_report.json")
     assert training_report["direct_event_weight_sum_mismatch_count"] == 1
-    assert training_report["direct_event_weight_sum_mismatches"] == {
-        "20300110:000001": 0.5
-    }
+    assert training_report["direct_event_weight_sum_mismatches"] == {"20300110:000001": 0.5}
 
 
 def test_versioned_bundle_can_stage_records_until_accepted(tmp_path: Path) -> None:
@@ -2515,9 +2439,7 @@ def test_invalid_bundle_can_only_be_staged_not_accepted(tmp_path: Path) -> None:
     )
     assert staged.accepted is False
     assert staged.validation["passed"] is False
-    assert staged.validation["hash_mismatches"]["brain_delta.jsonl"]["sources"] == [
-        "bundle_manifest.embedded_blocks"
-    ]
+    assert staged.validation["hash_mismatches"]["brain_delta.jsonl"]["sources"] == ["bundle_manifest.embedded_blocks"]
     assert len(BrainRecordStore(tmp_path).read_episode_records("NSLAB-20300110-SYNTH")) == 2
     assert BrainRecordStore(tmp_path).list_records() == []
 
@@ -2601,9 +2523,7 @@ def test_self_referential_manifest_hash_is_reported_without_blocking_import(
     assert imported.record_count == 2
     assert imported.training_eligible_record_count == 2
     assert imported.validation["passed"] is True
-    assert imported.validation["self_referential_hashes"]["bundle_manifest.json"][
-        "expected"
-    ] == "1" * 64
+    assert imported.validation["self_referential_hashes"]["bundle_manifest.json"]["expected"] == "1" * 64
 
 
 def test_conflicting_hash_expectation_sources_block_acceptance(tmp_path: Path) -> None:
@@ -2664,9 +2584,7 @@ def test_invalid_record_available_from_blocks_acceptance(tmp_path: Path) -> None
 
     report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
     assert report["status"] == "BUNDLE_VALIDATION_FAILED"
-    assert report["validation"]["invalid_available_from_record_ids"] == [
-        "BRAIN-SYNTH-ISSUER"
-    ]
+    assert report["validation"]["invalid_available_from_record_ids"] == ["BRAIN-SYNTH-ISSUER"]
     assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
 
 
@@ -2766,18 +2684,14 @@ def test_invalid_outcome_label_quality_blocks_acceptance(tmp_path: Path) -> None
     assert inspection["outcome_label_quality_valid"] is False
     assert inspection["invalid_outcome_label_quality_record_count"] == 1
     assert validation["outcome_label_quality_valid"] is False
-    assert validation["invalid_outcome_label_quality_record_ids"] == [
-        "BRAIN-SYNTH-ISSUER"
-    ]
+    assert validation["invalid_outcome_label_quality_record_ids"] == ["BRAIN-SYNTH-ISSUER"]
 
     with pytest.raises(VersionedBundleImportError):
         import_versioned_bundle(bundle, root=tmp_path, accepted=True)
 
     report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
     assert report["status"] == "BUNDLE_VALIDATION_FAILED"
-    assert report["validation"]["invalid_outcome_label_quality_record_ids"] == [
-        "BRAIN-SYNTH-ISSUER"
-    ]
+    assert report["validation"]["invalid_outcome_label_quality_record_ids"] == ["BRAIN-SYNTH-ISSUER"]
     assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
 
 
@@ -2798,26 +2712,15 @@ def test_record_store_audit_rejects_invalid_outcome_label_quality(
 
     episode_id = "NSLAB-20300110-SYNTH"
     record_path = tmp_path / "memory" / "records" / f"{episode_id}.jsonl"
-    records = [
-        json.loads(line)
-        for line in record_path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    records = [json.loads(line) for line in record_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     for record in records:
         if record["record_id"] != "BRAIN-SYNTH-ISSUER":
             continue
         record["payload"]["label_quality"] = "model_inference_unverified"
         record["payload"]["D_outcome"]["label_quality"] = "model_inference_unverified"
-        record["normalized_payload_sha256"] = sha256_text(
-            canonical_json(record["payload"])
-        )
-        record["raw_payload_sha256"] = sha256_text(
-            json.dumps(record["payload"], ensure_ascii=False, sort_keys=True)
-        )
-    record_payload = "".join(
-        json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n"
-        for record in records
-    )
+        record["normalized_payload_sha256"] = sha256_text(canonical_json(record["payload"]))
+        record["raw_payload_sha256"] = sha256_text(json.dumps(record["payload"], ensure_ascii=False, sort_keys=True))
+    record_payload = "".join(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n" for record in records)
     record_path.write_text(record_payload, encoding="utf-8")
 
     manifest_path = tmp_path / "memory" / "record_manifests" / f"{episode_id}.json"
@@ -2828,11 +2731,7 @@ def test_record_store_audit_rejects_invalid_outcome_label_quality(
     envelope_path = tmp_path / "research" / "episodes" / episode_id / "bundle_envelope.json"
     envelope = _read_json(envelope_path)
     brain_delta_path = tmp_path / envelope["raw_block_paths"]["brain_delta.jsonl"]
-    raw_rows = [
-        json.loads(line)
-        for line in brain_delta_path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    raw_rows = [json.loads(line) for line in brain_delta_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     for row in raw_rows:
         if row.get("record_id") == "BRAIN-SYNTH-ISSUER":
             row["label_quality"] = "model_inference_unverified"
@@ -2849,9 +2748,7 @@ def test_record_store_audit_rejects_invalid_outcome_label_quality(
     assert audit["manifest_hash_mismatch_episode_ids"] == []
     assert audit["raw_block_hash_mismatch_episode_ids"] == []
     assert audit["records_with_raw_payload_hash_mismatch"] == []
-    assert audit["invalid_outcome_label_quality_record_ids"] == [
-        "BRAIN-SYNTH-ISSUER"
-    ]
+    assert audit["invalid_outcome_label_quality_record_ids"] == ["BRAIN-SYNTH-ISSUER"]
     assert "record outcome label_quality values are invalid" in audit["findings"]
 
 
@@ -3019,15 +2916,9 @@ def test_v23_direct_ingest_contract_normalizes_nested_payloads(
     assert inspection["direct_ingest_validator_exit_code"] == 0
     assert inspection["direct_ingest_critical_error_count"] == 0
     assert inspection["validation"]["sample_weight_validation_status"] == "passed"
-    assert inspection["validation"]["sample_weight_validation"][
-        "duplicate_issuer_day_count"
-    ] == 0
-    assert inspection["validation"]["sample_weight_validation"][
-        "issuer_day_weight_sum_mismatches"
-    ] == {}
-    assert inspection["validation"]["sample_weight_validation"][
-        "direct_event_weight_sum_mismatches"
-    ] == {}
+    assert inspection["validation"]["sample_weight_validation"]["duplicate_issuer_day_count"] == 0
+    assert inspection["validation"]["sample_weight_validation"]["issuer_day_weight_sum_mismatches"] == {}
+    assert inspection["validation"]["sample_weight_validation"]["direct_event_weight_sum_mismatches"] == {}
 
     assert result.status == "imported"
     assert result.adapter_name == "v23-direct-ingest"
@@ -3052,9 +2943,7 @@ def test_v23_direct_ingest_contract_normalizes_nested_payloads(
     assert issuer.payload["issuer_day_case_id"] == "BD-DIRECT-1"
     assert issuer.payload["issuer_day_weight_group_id"] == "2030-02-04:000001"
     assert issuer.payload["sample_weight"] == 0.5
-    assert issuer.payload["issuer_day_sample_weight_policy"] == (
-        "fractional_issuer_day_group"
-    )
+    assert issuer.payload["issuer_day_sample_weight_policy"] == ("fractional_issuer_day_group")
     assert issuer.provenance_source_ids == ["SRC-NEWS-000001"]
     assert issuer.raw_payload_sha256 != issuer.normalized_payload_sha256
     direct = records[1]
@@ -3069,15 +2958,11 @@ def test_v23_direct_ingest_contract_normalizes_nested_payloads(
     second_issuer = records[3]
     assert second_issuer.record_type == "supervised_issuer_day_case"
     assert second_issuer.payload["issuer_day_case_id"] == "BD-DIRECT-4"
-    assert second_issuer.payload["issuer_day_weight_group_id"] == (
-        "2030-02-04:000001"
-    )
+    assert second_issuer.payload["issuer_day_weight_group_id"] == ("2030-02-04:000001")
     assert second_issuer.payload["sample_weight"] == 0.5
     second_direct = records[4]
     assert second_direct.record_type == "supervised_direct_event_case"
-    assert second_direct.payload["issuer_day_weight_group_id"] == (
-        "2030-02-04:000001"
-    )
+    assert second_direct.payload["issuer_day_weight_group_id"] == ("2030-02-04:000001")
     assert second_direct.payload["sample_weight"] == 0.5
 
     report = _read_json(tmp_path / "diagnostics" / "bundle_import_report.json")
@@ -3088,6 +2973,119 @@ def test_v23_direct_ingest_contract_normalizes_nested_payloads(
     assert report["raw_training_eligible_record_count"] == 5
     assert report["training_eligible_count_matches_raw"] is True
     assert report["dropped_record_count"] == 0
+
+
+def test_v23_nested_null_convenience_fields_are_not_promoted(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "v23_nested_null_payloads.md"
+    bundle.write_text(
+        _v23_direct_ingest_bundle(
+            nested_payload_updates={
+                "BD-DIRECT-1": {"D_outcome": None},
+                "BD-DIRECT-2": {"safe_D1_features": None},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    result = import_versioned_bundle(bundle, root=tmp_path)
+
+    assert inspection["validation_passed"] is True
+    assert inspection["typed_payload_valid"] is True
+    assert inspection["training_eligible_record_count"] == 5
+    assert inspection["training_eligible_count_matches_raw"] is True
+    assert result.training_eligible_record_count == 5
+
+    records_by_id = {record.record_id: record for record in BrainRecordStore(tmp_path).list_records()}
+    issuer = records_by_id["BD-DIRECT-1"]
+    direct = records_by_id["BD-DIRECT-2"]
+    assert issuer.typed_payload_status == "KNOWN_TYPED_PAYLOAD"
+    assert direct.typed_payload_status == "KNOWN_TYPED_PAYLOAD"
+    assert issuer.payload["D_outcome"] == {
+        "company_name": "Direct Issuer",
+        "ticker": "000001",
+    }
+    assert issuer.payload["payload"]["D_outcome"] is None
+    assert "safe_D1_features" not in direct.payload
+    assert direct.payload["payload"]["safe_D1_features"] is None
+
+    assert result.envelope_path is not None
+    envelope = _read_json(result.envelope_path)
+    raw_path = tmp_path / envelope["raw_block_paths"]["brain_delta.jsonl"]
+    raw_by_id = {row["brain_delta_id"]: row for row in _jsonl(raw_path)}
+    assert raw_by_id["BD-DIRECT-1"]["payload"]["D_outcome"] is None
+    assert raw_by_id["BD-DIRECT-2"]["payload"]["safe_D1_features"] is None
+
+
+def test_v23_duplicate_safe_d1_feature_mirror_collapses_without_losing_nested_list(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "v23_duplicate_safe_d1_features.md"
+    duplicate_features = [
+        {"snapshot_date": "2030-02-03", "amount_rank": 11},
+        {"snapshot_date": "2030-02-03", "amount_rank": 11},
+    ]
+    bundle.write_text(
+        _v23_direct_ingest_bundle(
+            nested_payload_updates={
+                "BD-DIRECT-1": {"safe_D1_features": duplicate_features},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    result = import_versioned_bundle(bundle, root=tmp_path)
+
+    assert inspection["validation_passed"] is True
+    assert inspection["typed_payload_valid"] is True
+    assert inspection["import_loss_audit_passed"] is True
+    assert result.accepted is True
+
+    issuer = next(
+        record
+        for record in BrainRecordStore(tmp_path).list_records()
+        if record.record_id == "BD-DIRECT-1"
+    )
+    assert issuer.payload["safe_D1_features"] == {
+        "snapshot_date": "2030-02-03",
+        "amount_rank": 11,
+    }
+    assert issuer.payload["payload"]["safe_D1_features"] == duplicate_features
+
+
+def test_v23_theme_return_mapping_stays_nested_for_typed_validation() -> None:
+    normalized = _v23_normalized_payload(
+        {
+            "brain_delta_id": "BD-THEME",
+            "record_type": "theme_formation_case",
+            "training_eligible": True,
+            "payload": {
+                "theme_name": "retrospective theme",
+                "outcome_high_return_pct": {"000001": 18.5, "000002": 2.0},
+            },
+        },
+        provenance={
+            "fact_to_source": {},
+            "inference_to_fact": {},
+            "row_to_source": {},
+            "available_source_ids": set(),
+            "source_ids": set(),
+        },
+    )
+
+    assert "outcome_high_return_pct" not in normalized
+    assert normalized["payload"]["outcome_high_return_pct"] == {
+        "000001": 18.5,
+        "000002": 2.0,
+    }
+    assert ThemeFormationCase.model_validate(normalized).record_type == "theme_formation_case"
 
 
 @pytest.mark.parametrize(
@@ -3258,10 +3256,7 @@ def test_opaque_unknown_bundle_with_raw_records_reports_quarantined_records(
     assert list((tmp_path / "data" / "quarantine" / "research_bundles").glob("*/original_bundle.md"))
     quarantine_payload = _read_json(Path(report["quarantine"]) / "quarantine.json")
     assert quarantine_payload["metadata"]["quarantined_raw_record_count"] == 1
-    assert (
-        quarantine_payload["metadata"]["normalization_skipped_reason"]
-        == "UNSUPPORTED_BUNDLE_VERSION"
-    )
+    assert quarantine_payload["metadata"]["normalization_skipped_reason"] == "UNSUPPORTED_BUNDLE_VERSION"
     store_report = record_store_report_payload(
         tmp_path,
         audit_record_store(tmp_path),
@@ -3272,11 +3267,7 @@ def test_opaque_unknown_bundle_with_raw_records_reports_quarantined_records(
 
 
 def _jsonl(path: Path) -> list[dict[str, object]]:
-    return [
-        json.loads(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line
-    ]
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -3312,9 +3303,7 @@ def _synthetic_v11_bundle_with_bad_brain_delta_hash() -> str:
 def _synthetic_v11_bundle_with_manifest_self_hash() -> str:
     return _synthetic_v11_bundle(include_unknown=False).replace(
         '"embedded_blocks": {',
-        '"embedded_blocks": {"bundle_manifest.json": {"sha256": "'
-        + ("1" * 64)
-        + '"}, ',
+        '"embedded_blocks": {"bundle_manifest.json": {"sha256": "' + ("1" * 64) + '"}, ',
         1,
     )
 
@@ -3350,9 +3339,7 @@ def _future_manifest_v11_family_bundle() -> str:
             },
         },
     ]
-    brain_delta = "\n".join(
-        json.dumps(row, ensure_ascii=False, sort_keys=True) for row in records
-    )
+    brain_delta = "\n".join(json.dumps(row, ensure_ascii=False, sort_keys=True) for row in records)
     manifest = json.dumps(
         {
             "schema_version": "nslab.bundle_manifest.v23",
@@ -3404,6 +3391,7 @@ def _v23_direct_ingest_bundle(
     contract_validator_exit_code: int = 0,
     contract_critical_error_count: int = 0,
     contract_payload_override: object | None = None,
+    nested_payload_updates: dict[str, dict[str, object]] | None = None,
 ) -> str:
     episode_id = "NSLAB-20300204-DIRECT"
     trade_day = "2030-02-04"
@@ -3477,9 +3465,13 @@ def _v23_direct_ingest_bundle(
             },
         },
     ]
-    brain_delta = "\n".join(
-        json.dumps(row, ensure_ascii=False, sort_keys=True) for row in records
-    )
+    if nested_payload_updates:
+        for record in records:
+            updates = nested_payload_updates.get(str(record.get("brain_delta_id")))
+            payload = record.get("payload")
+            if updates is not None and isinstance(payload, dict):
+                payload.update(updates)
+    brain_delta = "\n".join(json.dumps(row, ensure_ascii=False, sort_keys=True) for row in records)
     manifest = json.dumps(
         {
             "schema_version": "nslab.bundle_manifest.v23",
@@ -3515,15 +3507,11 @@ def _v23_direct_ingest_bundle(
         "episode_id": episode_id,
         "trade_date": trade_day,
         "direct_brain_ingest_ready": contract_direct_brain_ingest_ready,
-        "automated_import_expected_to_pass": (
-            contract_automated_import_expected_to_pass
-        ),
+        "automated_import_expected_to_pass": (contract_automated_import_expected_to_pass),
         "requires_human_semantic_review": contract_requires_human_semantic_review,
         "fatal_blockers": contract_fatal_blockers or [],
         "hard_gate_summary": {
-            "record_count_hash_parity_ready": (
-                contract_record_count_hash_parity_ready
-            ),
+            "record_count_hash_parity_ready": (contract_record_count_hash_parity_ready),
             "schema_contract_verified": contract_schema_contract_verified,
             "validator_exit_code": contract_validator_exit_code,
             "critical_error_count": contract_critical_error_count,

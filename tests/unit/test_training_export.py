@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from news_scalping_lab import training as training_module
 from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     Candidate,
@@ -157,6 +158,44 @@ def _brain_record(
         source_line=1,
         payload=body,
     )
+
+
+def test_training_export_selects_valid_negative_and_newsless_calibration_records() -> None:
+    negative = _brain_record(
+        "BRAIN-NEGATIVE-CONTROL",
+        "negative_control_case",
+        training_target="negative_control_calibration",
+        training_eligible=True,
+        payload={
+            "control_class": "WEAK_RESPONSE",
+            "high_return_pct": 1.5,
+            "rejection_or_exclusion_reason": "similar news did not produce a response",
+        },
+    )
+    newsless = _brain_record(
+        "BRAIN-NEWSLESS",
+        "newsless_or_unexplained_case",
+        training_target="newsless_outcome_calibration",
+        training_eligible=True,
+        payload={
+            "classification": "NEWSLESS_OR_UNEXPLAINED",
+            "outcome_high_return_pct": 18.0,
+            "no_catalyst_asserted": True,
+        },
+    )
+
+    assert training_module._record_selected_for_kind("sft", negative)
+    assert training_module._record_selected_for_kind("sft", newsless)
+    assert training_module._record_selected_for_kind("evals", negative)
+    assert training_module._record_selected_for_kind("evals", newsless)
+    negative_row = training_module._record_sft_row(negative)
+    newsless_row = training_module._record_sft_row(newsless)
+    assert negative_row["task"] == "record_negative_control_calibration"
+    assert negative_row["training_category"] == "negative_control_calibration_examples"
+    assert negative_row["output"]["outcome"] == {"high_return_pct": 1.5}
+    assert newsless_row["task"] == "record_newsless_causal_calibration"
+    assert newsless_row["training_category"] == "newsless_causal_calibration_examples"
+    assert newsless_row["output"]["outcome"] == {"outcome_high_return_pct": 18.0}
 
 
 def _write_record_training_fixture(root: Path) -> list[BrainRecordEnvelope]:

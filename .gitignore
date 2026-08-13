@@ -57,3 +57,8 @@ training_exports/*
 session_packs/*
 !session_packs/.gitkeep
 docs/0708/research_md/
+research/inbox/bundles/raw/**
+research/inbox/bundles/repaired/**
+research/inbox/bundles/.work/**
+!research/inbox/bundles/raw/.gitkeep
+!research/inbox/bundles/repaired/.gitkeep

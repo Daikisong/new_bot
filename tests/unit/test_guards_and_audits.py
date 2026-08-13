@@ -4217,6 +4217,7 @@ def test_provenance_audit_verifies_memory_sweep_artifacts(tmp_path: Path) -> Non
         "leader_selection_pairs": [],
         "theme_formation_failures": [],
         "candidate_generation_errors": [],
+        "newsless_or_unexplained": [],
         "from_cache": False,
     }
     write_json(record_sweep_path, record_sweep_payload)

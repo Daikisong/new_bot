@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from news_scalping_lab.contracts.models import ResearchEpisode
 from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.records.routing import record_memory_lanes
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.embedding import (
     VECTOR_DIMENSIONS,
@@ -26,7 +27,7 @@ from news_scalping_lab.retrieval.embedding import (
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import is_available_as_of, read_json, sha256_text, write_json
 
-VECTOR_INDEX_SCHEMA_VERSION = "nslab.local_vector_index.v1"
+VECTOR_INDEX_SCHEMA_VERSION = "nslab.local_vector_index.v2"
 VECTOR_INDEX_RECORDS = "episodes.jsonl"
 VECTOR_INDEX_BRAIN_RECORDS = "brain_records.jsonl"
 VECTOR_INDEX_MANIFEST = "manifest.json"
@@ -182,6 +183,7 @@ class LocalRetrievalStore:
         theme_id: str | None = None,
         path_type: str | None = None,
         response_class: str | None = None,
+        memory_lane: str | tuple[str, ...] | list[str] | set[str] | None = None,
         training_eligible: bool | None = None,
         evidence_phase: str | None = None,
         confidence_label: str | None = None,
@@ -216,6 +218,7 @@ class LocalRetrievalStore:
             and _matches_index_filter(record, "theme_id", theme_id)
             and _matches_index_filter(record, "path_type", path_type)
             and _matches_index_filter(record, "response_class", response_class)
+            and _matches_collection_filter(record.get("memory_lanes"), memory_lane)
             and (
                 training_eligible is None
                 or record.get("training_eligible") is training_eligible
@@ -311,6 +314,7 @@ class LocalRetrievalStore:
                     "theme_ids": filter_values["theme_id"],
                     "path_types": filter_values["path_type"],
                     "response_classes": filter_values["response_class"],
+                    "memory_lanes": sorted(record_memory_lanes(record)),
                     "text_sha256": sha256_text(text),
                     "terms": sorted(text_terms(text)),
                     "embedding": vector,
@@ -574,6 +578,11 @@ def _is_brain_index_record(value: object, *, dimensions: int) -> bool:
         return False
     if not isinstance(value.get("record_type"), str):
         return False
+    memory_lanes = value.get("memory_lanes")
+    if not isinstance(memory_lanes, list) or not all(
+        isinstance(lane, str) for lane in memory_lanes
+    ):
+        return False
     terms = value.get("terms")
     embedding = value.get("embedding")
     return (
@@ -655,6 +664,18 @@ def _matches_optional_string_filter(
     if isinstance(expected, str):
         return value == expected
     return isinstance(value, str) and value in expected
+
+
+def _matches_collection_filter(
+    value: object,
+    expected: str | tuple[str, ...] | list[str] | set[str] | None,
+) -> bool:
+    if expected is None:
+        return True
+    values = set(_string_values(value))
+    if isinstance(expected, str):
+        return expected in values
+    return bool(values.intersection(expected))
 
 
 def _brain_record_filter_values(payload: dict[str, Any]) -> dict[str, list[str]]:

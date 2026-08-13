@@ -19,9 +19,20 @@ from pydantic import ValidationError
 from news_scalping_lab.brain.compiler import current_brain_version
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.contracts.models import ResearchEpisode
-from news_scalping_lab.records.models import (
-    CANDIDATE_ERROR_RECORD_TYPES,
-    BrainRecordEnvelope,
+from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.records.routing import (
+    CANDIDATE_GENERATION_ERRORS_LANE,
+    COUNTEREXAMPLES_LANE,
+    LEADER_SELECTION_PAIRS_LANE,
+    NEAR_MISSES_LANE,
+    NEGATIVE_CONTROLS_LANE,
+    NEWSLESS_OR_UNEXPLAINED_LANE,
+    POSITIVE_ANALOGS_LANE,
+    THEME_FORMATION_FAILURES_LANE,
+    record_evidence_polarity,
+    record_memory_lanes,
+    record_outcome_payload,
+    record_response_class,
 )
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.storage import ResearchStore
@@ -34,7 +45,7 @@ from news_scalping_lab.utils import (
     write_json,
 )
 
-MEMORY_SWEEP_PROMPT_VERSION = "memory_sweep.shard_analysis.v1"
+MEMORY_SWEEP_PROMPT_VERSION = "memory_sweep.shard_analysis.v2"
 
 
 @dataclass(frozen=True)
@@ -589,6 +600,18 @@ class MemorySweeper:
         prompt_version: str,
         model_config_hash: str,
     ) -> dict[str, object]:
+        lanes_by_record_id = {
+            record.record_id: record_memory_lanes(record) for record in records
+        }
+
+        def summaries_for(lane: str) -> list[dict[str, object]]:
+            return [
+                _record_summary(record)
+                for record in records
+                if lane in lanes_by_record_id[record.record_id]
+            ]
+
+        negative_controls = summaries_for(NEGATIVE_CONTROLS_LANE)
         return {
             "schema_version": "nslab.record_memory_sweep_contribution.v1",
             "cache_key": cache_key,
@@ -608,56 +631,17 @@ class MemorySweeper:
             "training_targets": dict(
                 Counter(record.training_target or "UNKNOWN" for record in records)
             ),
-            "positive_analogs": [
-                _record_summary(record)
-                for record in records
-                if record.record_type
-                in {
-                    "supervised_issuer_day_case",
-                    "supervised_direct_event_case",
-                    "supervised_theme_formation_case",
-                    "beneficiary_discovery_case",
-                    "memory_claim",
-                    "mechanism_memory",
-                }
-            ],
-            "negative_analogs": [
-                _record_summary(record)
-                for record in records
-                if "error_case" in record.record_type
-                or record.record_type in {"counterexample"}
-            ],
-            "negative_controls": [
-                _record_summary(record)
-                for record in records
-                if "error_case" in record.record_type
-                or record.record_type in {"counterexample"}
-            ],
-            "near_misses": [
-                _record_summary(record)
-                for record in records
-                if _is_near_miss_record(record)
-            ],
-            "counterexamples": [
-                _record_summary(record)
-                for record in records
-                if record.record_type == "counterexample"
-            ],
-            "leader_selection_pairs": [
-                _record_summary(record)
-                for record in records
-                if record.record_type == "blind_leader_preference_pair"
-            ],
-            "theme_formation_failures": [
-                _record_summary(record)
-                for record in records
-                if record.record_type == "supervised_theme_formation_case"
-            ],
-            "candidate_generation_errors": [
-                _record_summary(record)
-                for record in records
-                if record.record_type in CANDIDATE_ERROR_RECORD_TYPES
-            ],
+            "positive_analogs": summaries_for(POSITIVE_ANALOGS_LANE),
+            "negative_analogs": negative_controls,
+            "negative_controls": negative_controls,
+            "near_misses": summaries_for(NEAR_MISSES_LANE),
+            "counterexamples": summaries_for(COUNTEREXAMPLES_LANE),
+            "leader_selection_pairs": summaries_for(LEADER_SELECTION_PAIRS_LANE),
+            "theme_formation_failures": summaries_for(THEME_FORMATION_FAILURES_LANE),
+            "candidate_generation_errors": summaries_for(
+                CANDIDATE_GENERATION_ERRORS_LANE
+            ),
+            "newsless_or_unexplained": summaries_for(NEWSLESS_OR_UNEXPLAINED_LANE),
             "supporting_points": first_pass_mechanisms,
             "objections": [
                 "Do not treat record retrieval misses as candidate blockers.",
@@ -724,21 +708,15 @@ def _record_summary(record: BrainRecordEnvelope) -> dict[str, object]:
         "training_target": record.training_target,
         "evidence_phase": record.evidence_phase,
         "training_eligible": record.training_eligible,
+        "eligibility_reason": record.eligibility_reason,
+        "training_exclusion_reason": payload.get("training_exclusion_reason"),
+        "evidence_polarity": record_evidence_polarity(record),
+        "memory_lanes": sorted(record_memory_lanes(record)),
         "available_from": record.available_from.isoformat(),
-        "response_class": payload.get("response_class"),
+        "response_class": record_response_class(payload),
+        "outcome": record_outcome_payload(payload),
         "ticker": payload.get("ticker"),
         "theme_id": payload.get("theme_id"),
         "path_type": payload.get("path_type"),
         "confidence_label": record.confidence_label,
     }
-
-
-def _is_near_miss_record(record: BrainRecordEnvelope) -> bool:
-    response_class = record.payload.get("response_class")
-    if isinstance(response_class, str) and "near_miss" in response_class:
-        return True
-    outcome = record.payload.get("outcome")
-    if isinstance(outcome, dict):
-        outcome_response = outcome.get("response_class")
-        return isinstance(outcome_response, str) and "near_miss" in outcome_response
-    return False

@@ -39,6 +39,7 @@ class Limits(BaseModel):
             "leader_selection_pairs",
             "theme_formation_failures",
             "candidate_generation_errors",
+            "newsless_or_unexplained",
         ]
     )
     cluster_coverage_promoted_record_limit: int = 360
@@ -178,6 +179,7 @@ DEFAULT_CONFIG_FILES: dict[str, dict[str, Any]] = {
                 "leader_selection_pairs",
                 "theme_formation_failures",
                 "candidate_generation_errors",
+                "newsless_or_unexplained",
             ],
             "cluster_coverage_promoted_record_limit": 360,
             "cluster_coverage_query_batch_size": 1,

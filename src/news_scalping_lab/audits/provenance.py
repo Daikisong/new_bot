@@ -2947,6 +2947,7 @@ def _check_record_sweep_category_fields(
         "leader_selection_pairs",
         "theme_formation_failures",
         "candidate_generation_errors",
+        "newsless_or_unexplained",
     ):
         value = payload.get(field)
         if not isinstance(value, list):

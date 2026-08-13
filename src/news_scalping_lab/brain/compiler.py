@@ -28,6 +28,12 @@ from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
+from news_scalping_lab.records.routing import (
+    RecordEvidencePolarity,
+    record_evidence_polarity,
+    record_is_positive_support,
+    record_memory_lanes,
+)
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
@@ -57,7 +63,12 @@ BRAIN_FILES = [
 ]
 CATEGORY_RECORD_TYPE_ROUTES = {
     "single_event": {"supervised_direct_event_case", "supervised_issuer_day_case"},
-    "theme_formation": {"supervised_theme_formation_case"},
+    "theme_formation": {
+        "supervised_theme_formation_case",
+        "theme_formation_case",
+        "retrospective_theme_member_edge",
+        "retrospective_theme_discovery",
+    },
     "beneficiary_discovery": {"beneficiary_discovery_case"},
     "leader_selection": {"blind_leader_preference_pair"},
     "continuation": {
@@ -68,17 +79,27 @@ CATEGORY_RECORD_TYPE_ROUTES = {
     },
     "failure_modes": {
         "candidate_generation_error_case",
+        "event_thesis_selection_error_case",
         "candidate_ranking_error_case",
+        "ranking_error_case",
         "row_disposition_error_case",
         "entity_resolution_error_case",
+        "negative_control_case",
+        "newsless_or_unexplained_case",
     },
     "counterexamples": {"counterexample"},
-    "market_memory": {"memory_claim", "mechanism_memory", "company_memory_delta"},
+    "market_memory": {
+        "memory_claim",
+        "mechanism_memory",
+        "company_memory_delta",
+        "context_market_state_or_fact_case",
+        "market_state_context_case",
+    },
 }
 EMPTY_BRAIN_CREATED_AT = datetime(1970, 1, 1, tzinfo=KST)
 SHARD_BRAIN_EPISODE_COUNT = 10
 CATALOG_COMPILER_VERSION = "nslab.brain.catalog.compiler.v5"
-LLM_FULL_COMPILER_VERSION = "nslab.brain.llm_full.compiler.v4"
+LLM_FULL_COMPILER_VERSION = "nslab.brain.llm_full.compiler.v6"
 LLM_FULL_RECORD_SHARD_SIZE = 50
 LLM_PROMPT_MAX_PAYLOAD_FIELDS = 32
 LLM_PROMPT_MAX_LIST_ITEMS = 12
@@ -1730,12 +1751,12 @@ def _compiled_claims_from_records(
     claims: list[CompiledBrainClaim] = []
     for record in sorted(records, key=lambda item: item.record_id):
         target = str(record.training_target or record.record_type)
-        is_negative_evidence = record.record_type in {
-            "candidate_generation_error_case",
-            "candidate_ranking_error_case",
-            "row_disposition_error_case",
-            "entity_resolution_error_case",
-            "counterexample",
+        polarity = record_evidence_polarity(record)
+        is_positive_support = record_is_positive_support(record)
+        is_negative_evidence = polarity is RecordEvidencePolarity.NEGATIVE
+        is_boundary_evidence = polarity in {
+            RecordEvidencePolarity.NEAR_MISS,
+            RecordEvidencePolarity.UNEXPLAINED,
         }
         claims.append(
             CompiledBrainClaim(
@@ -1760,9 +1781,11 @@ def _compiled_claims_from_records(
                 contradicting_record_ids=[],
                 supporting_episode_ids=[record.episode_id],
                 contradicting_episode_ids=[],
-                positive_case_count=0 if is_negative_evidence else 1,
+                positive_case_count=1 if is_positive_support else 0,
                 negative_case_count=1 if is_negative_evidence else 0,
-                near_miss_count=1 if is_negative_evidence else 0,
+                near_miss_count=(
+                    1 if is_boundary_evidence or not record.training_eligible else 0
+                ),
                 confidence_label=record.confidence_label,
                 status="supported" if record.training_eligible else "tentative",
                 available_from=record.available_from,
@@ -1783,16 +1806,25 @@ def _compiled_claim_category(record: BrainRecordEnvelope) -> str:
         "supervised_direct_event_case": "single_event",
         "supervised_issuer_day_case": "single_event",
         "supervised_theme_formation_case": "theme_formation",
+        "theme_formation_case": "theme_formation",
+        "retrospective_theme_member_edge": "theme_formation",
+        "retrospective_theme_discovery": "theme_formation",
         "beneficiary_discovery_case": "beneficiary_discovery",
         "blind_leader_preference_pair": "leader_selection",
         "candidate_generation_error_case": "failure_modes",
+        "event_thesis_selection_error_case": "failure_modes",
         "candidate_ranking_error_case": "failure_modes",
+        "ranking_error_case": "failure_modes",
         "row_disposition_error_case": "failure_modes",
         "entity_resolution_error_case": "failure_modes",
+        "negative_control_case": "failure_modes",
+        "newsless_or_unexplained_case": "failure_modes",
         "counterexample": "counterexamples",
         "memory_claim": "market_memory",
         "mechanism_memory": "market_memory",
         "company_memory_delta": "market_memory",
+        "context_market_state_or_fact_case": "market_memory",
+        "market_state_context_case": "market_memory",
     }
     return mapping.get(record.record_type, "world_model")
 
@@ -2108,7 +2140,10 @@ def _brain_record_shard_prompt(
                 "Extract reusable mechanisms, success/failure boundaries, near "
                 "misses, contradictions, and unresolved research questions. Cite "
                 "record IDs and avoid ticker, company, theme, region, or "
-                "beneficiary lookup rules."
+                "beneficiary lookup rules. training_eligible states evidence quality, "
+                "not bullish direction. A positive claim requires both eligibility and "
+                "evidence_polarity=POSITIVE. Retain negative, unexplained, and ineligible "
+                "records as controls, boundaries, near misses, or audit context."
             ),
             "compiler_version": LLM_FULL_COMPILER_VERSION,
             "brain_version": brain_version,
@@ -2139,7 +2174,9 @@ def _brain_category_prompt(
                 "category-specific research brain claims. Avoid ticker, company, "
                 "theme, region, or beneficiary lookup rules. Every claim must cite "
                 "supporting record IDs, state boundary conditions, and identify "
-                "contradicting or near-miss records when present."
+                "contradicting or near-miss records when present. Only records with "
+                "training_eligible=true is not itself positive evidence; positive claims "
+                "also require evidence_polarity=POSITIVE."
             ),
             "compiler_version": LLM_FULL_COMPILER_VERSION,
             "brain_version": brain_version,
@@ -2171,7 +2208,8 @@ def _brain_category_review_prompt(
                 "Review this category synthesis for contradictions, overreach, "
                 "missing boundary conditions, and claims supported only by a "
                 "single episode. Return concise corrections and unresolved risks. "
-                "Cite record IDs when possible."
+                "Cite record IDs when possible. Reject any positive claim that uses "
+                "an ineligible record or a non-POSITIVE evidence polarity as support."
             ),
             "compiler_version": LLM_FULL_COMPILER_VERSION,
             "brain_version": brain_version,
@@ -2193,6 +2231,10 @@ def _compact_record_for_prompt(record: BrainRecordEnvelope) -> dict[str, Any]:
         "record_id": record.record_id,
         "record_type": record.record_type,
         "training_target": record.training_target,
+        "training_eligible": record.training_eligible,
+        "eligibility_reason": record.eligibility_reason,
+        "evidence_polarity": record_evidence_polarity(record),
+        "memory_lanes": sorted(record_memory_lanes(record)),
         "evidence_phase": record.evidence_phase,
         "status": record.status,
         "confidence_label": record.confidence_label,
@@ -2202,6 +2244,13 @@ def _compact_record_for_prompt(record: BrainRecordEnvelope) -> dict[str, Any]:
     if routing_features:
         compact["routing_features"] = routing_features
     payload_summary = _compact_payload_for_llm_prompt(record.payload)
+    for field in (
+        "training_exclusion_reason",
+        "semantic_exclusion_relation_ids",
+    ):
+        value = record.payload.get(field)
+        if not _empty_prompt_value(value):
+            compact[field] = value
     if payload_summary:
         compact["payload_summary"] = payload_summary
     return compact

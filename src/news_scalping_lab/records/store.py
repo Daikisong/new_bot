@@ -16,6 +16,7 @@ from news_scalping_lab.records.models import (
     NormalizedEpisodeIndex,
     ResearchBundleEnvelope,
 )
+from news_scalping_lab.records.preference import has_sealed_preference_pair
 from news_scalping_lab.records.reference_integrity import (
     known_reference_ids_from_blocks,
     payload_reference_audit,
@@ -1189,18 +1190,7 @@ def _flatten_raw_record_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _payload_has_sealed_preference_pair(payload: dict[str, Any]) -> bool:
-    preferred = payload.get("blind_preferred_ticker") or payload.get(
-        "blind_preferred_candidate_id"
-    )
-    rejected = payload.get("blind_rejected_ticker") or payload.get(
-        "blind_rejected_candidate_id"
-    )
-    return (
-        isinstance(preferred, str)
-        and bool(preferred)
-        and isinstance(rejected, str)
-        and bool(rejected)
-    )
+    return has_sealed_preference_pair(payload)
 
 
 def _audit_record_source_lines(
@@ -1577,6 +1567,13 @@ def _record_has_invalid_outcome_label_quality(record: BrainRecordEnvelope) -> bo
     outcome = record.payload.get("D_outcome")
     if isinstance(outcome, dict) and "label_quality" in outcome:
         values.append(outcome.get("label_quality"))
+    if (
+        record.training_eligible is not True
+        and record.payload.get("sample_weight") == 0.0
+        and isinstance(record.payload.get("training_exclusion_reason"), str)
+        and record.payload.get("training_exclusion_reason")
+    ):
+        return False
     return any(
         not isinstance(value, str) or value not in VALID_OUTCOME_LABEL_QUALITIES
         for value in values

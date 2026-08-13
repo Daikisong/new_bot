@@ -26,6 +26,7 @@ from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
 from news_scalping_lab.llm.openai_provider import DEFAULT_OPENAI_EMBEDDING_MODEL
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
 from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
+from news_scalping_lab.records.preference import has_sealed_preference_pair
 from news_scalping_lab.records.store import (
     BrainRecordStore,
     audit_record_store,
@@ -33,7 +34,7 @@ from news_scalping_lab.records.store import (
 )
 from news_scalping_lab.research_import.versioned_bundle import inspect_versioned_bundle
 from news_scalping_lab.retrieval.embedding import VECTOR_EMBEDDING_METHOD
-from news_scalping_lab.retrieval.store import inspect_vector_index
+from news_scalping_lab.retrieval.store import VECTOR_INDEX_SCHEMA_VERSION, inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import audit_training_exports
 from news_scalping_lab.utils import (
@@ -3940,7 +3941,7 @@ def _production_semantic_index_manifest_status(
             brain_record_hash_mismatches = sorted(
                 {*invalid_hash_ids, *mismatched_hash_ids}
             )
-    if manifest.get("schema_version") != "nslab.local_vector_index.v1":
+    if manifest.get("schema_version") != VECTOR_INDEX_SCHEMA_VERSION:
         findings.append("semantic index manifest schema version is invalid")
     if not isinstance(embedding_method, str) or not embedding_method:
         findings.append("semantic index manifest embedding method is missing")
@@ -5203,19 +5204,7 @@ def _unsealed_training_eligible_preference_record_ids(
 
 
 def _record_has_sealed_preference_pair(record: BrainRecordEnvelope) -> bool:
-    payload = record.payload
-    preferred = payload.get("blind_preferred_ticker") or payload.get(
-        "blind_preferred_candidate_id"
-    )
-    rejected = payload.get("blind_rejected_ticker") or payload.get(
-        "blind_rejected_candidate_id"
-    )
-    return (
-        isinstance(preferred, str)
-        and bool(preferred)
-        and isinstance(rejected, str)
-        and bool(rejected)
-    )
+    return has_sealed_preference_pair(record.payload)
 
 
 def _production_warehouse_status(

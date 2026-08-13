@@ -41,6 +41,62 @@ class RecordingBrainLLM:
         return [[float(index + 1), float(len(text) % 7)] for index, text in enumerate(texts)]
 
 
+def test_ineligible_record_is_tentative_boundary_not_positive_support() -> None:
+    record = _record(
+        "BRAIN-SEMANTIC-EXCLUDED",
+        record_type="supervised_direct_event_case",
+        training_target="direct_event_response",
+        response_class="positive_high10",
+        training_eligible=False,
+        eligibility_reason="semantic_contract_failed",
+        payload_extra={
+            "training_exclusion_reason": "semantic_contract_failed",
+            "semantic_exclusion_relation_ids": ["CAND-1"],
+        },
+    )
+
+    compact = compiler_module._compact_record_for_prompt(record)
+    claim = compiler_module._compiled_claims_from_records([record])[0]
+    shard_prompt = json.loads(
+        compiler_module._brain_record_shard_prompt(
+            shard_index=1,
+            records=[record],
+            brain_version="brain-test",
+            provider_name="openai",
+            model="test-model",
+        )
+    )
+
+    assert compact["training_eligible"] is False
+    assert compact["eligibility_reason"] == "semantic_contract_failed"
+    assert compact["training_exclusion_reason"] == "semantic_contract_failed"
+    assert compact["semantic_exclusion_relation_ids"] == ["CAND-1"]
+    assert claim.status == "tentative"
+    assert claim.positive_case_count == 0
+    assert claim.negative_case_count == 0
+    assert claim.near_miss_count == 1
+    assert "A positive claim requires both eligibility" in shard_prompt["instruction"]
+
+
+def test_eligible_negative_control_is_supported_negative_not_positive() -> None:
+    record = _record(
+        "BRAIN-NEGATIVE-CONTROL",
+        record_type="negative_control_case",
+        training_target="negative_control_calibration",
+        response_class="negative_control",
+        training_eligible=True,
+        payload_extra={"outcome_high_return_pct": 1.0},
+    )
+
+    claim = compiler_module._compiled_claims_from_records([record])[0]
+
+    assert claim.category == "failure_modes"
+    assert claim.status == "supported"
+    assert claim.positive_case_count == 0
+    assert claim.negative_case_count == 1
+    assert claim.near_miss_count == 0
+
+
 def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     tmp_path: Path,
     monkeypatch,
@@ -373,6 +429,48 @@ def test_llm_full_category_routing_does_not_fallback_to_unrelated_records() -> N
         "BRAIN-DIRECT",
         "BRAIN-COUNTER",
     ]
+
+
+def test_llm_full_category_routing_includes_repaired_gold_record_types() -> None:
+    records = [
+        _record(
+            "BRAIN-THEME",
+            record_type="theme_formation_case",
+            training_target="theme_formation_response",
+            response_class="NO_RESPONSE",
+        ),
+        _record(
+            "BRAIN-NEGATIVE",
+            record_type="negative_control_case",
+            training_target="negative_control_calibration",
+            response_class="negative_control",
+        ),
+        _record(
+            "BRAIN-NEWSLESS",
+            record_type="newsless_or_unexplained_case",
+            training_target="newsless_outcome_calibration",
+            response_class="NEWSLESS_OR_UNEXPLAINED",
+        ),
+        _record(
+            "BRAIN-CONTEXT",
+            record_type="context_market_state_or_fact_case",
+            training_target="context_memory",
+            response_class="context",
+        ),
+    ]
+
+    assert [
+        record.record_id
+        for record in compiler_module._records_for_category(records, "theme_formation")
+    ] == ["BRAIN-THEME"]
+    assert [
+        record.record_id
+        for record in compiler_module._records_for_category(records, "failure_modes")
+    ] == ["BRAIN-NEGATIVE", "BRAIN-NEWSLESS"]
+    assert [
+        record.record_id
+        for record in compiler_module._records_for_category(records, "market_memory")
+    ] == ["BRAIN-CONTEXT"]
 
 
 def test_catalog_brain_marked_catalog_only(tmp_path: Path) -> None:
@@ -728,6 +826,8 @@ def _record(
     training_target: str,
     response_class: str,
     payload_extra: dict[str, object] | None = None,
+    training_eligible: bool | None = None,
+    eligibility_reason: str = "unit test llm-full record",
 ) -> BrainRecordEnvelope:
     available_from = datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST)
     payload = {
@@ -742,6 +842,7 @@ def _record(
     if payload_extra:
         payload.update(payload_extra)
     payload_hash = sha256_text(canonical_json(payload))
+    eligible = record_type != "counterexample" if training_eligible is None else training_eligible
     return BrainRecordEnvelope(
         record_id=record_id,
         record_type=record_type,
@@ -750,8 +851,8 @@ def _record(
         available_from=available_from,
         training_target=training_target,
         evidence_phase="POSTMORTEM",
-        training_eligible=record_type != "counterexample",
-        eligibility_reason="unit test llm-full record",
+        training_eligible=eligible,
+        eligibility_reason=eligibility_reason,
         status="supported",
         confidence_label="medium",
         provenance_source_ids=["SRC-llm-full"],

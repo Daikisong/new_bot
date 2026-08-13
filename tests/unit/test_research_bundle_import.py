@@ -13,7 +13,10 @@ from news_scalping_lab.context.final_synthesis import (
 from news_scalping_lab.contracts.models import BlindAnalysis, BlindPrediction, ResearchEpisode
 from news_scalping_lab.research_import.bundle import BundleImportError, parse_bundle
 from news_scalping_lab.research_import.importer import ResearchImporter
-from news_scalping_lab.research_import.versioned_bundle import parse_generic_bundle
+from news_scalping_lab.research_import.versioned_bundle import (
+    _semantic_audit_row_passed,
+    parse_generic_bundle,
+)
 from news_scalping_lab.utils import KST, canonical_json, sha256_text
 
 
@@ -92,6 +95,216 @@ trade_date: 2030-01-10
     )
 
 
+def test_generic_bundle_parser_accepts_yaml_document_end_front_matter(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "yaml-document-end.md"
+    bundle.write_text(
+        """---
+schema_version: nslab.research_bundle.v11
+episode_id: NSLAB-20300110-yaml-end
+trade_date: 2030-01-10
+...
+
+<!-- NSLAB:BEGIN brain_delta.jsonl -->
+{"record_id":"BD-1","record_type":"memory_claim"}
+<!-- NSLAB:END brain_delta.jsonl -->
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(bundle)
+
+    assert parsed.front_matter == {
+        "schema_version": "nslab.research_bundle.v11",
+        "episode_id": "NSLAB-20300110-yaml-end",
+        "trade_date": "2030-01-10",
+    }
+    assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_id"] == "BD-1"
+
+
+def test_generic_bundle_parser_accepts_nslab_artifact_markers(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "bundle.md"
+    path.write_text(
+        """---
+schema_version: nslab.research_bundle.v11
+episode_id: EP-1
+trade_date: 2024-01-02
+---
+<!-- NSLAB_ARTIFACT_BEGIN brain_delta.jsonl -->
+{"record_id":"BD-1","record_type":"memory_claim"}
+<!-- NSLAB_ARTIFACT_END brain_delta.jsonl -->
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(path)
+
+    assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_id"] == "BD-1"
+
+
+def test_generic_bundle_parser_claims_input_coverage_receipt_marker(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "coverage.md"
+    path.write_text(
+        """<!-- NSLAB:INPUT_COVERAGE_RECEIPT_BEGIN -->
+```json
+{"schema_version":"nslab.input_coverage_receipt.v1","csv_row_count":1}
+```
+<!-- NSLAB:INPUT_COVERAGE_RECEIPT_END -->
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(path)
+
+    assert parsed.json_blocks["input_coverage_receipt.json"]["csv_row_count"] == 1
+
+
+def test_generic_bundle_parser_accepts_inline_nslab_end_marker(tmp_path: Path) -> None:
+    path = tmp_path / "inline_end_bundle.md"
+    path.write_text(
+        """---
+schema_version: nslab.research_bundle.v11
+episode_id: EP-inline-end
+trade_date: 2024-01-02
+---
+<!-- NSLAB:BEGIN blind_prediction.json -->
+{"final_watchlist": []}<!-- NSLAB:END blind_prediction.json -->
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(path)
+
+    assert parsed.json_blocks["blind_prediction.json"] == {"final_watchlist": []}
+
+
+def test_generic_bundle_parser_accepts_inline_closing_fence(tmp_path: Path) -> None:
+    path = tmp_path / "inline_fence_bundle.md"
+    path.write_text(
+        """---
+schema_version: nslab.research_bundle.v11
+episode_id: EP-inline-fence
+trade_date: 2024-01-02
+---
+<!-- NSLAB:BEGIN acquisition_receipt.json -->
+```json
+{"schema_version":"nslab.acquisition_receipt.v1"}```
+<!-- NSLAB:END acquisition_receipt.json -->
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(path)
+
+    assert parsed.json_blocks["acquisition_receipt.json"]["schema_version"] == (
+        "nslab.acquisition_receipt.v1"
+    )
+
+
+def test_generic_bundle_parser_accepts_heading_prose_and_tilde_fence(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "bundle.md"
+    path.write_text(
+        """---
+schema_version: nslab.research_bundle.v11
+episode_id: EP-1
+trade_date: 2024-01-02
+---
+## brain_delta.jsonl
+Canonical machine appendix follows.
+
+~~~~jsonl
+{"record_id":"BD-1","record_type":"memory_claim"}
+~~~~
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(path)
+
+    assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_id"] == "BD-1"
+
+
+def test_generic_bundle_parser_normalizes_literal_newline_inside_jsonl_string(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "multiline_jsonl_bundle.md"
+    path.write_text(
+        """---
+schema_version: nslab.research_bundle.v11
+episode_id: EP-multiline-jsonl
+trade_date: 2030-01-02
+---
+<!-- NSLAB:BEGIN source_ledger.jsonl -->
+{"source_id":"SRC-1","source_type":"NEWS_CSV_ROW","body":"first
+second"}
+<!-- NSLAB:END source_ledger.jsonl -->
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(path)
+
+    assert parsed.jsonl_blocks["source_ledger.jsonl"] == [
+        {
+            "source_id": "SRC-1",
+            "source_type": "NEWS_CSV_ROW",
+            "body": "first\nsecond",
+        }
+    ]
+
+
+def test_generic_bundle_parser_accepts_json_named_jsonl_block(tmp_path: Path) -> None:
+    path = tmp_path / "json-named-jsonl-bundle.md"
+    path.write_text(
+        "---\nepisode_id: EP\ntrade_date: 2030-01-10\n---\n"
+        "<!-- NSLAB:BEGIN id_registry.json -->\n"
+        '{"id":"A","object_type":"brain_delta_record"}\n'
+        '{"id":"B","object_type":"brain_delta_record"}\n'
+        "<!-- NSLAB:END id_registry.json -->\n",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(path)
+
+    assert parsed.jsonl_blocks["id_registry.json"] == [
+        {"id": "A", "object_type": "brain_delta_record"},
+        {"id": "B", "object_type": "brain_delta_record"},
+    ]
+    assert "id_registry.json" not in parsed.json_blocks
+
+
+def test_generic_bundle_parser_accepts_four_backtick_standard_fence(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "four_backtick_bundle.md"
+    bundle.write_text(
+        """---
+schema_version: nslab.research_bundle.v11
+episode_id: NSLAB-20300110-four-backticks
+trade_date: 2030-01-10
+---
+
+<!-- NSLAB:BEGIN phase_state.json -->
+````json
+{"current_phase":"PHASE_0","blind_valid":true}
+````
+<!-- NSLAB:END phase_state.json -->
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(bundle)
+
+    assert parsed.json_blocks["phase_state.json"]["current_phase"] == "PHASE_0"
+
+
 def test_generic_bundle_parser_accepts_nslab_block_start_markers(tmp_path: Path) -> None:
     bundle = tmp_path / "block_start_bundle.md"
     bundle.write_text(
@@ -146,6 +359,211 @@ trade_date: 2030-01-10
 
     assert "acquisition_receipt.json" not in parsed.json_blocks
     assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_id"] == "BD-3"
+
+
+def test_generic_bundle_parser_does_not_let_prose_md_heading_consume_next_artifact(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "prose_md_heading_bundle.md"
+    bundle.write_text(
+        """---
+schema_version: nslab.research_bundle.v11
+episode_id: NSLAB-20300110-prose
+trade_date: 2030-01-10
+---
+
+## blind_report.md
+
+This is a prose report section, not a fenced machine artifact.
+
+## source_ledger.jsonl
+
+```jsonl
+{"source_id":"SRC-1","row_id":"ROW-1"}
+```
+
+## brain_delta.jsonl
+
+```jsonl
+{"record_id":"BD-7","record_type":"memory_claim","training_eligible":false,"provenance_source_ids":["SRC-1"]}
+```
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(bundle)
+
+    assert "blind_report.md" not in parsed.payload_blocks
+    assert parsed.jsonl_blocks["source_ledger.jsonl"][0]["source_id"] == "SRC-1"
+    assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_id"] == "BD-7"
+
+
+def test_generic_bundle_parser_accepts_artifact_payload_heading_prefix(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "artifact_payload_heading_bundle.md"
+    bundle.write_text(
+        """---
+schema_version: nslab.research_bundle.v11
+episode_id: NSLAB-20300110-artifact-payload
+trade_date: 2030-01-10
+---
+
+## artifact_payload: brain_delta.jsonl
+
+```jsonl
+{"record_id":"BD-8","record_type":"memory_claim","training_eligible":false}
+```
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(bundle)
+
+    assert parsed.jsonl_blocks["brain_delta.jsonl"][0]["record_id"] == "BD-8"
+
+
+def test_generic_bundle_parser_rejects_invalid_utf8(tmp_path: Path) -> None:
+    bundle = tmp_path / "invalid_utf8.md"
+    bundle.write_bytes(b"---\nepisode_id: EP\ntrade_date: 2030-01-10\n---\n\xff")
+
+    with pytest.raises(UnicodeDecodeError):
+        parse_generic_bundle(bundle)
+
+
+def test_generic_bundle_parser_rejects_conflicting_duplicate_artifacts(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "conflicting_duplicate.md"
+    bundle.write_text(
+        """---
+episode_id: EP
+trade_date: 2030-01-10
+---
+<!-- NSLAB:BEGIN brain_delta.jsonl -->
+{"record_id":"BD-1"}
+<!-- NSLAB:END brain_delta.jsonl -->
+
+## brain_delta.jsonl
+```jsonl
+{"record_id":"BD-2"}
+```
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="conflicting duplicate block"):
+        parse_generic_bundle(bundle)
+
+
+def test_generic_bundle_parser_accepts_equivalent_duplicate_artifacts(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "equivalent_duplicate.md"
+    bundle.write_text(
+        """---
+episode_id: EP
+trade_date: 2030-01-10
+---
+<!-- NSLAB:BEGIN brain_delta.jsonl -->
+{"record_id":"BD-1"}
+<!-- NSLAB:END brain_delta.jsonl -->
+
+## brain_delta.jsonl
+```jsonl
+{ "record_id": "BD-1" }
+```
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(bundle)
+
+    assert parsed.jsonl_blocks["brain_delta.jsonl"] == [{"record_id": "BD-1"}]
+
+
+def test_generic_bundle_parser_accepts_marker_and_heading_markdown_alias(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "equivalent_markdown_duplicate.md"
+    bundle.write_text(
+        """---
+episode_id: EP
+trade_date: 2030-01-10
+---
+### Artifact: `research_report.md`
+<!-- NSLAB:BEGIN research_report.md -->
+```markdown
+# Report
+same payload
+```
+<!-- NSLAB:END research_report.md -->
+""",
+        encoding="utf-8",
+    )
+
+    parsed = parse_generic_bundle(bundle)
+
+    assert parsed.blocks["research_report.md"].startswith("```markdown")
+
+
+def test_semantic_audit_pass_with_is_not_a_full_pass() -> None:
+    assert not _semantic_audit_row_passed(
+        {
+            "semantic_verdict": "PASS_WITH_WARNING",
+            "pass": True,
+            "fail_reasons": ["witness_missing"],
+        }
+    )
+
+
+def test_semantic_audit_boolean_pass_requires_no_fail_reasons() -> None:
+    assert _semantic_audit_row_passed({"pass": True, "fail_reasons": []})
+    assert not _semantic_audit_row_passed(
+        {"pass": True, "fail_reasons": ["owner_mismatch"]}
+    )
+
+
+def test_semantic_audit_verdict_alias_is_supported() -> None:
+    assert _semantic_audit_row_passed({"audit_verdict": "PASS"})
+    assert not _semantic_audit_row_passed({"audit_verdict": "PASS_WITH_WARNING"})
+
+
+def test_semantic_audit_boolean_alias_is_supported() -> None:
+    assert _semantic_audit_row_passed({"semantic_passed": True, "fail_reasons": []})
+    assert not _semantic_audit_row_passed(
+        {"semantic_passed": True, "fail_reasons": ["owner_mismatch"]}
+    )
+    assert not _semantic_audit_row_passed({"semantic_passed": False})
+    assert _semantic_audit_row_passed({"final_semantic_pass": True, "fail_reasons": []})
+    assert not _semantic_audit_row_passed({"final_semantic_pass": False})
+
+
+def test_semantic_audit_decision_alias_is_supported_without_false_positive() -> None:
+    assert _semantic_audit_row_passed(
+        {"decision": "PASS", "semantic_false_positive": False, "fail_reasons": []}
+    )
+    assert not _semantic_audit_row_passed(
+        {"decision": "PASS", "semantic_false_positive": True, "fail_reasons": []}
+    )
+    assert _semantic_audit_row_passed({"semantic_decision": "PASS", "fail_reasons": []})
+
+
+def test_semantic_audit_legacy_gate_alias_requires_corroborating_fields() -> None:
+    row = {
+        "semantic_gate_passed": True,
+        "issuer_binding_status": "BOUND_EXACT",
+        "economic_mechanism_supported": True,
+        "cross_issuer_leak_detected": False,
+        "fail_reasons": [],
+    }
+    assert _semantic_audit_row_passed(row)
+    assert not _semantic_audit_row_passed(
+        {**row, "cross_issuer_leak_detected": True}
+    )
+    assert not _semantic_audit_row_passed(
+        {**row, "economic_mechanism_supported": False}
+    )
 
 
 def test_generic_bundle_parser_accepts_artifact_heading_prefix(

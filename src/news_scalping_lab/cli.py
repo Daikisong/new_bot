@@ -184,9 +184,7 @@ def _parse_cutoff(value: str) -> datetime:
     try:
         return parse_datetime(value)
     except ValueError as exc:
-        raise typer.BadParameter(
-            "expected ISO timestamp, for example 2026-07-15T08:59:59+09:00"
-        ) from exc
+        raise typer.BadParameter("expected ISO timestamp, for example 2026-07-15T08:59:59+09:00") from exc
 
 
 def _exit_with_error(exc: Exception) -> NoReturn:
@@ -371,10 +369,7 @@ def doctor(
     production_readiness = report.get("production_readiness")
     if strict and (not isinstance(readiness, dict) or readiness.get("passed") is not True):
         raise typer.Exit(code=1)
-    if production and (
-        not isinstance(production_readiness, dict)
-        or production_readiness.get("passed") is not True
-    ):
+    if production and (not isinstance(production_readiness, dict) or production_readiness.get("passed") is not True):
         raise typer.Exit(code=1)
 
 
@@ -446,12 +441,8 @@ def news_inspect(csv_path: Path) -> None:
             "sha256": batch.sha256,
             "trade_date": batch.trade_date.isoformat(),
             "row_count": batch.row_count,
-            "default_news_window_start_at": default_news_window_start(
-                batch.trade_date
-            ).isoformat(),
-            "missing_collected_at": sum(
-                1 for item in batch.items if item.collected_at is None
-            ),
+            "default_news_window_start_at": default_news_window_start(batch.trade_date).isoformat(),
+            "missing_collected_at": sum(1 for item in batch.items if item.collected_at is None),
             "first_published_at": batch.items[0].published_at.isoformat() if batch.items else None,
             "last_published_at": batch.items[-1].published_at.isoformat() if batch.items else None,
         }
@@ -502,9 +493,7 @@ def research_import(path: Path, mode: str = "auto") -> None:
                 "episode_id": result.episode_id,
                 "bundle_schema_version": result.bundle_schema_version,
                 "record_count": result.record_count,
-                "training_eligible_record_count": (
-                    result.training_eligible_record_count
-                ),
+                "training_eligible_record_count": (result.training_eligible_record_count),
                 "mode": mode,
                 "source_path": path.as_posix(),
                 "version_aware_import": True,
@@ -544,96 +533,48 @@ def research_inspect_bundle(path: Path) -> None:
             "episode_schema_version": inspection.get("episode_schema_version"),
             "adapter": inspection.get("adapter"),
             "supported": inspection.get("supported"),
-            "forward_compatible_raw_only": inspection.get(
-                "forward_compatible_raw_only"
-            ),
+            "forward_compatible_raw_only": inspection.get("forward_compatible_raw_only"),
             "episode_id": inspection.get("episode_id"),
             "trade_date": inspection.get("trade_date"),
             "raw_record_count": inspection.get("raw_record_count"),
             "normalized_record_count": inspection.get("normalized_record_count"),
-            "raw_normalized_record_count_matches": inspection.get(
-                "raw_normalized_record_count_matches"
-            ),
-            "training_eligible_record_count": inspection.get(
-                "training_eligible_record_count"
-            ),
+            "raw_normalized_record_count_matches": inspection.get("raw_normalized_record_count_matches"),
+            "training_eligible_record_count": inspection.get("training_eligible_record_count"),
             "raw_record_ids": inspection.get("raw_record_ids"),
             "normalized_record_ids": inspection.get("normalized_record_ids"),
-            "raw_record_without_id_count": inspection.get(
-                "raw_record_without_id_count"
-            ),
+            "raw_record_without_id_count": inspection.get("raw_record_without_id_count"),
             "record_id_set_comparable": inspection.get("record_id_set_comparable"),
             "record_id_set_matches_raw": inspection.get("record_id_set_matches_raw"),
-            "missing_normalized_record_ids": inspection.get(
-                "missing_normalized_record_ids"
-            ),
-            "missing_normalized_record_count": inspection.get(
-                "missing_normalized_record_count"
-            ),
-            "extra_normalized_record_ids": inspection.get(
-                "extra_normalized_record_ids"
-            ),
-            "extra_normalized_record_count": inspection.get(
-                "extra_normalized_record_count"
-            ),
+            "missing_normalized_record_ids": inspection.get("missing_normalized_record_ids"),
+            "missing_normalized_record_count": inspection.get("missing_normalized_record_count"),
+            "extra_normalized_record_ids": inspection.get("extra_normalized_record_ids"),
+            "extra_normalized_record_count": inspection.get("extra_normalized_record_count"),
             "raw_record_counts_by_type": inspection.get("raw_record_counts_by_type"),
-            "record_type_counts_match_raw": inspection.get(
-                "record_type_counts_match_raw"
-            ),
-            "raw_training_eligible_record_count": inspection.get(
-                "raw_training_eligible_record_count"
-            ),
-            "training_eligible_count_matches_raw": inspection.get(
-                "training_eligible_count_matches_raw"
-            ),
+            "record_type_counts_match_raw": inspection.get("record_type_counts_match_raw"),
+            "raw_training_eligible_record_count": inspection.get("raw_training_eligible_record_count"),
+            "training_eligible_count_matches_raw": inspection.get("training_eligible_count_matches_raw"),
             "raw_payload_hashes_match": inspection.get("raw_payload_hashes_match"),
-            "raw_payload_hash_mismatch_record_ids": inspection.get(
-                "raw_payload_hash_mismatch_record_ids"
-            ),
-            "import_loss_audit_passed": inspection.get(
-                "import_loss_audit_passed"
-            ),
+            "raw_payload_hash_mismatch_record_ids": inspection.get("raw_payload_hash_mismatch_record_ids"),
+            "import_loss_audit_passed": inspection.get("import_loss_audit_passed"),
             "dropped_record_count": inspection.get("dropped_record_count"),
             "quarantined_bundle_count": inspection.get("quarantined_bundle_count"),
-            "quarantined_raw_record_count": inspection.get(
-                "quarantined_raw_record_count"
-            ),
-            "normalization_skipped_reason": inspection.get(
-                "normalization_skipped_reason"
-            ),
+            "quarantined_raw_record_count": inspection.get("quarantined_raw_record_count"),
+            "normalization_skipped_reason": inspection.get("normalization_skipped_reason"),
             "quarantined_record_count": inspection.get("quarantined_record_count"),
             "record_counts_by_type": inspection.get("record_counts_by_type"),
             "validation_passed": inspection.get("validation_passed"),
-            "record_count_matches_manifest": inspection.get(
-                "record_count_matches_manifest"
-            ),
-            "training_eligible_count_matches_manifest": inspection.get(
-                "training_eligible_count_matches_manifest"
-            ),
+            "record_count_matches_manifest": inspection.get("record_count_matches_manifest"),
+            "training_eligible_count_matches_manifest": inspection.get("training_eligible_count_matches_manifest"),
             "hash_mismatch_count": inspection.get("hash_mismatch_count"),
-            "hash_expectation_conflict_count": inspection.get(
-                "hash_expectation_conflict_count"
-            ),
-            "missing_source_reference_count": inspection.get(
-                "missing_source_reference_count"
-            ),
-            "missing_payload_reference_count": inspection.get(
-                "missing_payload_reference_count"
-            ),
+            "hash_expectation_conflict_count": inspection.get("hash_expectation_conflict_count"),
+            "missing_source_reference_count": inspection.get("missing_source_reference_count"),
+            "missing_payload_reference_count": inspection.get("missing_payload_reference_count"),
             "available_from_valid": inspection.get("available_from_valid"),
-            "invalid_available_from_record_count": inspection.get(
-                "invalid_available_from_record_count"
-            ),
-            "outcome_label_quality_valid": inspection.get(
-                "outcome_label_quality_valid"
-            ),
-            "invalid_outcome_label_quality_record_count": inspection.get(
-                "invalid_outcome_label_quality_record_count"
-            ),
+            "invalid_available_from_record_count": inspection.get("invalid_available_from_record_count"),
+            "outcome_label_quality_valid": inspection.get("outcome_label_quality_valid"),
+            "invalid_outcome_label_quality_record_count": inspection.get("invalid_outcome_label_quality_record_count"),
             "typed_payload_valid": inspection.get("typed_payload_valid"),
-            "invalid_typed_payload_record_count": inspection.get(
-                "invalid_typed_payload_record_count"
-            ),
+            "invalid_typed_payload_record_count": inspection.get("invalid_typed_payload_record_count"),
             "validation": inspection.get("validation"),
         },
     )
@@ -673,6 +614,13 @@ def research_import_bundle(
     path: Path,
     validate: Annotated[bool, typer.Option("--validate/--no-validate")] = True,
     accept: Annotated[bool, typer.Option("--accept/--no-accept")] = False,
+    quality_gate: Annotated[
+        Path | None,
+        typer.Option(
+            "--quality-gate",
+            help="Reviewed external quality-gate JSON required by repaired bundles.",
+        ),
+    ] = None,
 ) -> None:
     if not path.exists() or not path.is_file():
         typer.echo(f"research bundle file not found: {path}", err=True)
@@ -684,6 +632,7 @@ def research_import_bundle(
             root=settings.project_root,
             validate=validate,
             accepted=accept,
+            external_quality_gate_path=quality_gate,
         )
     except (OSError, ValueError) as exc:
         _exit_with_error(exc)
@@ -698,37 +647,19 @@ def research_import_bundle(
             "bundle_schema_version": result.bundle_schema_version,
             "record_count": result.record_count,
             "training_eligible_record_count": result.training_eligible_record_count,
-            "envelope": result.envelope_path.as_posix()
-            if result.envelope_path is not None
-            else None,
-            "records": result.record_path.as_posix()
-            if result.record_path is not None
-            else None,
-            "manifest": result.manifest_path.as_posix()
-            if result.manifest_path is not None
-            else None,
+            "envelope": result.envelope_path.as_posix() if result.envelope_path is not None else None,
+            "records": result.record_path.as_posix() if result.record_path is not None else None,
+            "manifest": result.manifest_path.as_posix() if result.manifest_path is not None else None,
             "raw_record_count": import_report.get("raw_record_count"),
             "normalized_record_count": import_report.get("normalized_record_count"),
-            "raw_normalized_record_count_matches": import_report.get(
-                "raw_normalized_record_count_matches"
-            ),
-            "raw_training_eligible_record_count": import_report.get(
-                "raw_training_eligible_record_count"
-            ),
+            "raw_normalized_record_count_matches": import_report.get("raw_normalized_record_count_matches"),
+            "raw_training_eligible_record_count": import_report.get("raw_training_eligible_record_count"),
             "dropped_record_count": import_report.get("dropped_record_count"),
-            "extra_normalized_record_count": import_report.get(
-                "extra_normalized_record_count"
-            ),
+            "extra_normalized_record_count": import_report.get("extra_normalized_record_count"),
             "quarantined_bundle_count": import_report.get("quarantined_bundle_count"),
-            "quarantined_raw_record_count": import_report.get(
-                "quarantined_raw_record_count"
-            ),
-            "quarantined_record_count": import_report.get(
-                "quarantined_record_count"
-            ),
-            "import_loss_audit_passed": import_report.get(
-                "import_loss_audit_passed"
-            ),
+            "quarantined_raw_record_count": import_report.get("quarantined_raw_record_count"),
+            "quarantined_record_count": import_report.get("quarantined_record_count"),
+            "import_loss_audit_passed": import_report.get("import_loss_audit_passed"),
             "record_counts_by_type": import_report.get("record_counts_by_type"),
             "validation": result.validation,
         }
@@ -843,14 +774,7 @@ def _repair_legacy_migration_raw_hashes(
     source_path: Path,
 ) -> bool:
     envelope_path = root / "research" / "episodes" / episode_id / "bundle_envelope.json"
-    raw_block_path = (
-        root
-        / "research"
-        / "episodes"
-        / episode_id
-        / "raw_blocks"
-        / "legacy_research_episode.json"
-    )
+    raw_block_path = root / "research" / "episodes" / episode_id / "raw_blocks" / "legacy_research_episode.json"
     if not envelope_path.exists() or not raw_block_path.exists() or not source_path.exists():
         return False
     try:
@@ -939,9 +863,7 @@ def research_validate(episode_id: str) -> None:
     except (FileNotFoundError, ValueError) as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
-    _echo(
-        {"valid": True, "episode_id": episode.episode_id, "schema_version": episode.schema_version}
-    )
+    _echo({"valid": True, "episode_id": episode.episode_id, "schema_version": episode.schema_version})
 
 
 @research_app.command("accept")
@@ -1154,9 +1076,7 @@ def _inspect_context_manifest(
         "memory_sweep": memory_sweep,
         "record_sweep": record_sweep,
         "llm_traces": llm_traces,
-        "reproducibility_checks_passed": _prediction_artifact_status_passed(
-            prediction
-        )
+        "reproducibility_checks_passed": _prediction_artifact_status_passed(prediction)
         and _artifact_status_passed(report, required_extra_key="contains_run_id")
         and _news_input_status_passed(news_input)
         and _context_file_group_status_passed(brain_files)
@@ -1244,9 +1164,7 @@ def _inspect_manifest_record_coverage_contract(manifest: dict[str, Any]) -> dict
         "errors": [],
     }
     accepted_record_count = _non_bool_int(manifest.get("accepted_record_count"))
-    status["accepted_record_count_valid"] = (
-        accepted_record_count is not None and accepted_record_count >= 0
-    )
+    status["accepted_record_count_valid"] = accepted_record_count is not None and accepted_record_count >= 0
     if not status["accepted_record_count_valid"]:
         status["errors"].append("accepted_record_count_missing_or_invalid")
 
@@ -1270,13 +1188,11 @@ def _inspect_manifest_record_coverage_contract(manifest: dict[str, Any]) -> dict
     )
 
     if available_ids is not None and training_eligible_ids is not None:
-        status["training_eligible_available_record_ids_subset_verified"] = (
-            _record_ids_subset_of_available(
-                status,
-                field="training_eligible_available_record_ids",
-                record_ids=training_eligible_ids,
-                available_record_ids=available_ids,
-            )
+        status["training_eligible_available_record_ids_subset_verified"] = _record_ids_subset_of_available(
+            status,
+            field="training_eligible_available_record_ids",
+            record_ids=training_eligible_ids,
+            available_record_ids=available_ids,
         )
     if available_ids is not None:
         for field, verified_key in (
@@ -1296,31 +1212,31 @@ def _inspect_manifest_record_coverage_contract(manifest: dict[str, Any]) -> dict
 
     if manifest.get("mode") == "exhaustive":
         status["exhaustive_swept_record_ids_verified"] = (
-            available_ids is not None
-            and swept_ids is not None
-            and Counter(available_ids) == Counter(swept_ids)
+            available_ids is not None and swept_ids is not None and Counter(available_ids) == Counter(swept_ids)
         )
         if not status["exhaustive_swept_record_ids_verified"]:
             status["errors"].append("exhaustive_swept_record_ids_mismatch")
 
-    if available_ids is not None and swept_ids is not None and (
-        manifest.get("mode") == "exhaustive"
-        or any(
-            field in manifest
-            for field in (
-                "missing_swept_record_ids",
-                "unexpected_swept_record_ids",
-                "duplicate_swept_record_ids",
+    if (
+        available_ids is not None
+        and swept_ids is not None
+        and (
+            manifest.get("mode") == "exhaustive"
+            or any(
+                field in manifest
+                for field in (
+                    "missing_swept_record_ids",
+                    "unexpected_swept_record_ids",
+                    "duplicate_swept_record_ids",
+                )
             )
         )
     ):
-        status["swept_record_delta_fields_verified"] = (
-            _verify_manifest_record_sweep_delta_fields(
-                status,
-                manifest,
-                available_record_ids=available_ids,
-                swept_record_ids=swept_ids,
-            )
+        status["swept_record_delta_fields_verified"] = _verify_manifest_record_sweep_delta_fields(
+            status,
+            manifest,
+            available_record_ids=available_ids,
+            swept_record_ids=swept_ids,
         )
 
     status["passed"] = (
@@ -1480,9 +1396,7 @@ def _inspect_price_snapshot_contract(manifest: dict[str, Any]) -> dict[str, Any]
         return status
 
     source_name = raw_snapshot.get("source_name")
-    status["source_name_valid"] = isinstance(source_name, str) and bool(
-        source_name.strip()
-    )
+    status["source_name_valid"] = isinstance(source_name, str) and bool(source_name.strip())
     if not status["source_name_valid"]:
         status["errors"].append("price_snapshot_source_name_missing_or_invalid")
 
@@ -1511,13 +1425,9 @@ def _inspect_price_snapshot_contract(manifest: dict[str, Any]) -> dict[str, Any]
             if trade_date is None:
                 status["errors"].append("trade_date_missing_or_invalid")
             else:
-                status["allowed_through_before_trade_date"] = (
-                    allowed_through < trade_date
-                )
+                status["allowed_through_before_trade_date"] = allowed_through < trade_date
                 if not status["allowed_through_before_trade_date"]:
-                    status["errors"].append(
-                        "price_snapshot_allowed_through_not_before_trade_date"
-                    )
+                    status["errors"].append("price_snapshot_allowed_through_not_before_trade_date")
 
     raw_as_of = raw_snapshot.get("as_of")
     if raw_as_of is not None:
@@ -1656,42 +1566,20 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
     }
     statuses["row_disposition"] = _inspect_row_disposition_artifact(root, manifest)
     statuses["event_cluster"] = _inspect_event_cluster_artifact(root, manifest)
-    statuses["open_world_first_analysis"] = (
-        _inspect_open_world_first_analysis_artifact(root, manifest)
-    )
-    statuses["news_novelty_review"] = _inspect_news_novelty_review_artifact(
-        root, manifest
-    )
-    statuses["semantic_retrieval_plan"] = _inspect_semantic_retrieval_plan_artifact(
-        root, manifest
-    )
+    statuses["open_world_first_analysis"] = _inspect_open_world_first_analysis_artifact(root, manifest)
+    statuses["news_novelty_review"] = _inspect_news_novelty_review_artifact(root, manifest)
+    statuses["semantic_retrieval_plan"] = _inspect_semantic_retrieval_plan_artifact(root, manifest)
     statuses["semantic_retrieval"] = _inspect_semantic_retrieval_artifact(root, manifest)
-    statuses["semantic_cluster_coverage"] = _inspect_semantic_cluster_coverage_artifact(
-        root, manifest
-    )
-    statuses["candidate_expansion"] = _inspect_candidate_expansion_artifact(
-        root, manifest
-    )
+    statuses["semantic_cluster_coverage"] = _inspect_semantic_cluster_coverage_artifact(root, manifest)
+    statuses["candidate_expansion"] = _inspect_candidate_expansion_artifact(root, manifest)
     statuses["source_ledger"] = _inspect_source_ledger_artifact(root, manifest)
     statuses["web_source"] = _inspect_web_source_artifact(root, manifest)
-    statuses["excluded_web_source"] = _inspect_excluded_web_source_artifact(
-        root, manifest
-    )
-    statuses["candidate_web_check"] = _inspect_candidate_web_check_artifact(
-        root, manifest
-    )
-    statuses["excluded_candidate_web_check"] = (
-        _inspect_excluded_candidate_web_check_artifact(root, manifest)
-    )
-    statuses["candidate_verification"] = _inspect_candidate_verification_artifact(
-        root, manifest
-    )
-    statuses["final_synthesis_context"] = _inspect_final_synthesis_context_artifact(
-        root, manifest
-    )
-    statuses["blind_seal_receipt"] = _inspect_blind_seal_receipt_artifact(
-        root, manifest
-    )
+    statuses["excluded_web_source"] = _inspect_excluded_web_source_artifact(root, manifest)
+    statuses["candidate_web_check"] = _inspect_candidate_web_check_artifact(root, manifest)
+    statuses["excluded_candidate_web_check"] = _inspect_excluded_candidate_web_check_artifact(root, manifest)
+    statuses["candidate_verification"] = _inspect_candidate_verification_artifact(root, manifest)
+    statuses["final_synthesis_context"] = _inspect_final_synthesis_context_artifact(root, manifest)
+    statuses["blind_seal_receipt"] = _inspect_blind_seal_receipt_artifact(root, manifest)
     statuses["phase_state"] = _inspect_phase_state_artifact(root, manifest)
     statuses["red_team"] = _inspect_red_team_artifacts(root, manifest)
     return statuses
@@ -1765,14 +1653,10 @@ def _inspect_row_disposition_artifact(
         return status
 
     run_id = manifest.get("run_id")
-    status["schema_version_verified"] = all(
-        row.get("schema_version") == "nslab.row_disposition.v1" for row in rows
-    )
+    status["schema_version_verified"] = all(row.get("schema_version") == "nslab.row_disposition.v1" for row in rows)
     if not status["schema_version_verified"]:
         status["errors"].append("row_disposition_schema_version_mismatch")
-    status["run_id_verified"] = not isinstance(run_id, str) or all(
-        row.get("run_id") == run_id for row in rows
-    )
+    status["run_id_verified"] = not isinstance(run_id, str) or all(row.get("run_id") == run_id for row in rows)
     if not status["run_id_verified"]:
         status["errors"].append("row_disposition_run_id_mismatch")
 
@@ -1788,11 +1672,7 @@ def _inspect_row_disposition_artifact(
         status["errors"].append("row_disposition_summary_mismatch")
 
     manifest_ratio = manifest.get("row_disposition_coverage_ratio")
-    summary_ratio = (
-        manifest_summary.get("coverage_ratio")
-        if isinstance(manifest_summary, dict)
-        else None
-    )
+    summary_ratio = manifest_summary.get("coverage_ratio") if isinstance(manifest_summary, dict) else None
     status["coverage_ratio_verified"] = (
         isinstance(manifest_ratio, int | float)
         and not isinstance(manifest_ratio, bool)
@@ -1807,16 +1687,13 @@ def _inspect_row_disposition_artifact(
     row_numbers = [
         row.get("row_number")
         for row in rows
-        if isinstance(row.get("row_number"), int)
-        and not isinstance(row.get("row_number"), bool)
+        if isinstance(row.get("row_number"), int) and not isinstance(row.get("row_number"), bool)
     ]
     status["duplicate_row_numbers_absent"] = len(row_numbers) == len(set(row_numbers))
     if not status["duplicate_row_numbers_absent"]:
         status["errors"].append("row_disposition_duplicate_row_number")
 
-    status["raw_content_absent_verified"] = all(
-        "title" not in row and "body" not in row for row in rows
-    )
+    status["raw_content_absent_verified"] = all("title" not in row and "body" not in row for row in rows)
     if not status["raw_content_absent_verified"]:
         status["errors"].append("row_disposition_raw_content_present")
 
@@ -1878,21 +1755,15 @@ def _inspect_event_cluster_artifact(
         return status
 
     run_id = manifest.get("run_id")
-    status["schema_version_verified"] = all(
-        row.get("schema_version") == "nslab.news_event_cluster.v1" for row in rows
-    )
+    status["schema_version_verified"] = all(row.get("schema_version") == "nslab.news_event_cluster.v1" for row in rows)
     if not status["schema_version_verified"]:
         status["errors"].append("event_cluster_schema_version_mismatch")
-    status["run_id_verified"] = not isinstance(run_id, str) or all(
-        row.get("run_id") == run_id for row in rows
-    )
+    status["run_id_verified"] = not isinstance(run_id, str) or all(row.get("run_id") == run_id for row in rows)
     if not status["run_id_verified"]:
         status["errors"].append("event_cluster_run_id_mismatch")
 
     expected_count = manifest.get("event_cluster_count")
-    status["row_count_verified"] = not isinstance(expected_count, int) or len(
-        rows
-    ) == expected_count
+    status["row_count_verified"] = not isinstance(expected_count, int) or len(rows) == expected_count
     if not status["row_count_verified"]:
         status["errors"].append("event_cluster_count_mismatch")
 
@@ -1903,20 +1774,12 @@ def _inspect_event_cluster_artifact(
         return status
 
     source_row_count = sum(_non_bool_int(row.get("row_count")) or 0 for row in rows)
-    exact_duplicate_count = sum(
-        _non_bool_int(row.get("exact_duplicate_count")) or 0 for row in rows
-    )
-    exact_duplicate_cluster_count = sum(
-        1 for row in rows if (_non_bool_int(row.get("exact_duplicate_count")) or 0) > 0
-    )
-    status["summary_cluster_count_verified"] = (
-        _non_bool_int(summary.get("cluster_count")) == len(rows)
-    )
+    exact_duplicate_count = sum(_non_bool_int(row.get("exact_duplicate_count")) or 0 for row in rows)
+    exact_duplicate_cluster_count = sum(1 for row in rows if (_non_bool_int(row.get("exact_duplicate_count")) or 0) > 0)
+    status["summary_cluster_count_verified"] = _non_bool_int(summary.get("cluster_count")) == len(rows)
     if not status["summary_cluster_count_verified"]:
         status["errors"].append("event_cluster_summary_cluster_count_mismatch")
-    status["summary_source_row_count_verified"] = (
-        _non_bool_int(summary.get("source_row_count")) == source_row_count
-    )
+    status["summary_source_row_count_verified"] = _non_bool_int(summary.get("source_row_count")) == source_row_count
     if not status["summary_source_row_count_verified"]:
         status["errors"].append("event_cluster_summary_source_row_count_mismatch")
     status["summary_exact_duplicate_count_verified"] = (
@@ -1925,40 +1788,25 @@ def _inspect_event_cluster_artifact(
     if not status["summary_exact_duplicate_count_verified"]:
         status["errors"].append("event_cluster_summary_exact_duplicate_count_mismatch")
     status["summary_exact_duplicate_cluster_count_verified"] = (
-        _non_bool_int(summary.get("exact_duplicate_cluster_count"))
-        == exact_duplicate_cluster_count
+        _non_bool_int(summary.get("exact_duplicate_cluster_count")) == exact_duplicate_cluster_count
     )
     if not status["summary_exact_duplicate_cluster_count_verified"]:
-        status["errors"].append(
-            "event_cluster_summary_exact_duplicate_cluster_count_mismatch"
-        )
+        status["errors"].append("event_cluster_summary_exact_duplicate_cluster_count_mismatch")
     status["summary_semantic_duplicate_cluster_count_verified"] = (
         _non_bool_int(summary.get("semantic_duplicate_cluster_count")) == 0
     )
     if not status["summary_semantic_duplicate_cluster_count_verified"]:
-        status["errors"].append(
-            "event_cluster_summary_semantic_duplicate_cluster_count_mismatch"
-        )
-    methods = {
-        method
-        for row in rows
-        if isinstance(method := row.get("cluster_method"), str) and method
-    }
+        status["errors"].append("event_cluster_summary_semantic_duplicate_cluster_count_mismatch")
+    methods = {method for row in rows if isinstance(method := row.get("cluster_method"), str) and method}
     status["summary_cluster_method_verified"] = (
-        isinstance(summary.get("cluster_method"), str)
-        and bool(methods)
-        and methods == {summary.get("cluster_method")}
+        isinstance(summary.get("cluster_method"), str) and bool(methods) and methods == {summary.get("cluster_method")}
     )
     if not status["summary_cluster_method_verified"]:
         status["errors"].append("event_cluster_summary_cluster_method_mismatch")
-    status["summary_novelty_review_required_verified"] = (
-        summary.get("novelty_review_required") is True
-    )
+    status["summary_novelty_review_required_verified"] = summary.get("novelty_review_required") is True
     if not status["summary_novelty_review_required_verified"]:
         status["errors"].append("event_cluster_summary_novelty_review_required_mismatch")
-    status["row_membership_counts_verified"] = all(
-        _event_cluster_membership_counts_match(row) for row in rows
-    )
+    status["row_membership_counts_verified"] = all(_event_cluster_membership_counts_match(row) for row in rows)
     if not status["row_membership_counts_verified"]:
         status["errors"].append("event_cluster_row_membership_counts_mismatch")
 
@@ -1998,9 +1846,7 @@ def _inspect_open_world_first_analysis_artifact(
             status["passed"] = _open_world_first_analysis_status_passed(status)
         return status
 
-    status["schema_version_verified"] = (
-        payload.get("schema_version") == "nslab.open_world_first_analysis.v1"
-    )
+    status["schema_version_verified"] = payload.get("schema_version") == "nslab.open_world_first_analysis.v1"
     if not status["schema_version_verified"]:
         status["errors"].append("open_world_first_analysis_schema_version_mismatch")
 
@@ -2010,9 +1856,7 @@ def _inspect_open_world_first_analysis_artifact(
         status["errors"].append("open_world_first_analysis_run_id_mismatch")
 
     prompt_hash = _manifest_prompt_hash(manifest, "open_world_first_analysis")
-    status["prompt_hash_verified"] = (
-        prompt_hash is None or payload.get("prompt_sha256") == prompt_hash
-    )
+    status["prompt_hash_verified"] = prompt_hash is None or payload.get("prompt_sha256") == prompt_hash
     if not status["prompt_hash_verified"]:
         status["errors"].append("open_world_first_analysis_prompt_hash_mismatch")
 
@@ -2028,37 +1872,23 @@ def _inspect_open_world_first_analysis_artifact(
         "beneficiary_investigation_questions",
         "uncertainties",
     ]
-    status["required_fields_present"] = all(
-        _string_list(payload.get(field)) for field in required_fields
-    )
+    status["required_fields_present"] = all(_string_list(payload.get(field)) for field in required_fields)
     if not status["required_fields_present"]:
         status["errors"].append("open_world_first_analysis_required_fields_missing")
 
     expected_summary = {
         "event_cluster_count": len(_string_list(payload.get("event_clusters"))),
-        "direct_company_event_count": len(
-            _string_list(payload.get("direct_company_events"))
-        ),
-        "policy_industry_event_count": len(
-            _string_list(payload.get("policy_industry_events"))
-        ),
+        "direct_company_event_count": len(_string_list(payload.get("direct_company_events"))),
+        "policy_industry_event_count": len(_string_list(payload.get("policy_industry_events"))),
         "mechanism_count": len(_string_list(payload.get("mechanisms"))),
-        "transmission_path_count": len(
-            _string_list(payload.get("beneficiary_transmission_paths"))
-        ),
-        "narrative_conversion_point_count": len(
-            _string_list(payload.get("narrative_conversion_points"))
-        ),
+        "transmission_path_count": len(_string_list(payload.get("beneficiary_transmission_paths"))),
+        "narrative_conversion_point_count": len(_string_list(payload.get("narrative_conversion_points"))),
         "direct_candidate_count": len(_string_list(payload.get("direct_candidates"))),
         "potential_sector_count": len(_string_list(payload.get("potential_sectors"))),
-        "investigation_question_count": len(
-            _string_list(payload.get("beneficiary_investigation_questions"))
-        ),
+        "investigation_question_count": len(_string_list(payload.get("beneficiary_investigation_questions"))),
         "uncertainty_count": len(_string_list(payload.get("uncertainties"))),
     }
-    status["summary_verified"] = (
-        manifest.get("open_world_first_analysis_summary") == expected_summary
-    )
+    status["summary_verified"] = manifest.get("open_world_first_analysis_summary") == expected_summary
     if not status["summary_verified"]:
         status["errors"].append("open_world_first_analysis_summary_mismatch")
 
@@ -2102,9 +1932,7 @@ def _inspect_news_novelty_review_artifact(
         status["passed"] = _news_novelty_review_status_passed(status)
         return status
 
-    status["schema_version_verified"] = (
-        payload.get("schema_version") == "nslab.news_novelty_review.v1"
-    )
+    status["schema_version_verified"] = payload.get("schema_version") == "nslab.news_novelty_review.v1"
     if not status["schema_version_verified"]:
         status["errors"].append("news_novelty_review_schema_version_mismatch")
     run_id = manifest.get("run_id")
@@ -2112,36 +1940,27 @@ def _inspect_news_novelty_review_artifact(
     if not status["run_id_verified"]:
         status["errors"].append("news_novelty_review_run_id_mismatch")
     prompt_hash = _manifest_prompt_hash(manifest, "news_novelty_review")
-    status["prompt_hash_verified"] = (
-        not isinstance(prompt_hash, str) or payload.get("prompt_sha256") == prompt_hash
-    )
+    status["prompt_hash_verified"] = not isinstance(prompt_hash, str) or payload.get("prompt_sha256") == prompt_hash
     if not status["prompt_hash_verified"]:
         status["errors"].append("news_novelty_review_prompt_hash_mismatch")
 
     findings = payload.get("findings")
-    if not isinstance(findings, list) or not all(
-        isinstance(finding, dict) for finding in findings
-    ):
+    if not isinstance(findings, list) or not all(isinstance(finding, dict) for finding in findings):
         status["errors"].append("news_novelty_review_findings_invalid")
         status["passed"] = _news_novelty_review_status_passed(status)
         return status
 
     expected_count = manifest.get("news_novelty_review_count")
-    status["manifest_count_verified"] = not isinstance(expected_count, int) or len(
-        findings
-    ) == expected_count
+    status["manifest_count_verified"] = not isinstance(expected_count, int) or len(findings) == expected_count
     if not status["manifest_count_verified"]:
         status["errors"].append("news_novelty_review_count_mismatch")
     event_cluster_count = manifest.get("event_cluster_count")
     status["payload_cluster_count_verified"] = (
-        not isinstance(event_cluster_count, int)
-        or payload.get("cluster_count") == event_cluster_count
+        not isinstance(event_cluster_count, int) or payload.get("cluster_count") == event_cluster_count
     )
     if not status["payload_cluster_count_verified"]:
         status["errors"].append("news_novelty_review_cluster_count_mismatch")
-    status["payload_reviewed_cluster_count_verified"] = (
-        payload.get("reviewed_cluster_count") == len(findings)
-    )
+    status["payload_reviewed_cluster_count_verified"] = payload.get("reviewed_cluster_count") == len(findings)
     if not status["payload_reviewed_cluster_count_verified"]:
         status["errors"].append("news_novelty_review_reviewed_cluster_count_mismatch")
 
@@ -2154,45 +1973,34 @@ def _inspect_news_novelty_review_artifact(
     time_verified_count = sum(1 for finding in findings if finding.get("time_verified") is True)
     excluded_ids = _string_list(payload.get("excluded_after_cutoff_source_ids"))
     novelty_counts = _news_novelty_counts(findings, summary.get("novelty_counts"))
-    status["summary_cluster_count_verified"] = (
-        _non_bool_int(summary.get("cluster_count"))
-        == _non_bool_int(payload.get("cluster_count"))
+    status["summary_cluster_count_verified"] = _non_bool_int(summary.get("cluster_count")) == _non_bool_int(
+        payload.get("cluster_count")
     )
     if not status["summary_cluster_count_verified"]:
         status["errors"].append("news_novelty_review_summary_cluster_count_mismatch")
-    status["summary_reviewed_cluster_count_verified"] = (
-        _non_bool_int(summary.get("reviewed_cluster_count")) == len(findings)
+    status["summary_reviewed_cluster_count_verified"] = _non_bool_int(summary.get("reviewed_cluster_count")) == len(
+        findings
     )
     if not status["summary_reviewed_cluster_count_verified"]:
-        status["errors"].append(
-            "news_novelty_review_summary_reviewed_cluster_count_mismatch"
-        )
-    status["summary_review_mode_verified"] = (
-        isinstance(summary.get("review_mode"), str)
-        and summary.get("review_mode") == payload.get("review_mode")
-    )
+        status["errors"].append("news_novelty_review_summary_reviewed_cluster_count_mismatch")
+    status["summary_review_mode_verified"] = isinstance(summary.get("review_mode"), str) and summary.get(
+        "review_mode"
+    ) == payload.get("review_mode")
     if not status["summary_review_mode_verified"]:
         status["errors"].append("news_novelty_review_summary_review_mode_mismatch")
-    status["summary_novelty_counts_verified"] = (
-        summary.get("novelty_counts") == novelty_counts
-    )
+    status["summary_novelty_counts_verified"] = summary.get("novelty_counts") == novelty_counts
     if not status["summary_novelty_counts_verified"]:
         status["errors"].append("news_novelty_review_summary_novelty_counts_mismatch")
     status["summary_time_verified_count_verified"] = (
         _non_bool_int(summary.get("time_verified_count")) == time_verified_count
     )
     if not status["summary_time_verified_count_verified"]:
-        status["errors"].append(
-            "news_novelty_review_summary_time_verified_count_mismatch"
-        )
-    status["summary_excluded_after_cutoff_source_count_verified"] = (
-        _non_bool_int(summary.get("excluded_after_cutoff_source_count"))
-        == len(excluded_ids)
-    )
+        status["errors"].append("news_novelty_review_summary_time_verified_count_mismatch")
+    status["summary_excluded_after_cutoff_source_count_verified"] = _non_bool_int(
+        summary.get("excluded_after_cutoff_source_count")
+    ) == len(excluded_ids)
     if not status["summary_excluded_after_cutoff_source_count_verified"]:
-        status["errors"].append(
-            "news_novelty_review_summary_excluded_after_cutoff_source_count_mismatch"
-        )
+        status["errors"].append("news_novelty_review_summary_excluded_after_cutoff_source_count_mismatch")
 
     status["passed"] = _news_novelty_review_status_passed(status)
     return status
@@ -2224,9 +2032,7 @@ def _inspect_semantic_retrieval_plan_artifact(
         status["passed"] = _semantic_retrieval_plan_status_passed(status)
         return status
 
-    status["schema_version_verified"] = (
-        payload.get("schema_version") == "nslab.semantic_retrieval_plan.v1"
-    )
+    status["schema_version_verified"] = payload.get("schema_version") == "nslab.semantic_retrieval_plan.v1"
     if not status["schema_version_verified"]:
         status["errors"].append("semantic_retrieval_plan_schema_version_mismatch")
     run_id = manifest.get("run_id")
@@ -2234,9 +2040,7 @@ def _inspect_semantic_retrieval_plan_artifact(
     if not status["run_id_verified"]:
         status["errors"].append("semantic_retrieval_plan_run_id_mismatch")
     prompt_hash = _manifest_prompt_hash(manifest, "semantic_retrieval_plan")
-    status["prompt_hash_verified"] = (
-        not isinstance(prompt_hash, str) or payload.get("prompt_sha256") == prompt_hash
-    )
+    status["prompt_hash_verified"] = not isinstance(prompt_hash, str) or payload.get("prompt_sha256") == prompt_hash
     if not status["prompt_hash_verified"]:
         status["errors"].append("semantic_retrieval_plan_prompt_hash_mismatch")
     expected_categories = _semantic_retrieval_required_categories(manifest)
@@ -2253,18 +2057,14 @@ def _inspect_semantic_retrieval_plan_artifact(
         return status
     status["query_count"] = len(queries)
     expected_query_count = manifest.get("semantic_retrieval_query_count")
-    status["query_count_verified"] = not isinstance(expected_query_count, int) or len(
-        queries
-    ) == expected_query_count
+    status["query_count_verified"] = not isinstance(expected_query_count, int) or len(queries) == expected_query_count
     if not status["query_count_verified"]:
         status["errors"].append("semantic_retrieval_plan_query_count_mismatch")
     query_categories = [
-        query.get("category")
-        for query in queries
-        if isinstance(query, dict) and isinstance(query.get("category"), str)
+        query.get("category") for query in queries if isinstance(query, dict) and isinstance(query.get("category"), str)
     ]
-    status["category_coverage_verified"] = (
-        bool(expected_categories) and set(query_categories) == set(expected_categories)
+    status["category_coverage_verified"] = bool(expected_categories) and set(query_categories) == set(
+        expected_categories
     )
     if not status["category_coverage_verified"]:
         status["errors"].append("semantic_retrieval_plan_category_coverage_mismatch")
@@ -2304,11 +2104,7 @@ def _inspect_semantic_retrieval_artifact(
         status["passed"] = _semantic_retrieval_status_passed(status)
         return status
     try:
-        rows = [
-            json.loads(line)
-            for line in artifact_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        rows = [json.loads(line) for line in artifact_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         status["errors"].append("semantic_retrieval_invalid_jsonl")
         status["passed"] = _semantic_retrieval_status_passed(status)
@@ -2325,39 +2121,26 @@ def _inspect_semantic_retrieval_artifact(
     )
     if not status["schema_version_verified"]:
         status["errors"].append("semantic_retrieval_schema_version_mismatch")
-    status["run_id_verified"] = not isinstance(run_id, str) or all(
-        row.get("run_id") == run_id for row in rows
-    )
+    status["run_id_verified"] = not isinstance(run_id, str) or all(row.get("run_id") == run_id for row in rows)
     if not status["run_id_verified"]:
         status["errors"].append("semantic_retrieval_run_id_mismatch")
     expected_query_count = manifest.get("semantic_retrieval_query_count")
-    status["query_count_verified"] = not isinstance(expected_query_count, int) or len(
-        rows
-    ) == expected_query_count
+    status["query_count_verified"] = not isinstance(expected_query_count, int) or len(rows) == expected_query_count
     if not status["query_count_verified"]:
         status["errors"].append("semantic_retrieval_query_count_mismatch")
-    category_counts = Counter(
-        row.get("category") for row in rows if isinstance(row.get("category"), str)
-    )
+    category_counts = Counter(row.get("category") for row in rows if isinstance(row.get("category"), str))
     summary = manifest.get("semantic_retrieval_summary")
-    expected_category_counts = (
-        summary.get("category_query_counts") if isinstance(summary, dict) else None
-    )
+    expected_category_counts = summary.get("category_query_counts") if isinstance(summary, dict) else None
     status["category_counts_verified"] = (
-        isinstance(expected_category_counts, dict)
-        and dict(category_counts) == expected_category_counts
+        isinstance(expected_category_counts, dict) and dict(category_counts) == expected_category_counts
     )
     if not status["category_counts_verified"]:
         status["errors"].append("semantic_retrieval_category_counts_mismatch")
     included_ids = _unique_strings(
-        episode_id
-        for row in rows
-        for episode_id in _string_list(row.get("included_episode_ids"))
+        episode_id for row in rows for episode_id in _string_list(row.get("included_episode_ids"))
     )
     excluded_ids = _unique_strings(
-        episode_id
-        for row in rows
-        for episode_id in _string_list(row.get("excluded_episode_ids"))
+        episode_id for row in rows for episode_id in _string_list(row.get("excluded_episode_ids"))
     )
     status["included_episode_ids_verified"] = included_ids == _string_list(
         manifest.get("semantic_retrieval_episode_ids")
@@ -2370,44 +2153,31 @@ def _inspect_semantic_retrieval_artifact(
     if not status["excluded_episode_ids_verified"]:
         status["errors"].append("semantic_retrieval_excluded_episode_ids_mismatch")
     included_record_ids = _unique_strings(
-        record_id
-        for row in rows
-        for record_id in _string_list(row.get("included_record_ids"))
+        record_id for row in rows for record_id in _string_list(row.get("included_record_ids"))
     )
     excluded_record_ids = _unique_strings(
-        record_id
-        for row in rows
-        for record_id in _string_list(row.get("excluded_record_ids"))
+        record_id for row in rows for record_id in _string_list(row.get("excluded_record_ids"))
     )
     record_contract_required = _semantic_retrieval_record_contract_required(
         manifest,
         summary,
         rows,
     )
-    status["included_record_ids_verified"] = (
-        not record_contract_required
-        or included_record_ids == _string_list(manifest.get("semantic_retrieval_record_ids"))
+    status["included_record_ids_verified"] = not record_contract_required or included_record_ids == _string_list(
+        manifest.get("semantic_retrieval_record_ids")
     )
     if not status["included_record_ids_verified"]:
         status["errors"].append("semantic_retrieval_included_record_ids_mismatch")
-    status["excluded_record_ids_verified"] = (
-        not record_contract_required
-        or excluded_record_ids
-        == _string_list(manifest.get("excluded_semantic_retrieval_record_ids"))
+    status["excluded_record_ids_verified"] = not record_contract_required or excluded_record_ids == _string_list(
+        manifest.get("excluded_semantic_retrieval_record_ids")
     )
     if not status["excluded_record_ids_verified"]:
         status["errors"].append("semantic_retrieval_excluded_record_ids_mismatch")
-    status["retrieval_zero_is_valid"] = (
-        isinstance(summary, dict) and summary.get("retrieval_zero_is_valid") is True
-    )
+    status["retrieval_zero_is_valid"] = isinstance(summary, dict) and summary.get("retrieval_zero_is_valid") is True
     if not status["retrieval_zero_is_valid"]:
         status["errors"].append("semantic_retrieval_zero_policy_missing")
-    status["record_retrieval_zero_is_valid"] = (
-        not record_contract_required
-        or (
-            isinstance(summary, dict)
-            and summary.get("record_retrieval_zero_is_valid") is True
-        )
+    status["record_retrieval_zero_is_valid"] = not record_contract_required or (
+        isinstance(summary, dict) and summary.get("record_retrieval_zero_is_valid") is True
     )
     if not status["record_retrieval_zero_is_valid"]:
         status["errors"].append("semantic_retrieval_record_zero_policy_missing")
@@ -2431,19 +2201,11 @@ def _event_cluster_ids_from_manifest(
     manifest: dict[str, Any],
 ) -> list[str]:
     artifact_ref = manifest.get("event_cluster_artifact")
-    artifact_path = (
-        _resolve_project_artifact(root, artifact_ref)
-        if isinstance(artifact_ref, str)
-        else None
-    )
+    artifact_path = _resolve_project_artifact(root, artifact_ref) if isinstance(artifact_ref, str) else None
     if artifact_path is None or not artifact_path.exists():
         return []
     try:
-        rows = [
-            json.loads(line)
-            for line in artifact_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        rows = [json.loads(line) for line in artifact_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return []
     cluster_ids: list[str] = []
@@ -2478,11 +2240,7 @@ def _inspect_semantic_cluster_coverage_artifact(
         }
     )
     artifact_ref = manifest.get("semantic_cluster_coverage_artifact")
-    artifact_path = (
-        _resolve_project_artifact(root, artifact_ref)
-        if isinstance(artifact_ref, str)
-        else None
-    )
+    artifact_path = _resolve_project_artifact(root, artifact_ref) if isinstance(artifact_ref, str) else None
     if artifact_path is None or not artifact_path.exists():
         status["passed"] = not any(
             key in manifest
@@ -2494,11 +2252,7 @@ def _inspect_semantic_cluster_coverage_artifact(
         )
         return status
     try:
-        rows = [
-            json.loads(line)
-            for line in artifact_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        rows = [json.loads(line) for line in artifact_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         status["errors"].append("semantic_cluster_coverage_invalid_jsonl")
         status["passed"] = False
@@ -2511,57 +2265,41 @@ def _inspect_semantic_cluster_coverage_artifact(
     status["row_count"] = len(rows)
     run_id = manifest.get("run_id")
     status["schema_version_verified"] = all(
-        row.get("schema_version") == "nslab.semantic_cluster_coverage_result.v1"
-        for row in rows
+        row.get("schema_version") == "nslab.semantic_cluster_coverage_result.v1" for row in rows
     )
     if not status["schema_version_verified"]:
         status["errors"].append("semantic_cluster_coverage_schema_version_mismatch")
-    status["run_id_verified"] = not isinstance(run_id, str) or all(
-        row.get("run_id") == run_id for row in rows
-    )
+    status["run_id_verified"] = not isinstance(run_id, str) or all(row.get("run_id") == run_id for row in rows)
     if not status["run_id_verified"]:
         status["errors"].append("semantic_cluster_coverage_run_id_mismatch")
     expected_query_count = manifest.get("semantic_cluster_coverage_query_count")
-    status["query_count_verified"] = not isinstance(expected_query_count, int) or len(
-        rows
-    ) == expected_query_count
+    status["query_count_verified"] = not isinstance(expected_query_count, int) or len(rows) == expected_query_count
     if not status["query_count_verified"]:
         status["errors"].append("semantic_cluster_coverage_query_count_mismatch")
 
     event_cluster_ids = _event_cluster_ids_from_manifest(root, manifest)
     covered_ids = _unique_strings(
-        cluster_id
-        for row in rows
-        for cluster_id in _string_list(row.get("related_cluster_ids"))
+        cluster_id for row in rows for cluster_id in _string_list(row.get("related_cluster_ids"))
     )
     if not covered_ids:
         covered_ids = _unique_strings(
-            cluster_id
-            for row in rows
-            for cluster_id in [row.get("cluster_id")]
-            if isinstance(cluster_id, str)
+            cluster_id for row in rows for cluster_id in [row.get("cluster_id")] if isinstance(cluster_id, str)
         )
     expected_covered_ids = _string_list(manifest.get("semantic_cluster_coverage_ids"))
-    status["cluster_ids_verified"] = (
-        (not expected_covered_ids or covered_ids == expected_covered_ids)
-        and (not event_cluster_ids or set(covered_ids) == set(event_cluster_ids))
+    status["cluster_ids_verified"] = (not expected_covered_ids or covered_ids == expected_covered_ids) and (
+        not event_cluster_ids or set(covered_ids) == set(event_cluster_ids)
     )
     if not status["cluster_ids_verified"]:
         status["errors"].append("semantic_cluster_coverage_cluster_ids_mismatch")
-    missing_ids = [
-        cluster_id for cluster_id in event_cluster_ids if cluster_id not in set(covered_ids)
-    ]
-    expected_missing_ids = _string_list(
-        manifest.get("semantic_cluster_coverage_missing_ids")
-    )
+    missing_ids = [cluster_id for cluster_id in event_cluster_ids if cluster_id not in set(covered_ids)]
+    expected_missing_ids = _string_list(manifest.get("semantic_cluster_coverage_missing_ids"))
     status["missing_ids_verified"] = missing_ids == expected_missing_ids
     if not status["missing_ids_verified"]:
         status["errors"].append("semantic_cluster_coverage_missing_ids_mismatch")
     summary = manifest.get("semantic_cluster_coverage_summary")
     status["summary_verified"] = (
         isinstance(summary, dict)
-        and summary.get("cluster_coverage_source_count")
-        == (len(event_cluster_ids) if event_cluster_ids else len(rows))
+        and summary.get("cluster_coverage_source_count") == (len(event_cluster_ids) if event_cluster_ids else len(rows))
         and summary.get("cluster_coverage_query_count") == len(rows)
         and summary.get("cluster_coverage_covered_count") == len(covered_ids)
         and summary.get("cluster_coverage_missing_count") == len(missing_ids)
@@ -2607,9 +2345,7 @@ def _inspect_candidate_expansion_artifact(
         status["passed"] = _candidate_expansion_status_passed(status)
         return status
 
-    status["schema_version_verified"] = (
-        payload.get("schema_version") == "nslab.candidate_expansion.v1"
-    )
+    status["schema_version_verified"] = payload.get("schema_version") == "nslab.candidate_expansion.v1"
     if not status["schema_version_verified"]:
         status["errors"].append("candidate_expansion_schema_version_mismatch")
 
@@ -2619,47 +2355,33 @@ def _inspect_candidate_expansion_artifact(
         status["errors"].append("candidate_expansion_run_id_mismatch")
 
     prompt_hash = _manifest_prompt_hash(manifest, "candidate_expansion")
-    status["prompt_hash_verified"] = (
-        not isinstance(prompt_hash, str) or payload.get("prompt_sha256") == prompt_hash
-    )
+    status["prompt_hash_verified"] = not isinstance(prompt_hash, str) or payload.get("prompt_sha256") == prompt_hash
     if not status["prompt_hash_verified"]:
         status["errors"].append("candidate_expansion_prompt_hash_mismatch")
 
     expected_paths = _candidate_expansion_required_paths(manifest)
     observed_required_paths = _string_list(payload.get("required_paths"))
-    status["required_paths_verified"] = (
-        bool(expected_paths) and observed_required_paths == expected_paths
-    )
+    status["required_paths_verified"] = bool(expected_paths) and observed_required_paths == expected_paths
     if not status["required_paths_verified"]:
         status["errors"].append("candidate_expansion_required_paths_mismatch")
 
     findings = payload.get("findings")
-    if not isinstance(findings, list) or not all(
-        isinstance(finding, dict) for finding in findings
-    ):
+    if not isinstance(findings, list) or not all(isinstance(finding, dict) for finding in findings):
         status["errors"].append("candidate_expansion_findings_invalid")
         status["passed"] = _candidate_expansion_status_passed(status)
         return status
 
-    observed_paths = [
-        str(finding["path"])
-        for finding in findings
-        if isinstance(finding.get("path"), str)
-    ]
+    observed_paths = [str(finding["path"]) for finding in findings if isinstance(finding.get("path"), str)]
     status["finding_count"] = len(findings)
     summary = manifest.get("candidate_expansion_summary")
-    expected_finding_count = (
-        summary.get("finding_count") if isinstance(summary, dict) else None
+    expected_finding_count = summary.get("finding_count") if isinstance(summary, dict) else None
+    status["finding_count_verified"] = (
+        not isinstance(expected_finding_count, int) or len(findings) == expected_finding_count
     )
-    status["finding_count_verified"] = not isinstance(expected_finding_count, int) or len(
-        findings
-    ) == expected_finding_count
     if not status["finding_count_verified"]:
         status["errors"].append("candidate_expansion_finding_count_mismatch")
 
-    status["path_coverage_verified"] = (
-        bool(expected_paths) and set(observed_paths) == set(expected_paths)
-    )
+    status["path_coverage_verified"] = bool(expected_paths) and set(observed_paths) == set(expected_paths)
     if not status["path_coverage_verified"]:
         status["errors"].append("candidate_expansion_path_coverage_mismatch")
 
@@ -2667,47 +2389,35 @@ def _inspect_candidate_expansion_artifact(
     expected_path_counts = summary.get("path_counts") if isinstance(summary, dict) else None
     status["path_counts"] = observed_path_counts
     status["path_counts_verified"] = (
-        isinstance(expected_path_counts, dict)
-        and observed_path_counts == expected_path_counts
+        isinstance(expected_path_counts, dict) and observed_path_counts == expected_path_counts
     )
     if not status["path_counts_verified"]:
         status["errors"].append("candidate_expansion_path_counts_mismatch")
 
     expected_manifest_count = manifest.get("candidate_expansion_count")
-    status["manifest_count_verified"] = not isinstance(expected_manifest_count, int) or len(
-        findings
-    ) == expected_manifest_count
+    status["manifest_count_verified"] = (
+        not isinstance(expected_manifest_count, int) or len(findings) == expected_manifest_count
+    )
     if not status["manifest_count_verified"]:
         status["errors"].append("candidate_expansion_manifest_count_mismatch")
 
-    continuation_findings = [
-        finding for finding in findings if finding.get("path") == "CONTINUATION"
-    ]
+    continuation_findings = [finding for finding in findings if finding.get("path") == "CONTINUATION"]
     status["continuation_d_minus_one_verified"] = bool(continuation_findings) and all(
-        finding.get("d_minus_one_market_data_only") is True
-        for finding in continuation_findings
+        finding.get("d_minus_one_market_data_only") is True for finding in continuation_findings
     )
     if not status["continuation_d_minus_one_verified"]:
         status["errors"].append("candidate_expansion_continuation_d_minus_one_missing")
 
     event_cluster_ids = _event_cluster_ids_from_manifest(root, manifest)
     finding_cluster_ids = _unique_strings(
-        cluster_id
-        for finding in findings
-        for cluster_id in _string_list(finding.get("related_cluster_ids"))
+        cluster_id for finding in findings for cluster_id in _string_list(finding.get("related_cluster_ids"))
     )
     covered_cluster_ids = _string_list(payload.get("covered_cluster_ids"))
     audit_only_cluster_ids = _string_list(payload.get("audit_only_cluster_ids"))
     uncovered_cluster_ids = _string_list(payload.get("uncovered_cluster_ids"))
-    manifest_covered_ids = _string_list(
-        manifest.get("candidate_expansion_cluster_coverage_ids")
-    )
-    manifest_audit_only_ids = _string_list(
-        manifest.get("candidate_expansion_audit_only_cluster_ids")
-    )
-    manifest_uncovered_ids = _string_list(
-        manifest.get("candidate_expansion_uncovered_cluster_ids")
-    )
+    manifest_covered_ids = _string_list(manifest.get("candidate_expansion_cluster_coverage_ids"))
+    manifest_audit_only_ids = _string_list(manifest.get("candidate_expansion_audit_only_cluster_ids"))
+    manifest_uncovered_ids = _string_list(manifest.get("candidate_expansion_uncovered_cluster_ids"))
     has_cluster_contract = any(
         field in payload or field in manifest
         for field in (
@@ -2719,22 +2429,13 @@ def _inspect_candidate_expansion_artifact(
     )
     status["cluster_coverage_verified"] = not has_cluster_contract or (
         covered_cluster_ids == finding_cluster_ids
-        and (
-            not manifest_covered_ids
-            or manifest_covered_ids == [*covered_cluster_ids, *audit_only_cluster_ids]
-        )
-        and (
-            not event_cluster_ids
-            or {*covered_cluster_ids, *audit_only_cluster_ids}
-            == set(event_cluster_ids)
-        )
+        and (not manifest_covered_ids or manifest_covered_ids == [*covered_cluster_ids, *audit_only_cluster_ids])
+        and (not event_cluster_ids or {*covered_cluster_ids, *audit_only_cluster_ids} == set(event_cluster_ids))
     )
     if not status["cluster_coverage_verified"]:
         status["errors"].append("candidate_expansion_cluster_coverage_mismatch")
     status["audit_only_clusters_verified"] = (
-        not has_cluster_contract
-        or not manifest_audit_only_ids
-        or manifest_audit_only_ids == audit_only_cluster_ids
+        not has_cluster_contract or not manifest_audit_only_ids or manifest_audit_only_ids == audit_only_cluster_ids
     )
     if not status["audit_only_clusters_verified"]:
         status["errors"].append("candidate_expansion_audit_only_cluster_ids_mismatch")
@@ -2800,38 +2501,28 @@ def _inspect_candidate_web_check_artifact(
 
     status["row_count"] = len(rows)
     run_id = manifest.get("run_id")
-    status["schema_version_verified"] = all(
-        row.get("schema_version") == "nslab.candidate_web_check.v1" for row in rows
-    )
+    status["schema_version_verified"] = all(row.get("schema_version") == "nslab.candidate_web_check.v1" for row in rows)
     if not status["schema_version_verified"]:
         status["errors"].append("candidate_web_check_schema_version_mismatch")
-    status["run_id_verified"] = not isinstance(run_id, str) or all(
-        row.get("run_id") == run_id for row in rows
-    )
+    status["run_id_verified"] = not isinstance(run_id, str) or all(row.get("run_id") == run_id for row in rows)
     if not status["run_id_verified"]:
         status["errors"].append("candidate_web_check_run_id_mismatch")
 
     expected_count = manifest.get("candidate_web_check_count")
-    status["row_count_verified"] = not isinstance(expected_count, int) or len(
-        rows
-    ) == expected_count
+    status["row_count_verified"] = not isinstance(expected_count, int) or len(rows) == expected_count
     if not status["row_count_verified"]:
         status["errors"].append("candidate_web_check_count_mismatch")
 
-    row_source_ids = _unique_strings(
-        str(row["source_id"]) for row in rows if isinstance(row.get("source_id"), str)
-    )
+    row_source_ids = _unique_strings(str(row["source_id"]) for row in rows if isinstance(row.get("source_id"), str))
     status["source_ids"] = row_source_ids
-    status["source_ids_verified"] = row_source_ids == _string_list(
-        manifest.get("candidate_web_source_ids")
-    )
+    status["source_ids_verified"] = row_source_ids == _string_list(manifest.get("candidate_web_source_ids"))
     if not status["source_ids_verified"]:
         status["errors"].append("candidate_web_check_source_ids_mismatch")
 
     summary = manifest.get("candidate_web_check_summary")
     summary_source_count = summary.get("source_count") if isinstance(summary, dict) else None
-    status["summary_source_count_verified"] = (
-        isinstance(summary_source_count, int) and summary_source_count == len(rows)
+    status["summary_source_count_verified"] = isinstance(summary_source_count, int) and summary_source_count == len(
+        rows
     )
     if not status["summary_source_count_verified"]:
         status["errors"].append("candidate_web_check_summary_source_count_mismatch")
@@ -2840,67 +2531,44 @@ def _inspect_candidate_web_check_artifact(
     subject_rows = [*rows, *excluded_rows]
     subject_keys = _candidate_web_subject_keys(subject_rows)
     final_candidate_keys = _candidate_web_subject_keys(
-        row
-        for row in subject_rows
-        if row.get("candidate_subject_type") == "final_candidate"
+        row for row in subject_rows if row.get("candidate_subject_type") == "final_candidate"
     )
     expansion_subject_keys = _candidate_web_subject_keys(
-        row
-        for row in subject_rows
-        if row.get("candidate_subject_type") == "candidate_expansion"
+        row for row in subject_rows if row.get("candidate_subject_type") == "candidate_expansion"
     )
-    summary_excluded_source_count = (
-        summary.get("excluded_source_count") if isinstance(summary, dict) else None
-    )
-    status["summary_excluded_source_count_verified"] = (
-        isinstance(summary_excluded_source_count, int)
-        and summary_excluded_source_count == len(excluded_rows)
-    )
+    summary_excluded_source_count = summary.get("excluded_source_count") if isinstance(summary, dict) else None
+    status["summary_excluded_source_count_verified"] = isinstance(
+        summary_excluded_source_count, int
+    ) and summary_excluded_source_count == len(excluded_rows)
     if not status["summary_excluded_source_count_verified"]:
-        status["errors"].append(
-            "candidate_web_check_summary_excluded_source_count_mismatch"
-        )
+        status["errors"].append("candidate_web_check_summary_excluded_source_count_mismatch")
 
     summary_subject_count = summary.get("subject_count") if isinstance(summary, dict) else None
-    status["summary_subject_count_verified"] = (
-        isinstance(summary_subject_count, int)
-        and summary_subject_count == len(subject_keys)
+    status["summary_subject_count_verified"] = isinstance(summary_subject_count, int) and summary_subject_count == len(
+        subject_keys
     )
     if not status["summary_subject_count_verified"]:
         status["errors"].append("candidate_web_check_summary_subject_count_mismatch")
 
-    summary_final_candidate_count = (
-        summary.get("final_candidate_subject_count")
-        if isinstance(summary, dict)
-        else None
-    )
-    status["summary_final_candidate_subject_count_verified"] = (
-        isinstance(summary_final_candidate_count, int)
-        and summary_final_candidate_count == len(final_candidate_keys)
-    )
+    summary_final_candidate_count = summary.get("final_candidate_subject_count") if isinstance(summary, dict) else None
+    status["summary_final_candidate_subject_count_verified"] = isinstance(
+        summary_final_candidate_count, int
+    ) and summary_final_candidate_count == len(final_candidate_keys)
     if not status["summary_final_candidate_subject_count_verified"]:
-        status["errors"].append(
-            "candidate_web_check_summary_final_candidate_subject_count_mismatch"
-        )
+        status["errors"].append("candidate_web_check_summary_final_candidate_subject_count_mismatch")
 
     summary_expansion_subject_count = (
-        summary.get("candidate_expansion_subject_count")
-        if isinstance(summary, dict)
-        else None
+        summary.get("candidate_expansion_subject_count") if isinstance(summary, dict) else None
     )
-    status["summary_candidate_expansion_subject_count_verified"] = (
-        isinstance(summary_expansion_subject_count, int)
-        and summary_expansion_subject_count == len(expansion_subject_keys)
-    )
+    status["summary_candidate_expansion_subject_count_verified"] = isinstance(
+        summary_expansion_subject_count, int
+    ) and summary_expansion_subject_count == len(expansion_subject_keys)
     if not status["summary_candidate_expansion_subject_count_verified"]:
-        status["errors"].append(
-            "candidate_web_check_summary_candidate_expansion_subject_count_mismatch"
-        )
+        status["errors"].append("candidate_web_check_summary_candidate_expansion_subject_count_mismatch")
 
     expansion_paths = _candidate_web_expansion_paths(subject_rows)
     status["summary_expansion_paths_verified"] = (
-        isinstance(summary, dict)
-        and _string_list(summary.get("expansion_paths")) == expansion_paths
+        isinstance(summary, dict) and _string_list(summary.get("expansion_paths")) == expansion_paths
     )
     if not status["summary_expansion_paths_verified"]:
         status["errors"].append("candidate_web_check_summary_expansion_paths_mismatch")
@@ -2913,24 +2581,18 @@ def _inspect_candidate_web_check_artifact(
         status["errors"].append("candidate_web_check_verification_focus_mismatch")
 
     required_fields = CANDIDATE_WEB_CHECK_REQUIRED_FIELDS | {"verification_focus"}
-    status["required_fields_verified"] = all(
-        required_fields <= set(row) for row in rows
-    )
+    status["required_fields_verified"] = all(required_fields <= set(row) for row in rows)
     if not status["required_fields_verified"]:
         status["errors"].append("candidate_web_check_required_fields_missing")
 
     status["source_url_verified"] = all(
-        isinstance(row.get("source_url"), str)
-        and row.get("source_url") == row.get("url")
-        for row in rows
+        isinstance(row.get("source_url"), str) and row.get("source_url") == row.get("url") for row in rows
     )
     if not status["source_url_verified"]:
         status["errors"].append("candidate_web_check_source_url_mismatch")
 
     cutoff_at = _manifest_datetime(manifest.get("cutoff_at"))
-    status["cutoff_verified"] = all(
-        _web_source_cutoff_valid(row, cutoff_at) for row in rows
-    )
+    status["cutoff_verified"] = all(_web_source_cutoff_valid(row, cutoff_at) for row in rows)
     if not status["cutoff_verified"]:
         status["errors"].append("candidate_web_check_cutoff_not_verified")
 
@@ -2939,15 +2601,12 @@ def _inspect_candidate_web_check_artifact(
         status["errors"].append("candidate_web_check_opened_text_present")
 
     status["raw_content_absent_verified"] = all(
-        "opened_text" not in row and "body" not in row and "content" not in row
-        for row in rows
+        "opened_text" not in row and "body" not in row and "content" not in row for row in rows
     )
     if not status["raw_content_absent_verified"]:
         status["errors"].append("candidate_web_check_raw_content_present")
 
-    status["timestamp_precision_verified"] = all(
-        _web_timestamp_precision_valid(row) for row in rows
-    )
+    status["timestamp_precision_verified"] = all(_web_timestamp_precision_valid(row) for row in rows)
     if not status["timestamp_precision_verified"]:
         status["errors"].append("candidate_web_check_timestamp_precision_invalid")
 
@@ -3002,29 +2661,22 @@ def _inspect_excluded_candidate_web_check_artifact(
 
     status["row_count"] = len(rows)
     status["schema_version_verified"] = all(
-        row.get("schema_version") == "nslab.excluded_candidate_web_check.v1"
-        for row in rows
+        row.get("schema_version") == "nslab.excluded_candidate_web_check.v1" for row in rows
     )
     if not status["schema_version_verified"]:
         status["errors"].append("excluded_candidate_web_check_schema_version_mismatch")
 
     run_id = manifest.get("run_id")
-    status["run_id_verified"] = not isinstance(run_id, str) or all(
-        row.get("run_id") == run_id for row in rows
-    )
+    status["run_id_verified"] = not isinstance(run_id, str) or all(row.get("run_id") == run_id for row in rows)
     if not status["run_id_verified"]:
         status["errors"].append("excluded_candidate_web_check_run_id_mismatch")
 
     expected_count = manifest.get("excluded_candidate_web_check_count")
-    status["row_count_verified"] = not isinstance(expected_count, int) or len(
-        rows
-    ) == expected_count
+    status["row_count_verified"] = not isinstance(expected_count, int) or len(rows) == expected_count
     if not status["row_count_verified"]:
         status["errors"].append("excluded_candidate_web_check_count_mismatch")
 
-    source_ids = [
-        row.get("source_id") for row in rows if isinstance(row.get("source_id"), str)
-    ]
+    source_ids = [row.get("source_id") for row in rows if isinstance(row.get("source_id"), str)]
     unique_source_ids = _unique_strings(str(source_id) for source_id in source_ids)
     expected_source_ids = _string_list(manifest.get("excluded_candidate_web_source_ids"))
     status["source_ids"] = unique_source_ids
@@ -3036,15 +2688,11 @@ def _inspect_excluded_candidate_web_check_artifact(
         status["errors"].append("excluded_candidate_web_check_duplicate_source_id")
 
     accepted_source_ids = set(_string_list(manifest.get("candidate_web_source_ids")))
-    status["not_accepted_verified"] = all(
-        source_id not in accepted_source_ids for source_id in unique_source_ids
-    )
+    status["not_accepted_verified"] = all(source_id not in accepted_source_ids for source_id in unique_source_ids)
     if not status["not_accepted_verified"]:
         status["errors"].append("excluded_candidate_web_check_also_accepted")
 
-    status["required_fields_verified"] = all(
-        set(row) >= EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS for row in rows
-    )
+    status["required_fields_verified"] = all(set(row) >= EXCLUDED_CANDIDATE_WEB_CHECK_REQUIRED_FIELDS for row in rows)
     if not status["required_fields_verified"]:
         status["errors"].append("excluded_candidate_web_check_required_fields_missing")
 
@@ -3053,33 +2701,23 @@ def _inspect_excluded_candidate_web_check_artifact(
         status["errors"].append("excluded_candidate_web_check_source_url_mismatch")
 
     status["exclusion_reason_verified"] = all(
-        isinstance(row.get("exclusion_reason"), str) and bool(row.get("exclusion_reason"))
-        for row in rows
+        isinstance(row.get("exclusion_reason"), str) and bool(row.get("exclusion_reason")) for row in rows
     )
     if not status["exclusion_reason_verified"]:
-        status["errors"].append(
-            "excluded_candidate_web_check_exclusion_reason_missing"
-        )
+        status["errors"].append("excluded_candidate_web_check_exclusion_reason_missing")
 
     status["raw_content_absent_verified"] = all(
-        "body" not in row and "content" not in row and "opened_text" not in row
-        for row in rows
+        "body" not in row and "content" not in row and "opened_text" not in row for row in rows
     )
     if not status["raw_content_absent_verified"]:
         status["errors"].append("excluded_candidate_web_check_raw_content_present")
 
     cutoff_at = _manifest_datetime(manifest.get("cutoff_at"))
-    status["cutoff_exclusion_verified"] = all(
-        _excluded_web_source_cutoff_valid(row, cutoff_at) for row in rows
-    )
+    status["cutoff_exclusion_verified"] = all(_excluded_web_source_cutoff_valid(row, cutoff_at) for row in rows)
     if not status["cutoff_exclusion_verified"]:
-        status["errors"].append(
-            "excluded_candidate_web_check_cutoff_exclusion_invalid"
-        )
+        status["errors"].append("excluded_candidate_web_check_cutoff_exclusion_invalid")
 
-    status["timestamp_precision_verified"] = all(
-        _web_timestamp_precision_valid(row) for row in rows
-    )
+    status["timestamp_precision_verified"] = all(_web_timestamp_precision_valid(row) for row in rows)
     if not status["timestamp_precision_verified"]:
         status["errors"].append("excluded_candidate_web_check_timestamp_precision_invalid")
 
@@ -3130,28 +2768,20 @@ def _inspect_source_ledger_artifact(
         return status
 
     status["row_count"] = len(rows)
-    status["schema_version_verified"] = all(
-        row.get("schema_version") == "nslab.source_ledger.v1" for row in rows
-    )
+    status["schema_version_verified"] = all(row.get("schema_version") == "nslab.source_ledger.v1" for row in rows)
     if not status["schema_version_verified"]:
         status["errors"].append("source_ledger_schema_version_mismatch")
 
     expected_count = manifest.get("source_ledger_entry_count")
-    status["entry_count_verified"] = (
-        isinstance(expected_count, int) and len(rows) == expected_count
-    )
+    status["entry_count_verified"] = isinstance(expected_count, int) and len(rows) == expected_count
     if not status["entry_count_verified"]:
         status["errors"].append("source_ledger_entry_count_mismatch")
 
-    status["required_fields_verified"] = all(
-        set(row) >= SOURCE_LEDGER_REQUIRED_FIELDS for row in rows
-    )
+    status["required_fields_verified"] = all(set(row) >= SOURCE_LEDGER_REQUIRED_FIELDS for row in rows)
     if not status["required_fields_verified"]:
         status["errors"].append("source_ledger_required_fields_missing")
 
-    source_ids = [
-        row.get("source_id") for row in rows if isinstance(row.get("source_id"), str)
-    ]
+    source_ids = [row.get("source_id") for row in rows if isinstance(row.get("source_id"), str)]
     status["source_ids_verified"] = len(source_ids) == len(rows) and all(source_ids)
     if not status["source_ids_verified"]:
         status["errors"].append("source_ledger_source_id_invalid")
@@ -3166,9 +2796,7 @@ def _inspect_source_ledger_artifact(
     if not status["summary_verified"]:
         status["errors"].append("source_ledger_summary_mismatch")
 
-    ledger_web_source_ids = _source_ledger_source_ids_for_type(
-        rows, "web_search_result"
-    )
+    ledger_web_source_ids = _source_ledger_source_ids_for_type(rows, "web_search_result")
     status["web_sources_covered_verified"] = _same_unique_string_set(
         ledger_web_source_ids,
         manifest.get("web_sources"),
@@ -3176,12 +2804,9 @@ def _inspect_source_ledger_artifact(
     if not status["web_sources_covered_verified"]:
         status["errors"].append("source_ledger_web_sources_mismatch")
 
-    ledger_candidate_web_source_ids = _source_ledger_source_ids_for_type(
-        rows, "candidate_web_check"
-    )
-    status["candidate_web_sources_covered_verified"] = (
-        ledger_candidate_web_source_ids
-        == _string_list(manifest.get("candidate_web_source_ids"))
+    ledger_candidate_web_source_ids = _source_ledger_source_ids_for_type(rows, "candidate_web_check")
+    status["candidate_web_sources_covered_verified"] = ledger_candidate_web_source_ids == _string_list(
+        manifest.get("candidate_web_source_ids")
     )
     if not status["candidate_web_sources_covered_verified"]:
         status["errors"].append("source_ledger_candidate_web_sources_mismatch")
@@ -3190,41 +2815,30 @@ def _inspect_source_ledger_artifact(
         *_string_list(manifest.get("excluded_web_source_ids")),
         *_string_list(manifest.get("excluded_candidate_web_source_ids")),
     }
-    status["excluded_sources_absent_verified"] = not (
-        set(source_ids) & excluded_source_ids
-    )
+    status["excluded_sources_absent_verified"] = not (set(source_ids) & excluded_source_ids)
     if not status["excluded_sources_absent_verified"]:
         status["errors"].append("source_ledger_excluded_source_present")
 
-    status["source_url_verified"] = all(
-        _source_url_valid(row) for row in rows
-    )
+    status["source_url_verified"] = all(_source_url_valid(row) for row in rows)
     if not status["source_url_verified"]:
         status["errors"].append("source_ledger_source_url_mismatch")
 
     status["raw_content_absent_verified"] = all(
-        "body" not in row and "content" not in row and "opened_text" not in row
-        for row in rows
+        "body" not in row and "content" not in row and "opened_text" not in row for row in rows
     )
     if not status["raw_content_absent_verified"]:
         status["errors"].append("source_ledger_raw_content_present")
 
-    status["usage_phase_verified"] = all(
-        row.get("usage_phase") in SOURCE_LEDGER_USAGE_PHASES for row in rows
-    )
+    status["usage_phase_verified"] = all(row.get("usage_phase") in SOURCE_LEDGER_USAGE_PHASES for row in rows)
     if not status["usage_phase_verified"]:
         status["errors"].append("source_ledger_usage_phase_invalid")
 
     cutoff_at = _manifest_datetime(manifest.get("cutoff_at"))
-    status["blind_cutoff_verified"] = all(
-        _source_ledger_blind_cutoff_valid(row, cutoff_at) for row in rows
-    )
+    status["blind_cutoff_verified"] = all(_source_ledger_blind_cutoff_valid(row, cutoff_at) for row in rows)
     if not status["blind_cutoff_verified"]:
         status["errors"].append("source_ledger_blind_cutoff_invalid")
 
-    status["timestamp_precision_verified"] = all(
-        _web_timestamp_precision_valid(row) for row in rows
-    )
+    status["timestamp_precision_verified"] = all(_web_timestamp_precision_valid(row) for row in rows)
     if not status["timestamp_precision_verified"]:
         status["errors"].append("source_ledger_timestamp_precision_invalid")
 
@@ -3236,9 +2850,7 @@ def _inspect_web_source_artifact(
     root: Path,
     manifest: dict[str, Any],
 ) -> dict[str, Any]:
-    required = bool(
-        manifest.get("web_source_artifact") or _string_list(manifest.get("web_sources"))
-    )
+    required = bool(manifest.get("web_source_artifact") or _string_list(manifest.get("web_sources")))
     status = _inspect_text_hashed_artifact(
         root,
         manifest,
@@ -3272,31 +2884,24 @@ def _inspect_web_source_artifact(
         return status
 
     status["row_count"] = len(rows)
-    status["schema_version_verified"] = all(
-        row.get("schema_version") == "nslab.web_source.v1" for row in rows
-    )
+    status["schema_version_verified"] = all(row.get("schema_version") == "nslab.web_source.v1" for row in rows)
     if not status["schema_version_verified"]:
         status["errors"].append("web_source_schema_version_mismatch")
 
-    source_ids = [
-        row.get("source_id") for row in rows if isinstance(row.get("source_id"), str)
-    ]
+    source_ids = [row.get("source_id") for row in rows if isinstance(row.get("source_id"), str)]
     unique_source_ids = _unique_strings(str(source_id) for source_id in source_ids)
     expected_source_ids = _string_list(manifest.get("web_sources"))
     status["source_ids"] = unique_source_ids
-    status["source_ids_verified"] = (
-        len(expected_source_ids) == len(set(expected_source_ids))
-        and set(unique_source_ids) == set(expected_source_ids)
-    )
+    status["source_ids_verified"] = len(expected_source_ids) == len(set(expected_source_ids)) and set(
+        unique_source_ids
+    ) == set(expected_source_ids)
     if not status["source_ids_verified"]:
         status["errors"].append("web_source_source_ids_mismatch")
     status["duplicate_source_ids_absent"] = len(source_ids) == len(set(source_ids))
     if not status["duplicate_source_ids_absent"]:
         status["errors"].append("web_source_duplicate_source_id")
 
-    status["required_fields_verified"] = all(
-        set(row) >= WEB_SOURCE_REQUIRED_FIELDS for row in rows
-    )
+    status["required_fields_verified"] = all(set(row) >= WEB_SOURCE_REQUIRED_FIELDS for row in rows)
     if not status["required_fields_verified"]:
         status["errors"].append("web_source_required_fields_missing")
 
@@ -3305,22 +2910,17 @@ def _inspect_web_source_artifact(
         status["errors"].append("web_source_source_url_mismatch")
 
     status["raw_content_absent_verified"] = all(
-        "body" not in row and "content" not in row and "opened_text" not in row
-        for row in rows
+        "body" not in row and "content" not in row and "opened_text" not in row for row in rows
     )
     if not status["raw_content_absent_verified"]:
         status["errors"].append("web_source_raw_content_present")
 
     cutoff_at = _manifest_datetime(manifest.get("cutoff_at"))
-    status["cutoff_verified"] = all(
-        _web_source_cutoff_valid(row, cutoff_at) for row in rows
-    )
+    status["cutoff_verified"] = all(_web_source_cutoff_valid(row, cutoff_at) for row in rows)
     if not status["cutoff_verified"]:
         status["errors"].append("web_source_cutoff_not_verified")
 
-    status["timestamp_precision_verified"] = all(
-        _web_timestamp_precision_valid(row) for row in rows
-    )
+    status["timestamp_precision_verified"] = all(_web_timestamp_precision_valid(row) for row in rows)
     if not status["timestamp_precision_verified"]:
         status["errors"].append("web_source_timestamp_precision_invalid")
 
@@ -3373,29 +2973,22 @@ def _inspect_excluded_web_source_artifact(
         return status
 
     status["row_count"] = len(rows)
-    status["schema_version_verified"] = all(
-        row.get("schema_version") == "nslab.excluded_web_source.v1" for row in rows
-    )
+    status["schema_version_verified"] = all(row.get("schema_version") == "nslab.excluded_web_source.v1" for row in rows)
     if not status["schema_version_verified"]:
         status["errors"].append("excluded_web_source_schema_version_mismatch")
 
     expected_count = manifest.get("excluded_web_source_count")
-    status["entry_count_verified"] = not isinstance(expected_count, int) or len(
-        rows
-    ) == expected_count
+    status["entry_count_verified"] = not isinstance(expected_count, int) or len(rows) == expected_count
     if not status["entry_count_verified"]:
         status["errors"].append("excluded_web_source_count_mismatch")
 
-    source_ids = [
-        row.get("source_id") for row in rows if isinstance(row.get("source_id"), str)
-    ]
+    source_ids = [row.get("source_id") for row in rows if isinstance(row.get("source_id"), str)]
     unique_source_ids = _unique_strings(str(source_id) for source_id in source_ids)
     expected_source_ids = _string_list(manifest.get("excluded_web_source_ids"))
     status["source_ids"] = unique_source_ids
-    status["source_ids_verified"] = (
-        len(expected_source_ids) == len(set(expected_source_ids))
-        and set(unique_source_ids) == set(expected_source_ids)
-    )
+    status["source_ids_verified"] = len(expected_source_ids) == len(set(expected_source_ids)) and set(
+        unique_source_ids
+    ) == set(expected_source_ids)
     if not status["source_ids_verified"]:
         status["errors"].append("excluded_web_source_source_ids_mismatch")
     status["duplicate_source_ids_absent"] = len(source_ids) == len(set(source_ids))
@@ -3403,15 +2996,11 @@ def _inspect_excluded_web_source_artifact(
         status["errors"].append("excluded_web_source_duplicate_source_id")
 
     included_source_ids = set(_string_list(manifest.get("web_sources")))
-    status["not_included_verified"] = all(
-        source_id not in included_source_ids for source_id in unique_source_ids
-    )
+    status["not_included_verified"] = all(source_id not in included_source_ids for source_id in unique_source_ids)
     if not status["not_included_verified"]:
         status["errors"].append("excluded_web_source_also_included")
 
-    status["required_fields_verified"] = all(
-        set(row) >= EXCLUDED_WEB_SOURCE_REQUIRED_FIELDS for row in rows
-    )
+    status["required_fields_verified"] = all(set(row) >= EXCLUDED_WEB_SOURCE_REQUIRED_FIELDS for row in rows)
     if not status["required_fields_verified"]:
         status["errors"].append("excluded_web_source_required_fields_missing")
 
@@ -3420,29 +3009,23 @@ def _inspect_excluded_web_source_artifact(
         status["errors"].append("excluded_web_source_source_url_mismatch")
 
     status["exclusion_reason_verified"] = all(
-        isinstance(row.get("exclusion_reason"), str) and bool(row.get("exclusion_reason"))
-        for row in rows
+        isinstance(row.get("exclusion_reason"), str) and bool(row.get("exclusion_reason")) for row in rows
     )
     if not status["exclusion_reason_verified"]:
         status["errors"].append("excluded_web_source_exclusion_reason_missing")
 
     status["raw_content_absent_verified"] = all(
-        "body" not in row and "content" not in row and "opened_text" not in row
-        for row in rows
+        "body" not in row and "content" not in row and "opened_text" not in row for row in rows
     )
     if not status["raw_content_absent_verified"]:
         status["errors"].append("excluded_web_source_raw_content_present")
 
     cutoff_at = _manifest_datetime(manifest.get("cutoff_at"))
-    status["cutoff_exclusion_verified"] = all(
-        _excluded_web_source_cutoff_valid(row, cutoff_at) for row in rows
-    )
+    status["cutoff_exclusion_verified"] = all(_excluded_web_source_cutoff_valid(row, cutoff_at) for row in rows)
     if not status["cutoff_exclusion_verified"]:
         status["errors"].append("excluded_web_source_cutoff_exclusion_invalid")
 
-    status["timestamp_precision_verified"] = all(
-        _web_timestamp_precision_valid(row) for row in rows
-    )
+    status["timestamp_precision_verified"] = all(_web_timestamp_precision_valid(row) for row in rows)
     if not status["timestamp_precision_verified"]:
         status["errors"].append("excluded_web_source_timestamp_precision_invalid")
 
@@ -3489,16 +3072,12 @@ def _inspect_candidate_verification_artifact(
     if not status.get("configured"):
         status["passed"] = _candidate_verification_status_passed(status)
         return status
-    payload = _read_artifact_object(
-        root, manifest.get("candidate_verification_artifact"), status
-    )
+    payload = _read_artifact_object(root, manifest.get("candidate_verification_artifact"), status)
     if payload is None:
         status["passed"] = _candidate_verification_status_passed(status)
         return status
 
-    status["schema_version_verified"] = (
-        payload.get("schema_version") == "nslab.candidate_verification.v1"
-    )
+    status["schema_version_verified"] = payload.get("schema_version") == "nslab.candidate_verification.v1"
     if not status["schema_version_verified"]:
         status["errors"].append("candidate_verification_schema_version_mismatch")
     run_id = manifest.get("run_id")
@@ -3508,16 +3087,12 @@ def _inspect_candidate_verification_artifact(
 
     expected_dimensions = _candidate_verification_required_dimensions(manifest)
     observed_dimensions = _string_list(payload.get("required_dimensions"))
-    status["required_dimensions_verified"] = (
-        bool(expected_dimensions) and observed_dimensions == expected_dimensions
-    )
+    status["required_dimensions_verified"] = bool(expected_dimensions) and observed_dimensions == expected_dimensions
     if not status["required_dimensions_verified"]:
         status["errors"].append("candidate_verification_required_dimensions_mismatch")
 
     findings = payload.get("findings")
-    if not isinstance(findings, list) or not all(
-        isinstance(finding, dict) for finding in findings
-    ):
+    if not isinstance(findings, list) or not all(isinstance(finding, dict) for finding in findings):
         status["errors"].append("candidate_verification_findings_invalid")
         status["passed"] = _candidate_verification_status_passed(status)
         return status
@@ -3546,8 +3121,7 @@ def _inspect_candidate_verification_artifact(
         status["errors"].append("candidate_verification_subject_count_mismatch")
 
     status["dimension_coverage_verified"] = bool(expected_dimensions) and all(
-        _candidate_verification_dimension_names(finding) == expected_dimensions
-        for finding in findings
+        _candidate_verification_dimension_names(finding) == expected_dimensions for finding in findings
     )
     if not status["dimension_coverage_verified"]:
         status["errors"].append("candidate_verification_dimension_coverage_mismatch")
@@ -3556,37 +3130,26 @@ def _inspect_candidate_verification_artifact(
     expected_status_counts = summary.get("status_counts") if isinstance(summary, dict) else None
     status["status_counts"] = observed_status_counts
     status["status_counts_verified"] = (
-        isinstance(expected_status_counts, dict)
-        and observed_status_counts == expected_status_counts
+        isinstance(expected_status_counts, dict) and observed_status_counts == expected_status_counts
     )
     if not status["status_counts_verified"]:
         status["errors"].append("candidate_verification_status_counts_mismatch")
 
-    status["source_counts_verified"] = (
-        sum(_non_bool_int(finding.get("source_count")) or 0 for finding in findings)
-        == _optional_int(manifest.get("candidate_web_check_count"))
-        and sum(
-            _non_bool_int(finding.get("excluded_source_count")) or 0
-            for finding in findings
-        )
-        == _optional_int(manifest.get("excluded_candidate_web_check_count"))
-    )
+    status["source_counts_verified"] = sum(
+        _non_bool_int(finding.get("source_count")) or 0 for finding in findings
+    ) == _optional_int(manifest.get("candidate_web_check_count")) and sum(
+        _non_bool_int(finding.get("excluded_source_count")) or 0 for finding in findings
+    ) == _optional_int(manifest.get("excluded_candidate_web_check_count"))
     if not status["source_counts_verified"]:
         status["errors"].append("candidate_verification_source_counts_mismatch")
 
     accepted_ids = _unique_strings(
-        source_id
-        for finding in findings
-        for source_id in _string_list(finding.get("accepted_source_ids"))
+        source_id for finding in findings for source_id in _string_list(finding.get("accepted_source_ids"))
     )
     excluded_ids = _unique_strings(
-        source_id
-        for finding in findings
-        for source_id in _string_list(finding.get("excluded_source_ids"))
+        source_id for finding in findings for source_id in _string_list(finding.get("excluded_source_ids"))
     )
-    status["accepted_source_ids_verified"] = accepted_ids == _string_list(
-        manifest.get("candidate_web_source_ids")
-    )
+    status["accepted_source_ids_verified"] = accepted_ids == _string_list(manifest.get("candidate_web_source_ids"))
     if not status["accepted_source_ids_verified"]:
         status["errors"].append("candidate_verification_accepted_source_ids_mismatch")
     status["excluded_source_ids_verified"] = excluded_ids == _string_list(
@@ -3599,59 +3162,39 @@ def _inspect_candidate_verification_artifact(
         1 for finding in findings if not _string_list(finding.get("accepted_source_ids"))
     )
     expected_subjects_without_sources = (
-        summary.get("subjects_without_cutoff_safe_sources")
-        if isinstance(summary, dict)
-        else None
+        summary.get("subjects_without_cutoff_safe_sources") if isinstance(summary, dict) else None
     )
     status["subjects_without_cutoff_safe_sources_verified"] = (
         isinstance(expected_subjects_without_sources, int)
         and observed_subjects_without_sources == expected_subjects_without_sources
     )
     if not status["subjects_without_cutoff_safe_sources_verified"]:
-        status["errors"].append(
-            "candidate_verification_subjects_without_cutoff_safe_sources_mismatch"
-        )
+        status["errors"].append("candidate_verification_subjects_without_cutoff_safe_sources_mismatch")
 
     observed_expansion_subject_count = sum(
         1 for finding in findings if finding.get("subject_type") == "candidate_expansion"
     )
     expected_expansion_subject_count = (
-        summary.get("candidate_expansion_subject_count")
-        if isinstance(summary, dict)
-        else None
+        summary.get("candidate_expansion_subject_count") if isinstance(summary, dict) else None
     )
     status["candidate_expansion_subject_count_verified"] = (
         isinstance(expected_expansion_subject_count, int)
         and observed_expansion_subject_count == expected_expansion_subject_count
     )
     if not status["candidate_expansion_subject_count_verified"]:
-        status["errors"].append(
-            "candidate_verification_candidate_expansion_subject_count_mismatch"
-        )
+        status["errors"].append("candidate_verification_candidate_expansion_subject_count_mismatch")
 
-    observed_d_minus_one_count = sum(
-        1 for finding in findings if finding.get("d_minus_one_market_data_only") is True
-    )
-    expected_d_minus_one_count = (
-        summary.get("d_minus_one_only_subject_count")
-        if isinstance(summary, dict)
-        else None
-    )
+    observed_d_minus_one_count = sum(1 for finding in findings if finding.get("d_minus_one_market_data_only") is True)
+    expected_d_minus_one_count = summary.get("d_minus_one_only_subject_count") if isinstance(summary, dict) else None
     status["d_minus_one_only_subject_count_verified"] = (
-        isinstance(expected_d_minus_one_count, int)
-        and observed_d_minus_one_count == expected_d_minus_one_count
+        isinstance(expected_d_minus_one_count, int) and observed_d_minus_one_count == expected_d_minus_one_count
     )
     if not status["d_minus_one_only_subject_count_verified"]:
-        status["errors"].append(
-            "candidate_verification_d_minus_one_only_subject_count_mismatch"
-        )
+        status["errors"].append("candidate_verification_d_minus_one_only_subject_count_mismatch")
 
-    market_snapshots = [
-        finding.get("blind_safe_market_snapshot") for finding in findings
-    ]
+    market_snapshots = [finding.get("blind_safe_market_snapshot") for finding in findings]
     has_market_snapshot_summary = isinstance(summary, dict) and (
-        "d_minus_one_snapshot_count" in summary
-        or "d_minus_one_snapshot_unavailable_count" in summary
+        "d_minus_one_snapshot_count" in summary or "d_minus_one_snapshot_unavailable_count" in summary
     )
     if not has_market_snapshot_summary:
         status["d_minus_one_market_snapshots_valid"] = True
@@ -3666,47 +3209,27 @@ def _inspect_candidate_verification_artifact(
         for snapshot in market_snapshots
     )
     if not status["d_minus_one_market_snapshots_valid"]:
-        status["errors"].append(
-            "candidate_verification_d_minus_one_market_snapshot_invalid"
-        )
+        status["errors"].append("candidate_verification_d_minus_one_market_snapshot_invalid")
     observed_snapshot_count = sum(
-        1
-        for snapshot in market_snapshots
-        if isinstance(snapshot, dict) and snapshot.get("status") == "snapshot"
+        1 for snapshot in market_snapshots if isinstance(snapshot, dict) and snapshot.get("status") == "snapshot"
     )
     observed_unavailable_count = sum(
-        1
-        for snapshot in market_snapshots
-        if isinstance(snapshot, dict) and snapshot.get("status") != "snapshot"
+        1 for snapshot in market_snapshots if isinstance(snapshot, dict) and snapshot.get("status") != "snapshot"
     )
-    expected_snapshot_count = (
-        summary.get("d_minus_one_snapshot_count") if isinstance(summary, dict) else None
-    )
+    expected_snapshot_count = summary.get("d_minus_one_snapshot_count") if isinstance(summary, dict) else None
     expected_unavailable_count = (
-        summary.get("d_minus_one_snapshot_unavailable_count")
-        if isinstance(summary, dict)
-        else None
+        summary.get("d_minus_one_snapshot_unavailable_count") if isinstance(summary, dict) else None
     )
-    status["d_minus_one_snapshot_count_verified"] = (
-        expected_snapshot_count is None
-        or (
-            isinstance(expected_snapshot_count, int)
-            and observed_snapshot_count == expected_snapshot_count
-        )
+    status["d_minus_one_snapshot_count_verified"] = expected_snapshot_count is None or (
+        isinstance(expected_snapshot_count, int) and observed_snapshot_count == expected_snapshot_count
     )
     if not status["d_minus_one_snapshot_count_verified"]:
         status["errors"].append("candidate_verification_d_minus_one_snapshot_count_mismatch")
-    status["d_minus_one_snapshot_unavailable_count_verified"] = (
-        expected_unavailable_count is None
-        or (
-            isinstance(expected_unavailable_count, int)
-            and observed_unavailable_count == expected_unavailable_count
-        )
+    status["d_minus_one_snapshot_unavailable_count_verified"] = expected_unavailable_count is None or (
+        isinstance(expected_unavailable_count, int) and observed_unavailable_count == expected_unavailable_count
     )
     if not status["d_minus_one_snapshot_unavailable_count_verified"]:
-        status["errors"].append(
-            "candidate_verification_d_minus_one_snapshot_unavailable_count_mismatch"
-        )
+        status["errors"].append("candidate_verification_d_minus_one_snapshot_unavailable_count_mismatch")
 
     status["passed"] = _candidate_verification_status_passed(status)
     return status
@@ -3760,11 +3283,7 @@ def _inspect_final_synthesis_context_artifact(
             "red_team_output_context_verified": None,
         }
     )
-    if not (
-        status.get("configured")
-        and status.get("path_within_project")
-        and status.get("exists")
-    ):
+    if not (status.get("configured") and status.get("path_within_project") and status.get("exists")):
         status["passed"] = _final_synthesis_context_status_passed(status)
         return status
     artifact_ref = manifest.get("final_synthesis_context_artifact")
@@ -3786,9 +3305,7 @@ def _inspect_final_synthesis_context_artifact(
         status["passed"] = _final_synthesis_context_status_passed(status)
         return status
 
-    status["schema_version_verified"] = (
-        payload.get("schema_version") == "nslab.final_synthesis_context.v1"
-    )
+    status["schema_version_verified"] = payload.get("schema_version") == "nslab.final_synthesis_context.v1"
     if not status["schema_version_verified"]:
         status["errors"].append("final_synthesis_context_schema_version_mismatch")
 
@@ -3803,9 +3320,7 @@ def _inspect_final_synthesis_context_artifact(
         status["passed"] = _final_synthesis_context_status_passed(status)
         return status
 
-    status["payload_hash_verified"] = payload.get("payload_sha256") == sha256_text(
-        canonical_json(context_payload)
-    )
+    status["payload_hash_verified"] = payload.get("payload_sha256") == sha256_text(canonical_json(context_payload))
     if not status["payload_hash_verified"]:
         status["errors"].append("final_synthesis_context_payload_sha256_mismatch")
 
@@ -3818,16 +3333,13 @@ def _inspect_final_synthesis_context_artifact(
     if not status["required_inputs_verified"]:
         status["errors"].append("final_synthesis_context_required_inputs_mismatch")
     required_input_list = _string_list(required_inputs)
-    status["required_input_set_verified"] = (
-        final_synthesis_required_inputs_compatible(required_input_list)
-    )
+    status["required_input_set_verified"] = final_synthesis_required_inputs_compatible(required_input_list)
     if not status["required_input_set_verified"]:
         status["errors"].append("final_synthesis_context_required_input_set_mismatch")
     missing_payload_keys = [
         key
         for key in required_input_list
-        if key not in context_payload
-        and not _optional_missing_final_synthesis_input_allowed(key, manifest)
+        if key not in context_payload and not _optional_missing_final_synthesis_input_allowed(key, manifest)
     ]
     status["missing_payload_keys"] = missing_payload_keys
     status["payload_keys_verified"] = not missing_payload_keys
@@ -3842,14 +3354,12 @@ def _inspect_final_synthesis_context_artifact(
         status["errors"].append("final_synthesis_context_input_summary_mismatch")
 
     manifest_summary = manifest.get("final_synthesis_context_summary")
-    status["manifest_summary_verified"] = (
-        manifest_summary is not None and manifest_summary == payload.get("input_summary")
+    status["manifest_summary_verified"] = manifest_summary is not None and manifest_summary == payload.get(
+        "input_summary"
     )
     if not status["manifest_summary_verified"]:
         status["errors"].append("final_synthesis_context_manifest_summary_mismatch")
-    manifest_count_mismatches = _final_synthesis_manifest_count_mismatches(
-        manifest, expected_summary
-    )
+    manifest_count_mismatches = _final_synthesis_manifest_count_mismatches(manifest, expected_summary)
     status["manifest_count_mismatches"] = manifest_count_mismatches
     status["manifest_counts_verified"] = not manifest_count_mismatches
     if not status["manifest_counts_verified"]:
@@ -3921,16 +3431,12 @@ def _inspect_final_synthesis_price_context(
     status["d_minus_one_price_context"] = price_status
     price_context = context_payload.get("d_minus_one_market_data")
     if not isinstance(price_context, dict):
-        status["errors"].append(
-            "final_synthesis_context_d_minus_one_market_data_invalid"
-        )
+        status["errors"].append("final_synthesis_context_d_minus_one_market_data_invalid")
         status["d_minus_one_price_context_verified"] = False
         return
     price_snapshot = manifest.get("price_snapshot")
     if not isinstance(price_snapshot, dict):
-        status["errors"].append(
-            "final_synthesis_context_manifest_price_snapshot_invalid"
-        )
+        status["errors"].append("final_synthesis_context_manifest_price_snapshot_invalid")
         status["d_minus_one_price_context_verified"] = False
         return
 
@@ -3957,9 +3463,7 @@ def _inspect_final_synthesis_price_context(
     manifest_allowed = price_snapshot.get("allowed_through")
     context_allowed = price_context.get("allowed_through")
     price_status["allowed_through_verified"] = (
-        isinstance(manifest_allowed, str)
-        and bool(manifest_allowed)
-        and context_allowed == manifest_allowed
+        isinstance(manifest_allowed, str) and bool(manifest_allowed) and context_allowed == manifest_allowed
     )
     if not price_status["allowed_through_verified"]:
         status["errors"].append("final_synthesis_context_price_allowed_through_mismatch")
@@ -3968,9 +3472,7 @@ def _inspect_final_synthesis_price_context(
     trade_date = _manifest_date(manifest.get("trade_date"))
     snapshots = price_context.get("snapshots")
     if not isinstance(snapshots, list):
-        price_status["invalid_snapshot_rows"] = [
-            {"row_index": None, "reason": "snapshots_not_list"}
-        ]
+        price_status["invalid_snapshot_rows"] = [{"row_index": None, "reason": "snapshots_not_list"}]
         status["errors"].append("final_synthesis_context_price_snapshot_rows_invalid")
         status["d_minus_one_price_context_verified"] = False
         return
@@ -3979,9 +3481,7 @@ def _inspect_final_synthesis_price_context(
     unsafe_rows: list[dict[str, Any]] = []
     for row_index, row in enumerate(snapshots):
         if not isinstance(row, dict):
-            invalid_rows.append(
-                {"row_index": row_index, "reason": "snapshot_not_object"}
-            )
+            invalid_rows.append({"row_index": row_index, "reason": "snapshot_not_object"})
             continue
         raw_row_trade_date = row.get("trade_date")
         row_trade_date = _manifest_date(raw_row_trade_date)
@@ -4018,9 +3518,7 @@ def _inspect_final_synthesis_price_context(
     if invalid_rows:
         status["errors"].append("final_synthesis_context_price_snapshot_rows_invalid")
     if unsafe_rows:
-        status["errors"].append(
-            "final_synthesis_context_price_snapshot_rows_not_d_minus_one_safe"
-        )
+        status["errors"].append("final_synthesis_context_price_snapshot_rows_not_d_minus_one_safe")
     status["d_minus_one_price_context_verified"] = bool(
         price_status["source_name_verified"]
         and price_status["source_ref_verified"]
@@ -4042,9 +3540,7 @@ def _inspect_final_synthesis_event_cluster_context(
         status,
         label="event_clusters",
     )
-    status["event_clusters_verified"] = (
-        context_payload.get("event_clusters") == event_cluster_rows
-    )
+    status["event_clusters_verified"] = context_payload.get("event_clusters") == event_cluster_rows
     if not status["event_clusters_verified"]:
         status["errors"].append("final_synthesis_context_event_clusters_mismatch")
 
@@ -4058,9 +3554,7 @@ def _inspect_final_synthesis_semantic_retrieval_context(
     context = context_payload.get("additional_semantic_retrieval")
     if not isinstance(context, dict):
         status["semantic_retrieval_context_verified"] = False
-        status["errors"].append(
-            "final_synthesis_context_semantic_retrieval_context_invalid"
-        )
+        status["errors"].append("final_synthesis_context_semantic_retrieval_context_invalid")
         return
 
     semantic_rows = _read_final_synthesis_jsonl_context_rows(
@@ -4076,38 +3570,30 @@ def _inspect_final_synthesis_semantic_retrieval_context(
     )
     checks = {
         "semantic_retrieval_plan_artifact_verified": (
-            context.get("plan_artifact")
-            == manifest.get("semantic_retrieval_plan_artifact")
+            context.get("plan_artifact") == manifest.get("semantic_retrieval_plan_artifact")
         ),
         "semantic_retrieval_artifact_verified": (
             context.get("artifact") == manifest.get("semantic_retrieval_artifact")
         ),
-        "semantic_retrieval_summary_verified": (
-            context.get("summary") == manifest.get("semantic_retrieval_summary")
-        ),
+        "semantic_retrieval_summary_verified": (context.get("summary") == manifest.get("semantic_retrieval_summary")),
         "semantic_retrieval_rows_verified": context.get("rows") == semantic_rows,
         "semantic_retrieval_included_ids_verified": (
             not record_contract_required
-            or context.get("included_episode_ids")
-            == manifest.get("semantic_retrieval_episode_ids")
+            or context.get("included_episode_ids") == manifest.get("semantic_retrieval_episode_ids")
         ),
         "semantic_retrieval_excluded_ids_verified": (
-            context.get("excluded_episode_ids")
-            == manifest.get("excluded_semantic_retrieval_episode_ids")
+            context.get("excluded_episode_ids") == manifest.get("excluded_semantic_retrieval_episode_ids")
         ),
         "semantic_retrieval_included_record_ids_verified": (
             not record_contract_required
-            or context.get("included_record_ids")
-            == manifest.get("semantic_retrieval_record_ids")
+            or context.get("included_record_ids") == manifest.get("semantic_retrieval_record_ids")
         ),
         "semantic_retrieval_excluded_record_ids_verified": (
             not record_contract_required
-            or context.get("excluded_record_ids")
-            == manifest.get("excluded_semantic_retrieval_record_ids")
+            or context.get("excluded_record_ids") == manifest.get("excluded_semantic_retrieval_record_ids")
         ),
         "semantic_retrieval_records_verified": (
-            not record_contract_required
-            or context.get("records") == _semantic_retrieval_record_context(root, manifest)
+            not record_contract_required or context.get("records") == _semantic_retrieval_record_context(root, manifest)
         ),
     }
     status.update(checks)
@@ -4115,15 +3601,9 @@ def _inspect_final_synthesis_semantic_retrieval_context(
         "semantic_retrieval_plan_artifact_verified": (
             "final_synthesis_context_semantic_retrieval_plan_artifact_mismatch"
         ),
-        "semantic_retrieval_artifact_verified": (
-            "final_synthesis_context_semantic_retrieval_artifact_mismatch"
-        ),
-        "semantic_retrieval_summary_verified": (
-            "final_synthesis_context_semantic_retrieval_summary_mismatch"
-        ),
-        "semantic_retrieval_rows_verified": (
-            "final_synthesis_context_semantic_retrieval_rows_mismatch"
-        ),
+        "semantic_retrieval_artifact_verified": ("final_synthesis_context_semantic_retrieval_artifact_mismatch"),
+        "semantic_retrieval_summary_verified": ("final_synthesis_context_semantic_retrieval_summary_mismatch"),
+        "semantic_retrieval_rows_verified": ("final_synthesis_context_semantic_retrieval_rows_mismatch"),
         "semantic_retrieval_included_ids_verified": (
             "final_synthesis_context_semantic_retrieval_included_ids_mismatch"
         ),
@@ -4136,9 +3616,7 @@ def _inspect_final_synthesis_semantic_retrieval_context(
         "semantic_retrieval_excluded_record_ids_verified": (
             "final_synthesis_context_semantic_retrieval_excluded_record_ids_mismatch"
         ),
-        "semantic_retrieval_records_verified": (
-            "final_synthesis_context_semantic_retrieval_records_mismatch"
-        ),
+        "semantic_retrieval_records_verified": ("final_synthesis_context_semantic_retrieval_records_mismatch"),
     }
     for field, error in error_by_field.items():
         if not status[field]:
@@ -4166,9 +3644,7 @@ def _inspect_final_synthesis_semantic_cluster_coverage_context(
         return
     if not isinstance(context, dict):
         status["semantic_cluster_coverage_context_verified"] = False
-        status["errors"].append(
-            "final_synthesis_context_semantic_cluster_coverage_context_invalid"
-        )
+        status["errors"].append("final_synthesis_context_semantic_cluster_coverage_context_invalid")
         return
     rows = _read_final_synthesis_jsonl_context_rows(
         root,
@@ -4189,20 +3665,15 @@ def _inspect_final_synthesis_semantic_cluster_coverage_context(
         ),
         "semantic_cluster_coverage_rows_verified": context.get("rows") == rows,
         "semantic_cluster_coverage_ids_verified": (
-            context.get("covered_cluster_ids")
-            == manifest.get("semantic_cluster_coverage_ids")
+            context.get("covered_cluster_ids") == manifest.get("semantic_cluster_coverage_ids")
         ),
         "semantic_cluster_coverage_missing_ids_verified": (
-            context.get("missing_cluster_ids")
-            == manifest.get("semantic_cluster_coverage_missing_ids")
+            context.get("missing_cluster_ids") == manifest.get("semantic_cluster_coverage_missing_ids")
         ),
         "semantic_cluster_coverage_promoted_record_ids_verified": (
-            context.get("promoted_record_ids")
-            == manifest.get("semantic_cluster_coverage_promoted_record_ids")
+            context.get("promoted_record_ids") == manifest.get("semantic_cluster_coverage_promoted_record_ids")
         ),
-        "semantic_cluster_coverage_promoted_records_verified": (
-            context.get("promoted_records") == promoted_records
-        ),
+        "semantic_cluster_coverage_promoted_records_verified": (context.get("promoted_records") == promoted_records),
     }
     status.update(checks)
     error_by_field = {
@@ -4212,12 +3683,8 @@ def _inspect_final_synthesis_semantic_cluster_coverage_context(
         "semantic_cluster_coverage_summary_verified": (
             "final_synthesis_context_semantic_cluster_coverage_summary_mismatch"
         ),
-        "semantic_cluster_coverage_rows_verified": (
-            "final_synthesis_context_semantic_cluster_coverage_rows_mismatch"
-        ),
-        "semantic_cluster_coverage_ids_verified": (
-            "final_synthesis_context_semantic_cluster_coverage_ids_mismatch"
-        ),
+        "semantic_cluster_coverage_rows_verified": ("final_synthesis_context_semantic_cluster_coverage_rows_mismatch"),
+        "semantic_cluster_coverage_ids_verified": ("final_synthesis_context_semantic_cluster_coverage_ids_mismatch"),
         "semantic_cluster_coverage_missing_ids_verified": (
             "final_synthesis_context_semantic_cluster_coverage_missing_ids_mismatch"
         ),
@@ -4246,9 +3713,7 @@ def _inspect_final_synthesis_web_research_context(
         status["errors"].append("final_synthesis_context_web_research_invalid")
         return
 
-    status["web_research_queries_verified"] = context.get("queries") == manifest.get(
-        "web_queries"
-    )
+    status["web_research_queries_verified"] = context.get("queries") == manifest.get("web_queries")
     if not status["web_research_queries_verified"]:
         status["errors"].append("final_synthesis_context_web_research_queries_mismatch")
 
@@ -4257,18 +3722,14 @@ def _inspect_final_synthesis_web_research_context(
         manifest.get("web_sources"),
     )
     if not status["web_research_source_ids_verified"]:
-        status["errors"].append(
-            "final_synthesis_context_web_research_source_ids_mismatch"
-        )
+        status["errors"].append("final_synthesis_context_web_research_source_ids_mismatch")
 
     status["web_research_excluded_ids_verified"] = _same_unique_string_set(
         context.get("excluded_after_cutoff_source_ids"),
         manifest.get("excluded_web_source_ids"),
     )
     if not status["web_research_excluded_ids_verified"]:
-        status["errors"].append(
-            "final_synthesis_context_web_research_excluded_ids_mismatch"
-        )
+        status["errors"].append("final_synthesis_context_web_research_excluded_ids_mismatch")
 
     web_source_rows = _read_web_source_context_rows(root, manifest, status)
     status["web_research_sources_verified"] = context.get("sources") == web_source_rows
@@ -4311,9 +3772,7 @@ def _inspect_final_synthesis_candidate_context(
             status,
         )
     )
-    status["candidate_web_checks_context_verified"] = (
-        context_payload.get("candidate_web_checks") == candidate_web_rows
-    )
+    status["candidate_web_checks_context_verified"] = context_payload.get("candidate_web_checks") == candidate_web_rows
     if not status["candidate_web_checks_context_verified"]:
         status["errors"].append("final_synthesis_context_candidate_web_checks_mismatch")
 
@@ -4350,9 +3809,7 @@ def _inspect_final_synthesis_review_context(
         manifest,
         status,
     )
-    status["red_team_output_context_verified"] = (
-        context_payload.get("red_team_output") == red_team_payload
-    )
+    status["red_team_output_context_verified"] = context_payload.get("red_team_output") == red_team_payload
     if not status["red_team_output_context_verified"]:
         status["errors"].append("final_synthesis_context_red_team_output_mismatch")
 
@@ -4468,10 +3925,7 @@ def _semantic_retrieval_record_contract_required(
     summary: object,
     rows: list[dict[str, Any]],
 ) -> bool:
-    if (
-        "semantic_retrieval_record_ids" in manifest
-        or "excluded_semantic_retrieval_record_ids" in manifest
-    ):
+    if "semantic_retrieval_record_ids" in manifest or "excluded_semantic_retrieval_record_ids" in manifest:
         return True
     if isinstance(summary, dict) and any(
         key in summary
@@ -4505,9 +3959,7 @@ def _read_candidate_web_check_context_rows(
         label="candidate_web_check",
     )
     if rows is None:
-        status["errors"].append(
-            "final_synthesis_context_candidate_web_check_rows_unavailable"
-        )
+        status["errors"].append("final_synthesis_context_candidate_web_check_rows_unavailable")
         return []
     return [_candidate_web_check_context_row(row) for row in rows]
 
@@ -4521,9 +3973,7 @@ def _candidate_web_check_context_row(row: dict[str, Any]) -> dict[str, Any]:
         "candidate_subject_type": row.get("candidate_subject_type"),
         "candidate_expansion_path": row.get("candidate_expansion_path"),
         "candidate_expansion_hypothesis": row.get("candidate_expansion_hypothesis"),
-        "candidate_investigation_questions": row.get(
-            "candidate_investigation_questions"
-        ),
+        "candidate_investigation_questions": row.get("candidate_investigation_questions"),
         "verification_focus": row.get("verification_focus"),
         "source_id": row.get("source_id"),
         "query": row.get("query"),
@@ -4602,16 +4052,12 @@ def _inspect_blind_seal_receipt_artifact(
             "validation_counts_verified": None,
         }
     )
-    payload = _read_artifact_object(
-        root, manifest.get("blind_seal_receipt_artifact"), status
-    )
+    payload = _read_artifact_object(root, manifest.get("blind_seal_receipt_artifact"), status)
     if payload is None:
         status["passed"] = _blind_seal_receipt_status_passed(status)
         return status
 
-    status["schema_version_verified"] = (
-        payload.get("schema_version") == "nslab.blind_seal_receipt.v1"
-    )
+    status["schema_version_verified"] = payload.get("schema_version") == "nslab.blind_seal_receipt.v1"
     if not status["schema_version_verified"]:
         status["errors"].append("blind_seal_receipt_schema_version_mismatch")
     run_id = manifest.get("run_id")
@@ -4621,44 +4067,36 @@ def _inspect_blind_seal_receipt_artifact(
     status["phase_verified"] = payload.get("phase") == "BLIND_SEALED"
     if not status["phase_verified"]:
         status["errors"].append("blind_seal_receipt_phase_mismatch")
-    status["blind_artifact_hash_verified"] = (
-        payload.get("blind_artifact_sha256") == manifest.get("blind_artifact_sha256")
+    status["blind_artifact_hash_verified"] = payload.get("blind_artifact_sha256") == manifest.get(
+        "blind_artifact_sha256"
     )
     if not status["blind_artifact_hash_verified"]:
         status["errors"].append("blind_seal_receipt_blind_hash_mismatch")
-    status["prediction_path_verified"] = (
-        payload.get("blind_prediction_path") == manifest.get("prediction_artifact")
-    )
+    status["prediction_path_verified"] = payload.get("blind_prediction_path") == manifest.get("prediction_artifact")
     if not status["prediction_path_verified"]:
         status["errors"].append("blind_seal_receipt_prediction_path_mismatch")
-    status["row_disposition_hash_verified"] = (
-        payload.get("row_disposition_sha256") == manifest.get("row_disposition_sha256")
+    status["row_disposition_hash_verified"] = payload.get("row_disposition_sha256") == manifest.get(
+        "row_disposition_sha256"
     )
     if not status["row_disposition_hash_verified"]:
         status["errors"].append("blind_seal_receipt_row_disposition_hash_mismatch")
-    status["source_ledger_hash_verified"] = (
-        payload.get("source_ledger_sha256") == manifest.get("source_ledger_sha256")
-    )
+    status["source_ledger_hash_verified"] = payload.get("source_ledger_sha256") == manifest.get("source_ledger_sha256")
     if not status["source_ledger_hash_verified"]:
         status["errors"].append("blind_seal_receipt_source_ledger_hash_mismatch")
     status["no_d_outcome_verified"] = (
-        payload.get("no_d_outcome_exposed") is True
-        and manifest.get("no_d_outcome_exposed") is True
+        payload.get("no_d_outcome_exposed") is True and manifest.get("no_d_outcome_exposed") is True
     )
     if not status["no_d_outcome_verified"]:
         status["errors"].append("blind_seal_receipt_no_d_outcome_mismatch")
     validation = payload.get("validation")
     expected_counts = {
         "blind_web_search_call_count": manifest.get("blind_web_search_call_count"),
-        "blind_price_repository_access_count": manifest.get(
-            "blind_price_repository_access_count"
-        ),
+        "blind_price_repository_access_count": manifest.get("blind_price_repository_access_count"),
         "blind_current_price_access_count": manifest.get("blind_current_price_access_count"),
         "canonical_blind_hash_verified": True,
     }
-    status["validation_counts_verified"] = (
-        isinstance(validation, dict)
-        and all(validation.get(key) == value for key, value in expected_counts.items())
+    status["validation_counts_verified"] = isinstance(validation, dict) and all(
+        validation.get(key) == value for key, value in expected_counts.items()
     )
     if not status["validation_counts_verified"]:
         status["errors"].append("blind_seal_receipt_validation_counts_mismatch")
@@ -4705,14 +4143,11 @@ def _inspect_phase_state_artifact(
         status["errors"].append("phase_state_phase_mismatch")
     completed_phases = _string_list(payload.get("completed_phases"))
     expected_phases = _phase_a_names(manifest.get("blind_context_mode"))
-    status["completed_phase_verified"] = bool(
-        expected_phases.intersection(completed_phases)
-    )
+    status["completed_phase_verified"] = bool(expected_phases.intersection(completed_phases))
     if not status["completed_phase_verified"]:
         status["errors"].append("phase_state_completed_phase_mismatch")
-    status["receipt_link_verified"] = (
-        payload.get("blind_seal_receipt_sha256")
-        == manifest.get("blind_seal_receipt_sha256")
+    status["receipt_link_verified"] = payload.get("blind_seal_receipt_sha256") == manifest.get(
+        "blind_seal_receipt_sha256"
     )
     if not status["receipt_link_verified"]:
         status["errors"].append("phase_state_receipt_sha_mismatch")
@@ -4729,11 +4164,7 @@ def _inspect_phase_state_artifact(
 def _inspect_red_team_artifacts(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     raw_artifacts = manifest.get("red_team_artifacts")
     prompt_hashes = manifest.get("prompt_hashes")
-    expected_prompt_hash = (
-        prompt_hashes.get("red_team_candidate_review")
-        if isinstance(prompt_hashes, dict)
-        else None
-    )
+    expected_prompt_hash = prompt_hashes.get("red_team_candidate_review") if isinstance(prompt_hashes, dict) else None
     status: dict[str, Any] = {
         "configured": raw_artifacts is not None,
         "artifact_count": 0,
@@ -4763,9 +4194,7 @@ def _inspect_red_team_artifacts(root: Path, manifest: dict[str, Any]) -> dict[st
         status["errors"].append("red_team_artifacts_missing")
         status["passed"] = False
         return status
-    if not isinstance(raw_artifacts, list) or not all(
-        isinstance(item, str) and item for item in raw_artifacts
-    ):
+    if not isinstance(raw_artifacts, list) or not all(isinstance(item, str) and item for item in raw_artifacts):
         status["errors"].append("red_team_artifacts_invalid")
         status["passed"] = False
         return status
@@ -4792,10 +4221,7 @@ def _inspect_red_team_artifacts(root: Path, manifest: dict[str, Any]) -> dict[st
             status["schema_mismatches"].append(artifact_ref)
         if isinstance(run_id, str) and payload.get("run_id") != run_id:
             status["run_id_mismatches"].append(artifact_ref)
-        if (
-            isinstance(expected_prompt_hash, str)
-            and payload.get("prompt_sha256") != expected_prompt_hash
-        ):
+        if isinstance(expected_prompt_hash, str) and payload.get("prompt_sha256") != expected_prompt_hash:
             status["prompt_hash_mismatches"].append(artifact_ref)
         _inspect_red_team_payload_contract(
             artifact_ref=artifact_ref,
@@ -4814,15 +4240,9 @@ def _inspect_red_team_artifacts(root: Path, manifest: dict[str, Any]) -> dict[st
     )
     status["candidate_count_verified"] = not status["candidate_count_mismatches"]
     status["finding_count_verified"] = not status["finding_count_mismatches"]
-    status["required_attack_checks_verified"] = not status[
-        "required_attack_check_mismatches"
-    ]
-    status["attack_check_coverage_verified"] = not status[
-        "attack_check_coverage_mismatches"
-    ]
-    status["passed_to_synthesis_verified"] = not status[
-        "passed_to_synthesis_failures"
-    ]
+    status["required_attack_checks_verified"] = not status["required_attack_check_mismatches"]
+    status["attack_check_coverage_verified"] = not status["attack_check_coverage_mismatches"]
+    status["passed_to_synthesis_verified"] = not status["passed_to_synthesis_failures"]
     status["summary_verified"] = (
         status["candidate_count_verified"]
         and status["finding_count_verified"]
@@ -4864,20 +4284,13 @@ def _inspect_red_team_payload_contract(
     status: dict[str, Any],
 ) -> None:
     summary = manifest.get("red_team_summary")
-    expected_candidate_count = (
-        summary.get("candidate_count") if isinstance(summary, dict) else None
-    )
+    expected_candidate_count = summary.get("candidate_count") if isinstance(summary, dict) else None
     observed_candidate_count = _non_bool_int(payload.get("candidate_count"))
-    if (
-        not isinstance(expected_candidate_count, int)
-        or observed_candidate_count != expected_candidate_count
-    ):
+    if not isinstance(expected_candidate_count, int) or observed_candidate_count != expected_candidate_count:
         status["candidate_count_mismatches"].append(artifact_ref)
 
     candidate_findings = payload.get("candidate_findings")
-    if not isinstance(candidate_findings, list) or not all(
-        isinstance(finding, dict) for finding in candidate_findings
-    ):
+    if not isinstance(candidate_findings, list) or not all(isinstance(finding, dict) for finding in candidate_findings):
         status["finding_count_mismatches"].append(artifact_ref)
         status["attack_check_coverage_mismatches"].append(artifact_ref)
         status["passed_to_synthesis_failures"].append(artifact_ref)
@@ -4891,17 +4304,9 @@ def _inspect_red_team_payload_contract(
     ):
         status["finding_count_mismatches"].append(artifact_ref)
 
-    expected_required_checks = (
-        _string_list(summary.get("required_attack_checks"))
-        if isinstance(summary, dict)
-        else []
-    )
+    expected_required_checks = _string_list(summary.get("required_attack_checks")) if isinstance(summary, dict) else []
     observed_required_checks = _string_list(payload.get("required_attack_checks"))
-    expected_required_count = (
-        summary.get("required_attack_check_count")
-        if isinstance(summary, dict)
-        else None
-    )
+    expected_required_count = summary.get("required_attack_check_count") if isinstance(summary, dict) else None
     if (
         not expected_required_checks
         or observed_required_checks != expected_required_checks
@@ -4911,28 +4316,16 @@ def _inspect_red_team_payload_contract(
 
     for index, finding in enumerate(candidate_findings, start=1):
         attack_checks = finding.get("attack_checks")
-        if not isinstance(attack_checks, list) or not all(
-            isinstance(check, dict) for check in attack_checks
-        ):
-            status["attack_check_coverage_mismatches"].append(
-                {"path": artifact_ref, "finding": index}
-            )
+        if not isinstance(attack_checks, list) or not all(isinstance(check, dict) for check in attack_checks):
+            status["attack_check_coverage_mismatches"].append({"path": artifact_ref, "finding": index})
             continue
-        observed_names = [
-            str(check["name"])
-            for check in attack_checks
-            if isinstance(check.get("name"), str)
-        ]
+        observed_names = [str(check["name"]) for check in attack_checks if isinstance(check.get("name"), str)]
         if observed_names != observed_required_checks:
-            status["attack_check_coverage_mismatches"].append(
-                {"path": artifact_ref, "finding": index}
-            )
+            status["attack_check_coverage_mismatches"].append({"path": artifact_ref, "finding": index})
         if finding.get("passed_to_synthesis") is not True or any(
             check.get("passed_to_synthesis") is not True for check in attack_checks
         ):
-            status["passed_to_synthesis_failures"].append(
-                {"path": artifact_ref, "finding": index}
-            )
+            status["passed_to_synthesis_failures"].append({"path": artifact_ref, "finding": index})
 
     if not (isinstance(summary, dict) and summary.get("all_findings_passed_to_synthesis") is True):
         status["passed_to_synthesis_failures"].append(artifact_ref)
@@ -4980,9 +4373,7 @@ def _inspect_memory_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         status["errors"].append("memory_sweep_artifacts_missing")
         status["passed"] = False
         return status
-    if not isinstance(raw_artifacts, list) or not all(
-        isinstance(item, str) and item for item in raw_artifacts
-    ):
+    if not isinstance(raw_artifacts, list) or not all(isinstance(item, str) and item for item in raw_artifacts):
         status["errors"].append("memory_sweep_artifacts_invalid")
         status["passed"] = False
         return status
@@ -4990,10 +4381,7 @@ def _inspect_memory_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         raw_hashes = {}
         if raw_artifacts:
             status["errors"].append("memory_sweep_artifact_hashes_missing_or_invalid")
-    elif any(
-        not isinstance(key, str) or not isinstance(value, str)
-        for key, value in raw_hashes.items()
-    ):
+    elif any(not isinstance(key, str) or not isinstance(value, str) for key, value in raw_hashes.items()):
         raw_hashes = {}
         status["errors"].append("memory_sweep_artifact_hashes_invalid")
 
@@ -5047,13 +4435,9 @@ def _inspect_memory_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
             if expected is not None and payload.get(field) != expected
         ]
         if mismatched_fields:
-            status["metadata_mismatches"].append(
-                {"path": artifact_ref, "fields": mismatched_fields}
-            )
+            status["metadata_mismatches"].append({"path": artifact_ref, "fields": mismatched_fields})
         episode_ids = payload.get("episode_ids")
-        if not isinstance(episode_ids, list) or not all(
-            isinstance(episode_id, str) for episode_id in episode_ids
-        ):
+        if not isinstance(episode_ids, list) or not all(isinstance(episode_id, str) for episode_id in episode_ids):
             status["episode_count_mismatches"].append(artifact_ref)
             continue
         observed_episode_ids.extend(episode_ids)
@@ -5105,19 +4489,14 @@ def _inspect_memory_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         and not status["shard_hash_mismatches"]
     )
     status["source_hashes_verified"] = (
-        status["exists_verified"]
-        and not status["source_hash_mismatches"]
-        and not status["shard_hash_mismatches"]
+        status["exists_verified"] and not status["source_hash_mismatches"] and not status["shard_hash_mismatches"]
     )
     status["shard_count_verified"] = expected_shard_count == status["artifact_count"]
     status["cache_hits_verified"] = expected_cache_hits == status["observed_cache_hits"]
-    if isinstance(expected_swept_ids, list) and all(
-        isinstance(episode_id, str) for episode_id in expected_swept_ids
-    ):
-        status["swept_episode_ids_verified"] = (
-            Counter(observed_episode_ids) == Counter(expected_swept_ids)
-            and expected_swept_count == len(expected_swept_ids)
-        )
+    if isinstance(expected_swept_ids, list) and all(isinstance(episode_id, str) for episode_id in expected_swept_ids):
+        status["swept_episode_ids_verified"] = Counter(observed_episode_ids) == Counter(
+            expected_swept_ids
+        ) and expected_swept_count == len(expected_swept_ids)
     else:
         status["errors"].append("swept_episode_ids_invalid")
         status["swept_episode_ids_verified"] = False
@@ -5199,9 +4578,7 @@ def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         status["errors"].append("record_sweep_artifacts_missing")
         status["passed"] = False
         return status
-    if not isinstance(raw_artifacts, list) or not all(
-        isinstance(item, str) and item for item in raw_artifacts
-    ):
+    if not isinstance(raw_artifacts, list) or not all(isinstance(item, str) and item for item in raw_artifacts):
         status["errors"].append("record_sweep_artifacts_invalid")
         status["passed"] = False
         return status
@@ -5209,10 +4586,7 @@ def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         raw_hashes = {}
         if raw_artifacts:
             status["errors"].append("record_sweep_artifact_hashes_missing_or_invalid")
-    elif any(
-        not isinstance(key, str) or not isinstance(value, str)
-        for key, value in raw_hashes.items()
-    ):
+    elif any(not isinstance(key, str) or not isinstance(value, str) for key, value in raw_hashes.items()):
         raw_hashes = {}
         status["errors"].append("record_sweep_artifact_hashes_invalid")
 
@@ -5266,13 +4640,9 @@ def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
             if expected is not None and payload.get(field) != expected
         ]
         if mismatched_fields:
-            status["metadata_mismatches"].append(
-                {"path": artifact_ref, "fields": mismatched_fields}
-            )
+            status["metadata_mismatches"].append({"path": artifact_ref, "fields": mismatched_fields})
         record_ids = payload.get("record_ids")
-        if not isinstance(record_ids, list) or not all(
-            isinstance(record_id, str) for record_id in record_ids
-        ):
+        if not isinstance(record_ids, list) or not all(isinstance(record_id, str) for record_id in record_ids):
             status["record_count_mismatches"].append(artifact_ref)
             continue
         observed_record_ids.extend(record_ids)
@@ -5283,9 +4653,7 @@ def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
             record_ids,
         )
         if category_mismatches:
-            status["category_field_mismatches"].append(
-                {"path": artifact_ref, "fields": category_mismatches}
-            )
+            status["category_field_mismatches"].append({"path": artifact_ref, "fields": category_mismatches})
         source_hashes = _record_sweep_source_hashes(
             payload.get("record_shard_source_hashes"),
             record_ids,
@@ -5334,19 +4702,14 @@ def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
         and not status["shard_hash_mismatches"]
     )
     status["source_hashes_verified"] = (
-        status["exists_verified"]
-        and not status["source_hash_mismatches"]
-        and not status["shard_hash_mismatches"]
+        status["exists_verified"] and not status["source_hash_mismatches"] and not status["shard_hash_mismatches"]
     )
     status["shard_count_verified"] = expected_shard_count == status["artifact_count"]
     status["cache_hits_verified"] = expected_cache_hits == status["observed_cache_hits"]
-    if isinstance(expected_swept_ids, list) and all(
-        isinstance(record_id, str) for record_id in expected_swept_ids
-    ):
-        status["swept_record_ids_verified"] = (
-            Counter(observed_record_ids) == Counter(expected_swept_ids)
-            and expected_swept_count == len(expected_swept_ids)
-        )
+    if isinstance(expected_swept_ids, list) and all(isinstance(record_id, str) for record_id in expected_swept_ids):
+        status["swept_record_ids_verified"] = Counter(observed_record_ids) == Counter(
+            expected_swept_ids
+        ) and expected_swept_count == len(expected_swept_ids)
     else:
         status["errors"].append("swept_record_ids_invalid")
         status["swept_record_ids_verified"] = False
@@ -5441,6 +4804,7 @@ def _record_sweep_category_field_mismatches(
         "leader_selection_pairs",
         "theme_formation_failures",
         "candidate_generation_errors",
+        "newsless_or_unexplained",
     ):
         value = payload.get(field)
         if not isinstance(value, list):
@@ -5532,9 +4896,7 @@ def _inspect_llm_traces(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     }
     status["purposes"] = purpose_statuses
     status["matched_prompt_count"] = sum(
-        1
-        for purpose_status in purpose_statuses.values()
-        if purpose_status.get("matching_trace_count", 0) > 0
+        1 for purpose_status in purpose_statuses.values() if purpose_status.get("matching_trace_count", 0) > 0
     )
     status["passed"] = (
         status["configured"]
@@ -5585,9 +4947,7 @@ def _inspect_prompt_trace(
         "manifest_hash_key": hash_key,
         "manifest_token_count_key": token_count_key,
         "purpose": purpose,
-        "expected_prompt_sha256": expected_prompt_hash
-        if isinstance(expected_prompt_hash, str)
-        else None,
+        "expected_prompt_sha256": expected_prompt_hash if isinstance(expected_prompt_hash, str) else None,
         "expected_prompt_tokens_estimate": expected_prompt_tokens,
         "matching_trace_count": 0,
         "matching_trace_ids": [],
@@ -5650,9 +5010,7 @@ def _inspect_prompt_trace(
 
     if status["matching_trace_count"] == 0:
         status["errors"].append("matching_trace_missing")
-    status["trace_payloads_valid"] = (
-        status["matching_trace_count"] > 0 and not status["trace_validation_errors"]
-    )
+    status["trace_payloads_valid"] = status["matching_trace_count"] > 0 and not status["trace_validation_errors"]
     if expected_model_config == {}:
         status["model_config_comparison"] = "skipped_no_comparable_manifest_keys"
         status["model_config_verified"] = status["matching_trace_count"] > 0
@@ -5672,10 +5030,7 @@ def _inspect_prompt_trace(
         status["errors"].append("matching_trace_payload_invalid")
     if not status["model_config_verified"]:
         status["errors"].append("matching_trace_model_config_mismatch")
-    if (
-        not status["token_counts_verified"]
-        and "manifest_prompt_token_count_missing_or_invalid" not in status["errors"]
-    ):
+    if not status["token_counts_verified"] and "manifest_prompt_token_count_missing_or_invalid" not in status["errors"]:
         status["errors"].append("matching_trace_token_count_mismatch")
     status["passed"] = _prompt_trace_status_passed(status)
     return status
@@ -5698,9 +5053,7 @@ def _expected_trace_model_config(manifest: dict[str, Any]) -> dict[str, Any] | N
     model_config = manifest.get("model_config")
     if not isinstance(model_config, dict) or not model_config:
         return None
-    return {
-        key: model_config[key] for key in _TRACE_MODEL_CONFIG_KEYS if key in model_config
-    }
+    return {key: model_config[key] for key in _TRACE_MODEL_CONFIG_KEYS if key in model_config}
 
 
 def _trace_model_config_mismatches(
@@ -5711,9 +5064,7 @@ def _trace_model_config_mismatches(
     if not isinstance(trace_model_config, dict):
         return ["model_config"]
     return [
-        key
-        for key, expected_value in expected_model_config.items()
-        if trace_model_config.get(key) != expected_value
+        key for key, expected_value in expected_model_config.items() if trace_model_config.get(key) != expected_value
     ]
 
 
@@ -5736,28 +5087,16 @@ def _trace_prompt_token_count_mismatch(
 ) -> dict[str, Any] | None:
     trace_input = payload.get("input")
     token_usage = payload.get("token_usage")
-    observed_prompt_tokens = (
-        token_usage.get("prompt_tokens_estimate")
-        if isinstance(token_usage, dict)
-        else None
-    )
+    observed_prompt_tokens = token_usage.get("prompt_tokens_estimate") if isinstance(token_usage, dict) else None
     prompt_chars = trace_input.get("prompt_chars") if isinstance(trace_input, dict) else None
     prompt_chars_token_estimate = _estimate_prompt_tokens_from_chars(prompt_chars)
     reasons: list[str] = []
-    if not isinstance(observed_prompt_tokens, int) or isinstance(
-        observed_prompt_tokens, bool
-    ):
+    if not isinstance(observed_prompt_tokens, int) or isinstance(observed_prompt_tokens, bool):
         reasons.append("prompt_tokens_estimate_missing_or_invalid")
     else:
-        if (
-            expected_prompt_tokens is not None
-            and observed_prompt_tokens != expected_prompt_tokens
-        ):
+        if expected_prompt_tokens is not None and observed_prompt_tokens != expected_prompt_tokens:
             reasons.append("manifest_token_count_mismatch")
-        if (
-            prompt_chars_token_estimate is not None
-            and observed_prompt_tokens != prompt_chars_token_estimate
-        ):
+        if prompt_chars_token_estimate is not None and observed_prompt_tokens != prompt_chars_token_estimate:
             reasons.append("prompt_chars_token_count_mismatch")
     if prompt_chars_token_estimate is None:
         reasons.append("prompt_chars_missing_or_invalid")
@@ -5767,12 +5106,9 @@ def _trace_prompt_token_count_mismatch(
         "reasons": reasons,
         "expected_prompt_tokens_estimate": expected_prompt_tokens,
         "observed_prompt_tokens_estimate": observed_prompt_tokens
-        if isinstance(observed_prompt_tokens, int)
-        and not isinstance(observed_prompt_tokens, bool)
+        if isinstance(observed_prompt_tokens, int) and not isinstance(observed_prompt_tokens, bool)
         else None,
-        "prompt_chars": prompt_chars
-        if isinstance(prompt_chars, int) and not isinstance(prompt_chars, bool)
-        else None,
+        "prompt_chars": prompt_chars if isinstance(prompt_chars, int) and not isinstance(prompt_chars, bool) else None,
         "prompt_chars_token_estimate": prompt_chars_token_estimate,
     }
 
@@ -5841,9 +5177,7 @@ def _llm_trace_payload_errors(payload: dict[str, Any]) -> list[str]:
     if not isinstance(token_usage, dict):
         errors.append("token_usage_not_object")
     else:
-        if status in {"ok", "checkpoint_hit"} and not isinstance(
-            token_usage.get("prompt_tokens_estimate"), int
-        ):
+        if status in {"ok", "checkpoint_hit"} and not isinstance(token_usage.get("prompt_tokens_estimate"), int):
             errors.append("prompt_token_estimate_missing")
         if (
             status in {"ok", "checkpoint_hit"}
@@ -5934,18 +5268,13 @@ def _inspect_context_file_group(
     if not status["configured"]:
         status["errors"].append(f"{files_field}_missing")
         return status
-    if not isinstance(raw_files, list) or not all(
-        isinstance(item, str) and item for item in raw_files
-    ):
+    if not isinstance(raw_files, list) or not all(isinstance(item, str) and item for item in raw_files):
         status["errors"].append(f"{files_field}_invalid")
         return status
     if not isinstance(raw_hashes, dict):
         status["errors"].append(f"{hashes_field}_invalid")
         return status
-    if any(
-        not isinstance(key, str) or not isinstance(value, str)
-        for key, value in raw_hashes.items()
-    ):
+    if any(not isinstance(key, str) or not isinstance(value, str) for key, value in raw_hashes.items()):
         status["errors"].append(f"{hashes_field}_invalid")
         return status
 
@@ -5955,9 +5284,7 @@ def _inspect_context_file_group(
     hash_ref_set = set(hash_refs)
     status["file_count"] = len(file_refs)
     status["hash_count"] = len(hash_refs)
-    status["duplicate_files"] = sorted(
-        {file_ref for file_ref in file_refs if file_refs.count(file_ref) > 1}
-    )
+    status["duplicate_files"] = sorted({file_ref for file_ref in file_refs if file_refs.count(file_ref) > 1})
     status["missing_hashes"] = sorted(file_ref_set - hash_ref_set)
     status["extra_hashes"] = sorted(hash_ref_set - file_ref_set)
 
@@ -6007,18 +5334,10 @@ def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     row_summary = manifest.get("row_disposition_summary")
     status["expected_sha256"] = expected_hash if isinstance(expected_hash, str) else None
     status["expected_row_count"] = _optional_int(manifest.get("news_row_count"))
-    status["expected_included_row_count"] = _optional_int(
-        manifest.get("included_news_row_count")
-    )
-    status["expected_excluded_row_count"] = _optional_int(
-        manifest.get("excluded_news_row_count")
-    )
-    status["expected_news_window_start_at"] = (
-        news_window_start_at.isoformat() if news_window_start_at else None
-    )
-    status["expected_news_window_end_at"] = (
-        news_window_end_at.isoformat() if news_window_end_at else None
-    )
+    status["expected_included_row_count"] = _optional_int(manifest.get("included_news_row_count"))
+    status["expected_excluded_row_count"] = _optional_int(manifest.get("excluded_news_row_count"))
+    status["expected_news_window_start_at"] = news_window_start_at.isoformat() if news_window_start_at else None
+    status["expected_news_window_end_at"] = news_window_end_at.isoformat() if news_window_end_at else None
     status["expected_missing_collected_at"] = (
         row_summary.get("missing_collected_at") if isinstance(row_summary, dict) else None
     )
@@ -6027,9 +5346,7 @@ def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     status["observed_excluded_row_count"] = None
     status["observed_missing_collected_at"] = None
     status["default_news_window_start_at"] = (
-        default_news_window_start(manifest_trade_date).isoformat()
-        if manifest_trade_date is not None
-        else None
+        default_news_window_start(manifest_trade_date).isoformat() if manifest_trade_date is not None else None
     )
     status["row_count_verified"] = None
     status["row_count_partition_verified"] = None
@@ -6063,16 +5380,12 @@ def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
         return status
     observed_row_count = batch.row_count
     status["observed_row_count"] = observed_row_count
-    status["observed_missing_collected_at"] = sum(
-        1 for item in batch.items if item.collected_at is None
-    )
+    status["observed_missing_collected_at"] = sum(1 for item in batch.items if item.collected_at is None)
     status["row_count_verified"] = observed_row_count == status["expected_row_count"]
     expected_included = status["expected_included_row_count"]
     expected_excluded = status["expected_excluded_row_count"]
     if isinstance(expected_included, int) and isinstance(expected_excluded, int):
-        status["row_count_partition_verified"] = (
-            expected_included + expected_excluded == status["expected_row_count"]
-        )
+        status["row_count_partition_verified"] = expected_included + expected_excluded == status["expected_row_count"]
     if (
         news_window_start_at is not None
         and news_window_end_at is not None
@@ -6087,9 +5400,7 @@ def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
         status["observed_excluded_row_count"] = observed_excluded
         status["included_row_count_verified"] = observed_included == expected_included
         status["excluded_row_count_verified"] = observed_excluded == expected_excluded
-        status["news_window_start_verified"] = (
-            news_window_start_at == default_news_window_start(manifest_trade_date)
-        )
+        status["news_window_start_verified"] = news_window_start_at == default_news_window_start(manifest_trade_date)
         status["news_window_end_verified"] = news_window_end_at == manifest_cutoff_at
         status["news_window_counts_verified"] = (
             status["included_row_count_verified"] and status["excluded_row_count_verified"]
@@ -6148,15 +5459,9 @@ def _inspect_prediction_artifact(root: Path, manifest: dict[str, Any]) -> dict[s
         return status
     run_id = manifest.get("run_id")
     context_manifest_id = payload.get("context_manifest_id")
-    status["context_manifest_id"] = (
-        context_manifest_id if isinstance(context_manifest_id, str) else None
-    )
-    status["context_manifest_id_verified"] = (
-        isinstance(run_id, str) and context_manifest_id == run_id
-    )
-    status["schema_version_verified"] = (
-        payload.get("schema_version") == "nslab.blind_prediction.v1"
-    )
+    status["context_manifest_id"] = context_manifest_id if isinstance(context_manifest_id, str) else None
+    status["context_manifest_id_verified"] = isinstance(run_id, str) and context_manifest_id == run_id
+    status["schema_version_verified"] = payload.get("schema_version") == "nslab.blind_prediction.v1"
     if not status["schema_version_verified"]:
         status["errors"].append("prediction_artifact_schema_version_mismatch")
     sealed_at = payload.get("sealed_at")
@@ -6164,9 +5469,7 @@ def _inspect_prediction_artifact(root: Path, manifest: dict[str, Any]) -> dict[s
     if not status["sealed_at_verified"]:
         status["errors"].append("prediction_artifact_sealed_at_missing")
     observed_blind_hash = payload.get("blind_artifact_sha256")
-    status["blind_artifact_sha256"] = (
-        observed_blind_hash if isinstance(observed_blind_hash, str) else None
-    )
+    status["blind_artifact_sha256"] = observed_blind_hash if isinstance(observed_blind_hash, str) else None
     prediction_for_hash = {**payload, "blind_artifact_sha256": None}
     expected_blind_hash = sha256_text(canonical_json(prediction_for_hash))
     status["expected_blind_artifact_sha256"] = expected_blind_hash
@@ -6174,9 +5477,7 @@ def _inspect_prediction_artifact(root: Path, manifest: dict[str, Any]) -> dict[s
     if not status["blind_artifact_hash_verified"]:
         status["errors"].append("prediction_artifact_blind_hash_mismatch")
     manifest_blind_hash = manifest.get("blind_artifact_sha256")
-    status["manifest_blind_artifact_sha256"] = (
-        manifest_blind_hash if isinstance(manifest_blind_hash, str) else None
-    )
+    status["manifest_blind_artifact_sha256"] = manifest_blind_hash if isinstance(manifest_blind_hash, str) else None
     status["manifest_blind_hash_verified"] = observed_blind_hash == manifest_blind_hash
     if not status["manifest_blind_hash_verified"]:
         status["errors"].append("prediction_artifact_manifest_blind_hash_mismatch")
@@ -6235,9 +5536,7 @@ def _base_artifact_status(root: Path, artifact_ref: object) -> dict[str, Any]:
 def _resolve_project_artifact(root: Path, artifact_ref: str) -> Path | None:
     root_resolved = root.resolve()
     candidate = Path(artifact_ref)
-    resolved = (
-        candidate if candidate.is_absolute() else root_resolved / candidate
-    ).resolve()
+    resolved = (candidate if candidate.is_absolute() else root_resolved / candidate).resolve()
     try:
         resolved.relative_to(root_resolved)
     except ValueError:
@@ -6307,10 +5606,7 @@ def _context_file_group_status_passed(status: dict[str, Any]) -> bool:
 
 
 def _supporting_artifacts_status_passed(statuses: dict[str, Any]) -> bool:
-    return all(
-        isinstance(status, dict) and bool(status.get("passed"))
-        for status in statuses.values()
-    )
+    return all(isinstance(status, dict) and bool(status.get("passed")) for status in statuses.values())
 
 
 def _manifest_reproducibility_status_passed(status: dict[str, Any]) -> bool:
@@ -6366,8 +5662,7 @@ def _llm_trace_status_passed(status: dict[str, Any]) -> bool:
         and isinstance(purposes, dict)
         and purposes
         and all(
-            isinstance(purpose_status, dict)
-            and _prompt_trace_status_passed(purpose_status)
+            isinstance(purpose_status, dict) and _prompt_trace_status_passed(purpose_status)
             for purpose_status in purposes.values()
         )
         and not status.get("errors")
@@ -6709,9 +6004,7 @@ def _read_artifact_object(
     artifact_ref: object,
     status: dict[str, Any],
 ) -> dict[str, Any] | None:
-    artifact_path = (
-        _resolve_project_artifact(root, artifact_ref) if isinstance(artifact_ref, str) else None
-    )
+    artifact_path = _resolve_project_artifact(root, artifact_ref) if isinstance(artifact_ref, str) else None
     if artifact_path is None or not artifact_path.exists():
         return None
     try:
@@ -6732,9 +6025,7 @@ def _read_artifact_jsonl_rows(
     *,
     label: str,
 ) -> list[dict[str, Any]] | None:
-    artifact_path = (
-        _resolve_project_artifact(root, artifact_ref) if isinstance(artifact_ref, str) else None
-    )
+    artifact_path = _resolve_project_artifact(root, artifact_ref) if isinstance(artifact_ref, str) else None
     if artifact_path is None or not artifact_path.exists():
         return None
     rows: list[dict[str, Any]] = []
@@ -6782,18 +6073,10 @@ def _candidate_expansion_required_paths(manifest: dict[str, Any]) -> list[str]:
 
 def _row_disposition_summary_from_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
     total_rows = len(rows)
-    included = sum(
-        1 for row in rows if row.get("disposition") == "INCLUDED_IN_NEWS_WINDOW"
-    )
-    excluded_before = sum(
-        1 for row in rows if row.get("disposition") == "EXCLUDED_BEFORE_WINDOW"
-    )
-    excluded_after = sum(
-        1 for row in rows if row.get("disposition") == "EXCLUDED_AFTER_CUTOFF"
-    )
-    missing_collected_at = sum(
-        1 for row in rows if row.get("collected_at_present") is False
-    )
+    included = sum(1 for row in rows if row.get("disposition") == "INCLUDED_IN_NEWS_WINDOW")
+    excluded_before = sum(1 for row in rows if row.get("disposition") == "EXCLUDED_BEFORE_WINDOW")
+    excluded_after = sum(1 for row in rows if row.get("disposition") == "EXCLUDED_AFTER_CUTOFF")
+    missing_collected_at = sum(1 for row in rows if row.get("collected_at_present") is False)
     return {
         "coverage_ratio": 1.0,
         "excluded_after_cutoff": excluded_after,
@@ -6821,19 +6104,10 @@ def _row_disposition_news_window_contract_matches(
     if row.get("within_news_window") is not within_window:
         return False
     if within_window:
-        return (
-            row.get("disposition") == "INCLUDED_IN_NEWS_WINDOW"
-            and row.get("eligible_for_blind_evidence") is True
-        )
+        return row.get("disposition") == "INCLUDED_IN_NEWS_WINDOW" and row.get("eligible_for_blind_evidence") is True
     if published_at > cutoff_at:
-        return (
-            row.get("disposition") == "EXCLUDED_AFTER_CUTOFF"
-            and row.get("eligible_for_blind_evidence") is False
-        )
-    return (
-        row.get("disposition") == "EXCLUDED_BEFORE_WINDOW"
-        and row.get("eligible_for_blind_evidence") is False
-    )
+        return row.get("disposition") == "EXCLUDED_AFTER_CUTOFF" and row.get("eligible_for_blind_evidence") is False
+    return row.get("disposition") == "EXCLUDED_BEFORE_WINDOW" and row.get("eligible_for_blind_evidence") is False
 
 
 def _event_cluster_membership_counts_match(row: dict[str, Any]) -> bool:
@@ -6852,17 +6126,13 @@ def _news_novelty_counts(
     summary_counts: object,
 ) -> dict[str, int]:
     observed = Counter(
-        novelty
-        for finding in findings
-        if isinstance(novelty := finding.get("novelty"), str) and novelty
+        novelty for finding in findings if isinstance(novelty := finding.get("novelty"), str) and novelty
     )
     if isinstance(summary_counts, dict):
         labels = [
             label
             for label, count in summary_counts.items()
-            if isinstance(label, str)
-            and isinstance(count, int)
-            and not isinstance(count, bool)
+            if isinstance(label, str) and isinstance(count, int) and not isinstance(count, bool)
         ]
         if labels:
             return {label: observed.get(label, 0) for label in labels}
@@ -6916,11 +6186,7 @@ def _candidate_web_subject_key(
 
 def _candidate_web_expansion_paths(rows: Iterable[dict[str, Any]]) -> list[str]:
     return sorted(
-        {
-            str(row["candidate_expansion_path"])
-            for row in rows
-            if row.get("candidate_expansion_path") is not None
-        }
+        {str(row["candidate_expansion_path"]) for row in rows if row.get("candidate_expansion_path") is not None}
     )
 
 
@@ -7041,9 +6307,7 @@ def _candidate_verification_status_counts(
         if not isinstance(dimensions, list):
             continue
         for dimension in dimensions:
-            if not isinstance(dimension, dict) or not isinstance(
-                dimension.get("status"), str
-            ):
+            if not isinstance(dimension, dict) or not isinstance(dimension.get("status"), str):
                 continue
             counts[str(dimension["status"])] += 1
     return dict(counts)
@@ -7069,9 +6333,7 @@ def _final_synthesis_manifest_count_mismatches(
     summary: dict[str, Any],
 ) -> dict[str, dict[str, Any]]:
     expected_counts: dict[str, int] = {}
-    _add_expected_count(
-        expected_counts, "event_cluster_count", manifest.get("event_cluster_count")
-    )
+    _add_expected_count(expected_counts, "event_cluster_count", manifest.get("event_cluster_count"))
     _add_expected_count(
         expected_counts,
         "news_novelty_finding_count",
@@ -7097,9 +6359,7 @@ def _final_synthesis_manifest_count_mismatches(
         "candidate_verification_finding_count",
         manifest.get("candidate_verification_count"),
     )
-    _add_expected_count(
-        expected_counts, "shard_contribution_count", manifest.get("memory_sweep_shard_count")
-    )
+    _add_expected_count(expected_counts, "shard_contribution_count", manifest.get("memory_sweep_shard_count"))
     _add_expected_count(
         expected_counts,
         "record_shard_contribution_count",
@@ -7211,11 +6471,7 @@ def _final_synthesis_manifest_count_mismatches(
         _add_expected_count(
             expected_counts,
             "semantic_cluster_coverage_promoted_record_id_count",
-            len(
-                _string_list(
-                    manifest.get("semantic_cluster_coverage_promoted_record_ids")
-                )
-            ),
+            len(_string_list(manifest.get("semantic_cluster_coverage_promoted_record_ids"))),
         )
     if "candidate_expansion_cluster_coverage_ids" in manifest:
         _add_expected_count(
@@ -7251,12 +6507,8 @@ def _final_synthesis_manifest_count_mismatches(
             "counterexample_record_count",
             len(_string_list(manifest.get("counterexample_record_ids"))),
         )
-    _add_expected_count(
-        expected_counts, "web_source_count", len(_string_list(manifest.get("web_sources")))
-    )
-    _add_expected_count(
-        expected_counts, "global_brain_file_count", len(_string_list(manifest.get("brain_files")))
-    )
+    _add_expected_count(expected_counts, "web_source_count", len(_string_list(manifest.get("web_sources"))))
+    _add_expected_count(expected_counts, "global_brain_file_count", len(_string_list(manifest.get("brain_files"))))
     _add_expected_count(
         expected_counts,
         "shard_brain_file_count",
@@ -7413,8 +6665,7 @@ def _source_ledger_source_ids_for_type(
     return _unique_strings(
         str(row["source_id"])
         for row in rows
-        if row.get("source_type") == source_type
-        and isinstance(row.get("source_id"), str)
+        if row.get("source_type") == source_type and isinstance(row.get("source_id"), str)
     )
 
 
@@ -7424,11 +6675,7 @@ def _source_ledger_summary_matches(
 ) -> bool:
     if not isinstance(summary, dict):
         return False
-    phase_counts = Counter(
-        row.get("usage_phase")
-        for row in rows
-        if isinstance(row.get("usage_phase"), str)
-    )
+    phase_counts = Counter(row.get("usage_phase") for row in rows if isinstance(row.get("usage_phase"), str))
     return (
         summary.get("total_sources") == len(rows)
         and summary.get("blind_sources") == phase_counts.get("BLIND", 0)
@@ -7455,11 +6702,7 @@ def _token_counts_valid(value: object) -> bool:
     if not isinstance(value, dict) or not value:
         return False
     return all(
-        isinstance(key, str)
-        and bool(key)
-        and isinstance(count, int)
-        and not isinstance(count, bool)
-        and count >= 0
+        isinstance(key, str) and bool(key) and isinstance(count, int) and not isinstance(count, bool) and count >= 0
         for key, count in value.items()
     )
 
@@ -7523,9 +6766,7 @@ def audit_lookahead_cmd(
     trade_date: Annotated[str | None, typer.Option("--trade-date")] = None,
 ) -> None:
     settings = load_settings()
-    result = audit_lookahead(
-        settings.project_root, trade_date=_parse_date(trade_date) if trade_date else None
-    )
+    result = audit_lookahead(settings.project_root, trade_date=_parse_date(trade_date) if trade_date else None)
     _echo(result)
     if not result.get("passed", False):
         raise typer.Exit(code=1)
@@ -7605,16 +6846,14 @@ def warehouse_inspect() -> None:
         coverage = audit_coverage(settings.project_root)
         warehouse_counts = coverage.get("warehouse_counts")
         counts = (
-            warehouse_counts
-            if isinstance(warehouse_counts, dict)
-            else WarehouseStore(settings.project_root).counts()
+            warehouse_counts if isinstance(warehouse_counts, dict) else WarehouseStore(settings.project_root).counts()
         )
         findings = coverage.get("findings")
-        warehouse_findings = [
-            finding
-            for finding in findings
-            if isinstance(finding, str) and finding.startswith("warehouse: ")
-        ] if isinstance(findings, list) else []
+        warehouse_findings = (
+            [finding for finding in findings if isinstance(finding, str) and finding.startswith("warehouse: ")]
+            if isinstance(findings, list)
+            else []
+        )
     except (OSError, ValueError) as exc:
         _exit_with_error(exc)
     _echo(
@@ -7646,11 +6885,11 @@ def warehouse_verify() -> None:
     except (OSError, ValueError) as exc:
         _exit_with_error(exc)
     findings = coverage.get("findings", [])
-    warehouse_findings = [
-        finding
-        for finding in findings
-        if isinstance(finding, str) and finding.startswith("warehouse: ")
-    ] if isinstance(findings, list) else []
+    warehouse_findings = (
+        [finding for finding in findings if isinstance(finding, str) and finding.startswith("warehouse: ")]
+        if isinstance(findings, list)
+        else []
+    )
     result = {
         "passed": not warehouse_findings
         and coverage.get("warehouse_required_files_present") is True
@@ -7658,9 +6897,7 @@ def warehouse_verify() -> None:
         and coverage.get("warehouse_projection_synced") is True,
         "warehouse_synced": coverage.get("warehouse_synced"),
         "warehouse_projection_synced": coverage.get("warehouse_projection_synced"),
-        "warehouse_required_files_present": coverage.get(
-            "warehouse_required_files_present"
-        ),
+        "warehouse_required_files_present": coverage.get("warehouse_required_files_present"),
         "warehouse_counts": coverage.get("warehouse_counts", {}),
         "warehouse_missing_files": coverage.get("warehouse_missing_files", []),
         "warehouse_unreadable_files": coverage.get("warehouse_unreadable_files", []),
@@ -7722,9 +6959,7 @@ def warehouse_query_records(
             err=True,
         )
         raise typer.Exit(code=1)
-    training_eligible = (
-        True if training_eligible_only else False if ineligible_only else None
-    )
+    training_eligible = True if training_eligible_only else False if ineligible_only else None
     settings = load_settings()
     record_type_filter: str | tuple[str, ...] | None
     if record_type is None or not record_type:
@@ -7802,35 +7037,21 @@ def memory_inspect(
             "raw_normalized_record_count_matches": raw_normalized_record_count_matches,
             "dropped_record_count": dropped_record_count,
             "extra_normalized_record_count": extra_normalized_record_count,
-            "training_eligible_record_count": sum(
-                1 for record in records if record.training_eligible
-            ),
-            "ineligible_record_count": sum(
-                1 for record in records if not record.training_eligible
-            ),
+            "training_eligible_record_count": sum(1 for record in records if record.training_eligible),
+            "ineligible_record_count": sum(1 for record in records if not record.training_eligible),
             "record_ids": [record.record_id for record in records],
-            "record_counts_by_type": dict(
-                sorted(Counter(record.record_type for record in records).items())
-            ),
+            "record_counts_by_type": dict(sorted(Counter(record.record_type for record in records).items())),
             "record_counts_by_evidence_phase": dict(
                 sorted(Counter(record.evidence_phase for record in records).items())
             ),
             "record_counts_by_training_target": dict(
-                sorted(
-                    Counter(
-                        record.training_target or "UNKNOWN" for record in records
-                    ).items()
-                )
+                sorted(Counter(record.training_target or "UNKNOWN" for record in records).items())
             ),
             "record_counts_by_typed_payload_status": dict(
-                sorted(
-                    Counter(record.typed_payload_status for record in records).items()
-                )
+                sorted(Counter(record.typed_payload_status for record in records).items())
             ),
             "unknown_typed_payload_count": sum(
-                1
-                for record in records
-                if record.typed_payload_status == "UNKNOWN_TYPED_PAYLOAD"
+                1 for record in records if record.typed_payload_status == "UNKNOWN_TYPED_PAYLOAD"
             ),
             "raw_only_record_count": sum(1 for record in records if _is_raw_only_record(record)),
         }
@@ -7910,9 +7131,7 @@ def memory_search_records(
             err=True,
         )
         raise typer.Exit(code=1)
-    training_eligible = (
-        True if training_eligible_only else False if ineligible_only else None
-    )
+    training_eligible = True if training_eligible_only else False if ineligible_only else None
     record_type_filter: str | tuple[str, ...] | None
     if record_type is None or not record_type:
         record_type_filter = None
@@ -7920,11 +7139,7 @@ def memory_search_records(
         record_type_filter = record_type[0]
     else:
         record_type_filter = tuple(record_type)
-    available_from = (
-        _parse_cutoff(available_from_as_of)
-        if available_from_as_of is not None
-        else None
-    )
+    available_from = _parse_cutoff(available_from_as_of) if available_from_as_of is not None else None
     settings = load_settings()
     store = LocalRetrievalStore(settings.project_root)
     filters = {
@@ -8063,13 +7278,9 @@ def _require_openai_embedding_runtime() -> None:
     try:
         module = import_module("openai")
     except ImportError as exc:
-        raise ValueError(
-            "production vector index rebuild requires the openai SDK; install the openai extra"
-        ) from exc
+        raise ValueError("production vector index rebuild requires the openai SDK; install the openai extra") from exc
     if not hasattr(module, "AsyncOpenAI"):
-        raise ValueError(
-            "production vector index rebuild requires an openai SDK exposing AsyncOpenAI"
-        )
+        raise ValueError("production vector index rebuild requires an openai SDK exposing AsyncOpenAI")
 
 
 @memory_app.command("rebuild-index")
@@ -8093,9 +7304,8 @@ def memory_rebuild_index(
                 raise ValueError("production vector index rebuild requires a non-mock model profile")
             if not BrainRecordStore(settings.project_root).list_records():
                 raise ValueError("production vector index rebuild requires normalized brain records")
-            if (
-                settings.llm_provider.strip().lower() in OPENAI_LLM_PROVIDER_ALIASES
-                and not settings.env_value("OPENAI_API_KEY")
+            if settings.llm_provider.strip().lower() in OPENAI_LLM_PROVIDER_ALIASES and not settings.env_value(
+                "OPENAI_API_KEY"
             ):
                 raise ValueError("production vector index rebuild requires OPENAI_API_KEY")
             if settings.llm_provider.strip().lower() in OPENAI_LLM_PROVIDER_ALIASES:
@@ -8103,16 +7313,10 @@ def memory_rebuild_index(
             provider = create_llm_provider(settings)
             if isinstance(provider, DeterministicMockLLMProvider):
                 raise ValueError("production vector index rebuild cannot use the mock LLM provider")
-            embedding_model = (
-                getattr(provider, "embedding_model", None)
-                or settings.llm.embedding_model
-                or "configured"
-            )
+            embedding_model = getattr(provider, "embedding_model", None) or settings.llm.embedding_model or "configured"
             embedding_provider = AsyncEmbeddingProviderAdapter(
                 provider,
-                embedding_method=(
-                    f"llm_embedding:{settings.llm_provider.strip().lower()}:{embedding_model}"
-                ),
+                embedding_method=(f"llm_embedding:{settings.llm_provider.strip().lower()}:{embedding_model}"),
             )
             mode = "production"
         store = (
@@ -8153,10 +7357,7 @@ def memory_apply_company_deltas(
         {
             "processed_record_count": result.processed_record_count,
             "written_count": result.written_count,
-            "written_paths": [
-                path.relative_to(settings.project_root).as_posix()
-                for path in result.written_paths
-            ],
+            "written_paths": [path.relative_to(settings.project_root).as_posix() for path in result.written_paths],
             "skipped_future_record_ids": result.skipped_future_record_ids,
             "skipped_invalid_record_ids": result.skipped_invalid_record_ids,
         }

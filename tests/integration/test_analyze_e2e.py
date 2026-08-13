@@ -14,7 +14,7 @@ from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.context.final_synthesis import final_synthesis_input_summary
-from news_scalping_lab.context.sweep import SweepResult
+from news_scalping_lab.context.sweep import MEMORY_SWEEP_PROMPT_VERSION, SweepResult
 from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     BlindPrediction,
@@ -189,6 +189,7 @@ class RecordingBlindLLM:
                     "leader_selection_pairs",
                     "theme_formation_failures",
                     "candidate_generation_errors",
+                    "newsless_or_unexplained",
                 ],
                 queries=[
                     SemanticRetrievalQuery(
@@ -204,6 +205,7 @@ class RecordingBlindLLM:
                         "leader_selection_pairs",
                         "theme_formation_failures",
                         "candidate_generation_errors",
+                        "newsless_or_unexplained",
                     ]
                 ],
             )
@@ -727,7 +729,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_manifest["token_counts"]["news_novelty_review_prompt"] > 0
     assert saved_manifest["semantic_retrieval_plan_artifact"]
     assert saved_manifest["semantic_retrieval_artifact"]
-    assert saved_manifest["semantic_retrieval_query_count"] == 7
+    assert saved_manifest["semantic_retrieval_query_count"] == 8
     assert saved_manifest["semantic_retrieval_summary"] == {
         "required_categories": [
             "positive_analogs",
@@ -737,6 +739,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
             "leader_selection_pairs",
             "theme_formation_failures",
             "candidate_generation_errors",
+            "newsless_or_unexplained",
         ],
         "category_query_counts": {
             "positive_analogs": 1,
@@ -746,8 +749,9 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
             "leader_selection_pairs": 1,
             "theme_formation_failures": 1,
             "candidate_generation_errors": 1,
+            "newsless_or_unexplained": 1,
         },
-        "query_count": 7,
+        "query_count": 8,
         "included_episode_count": 0,
         "excluded_episode_count": 0,
         "included_record_count": 0,
@@ -769,7 +773,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         json.loads(line) for line in semantic_results_text.splitlines() if line.strip()
     ]
     assert sha256_text(semantic_results_text) == saved_manifest["semantic_retrieval_sha256"]
-    assert len(semantic_rows) == 7
+    assert len(semantic_rows) == 8
     assert all(row["schema_version"] == "nslab.semantic_retrieval_result.v1" for row in semantic_rows)
     assert all(row["included_episode_ids"] == [] for row in semantic_rows)
     assert all(row["included_record_ids"] == [] for row in semantic_rows)
@@ -783,6 +787,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         "leader_selection_pairs",
         "theme_formation_failures",
         "candidate_generation_errors",
+        "newsless_or_unexplained",
     ]
     assert saved_manifest["semantic_cluster_coverage_query_count"] == len(
         expected_cluster_lanes
@@ -1390,7 +1395,7 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     prompt_versions = {trace["purpose"]: trace["prompt_version"] for trace in traces}
     assert prompt_versions["open_world_first_analysis"] == "open_world_first_analysis.v1"
     assert prompt_versions["news_novelty_review"] == "news_novelty_review.v1"
-    assert prompt_versions["semantic_retrieval_plan"] == "semantic_retrieval_plan.v1"
+    assert prompt_versions["semantic_retrieval_plan"] == "semantic_retrieval_plan.v2"
     assert prompt_versions["candidate_expansion"] == "candidate_expansion.v1"
     assert prompt_versions["daily_blind_analysis"] == "daily_blind_analysis.v1"
     assert prompt_versions["red_team_candidate_review"] == "red_team.candidate_attack.v2"
@@ -2033,7 +2038,7 @@ async def test_exhaustive_analyze_persists_all_memory_sweep_shards(tmp_path) -> 
     for artifact in changed_manifest.memory_sweep_artifacts:
         payload = read_json(tmp_path / artifact)
         assert payload["from_cache"] is False
-        assert payload["prompt_version"] == "memory_sweep.shard_analysis.v1"
+        assert payload["prompt_version"] == MEMORY_SWEEP_PROMPT_VERSION
         assert payload["model_config_sha256"]
 
 

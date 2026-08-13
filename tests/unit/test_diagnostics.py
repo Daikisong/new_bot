@@ -1659,7 +1659,7 @@ def test_production_readiness_rejects_on_disk_mock_embedding_manifest(
     write_json(
         vector_index_dir / "manifest.json",
         {
-            "schema_version": "nslab.local_vector_index.v1",
+            "schema_version": "nslab.local_vector_index.v2",
             "embedding_method": "deterministic_hashing_v1",
             "brain_record_count": 2,
             "brain_record_hashes": {"BRAIN-1": "hash-1", "BRAIN-2": "hash-2"},
@@ -11436,7 +11436,7 @@ def _write_semantic_index_fixture(
     write_json(
         vector_index_dir / "manifest.json",
         {
-            "schema_version": "nslab.local_vector_index.v1",
+            "schema_version": "nslab.local_vector_index.v2",
             "embedding_method": embedding_method,
             "dimensions": 2,
             "record_count": len(record_ids),

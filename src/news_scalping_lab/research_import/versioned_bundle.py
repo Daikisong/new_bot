@@ -24,6 +24,7 @@ from news_scalping_lab.records.models import (
     NormalizedEpisodeIndex,
     ResearchBundleEnvelope,
 )
+from news_scalping_lab.records.preference import has_sealed_preference_pair
 from news_scalping_lab.records.reference_integrity import (
     known_reference_ids_from_blocks,
     payload_reference_audit,
@@ -120,37 +121,22 @@ class BaseBundleAdapter:
         source_ids = _source_ids(parsed)
         missing_source_refs = _missing_source_references(records, source_ids)
         payload_reference_result = payload_reference_audit(
-            [
-                (_record_identity(record, line_number), record)
-                for line_number, record in enumerate(records, start=1)
-            ],
+            [(_record_identity(record, line_number), record) for line_number, record in enumerate(records, start=1)],
             known_reference_ids_from_blocks(parsed.json_blocks, parsed.jsonl_blocks),
         )
         missing_payload_refs = payload_reference_result["missing_references"]
         invalid_available_from_fields = _invalid_bundle_available_from_fields(parsed)
         invalid_available_from_record_ids = _invalid_record_available_from_ids(records)
-        invalid_label_quality_record_ids = _invalid_outcome_label_quality_record_ids(
-            records
-        )
+        invalid_label_quality_record_ids = _invalid_outcome_label_quality_record_ids(records)
         invalid_typed_payload_record_ids = _invalid_typed_payload_record_ids(records)
-        invalid_edge_cutoff_record_ids = _invalid_event_ticker_edge_cutoff_record_ids(
-            records
+        invalid_edge_cutoff_record_ids = _invalid_event_ticker_edge_cutoff_record_ids(records)
+        invalid_edge_source_ledger_record_ids = _invalid_event_ticker_edge_source_ledger_cutoff_record_ids(
+            records,
+            parsed.jsonl_blocks.get("source_ledger.jsonl", []),
         )
-        invalid_edge_source_ledger_record_ids = (
-            _invalid_event_ticker_edge_source_ledger_cutoff_record_ids(
-                records,
-                parsed.jsonl_blocks.get("source_ledger.jsonl", []),
-            )
-        )
-        invalid_company_memory_known_at_ids = (
-            _invalid_company_memory_delta_known_at_record_ids(records)
-        )
-        backdated_company_memory_known_at_ids = (
-            _backdated_company_memory_delta_known_at_record_ids(records)
-        )
-        invalid_issuer_day_event_weight_ids = (
-            _invalid_issuer_day_event_level_weight_record_ids(records)
-        )
+        invalid_company_memory_known_at_ids = _invalid_company_memory_delta_known_at_record_ids(records)
+        backdated_company_memory_known_at_ids = _backdated_company_memory_delta_known_at_record_ids(records)
+        invalid_issuer_day_event_weight_ids = _invalid_issuer_day_event_level_weight_record_ids(records)
         sample_weight_validation = _record_sample_weight_validation(records)
         expected_record_count = _int_field(
             manifest,
@@ -166,9 +152,7 @@ class BaseBundleAdapter:
                 "training_eligible_record_count",
             ),
         )
-        actual_training_count = sum(
-            1 for record in records if record.get("training_eligible") is True
-        )
+        actual_training_count = sum(1 for record in records if record.get("training_eligible") is True)
         normalized_records = self.normalize_brain_records(parsed)
         import_loss_summary = _import_loss_summary(parsed, normalized_records)
         import_loss_audit_passed = _import_loss_audit_passed(import_loss_summary)
@@ -181,69 +165,38 @@ class BaseBundleAdapter:
             "training_eligible_record_count": actual_training_count,
             "expected_record_count": expected_record_count,
             "expected_training_eligible_record_count": expected_training_count,
-            "record_count_matches_manifest": (
-                expected_record_count is None or expected_record_count == len(records)
-            ),
+            "record_count_matches_manifest": (expected_record_count is None or expected_record_count == len(records)),
             "training_eligible_count_matches_manifest": (
-                expected_training_count is None
-                or expected_training_count == actual_training_count
+                expected_training_count is None or expected_training_count == actual_training_count
             ),
             "block_hashes": block_hashes,
             "hash_mismatches": hash_mismatches,
             "self_referential_hashes": hash_validation.self_referential,
             "hash_expectation_sources": hash_validation.expectation_sources,
             "hash_expectation_conflicts": hash_validation.expectation_conflicts,
-            "source_reference_count": sum(
-                len(_string_list(record.get("provenance_source_ids")))
-                for record in records
-            ),
+            "source_reference_count": sum(len(_string_list(record.get("provenance_source_ids"))) for record in records),
             "missing_source_references": missing_source_refs,
             "provenance_closure_status": "closed" if not missing_source_refs else "missing_refs",
             "payload_reference_count": payload_reference_result["reference_count"],
             "missing_payload_references": missing_payload_refs,
-            "payload_reference_closure_status": (
-                "closed" if not missing_payload_refs else "missing_refs"
-            ),
-            "available_from_valid": (
-                not invalid_available_from_fields
-                and not invalid_available_from_record_ids
-            ),
+            "payload_reference_closure_status": ("closed" if not missing_payload_refs else "missing_refs"),
+            "available_from_valid": (not invalid_available_from_fields and not invalid_available_from_record_ids),
             "invalid_available_from_fields": invalid_available_from_fields,
             "invalid_available_from_record_ids": invalid_available_from_record_ids,
             "outcome_label_quality_valid": not invalid_label_quality_record_ids,
             "invalid_outcome_label_quality_record_ids": invalid_label_quality_record_ids,
             "typed_payload_valid": not invalid_typed_payload_record_ids,
             "invalid_typed_payload_record_ids": invalid_typed_payload_record_ids,
-            "event_ticker_edge_cutoff_provenance_valid": (
-                not invalid_edge_cutoff_record_ids
-            ),
-            "invalid_event_ticker_edge_cutoff_provenance_record_ids": (
-                invalid_edge_cutoff_record_ids
-            ),
-            "event_ticker_edge_source_ledger_cutoff_valid": (
-                not invalid_edge_source_ledger_record_ids
-            ),
-            "invalid_event_ticker_edge_source_ledger_cutoff_record_ids": (
-                invalid_edge_source_ledger_record_ids
-            ),
-            "company_memory_delta_known_at_valid": (
-                not invalid_company_memory_known_at_ids
-            ),
-            "invalid_company_memory_delta_known_at_record_ids": (
-                invalid_company_memory_known_at_ids
-            ),
-            "company_memory_delta_known_at_not_backdated": (
-                not backdated_company_memory_known_at_ids
-            ),
-            "backdated_company_memory_delta_known_at_record_ids": (
-                backdated_company_memory_known_at_ids
-            ),
-            "issuer_day_event_level_weights_valid": (
-                not invalid_issuer_day_event_weight_ids
-            ),
-            "invalid_issuer_day_event_level_weight_record_ids": (
-                invalid_issuer_day_event_weight_ids
-            ),
+            "event_ticker_edge_cutoff_provenance_valid": (not invalid_edge_cutoff_record_ids),
+            "invalid_event_ticker_edge_cutoff_provenance_record_ids": (invalid_edge_cutoff_record_ids),
+            "event_ticker_edge_source_ledger_cutoff_valid": (not invalid_edge_source_ledger_record_ids),
+            "invalid_event_ticker_edge_source_ledger_cutoff_record_ids": (invalid_edge_source_ledger_record_ids),
+            "company_memory_delta_known_at_valid": (not invalid_company_memory_known_at_ids),
+            "invalid_company_memory_delta_known_at_record_ids": (invalid_company_memory_known_at_ids),
+            "company_memory_delta_known_at_not_backdated": (not backdated_company_memory_known_at_ids),
+            "backdated_company_memory_delta_known_at_record_ids": (backdated_company_memory_known_at_ids),
+            "issuer_day_event_level_weights_valid": (not invalid_issuer_day_event_weight_ids),
+            "invalid_issuer_day_event_level_weight_record_ids": (invalid_issuer_day_event_weight_ids),
             "sample_weight_validation": sample_weight_validation,
             "sample_weight_validation_status": sample_weight_validation["status"],
             "import_loss_audit_passed": import_loss_audit_passed,
@@ -300,9 +253,7 @@ class BaseBundleAdapter:
             raw_block_names=sorted(parsed.blocks),
             record_ids=[record.record_id for record in records],
             record_count_by_type=dict(Counter(record.record_type for record in records)),
-            training_eligible_record_count=sum(
-                1 for record in records if record.training_eligible
-            ),
+            training_eligible_record_count=sum(1 for record in records if record.training_eligible),
             source_ids=source_ids,
         )
 
@@ -354,10 +305,8 @@ class LegacyV1Adapter(BaseBundleAdapter):
     def supports(self, parsed: GenericParsedBundle) -> bool:
         return (
             bundle_schema_version(parsed) in {"nslab.bundle_manifest.v1", "nslab.research_bundle.v1"}
-            or _optional_string(_manifest(parsed).get("schema_version"))
-            == "nslab.bundle_manifest.v1"
-            or _optional_string(_episode(parsed).get("schema_version"))
-            == "nslab.research_episode.v1"
+            or _optional_string(_manifest(parsed).get("schema_version")) == "nslab.bundle_manifest.v1"
+            or _optional_string(_episode(parsed).get("schema_version")) == "nslab.research_episode.v1"
         )
 
 
@@ -451,21 +400,12 @@ class V23DirectIngestAdapter(BaseBundleAdapter):
                 "direct_ingest_contract_present": checks["contract_present"],
                 "direct_ingest_contract_supported": checks["supported"],
                 "direct_brain_ingest_ready": checks["direct_brain_ingest_ready"],
-                "automated_import_expected_to_pass": checks[
-                    "automated_import_expected_to_pass"
-                ],
-                "requires_human_semantic_review": checks[
-                    "requires_human_semantic_review"
-                ],
+                "automated_import_expected_to_pass": checks["automated_import_expected_to_pass"],
+                "requires_human_semantic_review": checks["requires_human_semantic_review"],
                 "direct_ingest_fatal_blocker_count": checks["fatal_blocker_count"],
-                "direct_ingest_record_count_hash_parity_ready": checks[
-                    "record_count_hash_parity_ready"
-                ],
-                "direct_ingest_schema_contract_verified": checks[
-                    "schema_contract_verified"
-                ],
-                "bundle_status_accept_full": manifest.get("bundle_status")
-                == "ACCEPT_FULL",
+                "direct_ingest_record_count_hash_parity_ready": checks["record_count_hash_parity_ready"],
+                "direct_ingest_schema_contract_verified": checks["schema_contract_verified"],
+                "bundle_status_accept_full": manifest.get("bundle_status") == "ACCEPT_FULL",
                 "brain_eligible": _optional_bool(manifest.get("brain_eligible")) is True,
                 "validator_exit_code_zero": _all_declared_int_values_zero(
                     _int_field(manifest, "validator_exit_code"),
@@ -560,9 +500,7 @@ class ForwardCompatibleRawOnlyAdapter(BaseBundleAdapter):
         ]
 
     def envelope(self, parsed: GenericParsedBundle) -> ResearchBundleEnvelope:
-        return super().envelope(parsed).model_copy(
-            update={"import_status": "forward_compatible_raw_only"}
-        )
+        return super().envelope(parsed).model_copy(update={"import_status": "forward_compatible_raw_only"})
 
 
 ADAPTERS: tuple[BundleVersionAdapter, ...] = (
@@ -575,7 +513,7 @@ FORWARD_COMPATIBLE_RAW_ONLY_ADAPTER = ForwardCompatibleRawOnlyAdapter()
 
 
 def parse_generic_bundle(path: Path) -> GenericParsedBundle:
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = path.read_text(encoding="utf-8-sig", errors="strict")
     front_matter = _extract_front_matter(text)
     blocks = _extract_blocks(text)
     payload_blocks: dict[str, str] = {}
@@ -585,7 +523,17 @@ def parse_generic_bundle(path: Path) -> GenericParsedBundle:
         payload = _strip_optional_fence(block)
         payload_blocks[name] = payload
         if name.endswith(".json"):
-            json_blocks[name] = _parse_json(name, payload)
+            try:
+                json_blocks[name] = _parse_json(name, payload)
+            except VersionedBundleImportError as json_error:
+                # Legacy sessions occasionally label a line-delimited object
+                # stream with a ``.json`` filename. Accept it only when the
+                # complete payload parses as JSONL; a genuinely malformed
+                # object still raises the original JSON error.
+                try:
+                    jsonl_blocks[name] = _parse_jsonl(name, payload)
+                except VersionedBundleImportError:
+                    raise json_error from None
         elif name.endswith(".jsonl"):
             jsonl_blocks[name] = _parse_jsonl(name, payload)
     return GenericParsedBundle(
@@ -608,11 +556,7 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
         else None
     )
     effective_adapter = adapter or raw_only_adapter
-    records = (
-        effective_adapter.normalize_brain_records(parsed)
-        if effective_adapter is not None
-        else []
-    )
+    records = effective_adapter.normalize_brain_records(parsed) if effective_adapter is not None else []
     validation = effective_adapter.validate(parsed) if effective_adapter is not None else {}
     raw_record_count = len(parsed.jsonl_blocks.get("brain_delta.jsonl", []))
     normalized_record_count = len(records)
@@ -630,28 +574,18 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
     missing_source_refs = validation.get("missing_source_references")
     missing_payload_refs = validation.get("missing_payload_references")
     invalid_available_from_record_ids = validation.get("invalid_available_from_record_ids")
-    invalid_label_quality_record_ids = validation.get(
-        "invalid_outcome_label_quality_record_ids"
-    )
+    invalid_label_quality_record_ids = validation.get("invalid_outcome_label_quality_record_ids")
     invalid_typed_payload_record_ids = validation.get("invalid_typed_payload_record_ids")
     direct_ingest_contract = _direct_ingest_contract(parsed)
     direct_ingest_hard_gates = (
-        direct_ingest_contract.get("hard_gate_summary")
-        if isinstance(direct_ingest_contract, dict)
-        else None
+        direct_ingest_contract.get("hard_gate_summary") if isinstance(direct_ingest_contract, dict) else None
     )
     direct_ingest_fatal_blockers = (
-        direct_ingest_contract.get("fatal_blockers")
-        if isinstance(direct_ingest_contract, dict)
-        else None
+        direct_ingest_contract.get("fatal_blockers") if isinstance(direct_ingest_contract, dict) else None
     )
     final_semantic_audit_rows = parsed.jsonl_blocks.get("final_semantic_audit.jsonl")
     final_semantic_fail_count = (
-        sum(
-            1
-            for row in final_semantic_audit_rows
-            if not _semantic_audit_row_passed(row)
-        )
+        sum(1 for row in final_semantic_audit_rows if not _semantic_audit_row_passed(row))
         if final_semantic_audit_rows is not None
         else None
     )
@@ -670,53 +604,33 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
         "blocks": sorted(parsed.blocks),
         "record_count": len(records),
         **record_count_payload,
-        "training_eligible_record_count": sum(
-            1 for record in records if record.training_eligible
-        ),
+        "training_eligible_record_count": sum(1 for record in records if record.training_eligible),
         **import_loss_summary,
         "quarantined_record_count": 0,
-        "record_counts_by_type": dict(
-            sorted(Counter(record.record_type for record in records).items())
-        ),
+        "record_counts_by_type": dict(sorted(Counter(record.record_type for record in records).items())),
         "validation_passed": validation.get("passed") is True,
         "import_loss_audit_passed": validation.get("import_loss_audit_passed"),
         "record_count_matches_manifest": validation.get("record_count_matches_manifest"),
-        "training_eligible_count_matches_manifest": validation.get(
-            "training_eligible_count_matches_manifest"
-        ),
+        "training_eligible_count_matches_manifest": validation.get("training_eligible_count_matches_manifest"),
         "hash_mismatch_count": len(hash_mismatches) if isinstance(hash_mismatches, dict) else 0,
-        "hash_expectation_conflict_count": (
-            len(hash_conflicts) if isinstance(hash_conflicts, dict) else 0
-        ),
-        "missing_source_reference_count": (
-            len(missing_source_refs) if isinstance(missing_source_refs, list) else 0
-        ),
-        "missing_payload_reference_count": (
-            len(missing_payload_refs) if isinstance(missing_payload_refs, list) else 0
-        ),
+        "hash_expectation_conflict_count": (len(hash_conflicts) if isinstance(hash_conflicts, dict) else 0),
+        "missing_source_reference_count": (len(missing_source_refs) if isinstance(missing_source_refs, list) else 0),
+        "missing_payload_reference_count": (len(missing_payload_refs) if isinstance(missing_payload_refs, list) else 0),
         "available_from_valid": validation.get("available_from_valid"),
         "invalid_available_from_record_count": (
-            len(invalid_available_from_record_ids)
-            if isinstance(invalid_available_from_record_ids, list)
-            else 0
+            len(invalid_available_from_record_ids) if isinstance(invalid_available_from_record_ids, list) else 0
         ),
         "outcome_label_quality_valid": validation.get("outcome_label_quality_valid"),
         "invalid_outcome_label_quality_record_count": (
-            len(invalid_label_quality_record_ids)
-            if isinstance(invalid_label_quality_record_ids, list)
-            else 0
+            len(invalid_label_quality_record_ids) if isinstance(invalid_label_quality_record_ids, list) else 0
         ),
         "typed_payload_valid": validation.get("typed_payload_valid"),
         "invalid_typed_payload_record_count": (
-            len(invalid_typed_payload_record_ids)
-            if isinstance(invalid_typed_payload_record_ids, list)
-            else 0
+            len(invalid_typed_payload_record_ids) if isinstance(invalid_typed_payload_record_ids, list) else 0
         ),
         "direct_ingest_contract_present": isinstance(direct_ingest_contract, dict),
         "direct_ingest_contract_schema_version": (
-            direct_ingest_contract.get("schema_version")
-            if isinstance(direct_ingest_contract, dict)
-            else None
+            direct_ingest_contract.get("schema_version") if isinstance(direct_ingest_contract, dict) else None
         ),
         "direct_brain_ingest_ready": (
             direct_ingest_contract.get("direct_brain_ingest_ready")
@@ -724,9 +638,7 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
             else None
         ),
         "brain_eligible": (
-            direct_ingest_contract.get("brain_eligible")
-            if isinstance(direct_ingest_contract, dict)
-            else None
+            direct_ingest_contract.get("brain_eligible") if isinstance(direct_ingest_contract, dict) else None
         ),
         "requires_human_semantic_review": (
             direct_ingest_contract.get("requires_human_semantic_review")
@@ -734,21 +646,15 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
             else None
         ),
         "direct_ingest_fatal_blocker_count": (
-            len(direct_ingest_fatal_blockers)
-            if isinstance(direct_ingest_fatal_blockers, list)
-            else None
+            len(direct_ingest_fatal_blockers) if isinstance(direct_ingest_fatal_blockers, list) else None
         ),
         "direct_ingest_contract_validation_parity_verified": (
-            direct_ingest_hard_gates.get(
-                "direct_ingest_contract_validation_parity_verified"
-            )
+            direct_ingest_hard_gates.get("direct_ingest_contract_validation_parity_verified")
             if isinstance(direct_ingest_hard_gates, dict)
             else None
         ),
         "direct_ingest_contract_count_hash_parity_verified": (
-            direct_ingest_hard_gates.get(
-                "direct_ingest_contract_count_hash_parity_verified"
-            )
+            direct_ingest_hard_gates.get("direct_ingest_contract_count_hash_parity_verified")
             if isinstance(direct_ingest_hard_gates, dict)
             else None
         ),
@@ -774,9 +680,7 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
         ),
         "final_semantic_audit_present": final_semantic_audit_rows is not None,
         "final_semantic_audit_count": (
-            len(final_semantic_audit_rows)
-            if final_semantic_audit_rows is not None
-            else None
+            len(final_semantic_audit_rows) if final_semantic_audit_rows is not None else None
         ),
         "final_semantic_audit_fail_count": final_semantic_fail_count,
         "inspection_status": (
@@ -785,14 +689,58 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
             else (
                 "forward_compatible_raw_only"
                 if raw_only_adapter is not None
-                else (
-                    "validation_passed"
-                    if validation.get("passed") is True
-                    else "validation_failed"
-                )
+                else ("validation_passed" if validation.get("passed") is True else "validation_failed")
             )
         ),
         "validation": validation,
+    }
+
+
+def _load_external_quality_gate(
+    path: Path | None,
+    *,
+    repaired_sha256: str,
+) -> dict[str, Any]:
+    if path is None:
+        raise VersionedBundleImportError("accepted import requires --quality-gate for this repaired bundle")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise VersionedBundleImportError(f"external quality gate is unreadable: {path}") from exc
+    if not isinstance(payload, dict):
+        raise VersionedBundleImportError("external quality gate must be a JSON object")
+    schema_version = payload.get("schema_version")
+    if schema_version not in {
+        "nslab.repair_gate.v1",
+        "nslab.repair_reviewed_verdict_cache.v1",
+    }:
+        raise VersionedBundleImportError("external quality gate must be a repair quality gate artifact")
+    gate_value = payload if schema_version == "nslab.repair_gate.v1" else payload.get("quality_gate")
+    if not isinstance(gate_value, dict):
+        raise VersionedBundleImportError("external quality gate payload is missing")
+    wrapper_repaired_sha256 = payload.get("repaired_sha256")
+    if wrapper_repaired_sha256 not in {None, repaired_sha256}:
+        raise VersionedBundleImportError("external quality gate wrapper SHA256 mismatch")
+    checks = {
+        "passed": gate_value.get("passed") is True,
+        "ready_for_import_pass": (
+            gate_value.get("ready_for_import_pass") is True
+            or gate_value.get("current_gold_pass") is True
+        ),
+        "final_status": gate_value.get("final_status") in {"REPAIRED_PASS", "ADAPTER_PATCHED_PASS"},
+        "repaired_sha256": gate_value.get("repaired_sha256") == repaired_sha256,
+    }
+    failed = sorted(field for field, passed in checks.items() if not passed)
+    if failed:
+        raise VersionedBundleImportError(
+            "external quality gate does not authorize accepted import: " + ", ".join(failed)
+        )
+    return {
+        "status": "VERIFIED",
+        "quality_gate_path": str(path.resolve()),
+        "quality_gate_sha256": file_sha256(path),
+        "repaired_sha256": repaired_sha256,
+        "production_acceptance_allowed": True,
     }
 
 
@@ -802,15 +750,28 @@ def import_versioned_bundle(
     root: Path,
     validate: bool = True,
     accepted: bool = True,
+    external_quality_gate_path: Path | None = None,
+    allow_external_quality_pending_for_isolated_validation: bool = False,
 ) -> BundleImportResult:
     parsed = parse_generic_bundle(path)
     adapter = select_adapter(parsed)
     source_hash = file_sha256(path)
+    external_quality_gate_required = _optional_bool(_field(parsed, "external_quality_gate_required")) is True
+    external_quality_gate: dict[str, Any] | None = None
+    if accepted and external_quality_gate_required:
+        if allow_external_quality_pending_for_isolated_validation:
+            external_quality_gate = {
+                "status": "BYPASSED_FOR_ISOLATED_VALIDATION",
+                "production_acceptance_allowed": False,
+            }
+        else:
+            external_quality_gate = _load_external_quality_gate(
+                external_quality_gate_path,
+                repaired_sha256=source_hash,
+            )
     if adapter is None:
         raw_only_adapter = (
-            FORWARD_COMPATIBLE_RAW_ONLY_ADAPTER
-            if FORWARD_COMPATIBLE_RAW_ONLY_ADAPTER.supports(parsed)
-            else None
+            FORWARD_COMPATIBLE_RAW_ONLY_ADAPTER if FORWARD_COMPATIBLE_RAW_ONLY_ADAPTER.supports(parsed) else None
         )
         if raw_only_adapter is not None:
             validation = raw_only_adapter.validate(parsed)
@@ -848,9 +809,7 @@ def import_versioned_bundle(
                 "accepted": False,
                 "acceptance_status": "staged",
                 **_record_count_parity_payload(
-                    raw_record_count=len(
-                        parsed.jsonl_blocks.get("brain_delta.jsonl", [])
-                    ),
+                    raw_record_count=len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
                     normalized_record_count=raw_only_stored.record_count,
                 ),
                 "training_eligible_record_count": raw_only_stored.training_eligible_record_count,
@@ -861,9 +820,7 @@ def import_versioned_bundle(
                     _import_loss_audit_passed(import_loss_summary),
                 ),
                 "quarantined_record_count": 0,
-                "record_counts_by_type": dict(
-                    sorted(Counter(record.record_type for record in records).items())
-                ),
+                "record_counts_by_type": dict(sorted(Counter(record.record_type for record in records).items())),
                 "validation": validation,
             }
             write_diagnostic_report(root, "bundle_import_report", diagnostics_payload)
@@ -892,9 +849,7 @@ def import_versioned_bundle(
             metadata={
                 "bundle_schema_version": bundle_schema_version(parsed),
                 "manifest_schema_version": _optional_string(_manifest(parsed).get("schema_version")),
-                "quarantined_raw_record_count": len(
-                    parsed.jsonl_blocks.get("brain_delta.jsonl", [])
-                ),
+                "quarantined_raw_record_count": len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
                 "quarantined_normalized_record_count": 0,
                 "normalization_skipped_reason": "UNSUPPORTED_BUNDLE_VERSION",
             },
@@ -941,8 +896,7 @@ def import_versioned_bundle(
         )
         raise VersionedBundleImportError(
             "bundle validation failed; "
-            f"quarantined at {quarantine.as_posix()}: "
-            + json.dumps(validation, ensure_ascii=False, sort_keys=True)
+            f"quarantined at {quarantine.as_posix()}: " + json.dumps(validation, ensure_ascii=False, sort_keys=True)
         )
     import_loss_summary = _import_loss_summary(parsed, records)
     try:
@@ -988,10 +942,9 @@ def import_versioned_bundle(
             _import_loss_audit_passed(import_loss_summary),
         ),
         "quarantined_record_count": 0,
-        "record_counts_by_type": dict(
-            sorted(Counter(record.record_type for record in records).items())
-        ),
+        "record_counts_by_type": dict(sorted(Counter(record.record_type for record in records).items())),
         "validation": validation,
+        "external_quality_gate": external_quality_gate,
     }
     write_diagnostic_report(root, "bundle_import_report", diagnostics_payload)
     return BundleImportResult(
@@ -1034,14 +987,10 @@ def _write_store_conflict_report(
             "accepted": accepted,
             "acceptance_status": acceptance_status,
             **_record_count_parity_payload(
-                raw_record_count=len(
-                    parsed.jsonl_blocks.get("brain_delta.jsonl", [])
-                ),
+                raw_record_count=len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
                 normalized_record_count=len(records),
             ),
-            "training_eligible_record_count": sum(
-                1 for record in records if record.training_eligible
-            ),
+            "training_eligible_record_count": sum(1 for record in records if record.training_eligible),
             **import_loss_summary,
             "import_loss_audit_passed": validation.get(
                 "import_loss_audit_passed",
@@ -1051,9 +1000,7 @@ def _write_store_conflict_report(
             "quarantine": conflict.quarantine.as_posix(),
             "conflict_reason": conflict.reason,
             "conflict_message": str(conflict),
-            "record_counts_by_type": dict(
-                sorted(Counter(record.record_type for record in records).items())
-            ),
+            "record_counts_by_type": dict(sorted(Counter(record.record_type for record in records).items())),
             "validation": validation,
         },
     )
@@ -1078,9 +1025,7 @@ def _quarantine_validation_failure(
         metadata={
             "adapter": adapter_name,
             "bundle_schema_version": bundle_schema_version(parsed),
-            "quarantined_raw_record_count": len(
-                parsed.jsonl_blocks.get("brain_delta.jsonl", [])
-            ),
+            "quarantined_raw_record_count": len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
             "quarantined_normalized_record_count": len(records),
             "validation": validation,
         },
@@ -1095,14 +1040,10 @@ def _quarantine_validation_failure(
             "episode_id": episode_id,
             "raw_bundle_sha256": source_hash,
             **_record_count_parity_payload(
-                raw_record_count=len(
-                    parsed.jsonl_blocks.get("brain_delta.jsonl", [])
-                ),
+                raw_record_count=len(parsed.jsonl_blocks.get("brain_delta.jsonl", [])),
                 normalized_record_count=len(records),
             ),
-            "training_eligible_record_count": sum(
-                1 for record in records if record.training_eligible
-            ),
+            "training_eligible_record_count": sum(1 for record in records if record.training_eligible),
             **_import_loss_summary(parsed, records),
             "import_loss_audit_passed": validation.get("import_loss_audit_passed"),
             "quarantined_record_count": 1,
@@ -1134,30 +1075,18 @@ def _import_loss_summary(
     records: list[BrainRecordEnvelope],
 ) -> dict[str, Any]:
     raw_records = parsed.jsonl_blocks.get("brain_delta.jsonl", [])
-    raw_record_ids = [
-        _record_identity(record, line_number)
-        for line_number, record in enumerate(raw_records, start=1)
-    ]
+    raw_record_ids = [_record_identity(record, line_number) for line_number, record in enumerate(raw_records, start=1)]
     normalized_record_ids = [record.record_id for record in records]
-    raw_explicit_record_ids = [
-        record_id for record_id in raw_record_ids if not record_id.startswith("line:")
-    ]
+    raw_explicit_record_ids = [record_id for record_id in raw_record_ids if not record_id.startswith("line:")]
     raw_id_set_comparable = len(raw_explicit_record_ids) == len(raw_record_ids)
     missing_normalized_record_ids = sorted(set(raw_explicit_record_ids) - set(normalized_record_ids))
     extra_normalized_record_ids = sorted(set(normalized_record_ids) - set(raw_explicit_record_ids))
     raw_counts_by_type = dict(
-        sorted(
-            Counter(str(record.get("record_type") or "unknown") for record in raw_records).items()
-        )
+        sorted(Counter(str(record.get("record_type") or "unknown") for record in raw_records).items())
     )
-    normalized_counts_by_type = dict(
-        sorted(Counter(record.record_type for record in records).items())
-    )
+    normalized_counts_by_type = dict(sorted(Counter(record.record_type for record in records).items()))
     raw_training_eligible_count = _effective_raw_training_eligible_count(raw_records)
-    raw_hashes = [
-        sha256_text(json.dumps(record, ensure_ascii=False, sort_keys=True))
-        for record in raw_records
-    ]
+    raw_hashes = [sha256_text(json.dumps(record, ensure_ascii=False, sort_keys=True)) for record in raw_records]
     raw_payload_hash_mismatch_record_ids = [
         record.record_id
         for record, expected_hash in zip(records, raw_hashes, strict=False)
@@ -1169,9 +1098,7 @@ def _import_loss_summary(
         "raw_record_without_id_count": len(raw_record_ids) - len(raw_explicit_record_ids),
         "record_id_set_comparable": raw_id_set_comparable,
         "record_id_set_matches_raw": (
-            not missing_normalized_record_ids and not extra_normalized_record_ids
-            if raw_id_set_comparable
-            else None
+            not missing_normalized_record_ids and not extra_normalized_record_ids if raw_id_set_comparable else None
         ),
         "missing_normalized_record_ids": missing_normalized_record_ids,
         "missing_normalized_record_count": len(missing_normalized_record_ids),
@@ -1182,8 +1109,7 @@ def _import_loss_summary(
         "raw_training_eligible_record_count": raw_training_eligible_count,
         "training_eligible_count_matches_raw": raw_training_eligible_count
         == sum(1 for record in records if record.training_eligible),
-        "raw_payload_hashes_match": not raw_payload_hash_mismatch_record_ids
-        and len(raw_hashes) == len(records),
+        "raw_payload_hashes_match": not raw_payload_hash_mismatch_record_ids and len(raw_hashes) == len(records),
         "raw_payload_hash_mismatch_record_ids": raw_payload_hash_mismatch_record_ids,
     }
 
@@ -1217,9 +1143,7 @@ def _record_count_parity_payload(
     return {
         "raw_record_count": raw_record_count,
         "normalized_record_count": normalized_record_count,
-        "raw_normalized_record_count_matches": (
-            raw_record_count == normalized_record_count
-        ),
+        "raw_normalized_record_count_matches": (raw_record_count == normalized_record_count),
         "dropped_record_count": max(0, raw_record_count - normalized_record_count),
         "quarantined_bundle_count": 0,
         "quarantined_raw_record_count": 0,
@@ -1287,9 +1211,7 @@ def _record_envelope(
 ) -> BrainRecordEnvelope:
     record_type = str(payload.get("record_type") or "unknown")
     payload_model = KNOWN_RECORD_PAYLOAD_MODELS.get(record_type)
-    typed_payload_status = (
-        "KNOWN_TYPED_PAYLOAD" if payload_model is not None else "UNKNOWN_TYPED_PAYLOAD"
-    )
+    typed_payload_status = "KNOWN_TYPED_PAYLOAD" if payload_model is not None else "UNKNOWN_TYPED_PAYLOAD"
     normalized_payload = dict(payload)
     training_eligible = bool(payload.get("training_eligible") is True)
     eligibility_reason = _optional_string(payload.get("eligibility_reason"))
@@ -1300,17 +1222,15 @@ def _record_envelope(
             typed_payload_status = "UNKNOWN_TYPED_PAYLOAD"
             training_eligible = False
             eligibility_reason = (
-                (eligibility_reason + "; " if eligibility_reason else "")
-                + "known record_type payload failed typed validation; preserved as raw payload"
-            )
+                eligibility_reason + "; " if eligibility_reason else ""
+            ) + "known record_type payload failed typed validation; preserved as raw payload"
             normalized_payload["training_eligible"] = False
             normalized_payload["eligibility_reason"] = eligibility_reason
     else:
         training_eligible = False
         eligibility_reason = (
-            (eligibility_reason + "; " if eligibility_reason else "")
-            + "unknown record_type preserved as raw payload"
-        )
+            eligibility_reason + "; " if eligibility_reason else ""
+        ) + "unknown record_type preserved as raw payload"
         normalized_payload["training_eligible"] = False
         normalized_payload["eligibility_reason"] = eligibility_reason
     if (
@@ -1320,15 +1240,12 @@ def _record_envelope(
     ):
         training_eligible = False
         eligibility_reason = (
-            (eligibility_reason + "; " if eligibility_reason else "")
-            + "sealed_preference_pair_missing"
-        )
+            eligibility_reason + "; " if eligibility_reason else ""
+        ) + "sealed_preference_pair_missing"
         normalized_payload["training_eligible"] = False
         normalized_payload["eligibility_reason"] = eligibility_reason
     raw_payload_source = payload if raw_payload is None else raw_payload
-    raw_payload_sha = sha256_text(
-        json.dumps(raw_payload_source, ensure_ascii=False, sort_keys=True)
-    )
+    raw_payload_sha = sha256_text(json.dumps(raw_payload_source, ensure_ascii=False, sort_keys=True))
     normalized_payload_sha = sha256_text(canonical_json(normalized_payload))
     record_id = _record_id(payload, episode_id, record_type, normalized_payload_sha)
     return BrainRecordEnvelope(
@@ -1336,8 +1253,7 @@ def _record_envelope(
         record_type=record_type,
         episode_id=_optional_string(payload.get("episode_id")) or episode_id,
         trade_date=_optional_date(payload.get("trade_date")) or trade_date,
-        available_from=_optional_datetime(payload.get("available_from"))
-        or default_available_from,
+        available_from=_optional_datetime(payload.get("available_from")) or default_available_from,
         training_target=_optional_string(payload.get("training_target")),
         evidence_phase=_evidence_phase(record_type, payload),
         training_eligible=training_eligible,
@@ -1354,18 +1270,7 @@ def _record_envelope(
 
 
 def _payload_has_sealed_preference_pair(payload: dict[str, Any]) -> bool:
-    preferred = payload.get("blind_preferred_ticker") or payload.get(
-        "blind_preferred_candidate_id"
-    )
-    rejected = payload.get("blind_rejected_ticker") or payload.get(
-        "blind_rejected_candidate_id"
-    )
-    return (
-        isinstance(preferred, str)
-        and bool(preferred)
-        and isinstance(rejected, str)
-        and bool(rejected)
-    )
+    return has_sealed_preference_pair(payload)
 
 
 def _raw_only_record_envelope(
@@ -1381,9 +1286,8 @@ def _raw_only_record_envelope(
     normalized_payload["training_eligible"] = False
     eligibility_reason = _optional_string(payload.get("eligibility_reason"))
     eligibility_reason = (
-        (eligibility_reason + "; " if eligibility_reason else "")
-        + "unsupported bundle version preserved as forward-compatible raw-only record"
-    )
+        eligibility_reason + "; " if eligibility_reason else ""
+    ) + "unsupported bundle version preserved as forward-compatible raw-only record"
     normalized_payload["eligibility_reason"] = eligibility_reason
     raw_payload_sha = sha256_text(json.dumps(payload, ensure_ascii=False, sort_keys=True))
     normalized_payload_sha = sha256_text(canonical_json(normalized_payload))
@@ -1392,8 +1296,7 @@ def _raw_only_record_envelope(
         record_type=record_type,
         episode_id=_optional_string(payload.get("episode_id")) or episode_id,
         trade_date=_optional_date(payload.get("trade_date")) or trade_date,
-        available_from=_optional_datetime(payload.get("available_from"))
-        or default_available_from,
+        available_from=_optional_datetime(payload.get("available_from")) or default_available_from,
         training_target=_optional_string(payload.get("training_target")),
         evidence_phase=_evidence_phase(record_type, payload),
         training_eligible=False,
@@ -1461,19 +1364,9 @@ def _v23_direct_ingest_contract_checks(parsed: GenericParsedBundle) -> dict[str,
         raw_fatal_blockers = contract.get("fatal_blockers")
         if isinstance(raw_fatal_blockers, list):
             fatal_blockers = raw_fatal_blockers
-    direct_ready = (
-        isinstance(contract, dict)
-        and contract.get("direct_brain_ingest_ready") is True
-    )
-    automated_ready = (
-        isinstance(contract, dict)
-        and contract.get("automated_import_expected_to_pass") is True
-    )
-    human_review = (
-        contract.get("requires_human_semantic_review")
-        if isinstance(contract, dict)
-        else None
-    )
+    direct_ready = isinstance(contract, dict) and contract.get("direct_brain_ingest_ready") is True
+    automated_ready = isinstance(contract, dict) and contract.get("automated_import_expected_to_pass") is True
+    human_review = contract.get("requires_human_semantic_review") if isinstance(contract, dict) else None
     record_count_hash_ready = hard_gate_summary.get("record_count_hash_parity_ready") is True
     schema_contract_verified = hard_gate_summary.get("schema_contract_verified") is True
     supported = (
@@ -1498,20 +1391,51 @@ def _v23_direct_ingest_contract_checks(parsed: GenericParsedBundle) -> dict[str,
 
 
 def _semantic_audit_row_passed(row: dict[str, Any]) -> bool:
-    for field_name in ("semantic_verdict", "semantic_audit_status", "status"):
+    fail_reasons = _string_list(row.get("fail_reasons"))
+    legacy_gate_passed = (
+        row.get("semantic_gate_passed") is True
+        and row.get("issuer_binding_status") == "BOUND_EXACT"
+        and (
+            row.get("economic_mechanism_supported") is True
+            or row.get("economic_mechanism_supported_verified") is True
+        )
+        and row.get("cross_issuer_leak_detected") is False
+    )
+    if legacy_gate_passed:
+        return not fail_reasons and row.get("semantic_false_positive") is not True
+    semantic_passed = row.get("semantic_passed")
+    if semantic_passed is True:
+        return not fail_reasons and row.get("semantic_false_positive") is not True
+    if semantic_passed is False:
+        return False
+    final_semantic_pass = row.get("final_semantic_pass")
+    if final_semantic_pass is True:
+        return not fail_reasons and row.get("semantic_false_positive") is not True
+    if final_semantic_pass is False:
+        return False
+    for field_name in (
+        "semantic_verdict",
+        "semantic_audit_status",
+        "semantic_status",
+        "semantic_binding_status",
+        "audit_status",
+        "audit_verdict",
+        "semantic_decision",
+        "decision",
+        "status",
+    ):
         value = row.get(field_name)
-        if isinstance(value, str) and value.upper() == "PASS":
-            return True
-    return False
+        if isinstance(value, str) and value.upper() in {"PASS", "PASSED"}:
+            return not fail_reasons and row.get("semantic_false_positive") is not True
+        if isinstance(value, str) and value.upper().startswith("PASS_WITH"):
+            return False
+    return (row.get("passed") is True or row.get("pass") is True) and not fail_reasons
 
 
 def _v23_normalized_payloads(parsed: GenericParsedBundle) -> list[dict[str, Any]]:
     raw_records = parsed.jsonl_blocks.get("brain_delta.jsonl", [])
     provenance = _v23_provenance_index(parsed)
-    normalized = [
-        _v23_normalized_payload(record, provenance=provenance)
-        for record in raw_records
-    ]
+    normalized = [_v23_normalized_payload(record, provenance=provenance) for record in raw_records]
     _apply_v23_fractional_sample_weights(normalized)
     return normalized
 
@@ -1524,8 +1448,7 @@ def _v23_normalized_payload(
     normalized = dict(record)
     nested = record.get("payload")
     nested_payload = dict(nested) if isinstance(nested, dict) else {}
-    for key, value in nested_payload.items():
-        normalized.setdefault(key, value)
+    _promote_nested_payload_fields(normalized, nested_payload)
     if nested_payload:
         normalized["payload"] = nested_payload
     _v23_apply_common_aliases(normalized, nested_payload)
@@ -1535,6 +1458,49 @@ def _v23_normalized_payload(
     normalized.setdefault("evidence_phase", _v23_evidence_phase(normalized))
     normalized.setdefault("status", "supported")
     return normalized
+
+
+def _promote_nested_payload_fields(
+    normalized: dict[str, Any],
+    nested_payload: dict[str, Any],
+) -> None:
+    # A few legacy writers serialized the same pre-cutoff feature mapping as
+    # a repeated list.  The nested payload is the lossless source boundary;
+    # the typed top-level field is only a convenience mirror and must remain a
+    # mapping.  Collapse only byte-equivalent mapping entries.  If entries
+    # differ, do not guess which observation wins and leave the mirror absent;
+    # the complete list remains available under ``payload`` for audit/use.
+    existing_features = normalized.get("safe_D1_features")
+    if isinstance(existing_features, list):
+        collapsed_features = _collapse_duplicate_mapping_list(existing_features)
+        if collapsed_features is not None:
+            normalized["safe_D1_features"] = collapsed_features
+        else:
+            normalized.pop("safe_D1_features", None)
+    for key, value in nested_payload.items():
+        if key == "safe_D1_features" and isinstance(value, list):
+            collapsed_features = _collapse_duplicate_mapping_list(value)
+            if collapsed_features is not None:
+                normalized.setdefault(key, collapsed_features)
+            continue
+        # Retrospective theme records may carry a ticker -> return mapping.
+        # The typed model's scalar field is only a convenience mirror; do not
+        # promote a mapping into it and make an otherwise lossless record fail
+        # validation.  The complete mapping remains under payload.
+        if key == "outcome_high_return_pct" and isinstance(value, (dict, list)):
+            continue
+        if value is not None:
+            normalized.setdefault(key, value)
+
+
+def _collapse_duplicate_mapping_list(value: list[Any]) -> dict[str, Any] | None:
+    mappings = [item for item in value if isinstance(item, dict)]
+    if not mappings or len(mappings) != len(value):
+        return None
+    first = canonical_json(mappings[0])
+    if any(canonical_json(item) != first for item in mappings[1:]):
+        return None
+    return dict(mappings[0])
 
 
 def _v23_apply_common_aliases(
@@ -1573,9 +1539,7 @@ def _v23_apply_common_aliases(
 
 def _v23_apply_record_type_aliases(normalized: dict[str, Any]) -> None:
     record_type = _optional_string(normalized.get("record_type")) or "unknown"
-    record_id = _optional_string(normalized.get("brain_delta_id")) or _optional_string(
-        normalized.get("record_id")
-    )
+    record_id = _optional_string(normalized.get("brain_delta_id")) or _optional_string(normalized.get("record_id"))
     ticker = _optional_string(normalized.get("ticker"))
     company_name = _optional_string(normalized.get("company_name"))
     issuer_day_group_id = _issuer_day_case_id(normalized)
@@ -1651,10 +1615,7 @@ def _apply_v23_fractional_sample_weights(records: list[dict[str, Any]]) -> None:
     for record_type in ("supervised_issuer_day_case", "supervised_direct_event_case"):
         groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
         for record in records:
-            if (
-                record.get("record_type") != record_type
-                or record.get("training_eligible") is not True
-            ):
+            if record.get("record_type") != record_type or record.get("training_eligible") is not True:
                 continue
             ticker = _optional_string(record.get("ticker"))
             trade_day = _optional_string(record.get("trade_date"))
@@ -1668,11 +1629,7 @@ def _apply_v23_fractional_sample_weights(records: list[dict[str, Any]]) -> None:
                 for record in group
                 if _numeric_weight(record.get("sample_weight")) > 0.0
             )
-            missing = [
-                record
-                for record in group
-                if _numeric_weight(record.get("sample_weight")) == 0.0
-            ]
+            missing = [record for record in group if _numeric_weight(record.get("sample_weight")) == 0.0]
             if missing:
                 fill_weight = max(0.0, 1.0 - explicit_total) / len(missing)
                 for record in missing:
@@ -1680,9 +1637,7 @@ def _apply_v23_fractional_sample_weights(records: list[dict[str, Any]]) -> None:
             for record in group:
                 record.setdefault("issuer_day_weight_group_id", group_id)
                 if record_type == "supervised_issuer_day_case":
-                    record["issuer_day_sample_weight_policy"] = (
-                        "fractional_issuer_day_group"
-                    )
+                    record["issuer_day_sample_weight_policy"] = "fractional_issuer_day_group"
                     record.setdefault(
                         "issuer_day_case_id",
                         _optional_string(record.get("brain_delta_id"))
@@ -1819,9 +1774,35 @@ def _has_blind_payload(record: dict[str, Any]) -> bool:
 def _extract_blocks(text: str) -> dict[str, str]:
     blocks: dict[str, str] = {}
     _extract_standard_nslab_blocks(text, blocks)
+    _extract_input_coverage_receipt_block(text, blocks)
     _extract_alternate_marker_blocks(text, blocks)
     _extract_heading_fenced_blocks(text, blocks)
     return blocks
+
+
+def _extract_input_coverage_receipt_block(
+    text: str,
+    blocks: dict[str, str],
+) -> None:
+    """Claim the legacy coverage receipt without inventing a research record.
+
+    Some sessions emit this machine-readable receipt with a semantic marker
+    instead of the ordinary ``NSLAB:BEGIN <name>`` wrapper.  It is an audit
+    artifact, so normalize only its wrapper and keep the JSON payload intact.
+    """
+
+    pattern = re.compile(
+        r"<!--\s*NSLAB:INPUT_COVERAGE_RECEIPT_BEGIN\s*-->"
+        r"(?P<payload>.*?)"
+        r"<!--\s*NSLAB:INPUT_COVERAGE_RECEIPT_END\s*-->",
+        re.DOTALL | re.IGNORECASE,
+    )
+    for match in pattern.finditer(text):
+        _store_alternate_block(
+            blocks,
+            name="input_coverage_receipt.json",
+            payload=match.group("payload").strip(),
+        )
 
 
 def _extract_standard_nslab_blocks(text: str, blocks: dict[str, str]) -> None:
@@ -1836,10 +1817,23 @@ def _extract_standard_nslab_blocks(text: str, blocks: dict[str, str]) -> None:
             end_marker = f"<!-- NSLAB:END {name} -->"
             index += 1
             content: list[str] = []
-            while index < len(lines) and lines[index].strip() != end_marker:
-                content.append(lines[index])
+            found_end = False
+            while index < len(lines):
+                line = lines[index]
+                stripped_line = line.strip()
+                if stripped_line == end_marker:
+                    found_end = True
+                    break
+                if end_marker in line:
+                    before_end, after_end = line.split(end_marker, 1)
+                    if not after_end.strip():
+                        if before_end.strip():
+                            content.append(before_end)
+                        found_end = True
+                        break
+                content.append(line)
                 index += 1
-            if index >= len(lines):
+            if not found_end:
                 raise VersionedBundleImportError(f"missing END marker for block: {name}")
             blocks[name] = "\n".join(content).strip()
         index += 1
@@ -1855,6 +1849,11 @@ def _extract_alternate_marker_blocks(text: str, blocks: dict[str, str]) -> None:
     # paths are therefore tolerant only at the wrapper level; the payload itself
     # must still be valid JSON/JSONL before it is exposed to import/repair.
     patterns = (
+        re.compile(
+            r"<!--\s*NSLAB_ARTIFACT_BEGIN\s+([^>]+?)\s*-->(.*?)"
+            r"<!--\s*NSLAB_ARTIFACT_END\s+\1\s*-->",
+            re.DOTALL,
+        ),
         re.compile(
             r"<!--\s*BEGIN_ARTIFACT\s+([^>]+?)\s*-->(.*?)"
             r"<!--\s*END_ARTIFACT\s+\1\s*-->",
@@ -1896,29 +1895,48 @@ def _extract_heading_fenced_blocks(text: str, blocks: dict[str, str]) -> None:
         if name is None:
             index += 1
             continue
-        fence_index = index + 1
-        while fence_index < len(lines) and not lines[fence_index].strip().startswith(
-            "```"
-        ):
-            fence_index += 1
-        if fence_index >= len(lines):
+        fence_index = _next_artifact_fence(lines, index + 1)
+        if fence_index is None:
             index += 1
             continue
+        opening = re.match(r"^(?P<fence>`{3,}|~{3,})", lines[fence_index].strip())
+        if opening is None:
+            index += 1
+            continue
+        fence = opening.group("fence")
         content: list[str] = []
         end_index = fence_index + 1
-        while end_index < len(lines) and lines[end_index].strip() != "```":
+        while end_index < len(lines) and _closing_fence_offset(
+            lines[end_index], fence
+        ) is None:
             content.append(lines[end_index])
             end_index += 1
         if end_index >= len(lines):
             index += 1
             continue
+        closing_offset = _closing_fence_offset(lines[end_index], fence)
+        if closing_offset is not None:
+            closing_prefix = lines[end_index].rstrip("\r\n")[:closing_offset]
+            if closing_prefix.strip():
+                content.append(closing_prefix)
         _store_alternate_block(blocks, name=name, payload="\n".join(content).strip())
         index = end_index + 1
 
 
+def _next_artifact_fence(lines: list[str], start: int) -> int | None:
+    for index in range(start, min(len(lines), start + 13)):
+        stripped = lines[index].strip()
+        if re.match(r"^(?:`{3,}|~{3,})", stripped):
+            return index
+        if index > start and stripped.startswith("#"):
+            return None
+    return None
+
+
 def _heading_artifact_name(stripped_heading: str) -> str | None:
     match = re.match(
-        r"^#{1,6}\s+(?:ARTIFACT:\s*)?`?([A-Za-z0-9_.\-/]+(?:\.jsonl|\.json|\.md))`?\s*$",
+        r"^#{1,6}\s+(?:(?:ARTIFACT|ARTIFACTS|ARTIFACT_PAYLOAD):\s*)?"
+        r"`?([A-Za-z0-9_.\-/]+(?:\.jsonl|\.json|\.md))`?\s*$",
         stripped_heading,
         re.IGNORECASE,
     )
@@ -1939,12 +1957,44 @@ def _store_alternate_block(
     name: str,
     payload: str,
 ) -> None:
-    if name in blocks or not _is_artifact_block_name(name):
+    if not _is_artifact_block_name(name):
         return
     payload = _strip_optional_fence(payload)
     if not _alternate_block_payload_is_parseable(name, payload):
         return
+    if name in blocks:
+        if _artifact_payloads_equivalent(name, blocks[name], payload):
+            return
+        raise VersionedBundleImportError(f"conflicting duplicate block: {name}")
     blocks[name] = payload
+
+
+def _artifact_payloads_equivalent(name: str, left: str, right: str) -> bool:
+    left = _strip_optional_fence(left).strip()
+    right = _strip_optional_fence(right).strip()
+    if name.endswith(".json"):
+        return bool(json.loads(left) == json.loads(right))
+    if name.endswith(".jsonl"):
+        return _parse_jsonl_payload(left) == _parse_jsonl_payload(right)
+    return left.strip().replace("\r\n", "\n") == right.strip().replace("\r\n", "\n")
+
+
+def _parse_jsonl_payload(payload: str) -> list[dict[str, Any]]:
+    stripped = payload.strip()
+    if stripped.startswith("["):
+        parsed = json.loads(stripped)
+        if not isinstance(parsed, list) or not all(isinstance(item, dict) for item in parsed):
+            raise VersionedBundleImportError("JSONL array payload must contain objects")
+        return parsed
+    rows: list[dict[str, Any]] = []
+    for line in payload.splitlines():
+        if not line.strip():
+            continue
+        parsed_line = json.loads(line)
+        if not isinstance(parsed_line, dict):
+            raise VersionedBundleImportError("JSONL payload lines must contain objects")
+        rows.append(parsed_line)
+    return rows
 
 
 def _is_artifact_block_name(name: str) -> bool:
@@ -1963,9 +2013,7 @@ def _alternate_block_payload_is_parseable(name: str, payload: str) -> bool:
             stripped = payload.strip()
             if stripped.startswith("["):
                 parsed_payload = json.loads(stripped)
-                return isinstance(parsed_payload, list) and all(
-                    isinstance(item, dict) for item in parsed_payload
-                )
+                return isinstance(parsed_payload, list) and all(isinstance(item, dict) for item in parsed_payload)
             for line in payload.splitlines():
                 if not line.strip():
                     continue
@@ -1985,7 +2033,11 @@ def _extract_front_matter(text: str) -> dict[str, str]:
     front_matter: dict[str, str] = {}
     for line in lines[1:]:
         stripped = line.strip()
-        if stripped == "---":
+        # YAML permits ``...`` as an explicit document end.  Some research
+        # bundles use it instead of repeating the opening ``---``; stop
+        # front-matter parsing there so body markers are not emitted as
+        # metadata during repair.
+        if stripped in {"---", "..."}:
             return front_matter
         if not stripped:
             continue
@@ -2004,9 +2056,39 @@ def _front_matter_scalar(value: str) -> str:
 
 def _strip_optional_fence(block: str) -> str:
     lines = block.strip().splitlines()
-    if len(lines) >= 2 and lines[0].strip().startswith("```") and lines[-1].strip() == "```":
-        return "\n".join(lines[1:-1]).strip()
+    if len(lines) >= 2:
+        opening = re.match(r"^(?P<fence>`{3,}|~{3,})(?:[^`]*)$", lines[0].strip())
+        if opening is not None:
+            fence = opening.group("fence")
+            closing_offset = _closing_fence_offset(lines[-1], fence)
+            if closing_offset is not None:
+                body = lines[1:-1]
+                closing_prefix = lines[-1][:closing_offset]
+                if closing_prefix.strip():
+                    body.append(closing_prefix)
+                return "\n".join(body).strip()
     return block.strip()
+
+
+def _closing_fence_offset(line: str, opening_fence: str) -> int | None:
+    """Return the byte-independent character offset of a closing fence.
+
+    Web renderers occasionally attach the closing fence to the last JSON line
+    (for example ``{"ok": true}```).  Treat only a trailing fence as closing;
+    arbitrary backticks inside the payload remain ordinary content.
+    """
+
+    raw = line.rstrip("\r\n")
+    stripped = raw.strip()
+    if len(stripped) >= len(opening_fence) and set(stripped) == {
+        opening_fence[0]
+    }:
+        return raw.find(opening_fence[0])
+    if not raw.rstrip().endswith(opening_fence):
+        return None
+    offset = raw.rfind(opening_fence)
+    prefix = raw[:offset]
+    return offset if prefix.strip() else None
 
 
 def _parse_json(name: str, payload: str) -> Any:
@@ -2028,24 +2110,41 @@ def _parse_jsonl(name: str, payload: str) -> list[dict[str, Any]]:
         rows_from_array: list[dict[str, Any]] = []
         for index, item in enumerate(parsed_payload, start=1):
             if not isinstance(item, dict):
-                raise VersionedBundleImportError(
-                    f"{name}:{index} JSONL array item must be a JSON object"
-                )
+                raise VersionedBundleImportError(f"{name}:{index} JSONL array item must be a JSON object")
             rows_from_array.append(item)
         return rows_from_array
     rows: list[dict[str, Any]] = []
+    pending_lines: list[str] = []
+    pending_start_line: int | None = None
     for line_number, line in enumerate(payload.splitlines(), start=1):
         if not line.strip():
             continue
-        try:
-            parsed = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise VersionedBundleImportError(
-                f"{name}:{line_number} is not valid JSONL: {exc}"
-            ) from exc
+        if pending_start_line is None:
+            pending_start_line = line_number
+        pending_lines.append(line)
+        raw_candidate = "\n".join(pending_lines)
+        parsed: Any = None
+        parsed_ok = False
+        for candidate in (raw_candidate, "\\n".join(pending_lines)):
+            try:
+                parsed = json.loads(candidate)
+            except json.JSONDecodeError:
+                continue
+            parsed_ok = True
+            break
+        if not parsed_ok:
+            continue
         if not isinstance(parsed, dict):
-            raise VersionedBundleImportError(f"{name}:{line_number} must be a JSON object")
+            raise VersionedBundleImportError(
+                f"{name}:{pending_start_line} must be a JSON object"
+            )
         rows.append(parsed)
+        pending_lines = []
+        pending_start_line = None
+    if pending_lines:
+        raise VersionedBundleImportError(
+            f"{name}:{pending_start_line} is not valid JSONL: incomplete object"
+        )
     return rows
 
 
@@ -2160,11 +2259,7 @@ def _int_field(*sources: object) -> int | None:
     index = 0
     while index < len(sources):
         source = sources[index]
-        if (
-            isinstance(source, dict)
-            and index + 1 < len(sources)
-            and isinstance(sources[index + 1], str)
-        ):
+        if isinstance(source, dict) and index + 1 < len(sources) and isinstance(sources[index + 1], str):
             value = source.get(sources[index + 1])
             if isinstance(value, int) and not isinstance(value, bool):
                 return value
@@ -2187,11 +2282,7 @@ def _int_field(*sources: object) -> int | None:
 
 
 def _all_declared_int_values_zero(*values: object) -> bool:
-    declared_values = [
-        int_value
-        for value in values
-        if (int_value := _int_field(value)) is not None
-    ]
+    declared_values = [int_value for value in values if (int_value := _int_field(value)) is not None]
     return bool(declared_values) and all(value == 0 for value in declared_values)
 
 
@@ -2255,10 +2346,7 @@ def _invalid_event_ticker_edge_source_ledger_cutoff_record_ids(
     rows_by_source_id = _source_ledger_rows_by_id(source_ledger_rows)
     invalid: list[str] = []
     for line_number, record in enumerate(records, start=1):
-        if (
-            record.get("record_type") != "event_ticker_edge"
-            or record.get("training_eligible") is not True
-        ):
+        if record.get("record_type") != "event_ticker_edge" or record.get("training_eligible") is not True:
             continue
         source_rows = [
             rows_by_source_id[source_id]
@@ -2296,12 +2384,7 @@ def _backdated_company_memory_delta_known_at_record_ids(
             continue
         known_at = _explicit_datetime(record.get("known_at"))
         available_from = _explicit_datetime(record.get("available_from"))
-        if (
-            known_at is None
-            or known_at.tzinfo is None
-            or available_from is None
-            or available_from.tzinfo is None
-        ):
+        if known_at is None or known_at.tzinfo is None or available_from is None or available_from.tzinfo is None:
             continue
         if as_kst(known_at) < as_kst(available_from):
             backdated.append(_record_identity(record, line_number))
@@ -2324,14 +2407,9 @@ def _invalid_issuer_day_event_level_weight_record_ids(
             invalid.append(_record_identity(record, line_number))
             continue
         numeric_weights = [
-            float(value)
-            for value in weights.values()
-            if isinstance(value, int | float) and not isinstance(value, bool)
+            float(value) for value in weights.values() if isinstance(value, int | float) and not isinstance(value, bool)
         ]
-        if (
-            len(numeric_weights) != len(weights)
-            or abs(sum(numeric_weights) - 1.0) > 0.000001
-        ):
+        if len(numeric_weights) != len(weights) or abs(sum(numeric_weights) - 1.0) > 0.000001:
             invalid.append(_record_identity(record, line_number))
     return invalid
 
@@ -2367,11 +2445,7 @@ def _record_sample_weight_validation(records: list[dict[str, Any]]) -> dict[str,
     direct_weight_mismatches = _weight_sum_mismatches(direct_weights)
     return {
         "status": "passed"
-        if (
-            not duplicate_issuer_day_keys
-            and not issuer_weight_mismatches
-            and not direct_weight_mismatches
-        )
+        if (not duplicate_issuer_day_keys and not issuer_weight_mismatches and not direct_weight_mismatches)
         else "failed",
         "duplicate_issuer_day_count": len(duplicate_issuer_day_keys),
         "duplicate_issuer_day_keys": duplicate_issuer_day_keys,
@@ -2381,11 +2455,7 @@ def _record_sample_weight_validation(records: list[dict[str, Any]]) -> dict[str,
 
 
 def _weight_sum_mismatches(weights: dict[str, float]) -> dict[str, float]:
-    return {
-        key: round(total, 12)
-        for key, total in sorted(weights.items())
-        if abs(total - 1.0) > 0.000001
-    }
+    return {key: round(total, 12) for key, total in sorted(weights.items()) if abs(total - 1.0) > 0.000001}
 
 
 def _numeric_weight(value: object) -> float:
@@ -2501,6 +2571,16 @@ def _invalid_outcome_label_quality_record_ids(
         values = _outcome_label_quality_values(record)
         if not values:
             continue
+        # Non-training records may carry an explanatory policy label rather
+        # than a price-label quality.  Their explicit zero-weight exclusion
+        # keeps that text out of supervised outcome validation.
+        if (
+            record.get("training_eligible") is not True
+            and record.get("sample_weight") == 0.0
+            and isinstance(record.get("training_exclusion_reason"), str)
+            and record.get("training_exclusion_reason")
+        ):
+            continue
         if all(value in VALID_OUTCOME_LABEL_QUALITIES for value in values):
             continue
         identity = _optional_string(record.get("record_id")) or f"line:{line_number}"
@@ -2537,10 +2617,7 @@ def _outcome_label_quality_values(record: dict[str, Any]) -> list[str]:
 
 
 def _block_hashes(parsed: GenericParsedBundle) -> dict[str, str]:
-    return {
-        name: sha256_text(payload)
-        for name, payload in sorted(parsed.payload_blocks.items())
-    }
+    return {name: sha256_text(payload) for name, payload in sorted(parsed.payload_blocks.items())}
 
 
 def _block_counts(parsed: GenericParsedBundle) -> dict[str, int]:
@@ -2620,9 +2697,7 @@ def _hash_validation(
             "expected": expected,
             "actual": actual_hashes.get(block_name, ""),
             "sources": [
-                source["source"]
-                for source in expectation_sources.get(block_name, [])
-                if source["expected"] == expected
+                source["source"] for source in expectation_sources.get(block_name, []) if source["expected"] == expected
             ],
         }
         for block_name, expected in sorted(expected_hashes.items())
