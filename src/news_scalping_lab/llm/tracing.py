@@ -485,7 +485,10 @@ class TracingLLMProvider:
         return checkpoint_id
 
     def _metadata_for(self, purpose: str) -> dict[str, Any]:
-        return {**self.default_metadata, **self.purpose_metadata.get(purpose, {})}
+        purpose_metadata = self.purpose_metadata.get(purpose)
+        if purpose_metadata is None and ".batch_" in purpose:
+            purpose_metadata = self.purpose_metadata.get(purpose.split(".batch_", 1)[0])
+        return {**self.default_metadata, **(purpose_metadata or {})}
 
 
 def _estimate_tokens(text: str) -> int:

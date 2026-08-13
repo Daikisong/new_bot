@@ -27,6 +27,12 @@ class Limits(BaseModel):
     max_concurrency: int = 4
     shard_episode_count: int = 20
     max_news_items_for_mock: int = 12
+    event_cluster_embedding_batch_size: int = 128
+    event_cluster_similarity_threshold: float = 0.90
+    event_cluster_max_semantic_variants: int = 32
+    open_world_max_prompt_chars: int = 120_000
+    open_world_cluster_batch_size: int = 12
+    novelty_cluster_batch_size: int = 12
     session_pack_token_budget: int = 60_000
     cluster_coverage_record_limit_per_query: int = 3
     cluster_coverage_record_limit_per_lane: int = 3
@@ -168,6 +174,12 @@ DEFAULT_CONFIG_FILES: dict[str, dict[str, Any]] = {
             "max_concurrency": 4,
             "shard_episode_count": 20,
             "max_news_items_for_mock": 12,
+            "event_cluster_embedding_batch_size": 128,
+            "event_cluster_similarity_threshold": 0.90,
+            "event_cluster_max_semantic_variants": 32,
+            "open_world_max_prompt_chars": 120_000,
+            "open_world_cluster_batch_size": 12,
+            "novelty_cluster_batch_size": 12,
             "session_pack_token_budget": 60_000,
             "cluster_coverage_record_limit_per_query": 3,
             "cluster_coverage_record_limit_per_lane": 3,

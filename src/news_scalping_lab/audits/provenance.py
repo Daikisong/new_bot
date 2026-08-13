@@ -16,6 +16,10 @@ from news_scalping_lab.context.final_synthesis import (
     final_synthesis_input_summary,
     final_synthesis_required_inputs_compatible,
 )
+from news_scalping_lab.contracts.memory_context import (
+    EventClusterManifest,
+    NewsCoverageManifest,
+)
 from news_scalping_lab.contracts.models import (
     ClaimStatus,
     CompanyMemory,
@@ -25,6 +29,10 @@ from news_scalping_lab.contracts.models import (
     PathType,
     RelationClass,
 )
+from news_scalping_lab.inference.analyzer import (
+    OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION,
+)
+from news_scalping_lab.inference.event_clustering import EVENT_CLUSTERING_VERSION
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.reporting.sections import inspect_preopen_report_sections
@@ -2268,7 +2276,12 @@ def _check_manifest_basics(
     if not isinstance(prompt_hashes, dict):
         findings.append(f"{prediction_path.name}: context manifest prompt_hashes is not an object")
         prompt_hashes = {}
-    _check_manifest_prompt_hash_duplicates(prediction_path, prompt_hashes, findings)
+    _check_manifest_prompt_hash_duplicates(
+        prediction_path,
+        prompt_hashes,
+        manifest.get("prompt_batch_hashes"),
+        findings,
+    )
     _check_current_manifest_required_contract(
         prediction_path,
         prediction,
@@ -2300,11 +2313,15 @@ def _check_manifest_basics(
 def _check_manifest_prompt_hash_duplicates(
     prediction_path: Path,
     prompt_hashes: dict[str, Any],
+    prompt_batch_hashes: object,
     findings: list[str],
 ) -> None:
     fields_by_hash: dict[str, list[str]] = {}
     for field, prompt_hash in prompt_hashes.items():
         if not isinstance(prompt_hash, str) or not prompt_hash:
+            continue
+        declared_batches = prompt_batch_hashes.get(field) if isinstance(prompt_batch_hashes, dict) else None
+        if declared_batches == []:
             continue
         fields_by_hash.setdefault(prompt_hash, []).append(str(field))
     for prompt_hash, fields in sorted(fields_by_hash.items()):
@@ -2480,10 +2497,17 @@ def _check_manifest_news_input(
     elif file_sha256(news_path) != news_sha256:
         findings.append(f"{prediction_path.name}: context manifest news_sha256 mismatch")
 
-    _check_manifest_news_row_counts(prediction_path, manifest, news_path, findings)
+    _check_manifest_news_row_counts(
+        root,
+        prediction_path,
+        manifest,
+        news_path,
+        findings,
+    )
 
 
 def _check_manifest_news_row_counts(
+    root: Path,
     prediction_path: Path,
     manifest: dict[str, Any],
     news_path: Path,
@@ -2557,6 +2581,41 @@ def _check_manifest_news_row_counts(
             findings.append(
                 f"{prediction_path.name}: context manifest missing_collected_at mismatch"
             )
+    if _phase1_coverage_artifacts_required(manifest):
+        coverage_payload = _read_optional_manifest_object(
+            root,
+            manifest.get("news_coverage_manifest_artifact"),
+        )
+        if isinstance(coverage_payload, dict):
+            try:
+                coverage = NewsCoverageManifest.model_validate(coverage_payload)
+            except ValidationError:
+                return
+            expected_rows = {
+                item.row_number: (item.event_id, item.source_id)
+                for item in batch.items
+            }
+            observed_rows = {
+                row.row_number: (row.event_id, row.source_id)
+                for row in coverage.rows
+            }
+            if expected_rows != observed_rows:
+                findings.append(
+                    f"{prediction_path.name}: context manifest CSV row identity mismatch"
+                )
+            coverage_by_row = {row.row_number: row for row in coverage.rows}
+            if any(
+                (coverage_row := coverage_by_row.get(item.row_number)) is None
+                or coverage_row.disposition != "AUDIT_ONLY"
+                or coverage_row.primary_cluster_id is None
+                or coverage_row.duplicate_parent_cluster_id is not None
+                for item in batch.items
+                if not window_start_at <= item.published_at <= window_end_at
+            ):
+                findings.append(
+                    f"{prediction_path.name}: context manifest cutoff-excluded "
+                    "row entered a material or duplicate cluster"
+                )
 
 
 def _manifest_date(value: object) -> date | None:
@@ -3299,6 +3358,7 @@ def _check_manifest_output_artifacts(
         label="row_disposition",
         findings=findings,
     )
+    _check_phase1_news_coverage_artifacts(root, prediction_path, manifest, findings)
     source_ledger_rows = _check_manifest_jsonl_artifact(
         root,
         prediction_path,
@@ -3387,48 +3447,252 @@ def _check_retrieval_miss_open_world_outputs(
     manifest: dict[str, Any],
     findings: list[str],
 ) -> None:
-    if not _manifest_has_semantic_retrieval_miss(manifest):
+    if not _manifest_has_semantic_retrieval_miss(manifest) or _non_bool_int(manifest.get("event_cluster_count")) == 0:
         return
     blind_analysis = prediction.get("blind_analysis")
-    mechanisms = (
-        _string_list(blind_analysis.get("open_world_mechanisms"))
-        if isinstance(blind_analysis, dict)
-        else []
-    )
+    mechanisms = _string_list(blind_analysis.get("open_world_mechanisms")) if isinstance(blind_analysis, dict) else []
     if not mechanisms:
-        findings.append(
-            f"{prediction_path.name}: retrieval miss missing open-world mechanisms"
-        )
+        findings.append(f"{prediction_path.name}: retrieval miss missing open-world mechanisms")
     candidates = prediction.get("candidates")
-    if not isinstance(candidates, list) or not any(
-        isinstance(candidate, dict) for candidate in candidates
-    ):
+    if not isinstance(candidates, list) or not any(isinstance(candidate, dict) for candidate in candidates):
         findings.append(f"{prediction_path.name}: retrieval miss produced no candidates")
     sectors = prediction.get("dominant_sectors")
     if not isinstance(sectors, list) or not any(isinstance(sector, dict) for sector in sectors):
-        findings.append(
-            f"{prediction_path.name}: retrieval miss produced no dominant sectors"
-        )
+        findings.append(f"{prediction_path.name}: retrieval miss produced no dominant sectors")
     candidate_expansion_count = _non_bool_int(manifest.get("candidate_expansion_count"))
     if candidate_expansion_count is not None and candidate_expansion_count < 1:
-        findings.append(
-            f"{prediction_path.name}: retrieval miss produced no candidate expansion"
-        )
+        findings.append(f"{prediction_path.name}: retrieval miss produced no candidate expansion")
     summary = manifest.get("candidate_expansion_summary")
     if not isinstance(summary, dict):
         return
     candidate_name_count = _non_bool_int(summary.get("candidate_name_count"))
     if candidate_name_count is not None and candidate_name_count < 1:
-        findings.append(
-            f"{prediction_path.name}: retrieval miss candidate expansion has no candidates"
-        )
-    web_discovery_count = _non_bool_int(
-        summary.get("requires_web_company_discovery_count")
-    )
+        findings.append(f"{prediction_path.name}: retrieval miss candidate expansion has no candidates")
+    web_discovery_count = _non_bool_int(summary.get("requires_web_company_discovery_count"))
     if web_discovery_count is not None and web_discovery_count < 1:
+        findings.append(f"{prediction_path.name}: retrieval miss missing web company discovery plan")
+
+
+def _check_phase1_news_coverage_artifacts(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    findings: list[str],
+) -> None:
+    coverage_ref = manifest.get("news_coverage_manifest_artifact")
+    cluster_ref = manifest.get("event_cluster_manifest_artifact")
+    coverage_hash = manifest.get("news_coverage_manifest_sha256")
+    cluster_hash = manifest.get("event_cluster_manifest_sha256")
+    artifacts_missing = all(
+        value is None
+        for value in (coverage_ref, cluster_ref, coverage_hash, cluster_hash)
+    )
+    if artifacts_missing and not _phase1_coverage_artifacts_required(manifest):
+        return
+    coverage_path = _resolve_required_manifest_artifact(
+        root,
+        prediction_path,
+        coverage_ref,
+        label="news_coverage_manifest_artifact",
+        findings=findings,
+    )
+    cluster_path = _resolve_required_manifest_artifact(
+        root,
+        prediction_path,
+        cluster_ref,
+        label="event_cluster_manifest_artifact",
+        findings=findings,
+    )
+    if coverage_path is None or cluster_path is None:
+        return
+    if not isinstance(coverage_hash, str) or sha256_text(coverage_path.read_text(encoding="utf-8")) != coverage_hash:
+        findings.append(f"{prediction_path.name}: context manifest news_coverage_manifest_sha256 mismatch")
+    if not isinstance(cluster_hash, str) or sha256_text(cluster_path.read_text(encoding="utf-8")) != cluster_hash:
+        findings.append(f"{prediction_path.name}: context manifest event_cluster_manifest_sha256 mismatch")
+    coverage_payload = _read_json_object(coverage_path, findings)
+    cluster_payload = _read_json_object(cluster_path, findings)
+    if coverage_payload is None or cluster_payload is None:
+        return
+    try:
+        coverage = NewsCoverageManifest.model_validate(coverage_payload)
+        clusters = EventClusterManifest.model_validate(cluster_payload)
+    except ValidationError as exc:
         findings.append(
-            f"{prediction_path.name}: retrieval miss missing web company discovery plan"
+            f"{prediction_path.name}: Phase 1 coverage manifest contract invalid: {exc.error_count()} errors"
         )
+        return
+    if (
+        coverage.run_id != manifest.get("run_id")
+        or coverage.trade_date.isoformat() != manifest.get("trade_date")
+        or coverage.cutoff_at.isoformat() != manifest.get("cutoff_at")
+        or coverage.input_news_sha256 != manifest.get("news_sha256")
+        or coverage.input_row_count != _non_bool_int(manifest.get("news_row_count"))
+        or coverage.covered_row_count != coverage.input_row_count
+        or coverage.missing_row_count != 0
+    ):
+        findings.append(f"{prediction_path.name}: Phase 1 news coverage identity/count mismatch")
+    observed_coverage_hash = sha256_text(canonical_json([row.model_dump(mode="json") for row in coverage.rows]))
+    if coverage.row_coverage_sha256 != observed_coverage_hash:
+        findings.append(f"{prediction_path.name}: Phase 1 row coverage hash mismatch")
+    if (
+        clusters.run_id != manifest.get("run_id")
+        or clusters.trade_date.isoformat() != manifest.get("trade_date")
+        or clusters.cutoff_at.isoformat() != manifest.get("cutoff_at")
+        or clusters.input_row_count != coverage.input_row_count
+        or clusters.unassigned_row_count != 0
+        or clusters.duplicate_assignment_count != 0
+        or not isinstance(manifest.get("model_config"), dict)
+        or clusters.clustering_version
+        != manifest["model_config"].get("event_clustering_version")
+        or clusters.embedding_batch_size
+        != manifest["model_config"].get("event_cluster_embedding_batch_size")
+        or clusters.similarity_threshold
+        != manifest["model_config"].get("event_cluster_similarity_threshold")
+        or clusters.max_semantic_variants
+        != manifest["model_config"].get("event_cluster_max_semantic_variants")
+        or clusters.embedding_provider
+        != (
+            manifest.get("event_cluster_summary", {}).get("embedding_method")
+            if isinstance(manifest.get("event_cluster_summary"), dict)
+            else None
+        )
+        or clusters.embedding_status
+        != (
+            manifest.get("event_cluster_summary", {}).get("embedding_status")
+            if isinstance(manifest.get("event_cluster_summary"), dict)
+            else None
+        )
+        or clusters.embedding_status
+        not in {"PROVIDER", "DETERMINISTIC_FALLBACK"}
+        or manifest.get("event_clustering_result_sha256")
+        != _event_cluster_manifest_result_sha256(clusters)
+    ):
+        findings.append(f"{prediction_path.name}: Phase 1 event cluster identity/count mismatch")
+    expected_assignments: dict[
+        int, tuple[str, str, str, str, str | None, str | None]
+    ] = {}
+    for cluster in clusters.clusters:
+        for index, (row_number, event_id, source_id) in enumerate(
+            zip(
+                cluster.member_row_numbers,
+                cluster.member_event_ids,
+                cluster.member_source_ids,
+                strict=True,
+            )
+        ):
+            expected_assignments[row_number] = (
+                cluster.cluster_id,
+                event_id,
+                source_id,
+                cluster.disposition if index == 0 else "DUPLICATE",
+                cluster.cluster_id if index == 0 else None,
+                cluster.cluster_id if index > 0 else None,
+            )
+    observed_assignments = {
+        row.row_number: (
+            row.primary_cluster_id or row.duplicate_parent_cluster_id,
+            row.event_id,
+            row.source_id,
+            row.disposition,
+            row.primary_cluster_id,
+            row.duplicate_parent_cluster_id,
+        )
+        for row in coverage.rows
+    }
+    if expected_assignments != observed_assignments:
+        findings.append(f"{prediction_path.name}: Phase 1 row-to-cluster assignment mismatch")
+    disposition_rows = _read_optional_manifest_jsonl_rows(
+        root,
+        manifest.get("row_disposition_artifact"),
+    )
+    observed_sources: dict[int, tuple[object, object]] = {}
+    for disposition_row in disposition_rows or []:
+        disposition_row_number = _non_bool_int(disposition_row.get("row_number"))
+        if disposition_row_number is not None:
+            observed_sources[disposition_row_number] = (
+                disposition_row.get("event_id"),
+                disposition_row.get("source_id"),
+            )
+    expected_sources = {
+        row.row_number: (row.event_id, row.source_id) for row in coverage.rows
+    }
+    if expected_sources != observed_sources:
+        findings.append(f"{prediction_path.name}: Phase 1 source row identity mismatch")
+    material_cluster_ids = {
+        cluster.cluster_id for cluster in clusters.clusters if cluster.disposition == "MATERIAL_FULL_RETRIEVAL"
+    }
+    legacy_rows = _read_optional_manifest_jsonl_rows(
+        root,
+        manifest.get("event_cluster_artifact"),
+    )
+    legacy_cluster_ids = {
+        cluster_id for row in legacy_rows or [] if isinstance(cluster_id := row.get("cluster_id"), str)
+    }
+    open_world = _read_optional_manifest_object(
+        root,
+        manifest.get("open_world_first_analysis_artifact"),
+    )
+    source_cluster_ids = (
+        set(_string_list(open_world.get("source_cluster_ids"))) if isinstance(open_world, dict) else set()
+    )
+    analyzed_cluster_ids = (
+        set(_string_list(open_world.get("analyzed_cluster_ids"))) if isinstance(open_world, dict) else set()
+    )
+    uncovered_cluster_ids = (
+        _string_list(open_world.get("uncovered_cluster_ids")) if isinstance(open_world, dict) else []
+    )
+    if (
+        legacy_cluster_ids != material_cluster_ids
+        or source_cluster_ids != material_cluster_ids
+        or analyzed_cluster_ids != material_cluster_ids
+        or uncovered_cluster_ids
+    ):
+        findings.append(f"{prediction_path.name}: Phase 1 material cluster coverage mismatch")
+
+
+def _phase1_coverage_artifacts_required(manifest: dict[str, Any]) -> bool:
+    model_config = manifest.get("model_config")
+    summary = manifest.get("event_cluster_summary")
+    return (
+        isinstance(model_config, dict)
+        and model_config.get("event_clustering_version") == EVENT_CLUSTERING_VERSION
+    ) or (
+        isinstance(summary, dict)
+        and summary.get("cluster_method") == EVENT_CLUSTERING_VERSION
+    )
+
+
+def _event_cluster_manifest_result_sha256(
+    manifest: EventClusterManifest,
+) -> str:
+    return sha256_text(
+        canonical_json(
+            {
+                "clustering_version": manifest.clustering_version,
+                "embedding_method": manifest.embedding_provider,
+                "embedding_status": manifest.embedding_status,
+                "clusters": [
+                    {
+                        "cluster_id": cluster.cluster_id,
+                        "disposition": cluster.disposition,
+                        "row_numbers": cluster.member_row_numbers,
+                        "event_ids": cluster.member_event_ids,
+                        "source_ids": cluster.member_source_ids,
+                        "signature": cluster.cluster_signature_sha256,
+                    }
+                    for cluster in manifest.clusters
+                ],
+            }
+        )
+    )
+
+
+def _sha256_value(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _check_manifest_jsonl_artifact(
@@ -3672,11 +3936,36 @@ def _check_event_cluster_artifact_summary(
             continue
         for field in ("row_numbers", "event_ids", "source_ids"):
             value = row.get(field)
-            if isinstance(value, list) and len(value) != row_count:
+            if not isinstance(value, list) or len(value) != row_count:
                 findings.append(
                     f"{prediction_path.name}: context manifest event_cluster:{index} "
                     f"{field} count mismatch"
                 )
+        if not _phase1_coverage_artifacts_required(manifest):
+            continue
+        excerpts = row.get("member_news_excerpts")
+        row_numbers = row.get("row_numbers")
+        event_ids = row.get("event_ids")
+        if (
+            not isinstance(excerpts, list)
+            or len(excerpts) != row_count
+            or not isinstance(row_numbers, list)
+            or not isinstance(event_ids, list)
+            or any(
+                not isinstance(excerpt, dict)
+                or excerpt.get("row_number") != row_number
+                or excerpt.get("event_id") != event_id
+                or not _sha256_value(excerpt.get("title_sha256"))
+                or not _sha256_value(excerpt.get("body_sha256"))
+                for excerpt, row_number, event_id in zip(
+                    excerpts, row_numbers, event_ids, strict=True
+                )
+            )
+        ):
+            findings.append(
+                f"{prediction_path.name}: context manifest event_cluster:{index} "
+                "member news excerpts mismatch"
+            )
 
 
 def _check_open_world_first_analysis_artifact(
@@ -3688,6 +3977,11 @@ def _check_open_world_first_analysis_artifact(
     artifact_ref = manifest.get("open_world_first_analysis_artifact")
     expected_hash = manifest.get("open_world_first_analysis_sha256")
     if artifact_ref is None and expected_hash is None:
+        if _phase1_coverage_artifacts_required(manifest):
+            findings.append(
+                f"{prediction_path.name}: context manifest missing "
+                "Phase 1 open_world_first_analysis artifact"
+            )
         return
     artifact_path = _resolve_required_manifest_artifact(
         root,
@@ -3712,7 +4006,12 @@ def _check_open_world_first_analysis_artifact(
     payload = _read_json_object(artifact_path, findings)
     if payload is None:
         return
-    if payload.get("schema_version") != "nslab.open_world_first_analysis.v1":
+    expected_schema = (
+        "nslab.open_world_first_analysis.v2"
+        if _phase1_coverage_artifacts_required(manifest)
+        else "nslab.open_world_first_analysis.v1"
+    )
+    if payload.get("schema_version") != expected_schema:
         findings.append(
             f"{prediction_path.name}: context manifest open_world_first_analysis "
             "schema_version mismatch"
@@ -3728,6 +4027,15 @@ def _check_open_world_first_analysis_artifact(
         findings.append(
             f"{prediction_path.name}: context manifest open_world_first_analysis "
             "prompt_hash mismatch"
+        )
+    if (
+        _phase1_coverage_artifacts_required(manifest)
+        and payload.get("prompt_version")
+        != OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest open_world_first_analysis "
+            "prompt_version mismatch"
         )
     _check_open_world_first_analysis_summary(
         prediction_path,
@@ -3756,40 +4064,114 @@ def _check_open_world_first_analysis_summary(
         "uncertainties",
     )
     for field in required_fields:
-        if not _string_list(payload.get(field)):
+        value = payload.get(field)
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) and item.strip() for item in value
+        ):
             findings.append(
                 f"{prediction_path.name}: context manifest open_world_first_analysis "
-                f"{field} empty"
+                f"{field} invalid"
             )
+    source_cluster_ids = _string_list(payload.get("source_cluster_ids"))
+    if source_cluster_ids and not _string_list(payload.get("event_clusters")):
+        findings.append(
+            f"{prediction_path.name}: context manifest open_world_first_analysis "
+            "event cluster summaries missing"
+        )
+    if source_cluster_ids and not (
+        _string_list(payload.get("mechanisms"))
+        or _string_list(payload.get("uncertainties"))
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest open_world_first_analysis "
+            "mechanisms and uncertainties both missing"
+        )
+    cluster_findings = payload.get("cluster_findings")
+    finding_ids = (
+        [
+            finding.get("cluster_id")
+            for finding in cluster_findings
+            if isinstance(finding, dict)
+        ]
+        if isinstance(cluster_findings, list)
+        else []
+    )
+    if _phase1_coverage_artifacts_required(manifest) and (
+        not isinstance(cluster_findings, list)
+        or finding_ids != source_cluster_ids
+        or any(
+            not isinstance(finding, dict)
+            or not isinstance(finding.get("event_summary"), str)
+            or not finding["event_summary"].strip()
+            or not any(
+                value.strip()
+                for value in [
+                    *_string_list(finding.get("mechanisms")),
+                    *_string_list(finding.get("uncertainties")),
+                ]
+            )
+            for finding in cluster_findings
+        )
+    ):
+        findings.append(
+            f"{prediction_path.name}: context manifest open_world_first_analysis "
+            "cluster findings mismatch"
+        )
     summary = manifest.get("open_world_first_analysis_summary")
     if not isinstance(summary, dict):
-        findings.append(
-            f"{prediction_path.name}: context manifest "
-            "open_world_first_analysis_summary invalid"
-        )
+        findings.append(f"{prediction_path.name}: context manifest open_world_first_analysis_summary invalid")
         return
     expected_counts = {
         "event_cluster_count": len(_string_list(payload.get("event_clusters"))),
-        "direct_company_event_count": len(
-            _string_list(payload.get("direct_company_events"))
-        ),
-        "policy_industry_event_count": len(
-            _string_list(payload.get("policy_industry_events"))
-        ),
+        "direct_company_event_count": len(_string_list(payload.get("direct_company_events"))),
+        "policy_industry_event_count": len(_string_list(payload.get("policy_industry_events"))),
         "mechanism_count": len(_string_list(payload.get("mechanisms"))),
-        "transmission_path_count": len(
-            _string_list(payload.get("beneficiary_transmission_paths"))
-        ),
-        "narrative_conversion_point_count": len(
-            _string_list(payload.get("narrative_conversion_points"))
-        ),
+        "transmission_path_count": len(_string_list(payload.get("beneficiary_transmission_paths"))),
+        "narrative_conversion_point_count": len(_string_list(payload.get("narrative_conversion_points"))),
         "direct_candidate_count": len(_string_list(payload.get("direct_candidates"))),
         "potential_sector_count": len(_string_list(payload.get("potential_sectors"))),
-        "investigation_question_count": len(
-            _string_list(payload.get("beneficiary_investigation_questions"))
-        ),
+        "investigation_question_count": len(_string_list(payload.get("beneficiary_investigation_questions"))),
         "uncertainty_count": len(_string_list(payload.get("uncertainties"))),
     }
+    coverage_fields = (
+        "source_cluster_ids",
+        "analyzed_cluster_ids",
+        "uncovered_cluster_ids",
+        "analysis_batch_count",
+    )
+    if any(field in payload for field in coverage_fields):
+        analyzed_cluster_ids = _string_list(payload.get("analyzed_cluster_ids"))
+        uncovered_cluster_ids = _string_list(payload.get("uncovered_cluster_ids"))
+        analysis_batch_count = _non_bool_int(payload.get("analysis_batch_count"))
+        expected_counts = {
+            "source_cluster_count": len(source_cluster_ids),
+            "analyzed_cluster_count": len(analyzed_cluster_ids),
+            "uncovered_cluster_count": len(uncovered_cluster_ids),
+            "analysis_batch_count": (analysis_batch_count if analysis_batch_count is not None else -1),
+            **(
+                {
+                    "cluster_finding_count": (
+                        len(cluster_findings)
+                        if isinstance(cluster_findings, list)
+                        else -1
+                    )
+                }
+                if _phase1_coverage_artifacts_required(manifest)
+                else {}
+            ),
+            **expected_counts,
+        }
+        if (
+            len(source_cluster_ids) != len(set(source_cluster_ids))
+            or len(analyzed_cluster_ids) != len(set(analyzed_cluster_ids))
+            or set(source_cluster_ids) != set(analyzed_cluster_ids)
+            or uncovered_cluster_ids
+            or analysis_batch_count is None
+            or analysis_batch_count < (1 if source_cluster_ids else 0)
+        ):
+            findings.append(
+                f"{prediction_path.name}: context manifest open_world_first_analysis cluster coverage mismatch"
+            )
     for field, expected in expected_counts.items():
         _check_summary_int(
             prediction_path,
@@ -6472,9 +6854,24 @@ def _check_prompt_hash_traces(
     }
     traces_by_purpose = _trace_metadata_by_purpose(root, findings)
     requires_current_traces = manifest.get("schema_version") == "nslab.context_manifest.v1"
+    batch_hashes_by_key = manifest.get("prompt_batch_hashes")
     for hash_key, purpose in purpose_by_hash_key.items():
         manifest_hash = prompt_hashes.get(hash_key)
         if not manifest_hash:
+            continue
+        declared_batch_hashes = batch_hashes_by_key.get(hash_key) if isinstance(batch_hashes_by_key, dict) else None
+        if isinstance(declared_batch_hashes, list):
+            _check_batch_prompt_hash_traces(
+                root,
+                prediction_path,
+                manifest,
+                purpose=purpose,
+                token_count_key=token_key_by_hash_key[hash_key],
+                manifest_hash=manifest_hash,
+                batch_hashes=declared_batch_hashes,
+                traces_by_purpose=traces_by_purpose,
+                findings=findings,
+            )
             continue
         if purpose not in traces_by_purpose:
             if requires_current_traces:
@@ -6522,6 +6919,127 @@ def _check_prompt_hash_traces(
         )
 
 
+def _check_batch_prompt_hash_traces(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    *,
+    purpose: str,
+    token_count_key: str,
+    manifest_hash: object,
+    batch_hashes: list[Any],
+    traces_by_purpose: dict[str, dict[str, Any]],
+    findings: list[str],
+) -> None:
+    if not all(isinstance(value, str) and value for value in batch_hashes):
+        findings.append(f"{prediction_path.name}: invalid batch prompt hashes for {purpose}")
+        return
+    normalized_hashes = [str(value) for value in batch_hashes]
+    expected_aggregate = (
+        normalized_hashes[0] if len(normalized_hashes) == 1 else sha256_text(canonical_json(normalized_hashes))
+    )
+    if manifest_hash != expected_aggregate:
+        findings.append(f"{prediction_path.name}: aggregate prompt hash mismatch for {purpose}")
+
+    if not normalized_hashes:
+        _check_batch_trace_prompt_token_counts_match_manifest(
+            prediction_path,
+            manifest,
+            purpose,
+            token_count_key,
+            [],
+            expected_batch_count=0,
+            findings=findings,
+        )
+        return
+
+    selected_records: list[dict[str, Any]] = []
+    matching_model_configs: list[dict[str, Any]] = []
+    for index, prompt_hash in enumerate(normalized_hashes, start=1):
+        batch_purpose = purpose if len(normalized_hashes) == 1 else f"{purpose}.batch_{index:04d}"
+        trace_metadata = traces_by_purpose.get(batch_purpose)
+        matching_records = (
+            [
+                trace_record
+                for trace_record in trace_metadata["trace_records"]
+                if trace_record.get("prompt_sha256") == prompt_hash
+            ]
+            if isinstance(trace_metadata, dict)
+            else []
+        )
+        if not matching_records:
+            findings.append(f"{prediction_path.name}: prompt hash has no matching trace for {batch_purpose}")
+            continue
+        selected_records.append(matching_records[0])
+        for trace_record in matching_records:
+            _check_trace_checkpoint(
+                root,
+                trace_record["path"],
+                trace_record["payload"],
+                findings,
+            )
+            model_config = trace_record["payload"].get("model_config")
+            if isinstance(model_config, dict):
+                matching_model_configs.append(model_config)
+
+    _check_batch_trace_prompt_token_counts_match_manifest(
+        prediction_path,
+        manifest,
+        purpose,
+        token_count_key,
+        selected_records,
+        expected_batch_count=len(normalized_hashes),
+        findings=findings,
+    )
+    _check_trace_model_config_matches_manifest(
+        prediction_path,
+        manifest,
+        purpose,
+        matching_model_configs,
+        findings,
+    )
+
+
+def _check_batch_trace_prompt_token_counts_match_manifest(
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    purpose: str,
+    token_count_key: str,
+    trace_records: list[dict[str, Any]],
+    *,
+    expected_batch_count: int,
+    findings: list[str],
+) -> None:
+    if len(trace_records) != expected_batch_count:
+        return
+    token_counts = manifest.get("token_counts")
+    expected_total = token_counts.get(token_count_key) if isinstance(token_counts, dict) else None
+    if not isinstance(expected_total, int) or isinstance(expected_total, bool) or expected_total < 0:
+        findings.append(f"{prediction_path.name}: context manifest missing {token_count_key} token count for {purpose}")
+        return
+    observed_total = 0
+    for trace_record in trace_records:
+        payload = trace_record["payload"]
+        token_usage = payload.get("token_usage")
+        trace_input = payload.get("input")
+        observed = token_usage.get("prompt_tokens_estimate") if isinstance(token_usage, dict) else None
+        prompt_chars = trace_input.get("prompt_chars") if isinstance(trace_input, dict) else None
+        expected_from_chars = _estimate_prompt_tokens_from_chars(prompt_chars)
+        if (
+            not isinstance(observed, int)
+            or isinstance(observed, bool)
+            or expected_from_chars is None
+            or observed != expected_from_chars
+        ):
+            findings.append(
+                f"{prediction_path.name}: trace prompt token count mismatch for {purpose}: {trace_record['path'].name}"
+            )
+            return
+        observed_total += observed
+    if observed_total != expected_total:
+        findings.append(f"{prediction_path.name}: aggregate trace prompt token count mismatch for {purpose}")
+
+
 def _check_trace_model_config_matches_manifest(
     prediction_path: Path,
     manifest: dict[str, Any],
@@ -6539,6 +7057,13 @@ def _check_trace_model_config_matches_manifest(
         "embedding_model",
         "max_concurrency",
         "shard_episode_count",
+        "event_clustering_version",
+        "event_cluster_embedding_batch_size",
+        "event_cluster_similarity_threshold",
+        "event_cluster_max_semantic_variants",
+        "open_world_cluster_batch_size",
+        "open_world_max_prompt_chars",
+        "novelty_cluster_batch_size",
     ]
     expected = {
         key: manifest_model_config[key]

@@ -14,10 +14,12 @@ from news_scalping_lab.contracts.models import (
     PriceSnapshot,
 )
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
+from news_scalping_lab.inference.event_clustering import cluster_news_events
 from news_scalping_lab.utils import KST, sha256_text
 
 
-def test_event_cluster_artifact_groups_exact_normalized_duplicates(tmp_path) -> None:
+@pytest.mark.asyncio
+async def test_event_cluster_artifact_groups_exact_normalized_duplicates(tmp_path) -> None:
     cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
     manifest = ContextManifest(
         run_id="RUN-event-cluster",
@@ -57,8 +59,16 @@ def test_event_cluster_artifact_groups_exact_normalized_duplicates(tmp_path) -> 
     ]
 
     analyzer = DailyAnalyzer(Settings(project_root=tmp_path))
+    result = await cluster_news_events(
+        items,
+        window_start_at=manifest.news_window_start_at,
+        cutoff_at=cutoff,
+        embedding_provider=analyzer.llm,
+        embedding_batch_size=128,
+        similarity_threshold=1.0,
+    )
     analyzer._write_event_cluster_artifact(
-        news_items=items,
+        result=result,
         cutoff_at=cutoff,
         manifest=manifest,
     )
@@ -67,11 +77,17 @@ def test_event_cluster_artifact_groups_exact_normalized_duplicates(tmp_path) -> 
     assert manifest.event_cluster_count == 2
     assert manifest.event_cluster_summary == {
         "source_row_count": 3,
+        "all_input_row_count": 3,
+        "audit_only_row_count": 0,
         "cluster_count": 2,
         "exact_duplicate_count": 1,
         "exact_duplicate_cluster_count": 1,
+        "semantic_duplicate_count": 0,
         "semantic_duplicate_cluster_count": 0,
-        "cluster_method": "exact_normalized_title_body_v1",
+        "cluster_method": "semantic_complete_link_v1",
+        "embedding_method": "DeterministicMockLLMProvider:deterministic-mock",
+        "embedding_status": "PROVIDER",
+        "warnings": [],
         "novelty_review_required": True,
     }
     event_cluster_path = tmp_path / manifest.event_cluster_artifact
@@ -91,19 +107,29 @@ def test_event_cluster_artifact_groups_exact_normalized_duplicates(tmp_path) -> 
     assert "body" not in rows[0]
 
 
-def test_news_novelty_review_rejects_cutoff_after_evidence_time(tmp_path) -> None:
+@pytest.mark.asyncio
+async def test_news_novelty_review_rejects_cutoff_after_evidence_time(tmp_path) -> None:
     cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
     manifest = _manifest(cutoff)
     analyzer = DailyAnalyzer(Settings(project_root=tmp_path))
+    items = [
+        _news_item(
+            row_number=2,
+            published_at=datetime(2030, 1, 10, 8, 0, tzinfo=KST),
+            title="Current catalyst",
+            body="Pre-cutoff update",
+        )
+    ]
+    result = await cluster_news_events(
+        items,
+        window_start_at=manifest.news_window_start_at,
+        cutoff_at=cutoff,
+        embedding_provider=analyzer.llm,
+        embedding_batch_size=128,
+        similarity_threshold=1.0,
+    )
     analyzer._write_event_cluster_artifact(
-        news_items=[
-            _news_item(
-                row_number=2,
-                published_at=datetime(2030, 1, 10, 8, 0, tzinfo=KST),
-                title="Current catalyst",
-                body="Pre-cutoff update",
-            )
-        ],
+        result=result,
         cutoff_at=cutoff,
         manifest=manifest,
     )

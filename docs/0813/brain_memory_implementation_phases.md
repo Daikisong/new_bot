@@ -1,6 +1,6 @@
 # NSLAB 장기기억 두뇌 구현 단계
 
-상태: Phase 0 완료, Phase 1 대기
+상태: Phase 0~1 완료, Phase 2 대기
 
 기준 문서:
 

@@ -87,6 +87,7 @@ class RecordRoutingMetadata(StrictMemoryContextModel):
 class NewsRowCoverage(StrictMemoryContextModel):
     row_number: int = Field(ge=1)
     event_id: str
+    source_id: str
     primary_cluster_id: str | None = None
     duplicate_parent_cluster_id: str | None = None
     disposition: NewsDisposition
@@ -141,6 +142,7 @@ class EventClusterEntry(StrictMemoryContextModel):
     cluster_id: str
     representative_event_id: str
     member_event_ids: list[str] = Field(default_factory=list)
+    member_source_ids: list[str] = Field(default_factory=list)
     member_row_numbers: list[Annotated[int, Field(ge=1)]] = Field(
         default_factory=list
     )
@@ -151,12 +153,14 @@ class EventClusterEntry(StrictMemoryContextModel):
 
     @model_validator(mode="after")
     def validate_membership(self) -> Self:
-        if not self.member_event_ids or not self.member_row_numbers:
-            raise ValueError("clusters require event and row members")
+        if not self.member_event_ids or not self.member_source_ids or not self.member_row_numbers:
+            raise ValueError("clusters require event, source, and row members")
         if self.representative_event_id not in self.member_event_ids:
             raise ValueError("representative_event_id must be a cluster member")
-        if len(set(self.member_event_ids)) != len(self.member_event_ids):
-            raise ValueError("cluster event members must be unique")
+        if len(self.member_event_ids) != len(self.member_row_numbers) or len(
+            self.member_source_ids
+        ) != len(self.member_row_numbers):
+            raise ValueError("cluster event, source, and row member counts must match")
         if len(set(self.member_row_numbers)) != len(self.member_row_numbers):
             raise ValueError("cluster row members must be unique")
         if self.exact_duplicate_count + self.semantic_duplicate_count > (
@@ -174,7 +178,11 @@ class EventClusterManifest(StrictMemoryContextModel):
     trade_date: date
     cutoff_at: AwareDatetime
     clustering_version: str
-    embedding_provider: str | None = None
+    embedding_provider: str
+    embedding_status: str
+    embedding_batch_size: int = Field(ge=1)
+    similarity_threshold: float = Field(ge=0.0, le=1.0)
+    max_semantic_variants: int = Field(ge=1)
     input_row_count: int = Field(ge=0)
     cluster_count: int = Field(ge=0)
     material_cluster_count: int = Field(ge=0)

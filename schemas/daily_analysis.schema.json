@@ -655,6 +655,30 @@
           "title": "Event Cluster Count",
           "type": "integer"
         },
+        "event_cluster_manifest_artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Event Cluster Manifest Artifact"
+        },
+        "event_cluster_manifest_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Event Cluster Manifest Sha256"
+        },
         "event_cluster_sha256": {
           "anyOf": [
             {
@@ -671,6 +695,18 @@
           "additionalProperties": true,
           "title": "Event Cluster Summary",
           "type": "object"
+        },
+        "event_clustering_result_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Event Clustering Result Sha256"
         },
         "excluded_candidate_web_check_artifact": {
           "anyOf": [
@@ -865,6 +901,30 @@
           "title": "Model Config",
           "type": "object"
         },
+        "news_coverage_manifest_artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "News Coverage Manifest Artifact"
+        },
+        "news_coverage_manifest_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "News Coverage Manifest Sha256"
+        },
         "news_file": {
           "anyOf": [
             {
@@ -1058,6 +1118,16 @@
         },
         "price_snapshot": {
           "$ref": "#/$defs/PriceSnapshot"
+        },
+        "prompt_batch_hashes": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Prompt Batch Hashes",
+          "type": "object"
         },
         "prompt_hashes": {
           "additionalProperties": {

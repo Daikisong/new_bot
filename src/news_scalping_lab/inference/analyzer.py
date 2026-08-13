@@ -20,6 +20,12 @@ from news_scalping_lab.context.final_synthesis import (
 )
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.context.sweep import MemorySweeper
+from news_scalping_lab.contracts.memory_context import (
+    EventClusterEntry,
+    EventClusterManifest,
+    NewsCoverageManifest,
+    NewsRowCoverage,
+)
 from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     BlindPrediction,
@@ -41,12 +47,20 @@ from news_scalping_lab.contracts.models import (
     NewsNoveltyFinding,
     NewsNoveltyLabel,
     NewsNoveltyReview,
+    OpenWorldClusterFinding,
     OpenWorldFirstAnalysis,
     PathType,
     Provenance,
     RedTeamArtifact,
     SemanticRetrievalPlan,
     SemanticRetrievalQuery,
+)
+from news_scalping_lab.inference.event_clustering import (
+    EVENT_CLUSTERING_VERSION,
+    EventClusteringResult,
+    OpenWorldClusterInput,
+    cluster_news_events,
+    open_world_cluster_inputs,
 )
 from news_scalping_lab.inference.red_team import (
     PROMPT_VERSION as RED_TEAM_PROMPT_VERSION,
@@ -78,6 +92,7 @@ from news_scalping_lab.reporting.render import render_preopen_report
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
+    KST,
     canonical_json,
     default_news_window_start,
     file_sha256,
@@ -108,12 +123,16 @@ class ClusterCoverageError(RuntimeError):
     """Raised when an event cluster is not covered by retrieval audit."""
 
 
+class OpenWorldCoverageError(RuntimeError):
+    """Raised when Pass 0 does not attest every dispatched material cluster."""
+
+
 class FutureContextLeakError(RuntimeError):
     """Raised when the active brain context contains future-unavailable research."""
 
 
 DAILY_BLIND_PROMPT_VERSION = "daily_blind_analysis.v1"
-OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION = "open_world_first_analysis.v1"
+OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION = "open_world_first_analysis.v2"
 NEWS_NOVELTY_REVIEW_PROMPT_VERSION = "news_novelty_review.v1"
 SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION = "semantic_retrieval_plan.v2"
 CANDIDATE_EXPANSION_PROMPT_VERSION = "candidate_expansion.v1"
@@ -215,27 +234,63 @@ class DailyAnalyzer:
         full_batch = load_news_csv(news_csv, trade_date=trade_date)
         news_window_start_at = default_news_window_start(trade_date)
         batch = full_batch.within_window(news_window_start_at, cutoff_at)
+        event_clustering = await cluster_news_events(
+            full_batch.items,
+            window_start_at=news_window_start_at,
+            cutoff_at=cutoff_at,
+            embedding_provider=self.llm,
+            embedding_batch_size=(self.settings.limits.event_cluster_embedding_batch_size),
+            similarity_threshold=(self.settings.limits.event_cluster_similarity_threshold),
+            max_semantic_variants=(
+                self.settings.limits.event_cluster_max_semantic_variants
+            ),
+        )
+        clustering_result_sha256 = sha256_text(
+            canonical_json(
+                {
+                    "clustering_version": event_clustering.clustering_version,
+                    "embedding_method": event_clustering.embedding_method,
+                    "embedding_status": event_clustering.embedding_status,
+                    "clusters": [
+                        {
+                            "cluster_id": cluster.cluster_id,
+                            "disposition": cluster.disposition,
+                            "row_numbers": [
+                                item.row_number for item in cluster.members
+                            ],
+                            "event_ids": [item.event_id for item in cluster.members],
+                            "source_ids": [item.source_id for item in cluster.members],
+                            "signature": cluster.cluster_signature_sha256,
+                        }
+                        for cluster in event_clustering.clusters
+                    ],
+                }
+            )
+        )
         run_seed = sha256_text(
             canonical_json(
                 {
                     "analysis_mode": mode,
+                    "clustering_result_sha256": clustering_result_sha256,
                     "cutoff_at": cutoff_at.isoformat(),
                     "llm_model_config": self.llm_model_config,
-                    "news_sha256": batch.sha256,
+                    "news_sha256": full_batch.sha256,
                     "trade_date": trade_date.isoformat(),
                     "web_search": web_search,
                 }
             )
         )
-        blind_news_items = batch.items[: self.settings.limits.max_news_items_for_mock]
-        news_texts = [item.combined_text for item in blind_news_items]
-        event_ids = [item.event_id for item in batch.items]
-        open_world_first_analysis, open_world_prompt_hash, open_world_prompt_tokens = (
-            await self._run_open_world_first_analysis(
-                news_texts=news_texts,
-                event_ids=event_ids,
-                cutoff_at=cutoff_at,
-            )
+        open_world_inputs = open_world_cluster_inputs(event_clustering)
+        news_texts = [item.representative_text for item in open_world_inputs]
+        event_ids = [event_id for cluster in open_world_inputs for event_id in cluster.event_ids]
+        (
+            open_world_first_analysis,
+            open_world_prompt_hash,
+            open_world_prompt_tokens,
+            open_world_prompt_batch_hashes,
+        ) = await self._run_open_world_first_analysis(
+            clusters=open_world_inputs,
+            cutoff_at=cutoff_at,
         )
         first_pass_mechanisms = open_world_first_analysis.mechanisms
         web_queries = self._build_web_queries(batch.items)
@@ -274,6 +329,7 @@ class DailyAnalyzer:
         manifest.included_news_row_count = batch.row_count
         manifest.excluded_news_row_count = full_batch.row_count - batch.row_count
         manifest.llm_model_config = {**self.llm_model_config, "analysis_mode": mode}
+        manifest.event_clustering_result_sha256 = clustering_result_sha256
         manifest.excluded_retrieved_episode_ids = excluded_retrieved_ids
         manifest.excluded_retrieved_record_ids = excluded_retrieved_record_ids
         self._write_open_world_first_analysis_artifact(
@@ -293,7 +349,14 @@ class DailyAnalyzer:
             manifest=manifest,
         )
         self._write_event_cluster_artifact(
-            news_items=batch.items,
+            result=event_clustering,
+            cutoff_at=cutoff_at,
+            manifest=manifest,
+        )
+        self._write_news_coverage_manifests(
+            result=event_clustering,
+            news_sha256=full_batch.sha256,
+            trade_date=trade_date,
             cutoff_at=cutoff_at,
             manifest=manifest,
         )
@@ -312,12 +375,14 @@ class DailyAnalyzer:
         manifest.price_snapshot.source_name = self._blind_price_source_name()
         manifest.price_snapshot.source_ref = self._blind_price_source_ref()
 
-        _news_novelty_review, novelty_prompt_hash, novelty_prompt_tokens = (
-            await self._run_news_novelty_review(
-                news_texts=news_texts,
-                manifest=manifest,
-                cutoff_at=cutoff_at,
-            )
+        (
+            _news_novelty_review,
+            novelty_prompt_hash,
+            novelty_prompt_tokens,
+            novelty_prompt_batch_hashes,
+        ) = await self._run_news_novelty_review(
+            manifest=manifest,
+            cutoff_at=cutoff_at,
         )
         manifest.token_counts["news_novelty_review_prompt"] = novelty_prompt_tokens
         sweep = MemorySweeper(
@@ -580,6 +645,8 @@ class DailyAnalyzer:
         manifest.web_sources = sorted(set(manifest.web_sources))
         manifest.prompt_hashes["open_world_first_analysis"] = open_world_prompt_hash
         manifest.prompt_hashes["news_novelty_review"] = novelty_prompt_hash
+        manifest.prompt_batch_hashes["open_world_first_analysis"] = open_world_prompt_batch_hashes
+        manifest.prompt_batch_hashes["news_novelty_review"] = novelty_prompt_batch_hashes
         manifest.prompt_hashes["semantic_retrieval_plan"] = semantic_prompt_hash
         manifest.prompt_hashes["candidate_expansion"] = expansion_prompt_hash
         manifest.prompt_hashes["blind_analysis"] = blind_prompt_hash
@@ -635,51 +702,208 @@ class DailyAnalyzer:
     async def _run_open_world_first_analysis(
         self,
         *,
-        news_texts: list[str],
-        event_ids: list[str],
+        clusters: list[OpenWorldClusterInput],
         cutoff_at: datetime,
-    ) -> tuple[OpenWorldFirstAnalysis, str, int]:
-        prompt = self._build_open_world_first_analysis_prompt(
-            news_texts=news_texts,
-            event_ids=event_ids,
-            cutoff_at=cutoff_at,
-        )
-        prompt_sha256 = sha256_text(prompt)
-        try:
-            analysis = await self.llm.generate_structured(
-                prompt=prompt,
-                response_model=OpenWorldFirstAnalysis,
-                purpose="open_world_first_analysis",
-            )
-        except NotImplementedError:
-            analysis = self._fallback_open_world_first_analysis(
-                news_texts=news_texts,
-                event_ids=event_ids,
+    ) -> tuple[OpenWorldFirstAnalysis, str, int, list[str]]:
+        cluster_batches = self._open_world_cluster_batches(clusters)
+        batch_count = max(1, len(cluster_batches))
+        analyses: list[OpenWorldFirstAnalysis] = []
+        prompt_hashes: list[str] = []
+        token_count = 0
+        for batch_index, cluster_batch in enumerate(cluster_batches, start=1):
+            news_texts = [
+                member_news
+                for cluster in cluster_batch
+                for member_news in cluster.member_news
+            ]
+            event_ids = [event_id for cluster in cluster_batch for event_id in cluster.event_ids]
+            cluster_ids = [cluster.cluster_id for cluster in cluster_batch]
+            prompt = self._build_open_world_first_analysis_prompt(
+                clusters=cluster_batch,
                 cutoff_at=cutoff_at,
-                prompt_sha256=prompt_sha256,
             )
-        normalized = self._normalize_open_world_first_analysis(
-            analysis,
-            news_texts=news_texts,
-            event_ids=event_ids,
-            cutoff_at=cutoff_at,
-            prompt_sha256=prompt_sha256,
+            if len(prompt) > self.settings.limits.open_world_max_prompt_chars:
+                raise OpenWorldCoverageError(
+                    "open-world prompt exceeds the configured hard character budget"
+                )
+            prompt_sha256 = sha256_text(prompt)
+            prompt_hashes.append(prompt_sha256)
+            token_count += max(1, len(prompt) // 4)
+            try:
+                analysis = await self.llm.generate_structured(
+                    prompt=prompt,
+                    response_model=OpenWorldFirstAnalysis,
+                    purpose=(
+                        "open_world_first_analysis"
+                        if batch_count == 1
+                        else f"open_world_first_analysis.batch_{batch_index:04d}"
+                    ),
+                )
+            except NotImplementedError:
+                analysis = self._fallback_open_world_first_analysis(
+                    news_texts=news_texts,
+                    event_ids=event_ids,
+                    cutoff_at=cutoff_at,
+                    prompt_sha256=prompt_sha256,
+                ).model_copy(
+                    update={
+                        "source_cluster_ids": cluster_ids,
+                        "analyzed_cluster_ids": cluster_ids,
+                        "uncovered_cluster_ids": [],
+                        "analysis_batch_count": 1,
+                        "cluster_findings": self._fallback_cluster_findings(
+                            cluster_batch
+                        ),
+                    }
+                )
+            analyses.append(
+                self._normalize_open_world_first_analysis(
+                    analysis,
+                    news_texts=news_texts,
+                    event_ids=event_ids,
+                    cluster_ids=cluster_ids,
+                    cutoff_at=cutoff_at,
+                    prompt_sha256=prompt_sha256,
+                )
+            )
+        if not analyses:
+            empty_prompt_hash = sha256_text(canonical_json([]))
+            analyses.append(
+                self._fallback_open_world_first_analysis(
+                    news_texts=[],
+                    event_ids=[],
+                    cutoff_at=cutoff_at,
+                    prompt_sha256=empty_prompt_hash,
+                ).model_copy(
+                    update={
+                        "source_cluster_ids": [],
+                        "analyzed_cluster_ids": [],
+                        "uncovered_cluster_ids": [],
+                        "analysis_batch_count": 0,
+                    }
+                )
+            )
+        aggregate_prompt_sha256 = (
+            prompt_hashes[0] if len(prompt_hashes) == 1 else sha256_text(canonical_json(prompt_hashes))
         )
-        return normalized, prompt_sha256, max(1, len(prompt) // 4)
+        merged = self._merge_open_world_analyses(
+            analyses,
+            clusters=clusters,
+            cutoff_at=cutoff_at,
+            prompt_sha256=aggregate_prompt_sha256,
+            analysis_batch_count=len(prompt_hashes),
+        )
+        return merged, aggregate_prompt_sha256, token_count, prompt_hashes
+
+    def _open_world_cluster_batches(
+        self,
+        clusters: list[OpenWorldClusterInput],
+    ) -> list[list[OpenWorldClusterInput]]:
+        max_clusters = max(1, self.settings.limits.open_world_cluster_batch_size)
+        max_chars = max(1, self.settings.limits.open_world_max_prompt_chars)
+        batches: list[list[OpenWorldClusterInput]] = []
+        current: list[OpenWorldClusterInput] = []
+        for cluster in clusters:
+            single_prompt_chars = len(
+                self._build_open_world_first_analysis_prompt(
+                    clusters=[cluster],
+                    cutoff_at=datetime(2000, 1, 1, tzinfo=KST),
+                )
+            )
+            if single_prompt_chars > max_chars:
+                raise OpenWorldCoverageError(
+                    "one event cluster exceeds the bounded open-world prompt budget"
+                )
+            tentative = [*current, cluster]
+            tentative_chars = len(
+                self._build_open_world_first_analysis_prompt(
+                    clusters=tentative,
+                    cutoff_at=datetime(2000, 1, 1, tzinfo=KST),
+                )
+            )
+            if current and (len(current) >= max_clusters or tentative_chars > max_chars):
+                batches.append(current)
+                current = []
+            current.append(cluster)
+        if current:
+            batches.append(current)
+        return batches
+
+    def _merge_open_world_analyses(
+        self,
+        analyses: list[OpenWorldFirstAnalysis],
+        *,
+        clusters: list[OpenWorldClusterInput],
+        cutoff_at: datetime,
+        prompt_sha256: str,
+        analysis_batch_count: int,
+    ) -> OpenWorldFirstAnalysis:
+        source_cluster_ids = [cluster.cluster_id for cluster in clusters]
+        analyzed_cluster_ids = _unique_preserving_order(
+            [cluster_id for analysis in analyses for cluster_id in analysis.analyzed_cluster_ids]
+        )
+        uncovered_cluster_ids = sorted(set(source_cluster_ids) - set(analyzed_cluster_ids))
+
+        def merged_list(field_name: str) -> list[str]:
+            return _unique_preserving_order(
+                [
+                    value
+                    for analysis in analyses
+                    for value in getattr(analysis, field_name)
+                    if isinstance(value, str) and value.strip()
+                ]
+            )
+
+        return OpenWorldFirstAnalysis(
+            run_id="RUN-open-world-first-analysis-pending",
+            prompt_version=OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION,
+            prompt_sha256=prompt_sha256,
+            created_at=now_kst(),
+            cutoff_at=cutoff_at,
+            event_ids=_unique_preserving_order([event_id for cluster in clusters for event_id in cluster.event_ids]),
+            source_cluster_ids=source_cluster_ids,
+            analyzed_cluster_ids=analyzed_cluster_ids,
+            uncovered_cluster_ids=uncovered_cluster_ids,
+            analysis_batch_count=analysis_batch_count,
+            event_clusters=merged_list("event_clusters"),
+            direct_company_events=merged_list("direct_company_events"),
+            policy_industry_events=merged_list("policy_industry_events"),
+            mechanisms=merged_list("mechanisms"),
+            beneficiary_transmission_paths=merged_list("beneficiary_transmission_paths"),
+            narrative_conversion_points=merged_list("narrative_conversion_points"),
+            direct_candidates=merged_list("direct_candidates"),
+            potential_sectors=merged_list("potential_sectors"),
+            beneficiary_investigation_questions=merged_list("beneficiary_investigation_questions"),
+            uncertainties=merged_list("uncertainties"),
+            cluster_findings=[
+                finding
+                for analysis in analyses
+                for finding in analysis.cluster_findings
+            ],
+            notes=merged_list("notes"),
+        )
 
     def _build_open_world_first_analysis_prompt(
         self,
         *,
-        news_texts: list[str],
-        event_ids: list[str],
+        clusters: list[OpenWorldClusterInput],
         cutoff_at: datetime,
     ) -> str:
         payload = {
-            "schema": "nslab.open_world_first_analysis.v1",
+            "schema": "nslab.open_world_first_analysis.v2",
             "prompt_version": OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION,
             "cutoff_at": cutoff_at.isoformat(),
-            "event_ids": event_ids,
-            "current_news": news_texts,
+            "current_event_clusters": [
+                {
+                    "cluster_id": cluster.cluster_id,
+                    "event_ids": list(cluster.event_ids),
+                    "row_numbers": list(cluster.row_numbers),
+                    "representative_news": cluster.representative_text,
+                    "member_news": list(cluster.member_news),
+                }
+                for cluster in clusters
+            ],
+            "required_cluster_ids": [cluster.cluster_id for cluster in clusters],
             "forbidden_inputs": [
                 "past research search results",
                 "semantic retrieval hits",
@@ -687,6 +911,7 @@ class DailyAnalyzer:
                 "cutoff-after evidence",
             ],
             "required_fields": [
+                "cluster_findings",
                 "event_clusters",
                 "direct_company_events",
                 "policy_industry_events",
@@ -701,7 +926,8 @@ class DailyAnalyzer:
         }
         return (
             "Run Pass 0 open-world first read as OpenWorldFirstAnalysis. Use only "
-            "the current_news payload, before any past research or semantic retrieval. "
+            "current_event_clusters, before any past research or semantic retrieval. "
+            "Every required_cluster_id must be analyzed exactly once in this batch. "
             "Do not fit candidates to memory. Generate free-form mechanisms, possible "
             "direct candidates, sector hypotheses, beneficiary investigation questions, "
             "and uncertainties without hardcoded ticker/theme mappings.\n"
@@ -715,72 +941,70 @@ class DailyAnalyzer:
         *,
         news_texts: list[str],
         event_ids: list[str],
+        cluster_ids: list[str],
         cutoff_at: datetime,
         prompt_sha256: str,
     ) -> OpenWorldFirstAnalysis:
-        fallback = self._fallback_open_world_first_analysis(
-            news_texts=news_texts,
-            event_ids=event_ids,
-            cutoff_at=cutoff_at,
-            prompt_sha256=prompt_sha256,
-        )
+        if (
+            analysis.source_cluster_ids != cluster_ids
+            or analysis.analyzed_cluster_ids != cluster_ids
+            or analysis.uncovered_cluster_ids
+            or analysis.analysis_batch_count != 1
+        ):
+            raise OpenWorldCoverageError(
+                "open-world Pass 0 cluster coverage does not match the dispatched batch"
+            )
 
-        def list_or_fallback(
-            values: list[str],
-            fallback_values: list[str],
-        ) -> list[str]:
-            cleaned = _unique_preserving_order(
+        def cleaned(values: list[str]) -> list[str]:
+            return _unique_preserving_order(
                 [" ".join(value.split()) for value in values if value.strip()]
             )
-            return cleaned or fallback_values
+
+        event_clusters = cleaned(analysis.event_clusters)
+        mechanisms = cleaned(analysis.mechanisms)
+        uncertainties = cleaned(analysis.uncertainties)
+        finding_ids = [finding.cluster_id for finding in analysis.cluster_findings]
+        if finding_ids != cluster_ids:
+            raise OpenWorldCoverageError(
+                "open-world Pass 0 cluster findings do not match the dispatched batch"
+            )
+        if cluster_ids and not event_clusters:
+            raise OpenWorldCoverageError(
+                "open-world Pass 0 omitted event-cluster summaries for a material batch"
+            )
+        if cluster_ids and not mechanisms and not uncertainties:
+            raise OpenWorldCoverageError(
+                "open-world Pass 0 omitted both mechanisms and uncertainties for a material batch"
+            )
 
         return analysis.model_copy(
             update={
-                "run_id": analysis.run_id or fallback.run_id,
+                "run_id": analysis.run_id,
                 "prompt_version": OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION,
                 "prompt_sha256": prompt_sha256,
                 "cutoff_at": cutoff_at,
                 "event_ids": _unique_preserving_order(event_ids),
-                "event_clusters": list_or_fallback(
-                    analysis.event_clusters,
-                    fallback.event_clusters,
+                "source_cluster_ids": analysis.source_cluster_ids,
+                "analyzed_cluster_ids": analysis.analyzed_cluster_ids,
+                "uncovered_cluster_ids": analysis.uncovered_cluster_ids,
+                "analysis_batch_count": analysis.analysis_batch_count,
+                "cluster_findings": analysis.cluster_findings,
+                "event_clusters": event_clusters,
+                "direct_company_events": cleaned(analysis.direct_company_events),
+                "policy_industry_events": cleaned(analysis.policy_industry_events),
+                "mechanisms": mechanisms,
+                "beneficiary_transmission_paths": cleaned(
+                    analysis.beneficiary_transmission_paths
                 ),
-                "direct_company_events": list_or_fallback(
-                    analysis.direct_company_events,
-                    fallback.direct_company_events,
+                "narrative_conversion_points": cleaned(
+                    analysis.narrative_conversion_points
                 ),
-                "policy_industry_events": list_or_fallback(
-                    analysis.policy_industry_events,
-                    fallback.policy_industry_events,
+                "direct_candidates": cleaned(analysis.direct_candidates),
+                "potential_sectors": cleaned(analysis.potential_sectors),
+                "beneficiary_investigation_questions": cleaned(
+                    analysis.beneficiary_investigation_questions
                 ),
-                "mechanisms": list_or_fallback(
-                    analysis.mechanisms,
-                    fallback.mechanisms,
-                ),
-                "beneficiary_transmission_paths": list_or_fallback(
-                    analysis.beneficiary_transmission_paths,
-                    fallback.beneficiary_transmission_paths,
-                ),
-                "narrative_conversion_points": list_or_fallback(
-                    analysis.narrative_conversion_points,
-                    fallback.narrative_conversion_points,
-                ),
-                "direct_candidates": list_or_fallback(
-                    analysis.direct_candidates,
-                    fallback.direct_candidates,
-                ),
-                "potential_sectors": list_or_fallback(
-                    analysis.potential_sectors,
-                    fallback.potential_sectors,
-                ),
-                "beneficiary_investigation_questions": list_or_fallback(
-                    analysis.beneficiary_investigation_questions,
-                    fallback.beneficiary_investigation_questions,
-                ),
-                "uncertainties": list_or_fallback(
-                    analysis.uncertainties,
-                    fallback.uncertainties,
-                ),
+                "uncertainties": uncertainties,
             }
         )
 
@@ -842,6 +1066,30 @@ class DailyAnalyzer:
             ],
         )
 
+    def _fallback_cluster_findings(
+        self,
+        clusters: list[OpenWorldClusterInput],
+    ) -> list[OpenWorldClusterFinding]:
+        findings: list[OpenWorldClusterFinding] = []
+        for cluster in clusters:
+            mechanisms = self._infer_first_pass_mechanisms(list(cluster.member_news))
+            mentions = self.fallback_llm.extract_company_mentions(
+                list(cluster.member_news),
+                limit=6,
+            )
+            findings.append(
+                OpenWorldClusterFinding(
+                    cluster_id=cluster.cluster_id,
+                    event_summary=cluster.representative_text.splitlines()[0][:240],
+                    mechanisms=mechanisms,
+                    direct_candidates=mentions,
+                    uncertainties=[
+                        "fallback cluster semantics require cutoff-safe provider verification"
+                    ],
+                )
+            )
+        return findings
+
     def _write_open_world_first_analysis_artifact(
         self,
         *,
@@ -871,6 +1119,11 @@ class DailyAnalyzer:
         manifest.open_world_first_analysis_artifact = artifact_relative.as_posix()
         manifest.open_world_first_analysis_sha256 = sha256_text(artifact_text)
         manifest.open_world_first_analysis_summary = {
+            "source_cluster_count": len(normalized.source_cluster_ids),
+            "analyzed_cluster_count": len(normalized.analyzed_cluster_ids),
+            "uncovered_cluster_count": len(normalized.uncovered_cluster_ids),
+            "analysis_batch_count": normalized.analysis_batch_count,
+            "cluster_finding_count": len(normalized.cluster_findings),
             "event_cluster_count": len(normalized.event_clusters),
             "direct_company_event_count": len(normalized.direct_company_events),
             "policy_industry_event_count": len(normalized.policy_industry_events),
@@ -983,115 +1236,240 @@ class DailyAnalyzer:
     def _write_event_cluster_artifact(
         self,
         *,
-        news_items: list[NewsItem],
+        result: EventClusteringResult,
         cutoff_at: datetime,
         manifest: ContextManifest,
     ) -> None:
-        clusters: dict[str, list[NewsItem]] = {}
-        for item in news_items:
-            clusters.setdefault(_event_cluster_fingerprint(item), []).append(item)
         rows: list[dict[str, Any]] = []
-        for cluster_index, (fingerprint, items) in enumerate(clusters.items(), start=1):
+        for cluster_index, cluster in enumerate(result.material_clusters, start=1):
+            items = list(cluster.members)
             published = sorted(item.published_at for item in items)
             cutoff_safe_published = [value for value in published if value <= cutoff_at]
             rows.append(
                 {
                     "schema_version": "nslab.news_event_cluster.v1",
                     "run_id": manifest.run_id,
-                    "cluster_id": stable_id("EVCL", manifest.run_id, fingerprint),
+                    "cluster_id": cluster.cluster_id,
                     "cluster_index": cluster_index,
-                    "cluster_method": "exact_normalized_title_body_v1",
-                    "cluster_key_sha256": fingerprint,
+                    "cluster_method": result.clustering_version,
+                    "cluster_key_sha256": cluster.cluster_signature_sha256,
                     "row_numbers": [item.row_number for item in items],
                     "event_ids": [item.event_id for item in items],
                     "source_ids": [item.source_id for item in items],
                     "row_count": len(items),
-                    "exact_duplicate_count": max(0, len(items) - 1),
+                    "exact_duplicate_count": cluster.exact_duplicate_count,
+                    "semantic_duplicate_count": cluster.semantic_duplicate_count,
+                    "minimum_semantic_similarity": (cluster.minimum_semantic_similarity),
+                    "disposition": cluster.disposition,
+                    "eligible_for_blind_evidence": True,
                     "first_published_at": published[0].isoformat(),
                     "last_published_at_before_cutoff": (
-                        max(cutoff_safe_published).isoformat()
-                        if cutoff_safe_published
-                        else None
+                        max(cutoff_safe_published).isoformat() if cutoff_safe_published else None
                     ),
                     "cutoff_at": cutoff_at.isoformat(),
-                    "time_verified": bool(cutoff_safe_published)
-                    and max(cutoff_safe_published) <= cutoff_at,
-                    "representative_title_sha256": sha256_text(items[0].title),
-                    "representative_body_sha256": sha256_text(items[0].body),
-                    "representative_title_excerpt": items[0].title[:240],
-                    "representative_body_excerpt": items[0].body[:600],
+                    "time_verified": bool(cutoff_safe_published) and max(cutoff_safe_published) <= cutoff_at,
+                    "representative_title_sha256": sha256_text(cluster.representative.title),
+                    "representative_body_sha256": sha256_text(cluster.representative.body),
+                    "representative_title_excerpt": (cluster.representative.title[:240]),
+                    "representative_body_excerpt": cluster.representative.body[:600],
+                    "member_news_excerpts": [
+                        {
+                            "row_number": item.row_number,
+                            "event_id": item.event_id,
+                            "title_sha256": sha256_text(item.title),
+                            "body_sha256": sha256_text(item.body),
+                            "title_excerpt": item.title[:240],
+                            "body_excerpt": item.body[:600],
+                        }
+                        for item in items
+                    ],
                     "novelty": "unclear",
                     "novelty_basis": (
-                        "Deterministic exact duplicate clustering only; final novelty "
-                        "requires LLM/web review."
+                        "Cutoff-safe semantic clustering groups duplicate coverage only; "
+                        "final novelty still requires LLM/web review."
                     ),
                     "requires_llm_novelty_review": True,
                 }
             )
-        artifact_relative = (
-            Path("runs")
-            / "checkpoints"
-            / "event_clusters"
-            / manifest.run_id
-            / "event_clusters.jsonl"
-        )
+        artifact_relative = Path("runs") / "checkpoints" / "event_clusters" / manifest.run_id / "event_clusters.jsonl"
         artifact_path = self.root / artifact_relative
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
         payload = "".join(canonical_json(row) + "\n" for row in rows)
         artifact_path.write_text(payload, encoding="utf-8")
-        exact_duplicate_cluster_count = sum(
-            1 for row in rows if int(row["exact_duplicate_count"]) > 0
-        )
+        exact_duplicate_cluster_count = sum(1 for row in rows if int(row["exact_duplicate_count"]) > 0)
+        semantic_duplicate_cluster_count = sum(1 for row in rows if int(row["semantic_duplicate_count"]) > 0)
         manifest.event_cluster_artifact = artifact_relative.as_posix()
         manifest.event_cluster_sha256 = sha256_text(payload)
         manifest.event_cluster_count = len(rows)
         manifest.event_cluster_summary = {
-            "source_row_count": len(news_items),
+            "source_row_count": result.cutoff_safe_row_count,
+            "all_input_row_count": result.input_row_count,
+            "audit_only_row_count": result.audit_only_row_count,
             "cluster_count": len(rows),
             "exact_duplicate_count": sum(int(row["exact_duplicate_count"]) for row in rows),
             "exact_duplicate_cluster_count": exact_duplicate_cluster_count,
-            "semantic_duplicate_cluster_count": 0,
-            "cluster_method": "exact_normalized_title_body_v1",
+            "semantic_duplicate_count": sum(int(row["semantic_duplicate_count"]) for row in rows),
+            "semantic_duplicate_cluster_count": semantic_duplicate_cluster_count,
+            "cluster_method": result.clustering_version,
+            "embedding_method": result.embedding_method,
+            "embedding_status": result.embedding_status,
+            "warnings": list(result.warnings),
             "novelty_review_required": True,
         }
+
+    def _write_news_coverage_manifests(
+        self,
+        *,
+        result: EventClusteringResult,
+        news_sha256: str,
+        trade_date: date,
+        cutoff_at: datetime,
+        manifest: ContextManifest,
+    ) -> None:
+        coverage_rows: list[NewsRowCoverage] = []
+        cluster_entries: list[EventClusterEntry] = []
+        for cluster in result.clusters:
+            for index, item in enumerate(cluster.members):
+                disposition = cluster.disposition if index == 0 else "DUPLICATE"
+                coverage_rows.append(
+                    NewsRowCoverage(
+                        row_number=item.row_number,
+                        event_id=item.event_id,
+                        source_id=item.source_id,
+                        primary_cluster_id=(cluster.cluster_id if disposition != "DUPLICATE" else None),
+                        duplicate_parent_cluster_id=(cluster.cluster_id if disposition == "DUPLICATE" else None),
+                        disposition=disposition,
+                    )
+                )
+            cluster_entries.append(
+                EventClusterEntry(
+                    cluster_id=cluster.cluster_id,
+                    representative_event_id=cluster.representative.event_id,
+                    member_event_ids=[item.event_id for item in cluster.members],
+                    member_source_ids=[item.source_id for item in cluster.members],
+                    member_row_numbers=[item.row_number for item in cluster.members],
+                    disposition=cluster.disposition,
+                    exact_duplicate_count=cluster.exact_duplicate_count,
+                    semantic_duplicate_count=cluster.semantic_duplicate_count,
+                    cluster_signature_sha256=cluster.cluster_signature_sha256,
+                )
+            )
+        coverage_rows.sort(key=lambda row: row.row_number)
+        disposition_counts = dict(sorted(Counter(row.disposition for row in coverage_rows).items()))
+        coverage_hash = sha256_text(canonical_json([row.model_dump(mode="json") for row in coverage_rows]))
+        coverage_manifest = NewsCoverageManifest(
+            run_id=manifest.run_id,
+            trade_date=trade_date,
+            cutoff_at=cutoff_at,
+            input_news_sha256=news_sha256,
+            input_row_count=result.input_row_count,
+            covered_row_count=len(coverage_rows),
+            missing_row_count=result.input_row_count - len(coverage_rows),
+            duplicate_assignment_count=disposition_counts.get("DUPLICATE", 0),
+            disposition_counts=disposition_counts,
+            row_coverage_sha256=coverage_hash,
+            rows=coverage_rows,
+        )
+        event_manifest = EventClusterManifest(
+            run_id=manifest.run_id,
+            trade_date=trade_date,
+            cutoff_at=cutoff_at,
+            clustering_version=result.clustering_version,
+            embedding_provider=result.embedding_method,
+            embedding_status=result.embedding_status,
+            embedding_batch_size=self.settings.limits.event_cluster_embedding_batch_size,
+            similarity_threshold=self.settings.limits.event_cluster_similarity_threshold,
+            max_semantic_variants=self.settings.limits.event_cluster_max_semantic_variants,
+            input_row_count=result.input_row_count,
+            cluster_count=len(cluster_entries),
+            material_cluster_count=len(result.material_clusters),
+            unassigned_row_count=0,
+            duplicate_assignment_count=0,
+            clusters=cluster_entries,
+        )
+        base = Path("runs") / "checkpoints" / "event_clusters" / manifest.run_id
+        coverage_relative = base / "news_coverage_manifest.json"
+        event_relative = base / "event_cluster_manifest.json"
+        write_json(
+            self.root / coverage_relative,
+            coverage_manifest.model_dump(mode="json"),
+        )
+        write_json(self.root / event_relative, event_manifest.model_dump(mode="json"))
+        manifest.news_coverage_manifest_artifact = coverage_relative.as_posix()
+        manifest.news_coverage_manifest_sha256 = sha256_text(
+            (self.root / coverage_relative).read_text(encoding="utf-8")
+        )
+        manifest.event_cluster_manifest_artifact = event_relative.as_posix()
+        manifest.event_cluster_manifest_sha256 = sha256_text((self.root / event_relative).read_text(encoding="utf-8"))
 
     async def _run_news_novelty_review(
         self,
         *,
-        news_texts: list[str],
         manifest: ContextManifest,
         cutoff_at: datetime,
-    ) -> tuple[NewsNoveltyReview, str, int]:
-        prompt = self._build_news_novelty_review_prompt(
-            news_texts=news_texts,
-            manifest=manifest,
-            cutoff_at=cutoff_at,
-        )
-        prompt_sha256 = sha256_text(prompt)
-        try:
-            review = await self.llm.generate_structured(
-                prompt=prompt,
-                response_model=NewsNoveltyReview,
-                purpose="news_novelty_review",
-            )
-        except NotImplementedError:
-            review = self._fallback_news_novelty_review(
+    ) -> tuple[NewsNoveltyReview, str, int, list[str]]:
+        cluster_rows = self._read_event_cluster_context(manifest)
+        batch_size = max(1, self.settings.limits.novelty_cluster_batch_size)
+        batch_count = max(1, (len(cluster_rows) + batch_size - 1) // batch_size)
+        partial_reviews: list[NewsNoveltyReview] = []
+        prompt_hashes: list[str] = []
+        token_count = 0
+        for batch_index, start in enumerate(range(0, len(cluster_rows), batch_size), start=1):
+            batch_rows = cluster_rows[start : start + batch_size]
+            prompt = self._build_news_novelty_review_prompt(
+                cluster_rows=batch_rows,
                 manifest=manifest,
                 cutoff_at=cutoff_at,
-                prompt_sha256=prompt_sha256,
             )
-        normalized = self._normalize_news_novelty_review(
-            review,
-            manifest=manifest,
+            prompt_sha256 = sha256_text(prompt)
+            prompt_hashes.append(prompt_sha256)
+            token_count += max(1, len(prompt) // 4)
+            try:
+                review = await self.llm.generate_structured(
+                    prompt=prompt,
+                    response_model=NewsNoveltyReview,
+                    purpose=(
+                        "news_novelty_review" if batch_count == 1 else f"news_novelty_review.batch_{batch_index:04d}"
+                    ),
+                )
+            except NotImplementedError:
+                review = self._fallback_news_novelty_review_for_rows(
+                    cluster_rows=batch_rows,
+                    manifest=manifest,
+                    cutoff_at=cutoff_at,
+                    prompt_sha256=prompt_sha256,
+                )
+            partial_reviews.append(
+                self._normalize_news_novelty_review(
+                    review,
+                    manifest=manifest,
+                    cutoff_at=cutoff_at,
+                    prompt_sha256=prompt_sha256,
+                    cluster_rows=batch_rows,
+                )
+            )
+        aggregate_prompt_sha256 = (
+            prompt_hashes[0] if len(prompt_hashes) == 1 else sha256_text(canonical_json(prompt_hashes))
+        )
+        findings = sorted(
+            [finding for review in partial_reviews for finding in review.findings],
+            key=lambda item: item.cluster_index,
+        )
+        normalized = NewsNoveltyReview(
+            run_id=manifest.run_id,
+            prompt_version=NEWS_NOVELTY_REVIEW_PROMPT_VERSION,
+            prompt_sha256=aggregate_prompt_sha256,
+            created_at=now_kst(),
             cutoff_at=cutoff_at,
-            prompt_sha256=prompt_sha256,
+            review_mode=manifest.blind_context_mode,
+            cluster_count=len(cluster_rows),
+            reviewed_cluster_count=len(findings),
+            findings=findings,
+            excluded_after_cutoff_source_ids=manifest.excluded_web_source_ids,
+            notes=_unique_preserving_order([note for review in partial_reviews for note in review.notes]),
         )
         artifact_relative = (
-            Path("runs")
-            / "checkpoints"
-            / "news_novelty_reviews"
-            / manifest.run_id
-            / "news_novelty_review.json"
+            Path("runs") / "checkpoints" / "news_novelty_reviews" / manifest.run_id / "news_novelty_review.json"
         )
         artifact_path = self.root / artifact_relative
         write_json(artifact_path, normalized.model_dump(mode="json"))
@@ -1109,16 +1487,14 @@ class DailyAnalyzer:
             "review_mode": normalized.review_mode,
             "novelty_counts": novelty_counts,
             "time_verified_count": sum(1 for finding in normalized.findings if finding.time_verified),
-            "excluded_after_cutoff_source_count": len(
-                normalized.excluded_after_cutoff_source_ids
-            ),
+            "excluded_after_cutoff_source_count": len(normalized.excluded_after_cutoff_source_ids),
         }
-        return normalized, prompt_sha256, max(1, len(prompt) // 4)
+        return normalized, aggregate_prompt_sha256, token_count, prompt_hashes
 
     def _build_news_novelty_review_prompt(
         self,
         *,
-        news_texts: list[str],
+        cluster_rows: list[dict[str, Any]],
         manifest: ContextManifest,
         cutoff_at: datetime,
     ) -> str:
@@ -1128,8 +1504,16 @@ class DailyAnalyzer:
             "run_id": manifest.run_id,
             "cutoff_at": cutoff_at.isoformat(),
             "review_mode": manifest.blind_context_mode,
-            "current_news": news_texts,
-            "event_clusters": self._read_event_cluster_context(manifest),
+            "current_news": [
+                "\n".join(
+                    [
+                        str(row.get("representative_title_excerpt", "")),
+                        str(row.get("representative_body_excerpt", "")),
+                    ]
+                )
+                for row in cluster_rows
+            ],
+            "event_clusters": cluster_rows,
             "cutoff_safe_web_sources": self._read_web_source_context(manifest),
             "excluded_after_cutoff_source_ids": manifest.excluded_web_source_ids,
             "required_checks": [
@@ -1161,14 +1545,17 @@ class DailyAnalyzer:
         manifest: ContextManifest,
         cutoff_at: datetime,
         prompt_sha256: str,
+        cluster_rows: list[dict[str, Any]] | None = None,
     ) -> NewsNoveltyReview:
-        cluster_rows = self._read_event_cluster_context(manifest)
+        effective_cluster_rows = (
+            cluster_rows if cluster_rows is not None else self._read_event_cluster_context(manifest)
+        )
         cluster_by_id = {
             str(row["cluster_id"]): row
-            for row in cluster_rows
+            for row in effective_cluster_rows
             if isinstance(row, dict) and isinstance(row.get("cluster_id"), str)
         }
-        allowed_source_ids = self._allowed_news_novelty_source_ids(cluster_rows, manifest)
+        allowed_source_ids = self._allowed_news_novelty_source_ids(effective_cluster_rows, manifest)
         normalized_findings: list[NewsNoveltyFinding] = []
         seen_cluster_ids: set[str] = set()
         for finding in review.findings:
@@ -1259,7 +1646,21 @@ class DailyAnalyzer:
         cutoff_at: datetime,
         prompt_sha256: str,
     ) -> NewsNoveltyReview:
-        cluster_rows = self._read_event_cluster_context(manifest)
+        return self._fallback_news_novelty_review_for_rows(
+            cluster_rows=self._read_event_cluster_context(manifest),
+            manifest=manifest,
+            cutoff_at=cutoff_at,
+            prompt_sha256=prompt_sha256,
+        )
+
+    def _fallback_news_novelty_review_for_rows(
+        self,
+        *,
+        cluster_rows: list[dict[str, Any]],
+        manifest: ContextManifest,
+        cutoff_at: datetime,
+        prompt_sha256: str,
+    ) -> NewsNoveltyReview:
         findings = [
             self._fallback_news_novelty_finding(
                 cluster_row=cluster_row,
@@ -1967,47 +2368,46 @@ class DailyAnalyzer:
         existing_paths: set[CandidateExpansionPath] = set()
         allowed_source_ids = self._candidate_expansion_allowed_source_ids(manifest)
         allowed_cluster_ids = self._candidate_expansion_allowed_cluster_ids(manifest)
-        allowed_episode_ids = set(manifest.semantic_retrieval_episode_ids) | set(
-            manifest.retrieved_episode_ids
-        )
+        allowed_episode_ids = set(manifest.semantic_retrieval_episode_ids) | set(manifest.retrieved_episode_ids)
         for finding in review.findings:
             if finding.path not in CANDIDATE_EXPANSION_REQUIRED_PATHS:
                 continue
+            fallback = self._fallback_candidate_expansion_finding(
+                path=finding.path,
+                manifest=manifest,
+                first_pass_mechanisms=first_pass_mechanisms,
+            )
             unknown_sources = sorted(
-                source_id
-                for source_id in finding.evidence_source_ids
-                if source_id not in allowed_source_ids
+                source_id for source_id in finding.evidence_source_ids if source_id not in allowed_source_ids
             )
             if unknown_sources:
                 raise ValueError(
-                    "candidate expansion referenced unknown evidence_source_ids: "
-                    + ", ".join(unknown_sources)
+                    "candidate expansion referenced unknown evidence_source_ids: " + ", ".join(unknown_sources)
                 )
             unknown_clusters = sorted(
-                cluster_id
-                for cluster_id in finding.related_cluster_ids
-                if cluster_id not in allowed_cluster_ids
+                cluster_id for cluster_id in finding.related_cluster_ids if cluster_id not in allowed_cluster_ids
             )
             if unknown_clusters:
                 raise ValueError(
-                    "candidate expansion referenced unknown related_cluster_ids: "
-                    + ", ".join(unknown_clusters)
+                    "candidate expansion referenced unknown related_cluster_ids: " + ", ".join(unknown_clusters)
                 )
             unknown_episodes = sorted(
-                episode_id
-                for episode_id in finding.memory_episode_ids
-                if episode_id not in allowed_episode_ids
+                episode_id for episode_id in finding.memory_episode_ids if episode_id not in allowed_episode_ids
             )
             if unknown_episodes:
                 raise ValueError(
-                    "candidate expansion referenced unavailable memory_episode_ids: "
-                    + ", ".join(unknown_episodes)
+                    "candidate expansion referenced unavailable memory_episode_ids: " + ", ".join(unknown_episodes)
                 )
-            if (
-                finding.path == CandidateExpansionPath.CONTINUATION
-                and not finding.d_minus_one_market_data_only
-            ):
+            if finding.path == CandidateExpansionPath.CONTINUATION and not finding.d_minus_one_market_data_only:
                 finding = finding.model_copy(update={"d_minus_one_market_data_only": True})
+            finding = finding.model_copy(
+                update={
+                    "candidate_names": finding.candidate_names or fallback.candidate_names,
+                    "sector_hypotheses": finding.sector_hypotheses or fallback.sector_hypotheses,
+                    "investigation_questions": finding.investigation_questions or fallback.investigation_questions,
+                    "uncertainties": finding.uncertainties or fallback.uncertainties,
+                }
+            )
             findings.append(finding)
             existing_paths.add(finding.path)
         for path in CANDIDATE_EXPANSION_REQUIRED_PATHS:
@@ -2109,7 +2509,7 @@ class DailyAnalyzer:
     def _fallback_candidate_expansion_finding(
         self,
         *,
-        path: CandidateExpansionPath,
+        path: CandidateExpansionPath | str,
         manifest: ContextManifest,
         first_pass_mechanisms: list[str],
     ) -> CandidateExpansionFinding:
@@ -2120,11 +2520,13 @@ class DailyAnalyzer:
             if isinstance(row, dict) and isinstance(row.get("cluster_id"), str)
         ][:3]
         source_ids = self._candidate_expansion_allowed_source_ids(manifest)
-        path_text = path.value.lower().replace("_", " ")
+        path_value = path.value if isinstance(path, CandidateExpansionPath) else path
+        normalized_path = CandidateExpansionPath(path_value)
+        path_text = path_value.lower().replace("_", " ")
         return CandidateExpansionFinding(
-            path=path,
+            path=normalized_path,
             hypothesis=f"{path_text} route requires open-world review of {mechanism}.",
-            candidate_names=[f"{path.value}_DISCOVERY_REQUIRED"],
+            candidate_names=[f"{path_value}_DISCOVERY_REQUIRED"],
             sector_hypotheses=[f"{path_text} hypothesis from current catalyst"],
             investigation_questions=[
                 f"Which listed entities fit the {path_text} route before cutoff?",
@@ -2133,13 +2535,13 @@ class DailyAnalyzer:
             evidence_source_ids=sorted(source_ids)[:5],
             related_cluster_ids=cluster_ids,
             memory_episode_ids=manifest.semantic_retrieval_episode_ids[:5],
-            requires_web_company_discovery=path
+            requires_web_company_discovery=normalized_path
             in {
                 CandidateExpansionPath.SINGLE_EVENT,
                 CandidateExpansionPath.THEME_FORMATION,
                 CandidateExpansionPath.BENEFICIARY_DISCOVERY,
             },
-            d_minus_one_market_data_only=path == CandidateExpansionPath.CONTINUATION,
+            d_minus_one_market_data_only=(normalized_path == CandidateExpansionPath.CONTINUATION),
             uncertainties=["candidate route must be verified by Pass 5 web/company checks"],
         )
 
@@ -4211,37 +4613,42 @@ class DailyAnalyzer:
                 "provenance": analysis_provenance,
             }
         )
-        sectors = prediction.dominant_sectors or [
-            DominantSectorHypothesis(
-                name="open-world catalyst cluster",
-                triggering_events=event_ids[:5],
-                formation_mechanism=(
-                    analysis.open_world_mechanisms[0]
-                    if analysis.open_world_mechanisms
-                    else "current catalyst -> open-world sector hypothesis"
-                ),
-                expected_breadth="requires web verification and memory comparison",
-                direct_beneficiaries=[
-                    candidate.company_name
-                    for candidate in prediction.candidates
-                    if candidate.path_type == PathType.SINGLE_EVENT
-                ][:5],
-                indirect_beneficiaries=[
-                    candidate.company_name
-                    for candidate in prediction.candidates
-                    if candidate.path_type != PathType.SINGLE_EVENT
-                ][:5],
-                possible_leaders=[
-                    candidate.company_name
-                    for candidate in sorted(prediction.candidates, key=lambda item: item.rank)[:5]
-                ],
-                failure_conditions=[
-                    "web evidence fails listing or relation verification",
-                    "D-1 market already absorbed the catalyst",
-                    "memory counterexamples outweigh support",
-                ],
-            )
-        ]
+        sectors = (
+            []
+            if not event_ids
+            else prediction.dominant_sectors
+            or [
+                DominantSectorHypothesis(
+                    name="open-world catalyst cluster",
+                    triggering_events=event_ids[:5],
+                    formation_mechanism=(
+                        analysis.open_world_mechanisms[0]
+                        if analysis.open_world_mechanisms
+                        else "current catalyst -> open-world sector hypothesis"
+                    ),
+                    expected_breadth="requires web verification and memory comparison",
+                    direct_beneficiaries=[
+                        candidate.company_name
+                        for candidate in prediction.candidates
+                        if candidate.path_type == PathType.SINGLE_EVENT
+                    ][:5],
+                    indirect_beneficiaries=[
+                        candidate.company_name
+                        for candidate in prediction.candidates
+                        if candidate.path_type != PathType.SINGLE_EVENT
+                    ][:5],
+                    possible_leaders=[
+                        candidate.company_name
+                        for candidate in sorted(prediction.candidates, key=lambda item: item.rank)[:5]
+                    ],
+                    failure_conditions=[
+                        "web evidence fails listing or relation verification",
+                        "D-1 market already absorbed the catalyst",
+                        "memory counterexamples outweigh support",
+                    ],
+                )
+            ]
+        )
         normalized_sectors = []
         for index, sector in enumerate(sectors, start=1):
             sector_event_ids = sector.triggering_events or event_ids[:1]
@@ -4280,20 +4687,13 @@ class DailyAnalyzer:
                 )
             )
         normalized_candidates = []
-        for index, candidate in enumerate(prediction.candidates, start=1):
+        candidates = prediction.candidates if event_ids else []
+        for index, candidate in enumerate(candidates, start=1):
             candidate_event_ids = candidate.event_ids or event_ids[:1]
-            prior_positive_cases = (
-                candidate.prior_positive_cases or fallback_positive_case_ids
-            )
-            prior_negative_cases = (
-                candidate.prior_negative_cases or fallback_negative_case_ids
-            )
-            prior_positive_record_ids = (
-                candidate.prior_positive_record_ids or fallback_positive_record_ids
-            )
-            prior_negative_record_ids = (
-                candidate.prior_negative_record_ids or fallback_negative_record_ids
-            )
+            prior_positive_cases = candidate.prior_positive_cases or fallback_positive_case_ids
+            prior_negative_cases = candidate.prior_negative_cases or fallback_negative_case_ids
+            prior_positive_record_ids = candidate.prior_positive_record_ids or fallback_positive_record_ids
+            prior_negative_record_ids = candidate.prior_negative_record_ids or fallback_negative_record_ids
             memory_episode_ids = _unique_preserving_order(
                 [
                     *candidate.memory_episode_ids,
@@ -4376,6 +4776,9 @@ class DailyAnalyzer:
                 "open_world_first_analysis": {
                     "prompt_version": OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION
                 },
+                "daily_event_clustering": {
+                    "prompt_version": EVENT_CLUSTERING_VERSION
+                },
                 "news_novelty_review": {
                     "prompt_version": NEWS_NOVELTY_REVIEW_PROMPT_VERSION
                 },
@@ -4393,13 +4796,37 @@ class DailyAnalyzer:
         )
 
     def _llm_model_config(self, provider: LLMProvider) -> dict[str, Any]:
+        phase1_config = {
+            "event_clustering_version": EVENT_CLUSTERING_VERSION,
+            "event_cluster_embedding_batch_size": (
+                self.settings.limits.event_cluster_embedding_batch_size
+            ),
+            "event_cluster_similarity_threshold": (
+                self.settings.limits.event_cluster_similarity_threshold
+            ),
+            "event_cluster_max_semantic_variants": (
+                self.settings.limits.event_cluster_max_semantic_variants
+            ),
+            "open_world_cluster_batch_size": (
+                self.settings.limits.open_world_cluster_batch_size
+            ),
+            "open_world_max_prompt_chars": (
+                self.settings.limits.open_world_max_prompt_chars
+            ),
+            "novelty_cluster_batch_size": (
+                self.settings.limits.novelty_cluster_batch_size
+            ),
+        }
         if isinstance(provider, TracingLLMProvider):
-            return dict(provider.model_config)
+            traced_config = {**dict(provider.model_config), **phase1_config}
+            provider.model_config = dict(traced_config)
+            return traced_config
         config: dict[str, Any] = {
             "configured_provider": self.settings.llm_provider,
             "provider_class": type(provider).__name__,
             "max_concurrency": self.settings.limits.max_concurrency,
             "shard_episode_count": self.settings.limits.shard_episode_count,
+            **phase1_config,
         }
         model = getattr(provider, "model", None)
         if isinstance(model, str) and model:

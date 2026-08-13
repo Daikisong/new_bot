@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Annotated, Any, NoReturn
 
 import typer
+from pydantic import ValidationError
 
 from news_scalping_lab.audits.coverage import audit_coverage
 from news_scalping_lab.audits.hardcoding import audit_hardcoding
@@ -34,6 +35,10 @@ from news_scalping_lab.context.session_pack import (
     SessionPackFutureContextError,
     export_session_pack,
 )
+from news_scalping_lab.contracts.memory_context import (
+    EventClusterManifest,
+    NewsCoverageManifest,
+)
 from news_scalping_lab.contracts.schemas import export_json_schemas
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
 from news_scalping_lab.diagnostics import (
@@ -42,7 +47,11 @@ from news_scalping_lab.diagnostics import (
     real_bundle_smoke_report,
 )
 from news_scalping_lab.evaluation.evaluator import Evaluator
-from news_scalping_lab.inference.analyzer import DailyAnalyzer
+from news_scalping_lab.inference.analyzer import (
+    OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION,
+    DailyAnalyzer,
+)
+from news_scalping_lab.inference.event_clustering import EVENT_CLUSTERING_VERSION
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
@@ -1475,14 +1484,27 @@ def _is_mock_or_placeholder_ref(value: str) -> bool:
 
 
 def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
+    phase1_required = _phase1_coverage_artifacts_required(manifest)
     specs = (
         ("row_disposition", "row_disposition_artifact", "row_disposition_sha256", True),
         ("event_cluster", "event_cluster_artifact", "event_cluster_sha256", True),
         (
+            "news_coverage_manifest",
+            "news_coverage_manifest_artifact",
+            "news_coverage_manifest_sha256",
+            phase1_required,
+        ),
+        (
+            "event_cluster_manifest",
+            "event_cluster_manifest_artifact",
+            "event_cluster_manifest_sha256",
+            phase1_required,
+        ),
+        (
             "open_world_first_analysis",
             "open_world_first_analysis_artifact",
             "open_world_first_analysis_sha256",
-            False,
+            phase1_required,
         ),
         (
             "news_novelty_review",
@@ -1566,6 +1588,8 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
     }
     statuses["row_disposition"] = _inspect_row_disposition_artifact(root, manifest)
     statuses["event_cluster"] = _inspect_event_cluster_artifact(root, manifest)
+    statuses["news_coverage_manifest"] = _inspect_news_coverage_manifest_artifact(root, manifest)
+    statuses["event_cluster_manifest"] = _inspect_event_cluster_manifest_artifact(root, manifest)
     statuses["open_world_first_analysis"] = _inspect_open_world_first_analysis_artifact(root, manifest)
     statuses["news_novelty_review"] = _inspect_news_novelty_review_artifact(root, manifest)
     statuses["semantic_retrieval_plan"] = _inspect_semantic_retrieval_plan_artifact(root, manifest)
@@ -1776,6 +1800,9 @@ def _inspect_event_cluster_artifact(
     source_row_count = sum(_non_bool_int(row.get("row_count")) or 0 for row in rows)
     exact_duplicate_count = sum(_non_bool_int(row.get("exact_duplicate_count")) or 0 for row in rows)
     exact_duplicate_cluster_count = sum(1 for row in rows if (_non_bool_int(row.get("exact_duplicate_count")) or 0) > 0)
+    semantic_duplicate_cluster_count = sum(
+        1 for row in rows if (_non_bool_int(row.get("semantic_duplicate_count")) or 0) > 0
+    )
     status["summary_cluster_count_verified"] = _non_bool_int(summary.get("cluster_count")) == len(rows)
     if not status["summary_cluster_count_verified"]:
         status["errors"].append("event_cluster_summary_cluster_count_mismatch")
@@ -1793,13 +1820,13 @@ def _inspect_event_cluster_artifact(
     if not status["summary_exact_duplicate_cluster_count_verified"]:
         status["errors"].append("event_cluster_summary_exact_duplicate_cluster_count_mismatch")
     status["summary_semantic_duplicate_cluster_count_verified"] = (
-        _non_bool_int(summary.get("semantic_duplicate_cluster_count")) == 0
+        _non_bool_int(summary.get("semantic_duplicate_cluster_count")) == semantic_duplicate_cluster_count
     )
     if not status["summary_semantic_duplicate_cluster_count_verified"]:
         status["errors"].append("event_cluster_summary_semantic_duplicate_cluster_count_mismatch")
     methods = {method for row in rows if isinstance(method := row.get("cluster_method"), str) and method}
-    status["summary_cluster_method_verified"] = (
-        isinstance(summary.get("cluster_method"), str) and bool(methods) and methods == {summary.get("cluster_method")}
+    status["summary_cluster_method_verified"] = isinstance(summary.get("cluster_method"), str) and (
+        not rows or methods == {summary.get("cluster_method")}
     )
     if not status["summary_cluster_method_verified"]:
         status["errors"].append("event_cluster_summary_cluster_method_mismatch")
@@ -1814,6 +1841,260 @@ def _inspect_event_cluster_artifact(
     return status
 
 
+def _inspect_news_coverage_manifest_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="news_coverage_manifest_artifact",
+        hash_field="news_coverage_manifest_sha256",
+        required=_phase1_coverage_artifacts_required(manifest),
+    )
+    status.update(
+        {
+            "contract_verified": None,
+            "manifest_identity_verified": None,
+            "complete_coverage_verified": None,
+            "row_coverage_hash_verified": None,
+            "source_rows_verified": None,
+        }
+    )
+    if not status.get("configured"):
+        return status
+    payload = _read_artifact_object(
+        root,
+        manifest.get("news_coverage_manifest_artifact"),
+        status,
+    )
+    if payload is None:
+        status["passed"] = False
+        return status
+    try:
+        coverage = NewsCoverageManifest.model_validate(payload)
+    except ValidationError as exc:
+        status["errors"].append(f"news_coverage_manifest_contract_invalid:{exc.error_count()}")
+        status["contract_verified"] = False
+        status["passed"] = False
+        return status
+    status["contract_verified"] = True
+    status["manifest_identity_verified"] = (
+        coverage.run_id == manifest.get("run_id")
+        and coverage.trade_date.isoformat() == manifest.get("trade_date")
+        and coverage.cutoff_at.isoformat() == manifest.get("cutoff_at")
+        and coverage.input_news_sha256 == manifest.get("news_sha256")
+        and coverage.input_row_count == _non_bool_int(manifest.get("news_row_count"))
+    )
+    if not status["manifest_identity_verified"]:
+        status["errors"].append("news_coverage_manifest_identity_mismatch")
+    status["complete_coverage_verified"] = (
+        coverage.covered_row_count == coverage.input_row_count and coverage.missing_row_count == 0
+    )
+    if not status["complete_coverage_verified"]:
+        status["errors"].append("news_coverage_manifest_incomplete")
+    observed_row_hash = sha256_text(canonical_json([row.model_dump(mode="json") for row in coverage.rows]))
+    status["row_coverage_hash_verified"] = coverage.row_coverage_sha256 == observed_row_hash
+    if not status["row_coverage_hash_verified"]:
+        status["errors"].append("news_coverage_manifest_row_hash_mismatch")
+    disposition_rows = _read_optional_context_jsonl_rows(
+        root,
+        manifest.get("row_disposition_artifact"),
+    )
+    expected_sources = {
+        row.row_number: (row.event_id, row.source_id) for row in coverage.rows
+    }
+    observed_sources = {
+        row_number: (row.get("event_id"), row.get("source_id"))
+        for row in disposition_rows or []
+        if (row_number := _non_bool_int(row.get("row_number"))) is not None
+    }
+    status["source_rows_verified"] = expected_sources == observed_sources
+    if not status["source_rows_verified"]:
+        status["errors"].append("news_coverage_manifest_source_rows_mismatch")
+    status["passed"] = bool(
+        _text_hashed_artifact_status_passed(status)
+        and status["contract_verified"]
+        and status["manifest_identity_verified"]
+        and status["complete_coverage_verified"]
+        and status["row_coverage_hash_verified"]
+        and status["source_rows_verified"]
+    )
+    return status
+
+
+def _inspect_event_cluster_manifest_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field="event_cluster_manifest_artifact",
+        hash_field="event_cluster_manifest_sha256",
+        required=_phase1_coverage_artifacts_required(manifest),
+    )
+    status.update(
+        {
+            "contract_verified": None,
+            "manifest_identity_verified": None,
+            "coverage_link_verified": None,
+            "legacy_material_clusters_verified": None,
+            "open_world_material_clusters_verified": None,
+        }
+    )
+    if not status.get("configured"):
+        return status
+    payload = _read_artifact_object(
+        root,
+        manifest.get("event_cluster_manifest_artifact"),
+        status,
+    )
+    if payload is None:
+        status["passed"] = False
+        return status
+    try:
+        cluster_manifest = EventClusterManifest.model_validate(payload)
+    except ValidationError as exc:
+        status["errors"].append(f"event_cluster_manifest_contract_invalid:{exc.error_count()}")
+        status["contract_verified"] = False
+        status["passed"] = False
+        return status
+    status["contract_verified"] = True
+    status["manifest_identity_verified"] = (
+        cluster_manifest.run_id == manifest.get("run_id")
+        and cluster_manifest.trade_date.isoformat() == manifest.get("trade_date")
+        and cluster_manifest.cutoff_at.isoformat() == manifest.get("cutoff_at")
+        and cluster_manifest.input_row_count == _non_bool_int(manifest.get("news_row_count"))
+        and cluster_manifest.unassigned_row_count == 0
+        and cluster_manifest.duplicate_assignment_count == 0
+        and isinstance(manifest.get("model_config"), dict)
+        and cluster_manifest.clustering_version
+        == manifest["model_config"].get("event_clustering_version")
+        and cluster_manifest.embedding_batch_size
+        == manifest["model_config"].get("event_cluster_embedding_batch_size")
+        and cluster_manifest.similarity_threshold
+        == manifest["model_config"].get("event_cluster_similarity_threshold")
+        and cluster_manifest.max_semantic_variants
+        == manifest["model_config"].get("event_cluster_max_semantic_variants")
+        and cluster_manifest.embedding_provider
+        == (
+            manifest.get("event_cluster_summary", {}).get("embedding_method")
+            if isinstance(manifest.get("event_cluster_summary"), dict)
+            else None
+        )
+        and cluster_manifest.embedding_status
+        == (
+            manifest.get("event_cluster_summary", {}).get("embedding_status")
+            if isinstance(manifest.get("event_cluster_summary"), dict)
+            else None
+        )
+        and cluster_manifest.embedding_status
+        in {"PROVIDER", "DETERMINISTIC_FALLBACK"}
+        and manifest.get("event_clustering_result_sha256")
+        == _event_cluster_manifest_result_sha256(cluster_manifest)
+    )
+    if not status["manifest_identity_verified"]:
+        status["errors"].append("event_cluster_manifest_identity_mismatch")
+
+    coverage_payload = _read_optional_context_object(
+        root,
+        manifest.get("news_coverage_manifest_artifact"),
+    )
+    coverage_rows = coverage_payload.get("rows") if isinstance(coverage_payload, dict) else None
+    expected_assignments: dict[
+        int, tuple[str, str, str, str, str | None, str | None]
+    ] = {}
+    for cluster in cluster_manifest.clusters:
+        for index, (row_number, event_id, source_id) in enumerate(
+            zip(
+                cluster.member_row_numbers,
+                cluster.member_event_ids,
+                cluster.member_source_ids,
+                strict=True,
+            )
+        ):
+            expected_assignments[row_number] = (
+                cluster.cluster_id,
+                event_id,
+                source_id,
+                cluster.disposition if index == 0 else "DUPLICATE",
+                cluster.cluster_id if index == 0 else None,
+                cluster.cluster_id if index > 0 else None,
+            )
+    observed_assignments = (
+        {
+            observed_row_number: (
+                row.get("primary_cluster_id") or row.get("duplicate_parent_cluster_id"),
+                row.get("event_id"),
+                row.get("source_id"),
+                row.get("disposition"),
+                row.get("primary_cluster_id"),
+                row.get("duplicate_parent_cluster_id"),
+            )
+            for row in coverage_rows
+            if isinstance(row, dict) and (observed_row_number := _non_bool_int(row.get("row_number"))) is not None
+        }
+        if isinstance(coverage_rows, list)
+        else {}
+    )
+    status["coverage_link_verified"] = (
+        bool(coverage_payload)
+        and expected_assignments == observed_assignments
+        and len(observed_assignments) == cluster_manifest.input_row_count
+    )
+    if not status["coverage_link_verified"]:
+        status["errors"].append("event_cluster_manifest_coverage_link_mismatch")
+
+    legacy_rows = _read_optional_context_jsonl_rows(
+        root,
+        manifest.get("event_cluster_artifact"),
+    )
+    material_cluster_ids = {
+        cluster.cluster_id for cluster in cluster_manifest.clusters if cluster.disposition == "MATERIAL_FULL_RETRIEVAL"
+    }
+    legacy_cluster_ids = {
+        cluster_id for row in legacy_rows or [] if isinstance(cluster_id := row.get("cluster_id"), str)
+    }
+    status["legacy_material_clusters_verified"] = legacy_rows is not None and legacy_cluster_ids == material_cluster_ids
+    if not status["legacy_material_clusters_verified"]:
+        status["errors"].append("event_cluster_manifest_legacy_material_mismatch")
+
+    open_world_payload = _read_optional_context_object(
+        root,
+        manifest.get("open_world_first_analysis_artifact"),
+    )
+    source_cluster_ids = (
+        set(_string_list(open_world_payload.get("source_cluster_ids")))
+        if isinstance(open_world_payload, dict)
+        else set()
+    )
+    analyzed_cluster_ids = (
+        set(_string_list(open_world_payload.get("analyzed_cluster_ids")))
+        if isinstance(open_world_payload, dict)
+        else set()
+    )
+    uncovered_cluster_ids = (
+        _string_list(open_world_payload.get("uncovered_cluster_ids")) if isinstance(open_world_payload, dict) else []
+    )
+    status["open_world_material_clusters_verified"] = (
+        source_cluster_ids == material_cluster_ids
+        and analyzed_cluster_ids == material_cluster_ids
+        and not uncovered_cluster_ids
+    )
+    if not status["open_world_material_clusters_verified"]:
+        status["errors"].append("event_cluster_manifest_open_world_coverage_mismatch")
+    status["passed"] = bool(
+        _text_hashed_artifact_status_passed(status)
+        and status["contract_verified"]
+        and status["manifest_identity_verified"]
+        and status["coverage_link_verified"]
+        and status["legacy_material_clusters_verified"]
+        and status["open_world_material_clusters_verified"]
+    )
+    return status
+
+
 def _inspect_open_world_first_analysis_artifact(
     root: Path,
     manifest: dict[str, Any],
@@ -1823,7 +2104,7 @@ def _inspect_open_world_first_analysis_artifact(
         manifest,
         artifact_field="open_world_first_analysis_artifact",
         hash_field="open_world_first_analysis_sha256",
-        required=False,
+        required=_phase1_coverage_artifacts_required(manifest),
     )
     status.update(
         {
@@ -1831,6 +2112,8 @@ def _inspect_open_world_first_analysis_artifact(
             "run_id_verified": None,
             "prompt_hash_verified": None,
             "required_fields_present": None,
+            "cluster_coverage_verified": None,
+            "cluster_findings_verified": None,
             "summary_verified": None,
         }
     )
@@ -1840,13 +2123,20 @@ def _inspect_open_world_first_analysis_artifact(
         status,
     )
     if payload is None:
-        if not status.get("configured"):
+        if not status.get("configured") and not _phase1_coverage_artifacts_required(
+            manifest
+        ):
             status["passed"] = True
         else:
             status["passed"] = _open_world_first_analysis_status_passed(status)
         return status
 
-    status["schema_version_verified"] = payload.get("schema_version") == "nslab.open_world_first_analysis.v1"
+    expected_schema = (
+        "nslab.open_world_first_analysis.v2"
+        if _phase1_coverage_artifacts_required(manifest)
+        else "nslab.open_world_first_analysis.v1"
+    )
+    status["schema_version_verified"] = payload.get("schema_version") == expected_schema
     if not status["schema_version_verified"]:
         status["errors"].append("open_world_first_analysis_schema_version_mismatch")
 
@@ -1857,6 +2147,12 @@ def _inspect_open_world_first_analysis_artifact(
 
     prompt_hash = _manifest_prompt_hash(manifest, "open_world_first_analysis")
     status["prompt_hash_verified"] = prompt_hash is None or payload.get("prompt_sha256") == prompt_hash
+    if _phase1_coverage_artifacts_required(manifest):
+        status["prompt_hash_verified"] = bool(
+            status["prompt_hash_verified"]
+            and payload.get("prompt_version")
+            == OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION
+        )
     if not status["prompt_hash_verified"]:
         status["errors"].append("open_world_first_analysis_prompt_hash_mismatch")
 
@@ -1872,9 +2168,75 @@ def _inspect_open_world_first_analysis_artifact(
         "beneficiary_investigation_questions",
         "uncertainties",
     ]
-    status["required_fields_present"] = all(_string_list(payload.get(field)) for field in required_fields)
+    fields_are_string_lists = all(
+        isinstance(value := payload.get(field), list)
+        and all(isinstance(item, str) and item.strip() for item in value)
+        for field in required_fields
+    )
+    event_clusters = _string_list(payload.get("event_clusters"))
+    mechanisms = _string_list(payload.get("mechanisms"))
+    uncertainties = _string_list(payload.get("uncertainties"))
+    source_cluster_ids = _string_list(payload.get("source_cluster_ids"))
+    status["required_fields_present"] = fields_are_string_lists and (
+        not source_cluster_ids
+        or (bool(event_clusters) and bool(mechanisms or uncertainties))
+    )
     if not status["required_fields_present"]:
         status["errors"].append("open_world_first_analysis_required_fields_missing")
+
+    cluster_findings = payload.get("cluster_findings")
+    finding_ids = (
+        [
+            finding.get("cluster_id")
+            for finding in cluster_findings
+            if isinstance(finding, dict)
+        ]
+        if isinstance(cluster_findings, list)
+        else []
+    )
+    status["cluster_findings_verified"] = (
+        not _phase1_coverage_artifacts_required(manifest)
+        or (
+            isinstance(cluster_findings, list)
+            and finding_ids == source_cluster_ids
+            and all(
+                isinstance(finding, dict)
+                and isinstance(finding.get("event_summary"), str)
+                and bool(finding["event_summary"].strip())
+                and any(
+                    value.strip()
+                    for value in [
+                        *_string_list(finding.get("mechanisms")),
+                        *_string_list(finding.get("uncertainties")),
+                    ]
+                )
+                for finding in cluster_findings
+            )
+        )
+    )
+    if not status["cluster_findings_verified"]:
+        status["errors"].append("open_world_first_analysis_cluster_findings_mismatch")
+
+    coverage_fields = (
+        "source_cluster_ids",
+        "analyzed_cluster_ids",
+        "uncovered_cluster_ids",
+        "analysis_batch_count",
+    )
+    has_cluster_coverage = any(field in payload for field in coverage_fields)
+    analyzed_cluster_ids = _string_list(payload.get("analyzed_cluster_ids"))
+    uncovered_cluster_ids = _string_list(payload.get("uncovered_cluster_ids"))
+    analysis_batch_count = _non_bool_int(payload.get("analysis_batch_count"))
+    status["cluster_coverage_verified"] = not has_cluster_coverage or (
+        len(source_cluster_ids) == len(set(source_cluster_ids))
+        and len(analyzed_cluster_ids) == len(set(analyzed_cluster_ids))
+        and set(analyzed_cluster_ids) == set(source_cluster_ids)
+        and not uncovered_cluster_ids
+        and analysis_batch_count is not None
+        and analysis_batch_count >= (1 if source_cluster_ids else 0)
+    )
+    if not status["cluster_coverage_verified"]:
+        status["errors"].append("open_world_first_analysis_cluster_coverage_mismatch")
 
     expected_summary = {
         "event_cluster_count": len(_string_list(payload.get("event_clusters"))),
@@ -1888,6 +2250,25 @@ def _inspect_open_world_first_analysis_artifact(
         "investigation_question_count": len(_string_list(payload.get("beneficiary_investigation_questions"))),
         "uncertainty_count": len(_string_list(payload.get("uncertainties"))),
     }
+    if has_cluster_coverage:
+        expected_summary = {
+            "source_cluster_count": len(source_cluster_ids),
+            "analyzed_cluster_count": len(analyzed_cluster_ids),
+            "uncovered_cluster_count": len(uncovered_cluster_ids),
+        "analysis_batch_count": (analysis_batch_count if analysis_batch_count is not None else -1),
+            **(
+                {
+                    "cluster_finding_count": (
+                        len(cluster_findings)
+                        if isinstance(cluster_findings, list)
+                        else -1
+                    )
+                }
+                if _phase1_coverage_artifacts_required(manifest)
+                else {}
+            ),
+            **expected_summary,
+        }
     status["summary_verified"] = manifest.get("open_world_first_analysis_summary") == expected_summary
     if not status["summary_verified"]:
         status["errors"].append("open_world_first_analysis_summary_mismatch")
@@ -4858,6 +5239,13 @@ _TRACE_MODEL_CONFIG_KEYS = (
     "embedding_model",
     "max_concurrency",
     "shard_episode_count",
+    "event_clustering_version",
+    "event_cluster_embedding_batch_size",
+    "event_cluster_similarity_threshold",
+    "event_cluster_max_semantic_variants",
+    "open_world_cluster_batch_size",
+    "open_world_max_prompt_chars",
+    "novelty_cluster_batch_size",
 )
 
 
@@ -4939,6 +5327,31 @@ def _inspect_prompt_trace(
     purpose: str,
 ) -> dict[str, Any]:
     expected_prompt_hash = prompt_hashes.get(hash_key)
+    prompt_batch_hashes = manifest.get("prompt_batch_hashes")
+    declared_batch_hashes = prompt_batch_hashes.get(hash_key) if isinstance(prompt_batch_hashes, dict) else None
+    has_declared_batches = isinstance(declared_batch_hashes, list)
+    expected_call_hashes = (
+        [value for value in declared_batch_hashes if isinstance(value, str) and value]
+        if isinstance(declared_batch_hashes, list)
+        else []
+    )
+    if (
+        not has_declared_batches
+        and not expected_call_hashes
+        and isinstance(expected_prompt_hash, str)
+        and expected_prompt_hash
+    ):
+        expected_call_hashes = [expected_prompt_hash]
+    expected_aggregate_hash = (
+        expected_call_hashes[0] if len(expected_call_hashes) == 1 else sha256_text(canonical_json(expected_call_hashes))
+    )
+    expected_calls = [
+        (
+            purpose if len(expected_call_hashes) == 1 else f"{purpose}.batch_{index:04d}",
+            prompt_hash,
+        )
+        for index, prompt_hash in enumerate(expected_call_hashes, start=1)
+    ]
     token_count_key = _CONTEXT_PROMPT_TRACE_TOKEN_KEYS.get(hash_key)
     expected_prompt_tokens = _manifest_prompt_token_count(manifest, token_count_key)
     expected_model_config = _expected_trace_model_config(manifest)
@@ -4948,6 +5361,10 @@ def _inspect_prompt_trace(
         "manifest_token_count_key": token_count_key,
         "purpose": purpose,
         "expected_prompt_sha256": expected_prompt_hash if isinstance(expected_prompt_hash, str) else None,
+        "expected_batch_prompt_sha256": expected_call_hashes,
+        "expected_batch_count": len(expected_calls),
+        "matched_batch_count": 0,
+        "aggregate_hash_verified": expected_prompt_hash == expected_aggregate_hash,
         "expected_prompt_tokens_estimate": expected_prompt_tokens,
         "matching_trace_count": 0,
         "matching_trace_ids": [],
@@ -4965,65 +5382,104 @@ def _inspect_prompt_trace(
         status["errors"].append(f"{hash_key}_prompt_hash_missing")
         status["passed"] = False
         return status
+    if not status["aggregate_hash_verified"]:
+        status["errors"].append(f"{hash_key}_aggregate_prompt_hash_mismatch")
     if expected_model_config is None:
         status["errors"].append("manifest_model_config_missing_or_invalid")
     if expected_prompt_tokens is None:
         status["errors"].append("manifest_prompt_token_count_missing_or_invalid")
 
-    for trace_record in trace_records:
-        payload = trace_record["payload"]
-        if not _trace_matches_prompt(payload, purpose, str(expected_prompt_hash)):
-            continue
-        trace_path = trace_record["path"]
-        trace_ref = str(trace_record["path_ref"])
-        trace_id = payload.get("trace_id")
-        status["matching_trace_count"] += 1
-        status["matching_trace_paths"].append(trace_ref)
-        status["matching_trace_ids"].append(trace_id if isinstance(trace_id, str) else None)
-        validation_errors = _llm_trace_payload_errors(payload)
-        if validation_errors:
-            status["trace_validation_errors"][trace_ref] = validation_errors
-        if expected_model_config:
-            mismatched_keys = _trace_model_config_mismatches(
-                payload,
-                expected_model_config,
+    observed_batch_token_count = 0
+    for expected_purpose, expected_call_hash in expected_calls:
+        matching_records = [
+            trace_record
+            for trace_record in trace_records
+            if _trace_matches_prompt(
+                trace_record["payload"],
+                expected_purpose,
+                expected_call_hash,
             )
-            if mismatched_keys:
-                status["model_config_mismatches"].append(
+        ]
+        if not matching_records:
+            status["errors"].append(f"matching_trace_missing:{expected_purpose}")
+            continue
+        status["matched_batch_count"] += 1
+        first_payload = matching_records[0]["payload"]
+        first_token_usage = first_payload.get("token_usage")
+        first_prompt_tokens = (
+            _non_bool_int(first_token_usage.get("prompt_tokens_estimate"))
+            if isinstance(first_token_usage, dict)
+            else None
+        )
+        if first_prompt_tokens is not None:
+            observed_batch_token_count += first_prompt_tokens
+        for trace_record in matching_records:
+            payload = trace_record["payload"]
+            trace_path = trace_record["path"]
+            trace_ref = str(trace_record["path_ref"])
+            trace_id = payload.get("trace_id")
+            status["matching_trace_count"] += 1
+            status["matching_trace_paths"].append(trace_ref)
+            status["matching_trace_ids"].append(trace_id if isinstance(trace_id, str) else None)
+            validation_errors = _llm_trace_payload_errors(payload)
+            if validation_errors:
+                status["trace_validation_errors"][trace_ref] = validation_errors
+            if expected_model_config:
+                mismatched_keys = _trace_model_config_mismatches(
+                    payload,
+                    expected_model_config,
+                )
+                if mismatched_keys:
+                    status["model_config_mismatches"].append(
+                        {
+                            "path": _display_path(root, trace_path),
+                            "keys": mismatched_keys,
+                        }
+                    )
+            token_count_mismatch = _trace_prompt_token_count_mismatch(
+                payload,
+                None,
+            )
+            if token_count_mismatch:
+                status["token_count_mismatches"].append(
                     {
                         "path": _display_path(root, trace_path),
-                        "keys": mismatched_keys,
+                        "manifest_token_count_key": token_count_key,
+                        **token_count_mismatch,
                     }
                 )
-        token_count_mismatch = _trace_prompt_token_count_mismatch(
-            payload,
-            expected_prompt_tokens,
-        )
-        if token_count_mismatch:
-            status["token_count_mismatches"].append(
-                {
-                    "path": _display_path(root, trace_path),
-                    "manifest_token_count_key": token_count_key,
-                    **token_count_mismatch,
-                }
-            )
 
-    if status["matching_trace_count"] == 0:
+    if expected_prompt_tokens is not None and observed_batch_token_count != expected_prompt_tokens:
+        status["token_count_mismatches"].append(
+            {
+                "manifest_token_count_key": token_count_key,
+                "reasons": ["aggregate_manifest_token_count_mismatch"],
+                "expected_prompt_tokens_estimate": expected_prompt_tokens,
+                "observed_prompt_tokens_estimate": observed_batch_token_count,
+            }
+        )
+
+    if status["matching_trace_count"] == 0 and status["expected_batch_count"] > 0:
         status["errors"].append("matching_trace_missing")
-    status["trace_payloads_valid"] = status["matching_trace_count"] > 0 and not status["trace_validation_errors"]
-    if expected_model_config == {}:
+    status["trace_payloads_valid"] = (
+        status["matched_batch_count"] == status["expected_batch_count"] and not status["trace_validation_errors"]
+    )
+    if status["expected_batch_count"] == 0:
+        status["model_config_comparison"] = "not_applicable_zero_llm_calls"
+        status["model_config_verified"] = expected_model_config is not None
+    elif expected_model_config == {}:
         status["model_config_comparison"] = "skipped_no_comparable_manifest_keys"
         status["model_config_verified"] = status["matching_trace_count"] > 0
     else:
         status["model_config_comparison"] = "verified"
         status["model_config_verified"] = (
             expected_model_config is not None
-            and status["matching_trace_count"] > 0
+            and status["matched_batch_count"] == status["expected_batch_count"]
             and not status["model_config_mismatches"]
         )
     status["token_counts_verified"] = (
         expected_prompt_tokens is not None
-        and status["matching_trace_count"] > 0
+        and status["matched_batch_count"] == status["expected_batch_count"]
         and not status["token_count_mismatches"]
     )
     if not status["trace_payloads_valid"]:
@@ -5356,6 +5812,7 @@ def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     status["news_window_start_verified"] = None
     status["news_window_end_verified"] = None
     status["news_window_counts_verified"] = None
+    status["phase1_row_identity_verified"] = None
     if not status["configured"]:
         status["errors"].append("news_file_missing")
         return status
@@ -5381,6 +5838,64 @@ def _inspect_news_input(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     observed_row_count = batch.row_count
     status["observed_row_count"] = observed_row_count
     status["observed_missing_collected_at"] = sum(1 for item in batch.items if item.collected_at is None)
+    if _phase1_coverage_artifacts_required(manifest):
+        coverage_payload = _read_optional_context_object(
+            root,
+            manifest.get("news_coverage_manifest_artifact"),
+        )
+        coverage_rows = (
+            coverage_payload.get("rows")
+            if isinstance(coverage_payload, dict)
+            else None
+        )
+        expected_rows = {
+            item.row_number: (item.event_id, item.source_id)
+            for item in batch.items
+        }
+        observed_rows = (
+            {
+                row_number: (row.get("event_id"), row.get("source_id"))
+                for row in coverage_rows
+                if isinstance(row, dict)
+                and (row_number := _non_bool_int(row.get("row_number")))
+                is not None
+            }
+            if isinstance(coverage_rows, list)
+            else {}
+        )
+        status["phase1_row_identity_verified"] = expected_rows == observed_rows
+        coverage_by_row = (
+            {
+                row_number: row
+                for row in coverage_rows
+                if isinstance(row, dict)
+                and (row_number := _non_bool_int(row.get("row_number")))
+                is not None
+            }
+            if isinstance(coverage_rows, list)
+            else {}
+        )
+        outside_rows_are_audit_only = all(
+            (
+                row := coverage_by_row.get(item.row_number)
+            )
+            is not None
+            and row.get("disposition") == "AUDIT_ONLY"
+            and isinstance(row.get("primary_cluster_id"), str)
+            and row.get("duplicate_parent_cluster_id") is None
+            for item in batch.items
+            if news_window_start_at is not None
+            and news_window_end_at is not None
+            and not news_window_start_at <= item.published_at <= news_window_end_at
+        )
+        status["phase1_row_identity_verified"] = bool(
+            status["phase1_row_identity_verified"]
+            and outside_rows_are_audit_only
+        )
+        if not status["phase1_row_identity_verified"]:
+            status["errors"].append("phase1_news_row_identity_mismatch")
+    else:
+        status["phase1_row_identity_verified"] = True
     status["row_count_verified"] = observed_row_count == status["expected_row_count"]
     expected_included = status["expected_included_row_count"]
     expected_excluded = status["expected_excluded_row_count"]
@@ -5591,6 +6106,7 @@ def _news_input_status_passed(status: dict[str, Any]) -> bool:
         and status.get("news_window_start_verified")
         and status.get("news_window_end_verified")
         and status.get("news_window_counts_verified")
+        and status.get("phase1_row_identity_verified")
         and not status.get("errors")
     )
 
@@ -5672,7 +6188,8 @@ def _llm_trace_status_passed(status: dict[str, Any]) -> bool:
 def _prompt_trace_status_passed(status: dict[str, Any]) -> bool:
     return bool(
         status.get("configured")
-        and status.get("matching_trace_count", 0) > 0
+        and status.get("aggregate_hash_verified")
+        and (status.get("expected_batch_count") == 0 or status.get("matching_trace_count", 0) > 0)
         and status.get("trace_payloads_valid")
         and status.get("model_config_verified")
         and status.get("token_counts_verified")
@@ -5728,6 +6245,8 @@ def _open_world_first_analysis_status_passed(status: dict[str, Any]) -> bool:
         and status.get("run_id_verified")
         and status.get("prompt_hash_verified")
         and status.get("required_fields_present")
+        and status.get("cluster_coverage_verified")
+        and status.get("cluster_findings_verified")
         and status.get("summary_verified")
     )
 
@@ -6018,6 +6537,45 @@ def _read_artifact_object(
     return payload
 
 
+def _read_optional_context_object(
+    root: Path,
+    artifact_ref: object,
+) -> dict[str, Any] | None:
+    if not isinstance(artifact_ref, str):
+        return None
+    artifact_path = _resolve_project_artifact(root, artifact_ref)
+    if artifact_path is None or not artifact_path.exists():
+        return None
+    try:
+        payload = read_json(artifact_path)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _read_optional_context_jsonl_rows(
+    root: Path,
+    artifact_ref: object,
+) -> list[dict[str, Any]] | None:
+    if not isinstance(artifact_ref, str):
+        return None
+    artifact_path = _resolve_project_artifact(root, artifact_ref)
+    if artifact_path is None or not artifact_path.exists():
+        return None
+    rows: list[dict[str, Any]] = []
+    try:
+        for line in artifact_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            payload = json.loads(line)
+            if not isinstance(payload, dict):
+                return None
+            rows.append(payload)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return rows
+
+
 def _read_artifact_jsonl_rows(
     root: Path,
     artifact_ref: object,
@@ -6114,11 +6672,68 @@ def _event_cluster_membership_counts_match(row: dict[str, Any]) -> bool:
     row_count = _non_bool_int(row.get("row_count"))
     if row_count is None:
         return False
-    for field in ("row_numbers", "event_ids", "source_ids"):
+    for field in ("row_numbers", "event_ids", "source_ids", "member_news_excerpts"):
         value = row.get(field)
-        if isinstance(value, list) and len(value) != row_count:
+        if not isinstance(value, list) or len(value) != row_count:
             return False
-    return True
+    row_numbers = row["row_numbers"]
+    event_ids = row["event_ids"]
+    excerpts = row["member_news_excerpts"]
+    return not any(
+        not isinstance(excerpt, dict)
+        or excerpt.get("row_number") != row_number
+        or excerpt.get("event_id") != event_id
+        or not _is_sha256(excerpt.get("title_sha256"))
+        or not _is_sha256(excerpt.get("body_sha256"))
+        for excerpt, row_number, event_id in zip(
+            excerpts, row_numbers, event_ids, strict=True
+        )
+    )
+
+
+def _is_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _phase1_coverage_artifacts_required(manifest: dict[str, Any]) -> bool:
+    model_config = manifest.get("model_config")
+    summary = manifest.get("event_cluster_summary")
+    return (
+        isinstance(model_config, dict)
+        and model_config.get("event_clustering_version") == EVENT_CLUSTERING_VERSION
+    ) or (
+        isinstance(summary, dict)
+        and summary.get("cluster_method") == EVENT_CLUSTERING_VERSION
+    )
+
+
+def _event_cluster_manifest_result_sha256(
+    manifest: EventClusterManifest,
+) -> str:
+    return sha256_text(
+        canonical_json(
+            {
+                "clustering_version": manifest.clustering_version,
+                "embedding_method": manifest.embedding_provider,
+                "embedding_status": manifest.embedding_status,
+                "clusters": [
+                    {
+                        "cluster_id": cluster.cluster_id,
+                        "disposition": cluster.disposition,
+                        "row_numbers": cluster.member_row_numbers,
+                        "event_ids": cluster.member_event_ids,
+                        "source_ids": cluster.member_source_ids,
+                        "signature": cluster.cluster_signature_sha256,
+                    }
+                    for cluster in manifest.clusters
+                ],
+            }
+        )
+    )
 
 
 def _news_novelty_counts(

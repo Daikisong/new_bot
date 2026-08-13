@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from news_scalping_lab.utils import now_kst
+from news_scalping_lab.utils import canonical_json, now_kst, sha256_text
 
 
 class StrictModel(BaseModel):
@@ -19,6 +19,10 @@ class StrictModel(BaseModel):
         use_enum_values=True,
         validate_assignment=True,
     )
+
+
+def _looks_like_sha256(value: str) -> bool:
+    return len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
 
 class ConfidenceLabel(StrEnum):
@@ -224,14 +228,40 @@ class NewsNoveltyReview(StrictModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class OpenWorldClusterFinding(StrictModel):
+    cluster_id: str
+    event_summary: str
+    mechanisms: list[str] = Field(default_factory=list)
+    direct_candidates: list[str] = Field(default_factory=list)
+    potential_sectors: list[str] = Field(default_factory=list)
+    uncertainties: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_semantic_content(self) -> Self:
+        if not self.event_summary.strip():
+            raise ValueError("cluster finding requires an event summary")
+        if not any(
+            value.strip() for value in [*self.mechanisms, *self.uncertainties]
+        ):
+            raise ValueError("cluster finding requires mechanisms or uncertainties")
+        return self
+
+
 class OpenWorldFirstAnalysis(StrictModel):
-    schema_version: str = "nslab.open_world_first_analysis.v1"
+    schema_version: Literal["nslab.open_world_first_analysis.v2"] = (
+        "nslab.open_world_first_analysis.v2"
+    )
     run_id: str
     prompt_version: str
     prompt_sha256: str
     created_at: datetime
     cutoff_at: datetime
     event_ids: list[str] = Field(default_factory=list)
+    source_cluster_ids: list[str] = Field(default_factory=list)
+    analyzed_cluster_ids: list[str] = Field(default_factory=list)
+    uncovered_cluster_ids: list[str] = Field(default_factory=list)
+    analysis_batch_count: int = 0
+    cluster_findings: list[OpenWorldClusterFinding] = Field(default_factory=list)
     event_clusters: list[str] = Field(default_factory=list)
     direct_company_events: list[str] = Field(default_factory=list)
     policy_industry_events: list[str] = Field(default_factory=list)
@@ -651,6 +681,11 @@ class ContextManifest(StrictModel):
     event_cluster_sha256: str | None = None
     event_cluster_count: int = 0
     event_cluster_summary: dict[str, Any] = Field(default_factory=dict)
+    news_coverage_manifest_artifact: str | None = None
+    news_coverage_manifest_sha256: str | None = None
+    event_cluster_manifest_artifact: str | None = None
+    event_cluster_manifest_sha256: str | None = None
+    event_clustering_result_sha256: str | None = None
     open_world_first_analysis_artifact: str | None = None
     open_world_first_analysis_sha256: str | None = None
     open_world_first_analysis_summary: dict[str, Any] = Field(default_factory=dict)
@@ -721,7 +756,26 @@ class ContextManifest(StrictModel):
     price_snapshot: PriceSnapshot
     llm_model_config: dict[str, Any] = Field(default_factory=dict, alias="model_config")
     prompt_hashes: dict[str, str] = Field(default_factory=dict)
+    prompt_batch_hashes: dict[str, list[str]] = Field(default_factory=dict)
     errors: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_prompt_batches(self) -> Self:
+        for purpose, batch_hashes in self.prompt_batch_hashes.items():
+            if purpose not in self.prompt_hashes:
+                raise ValueError("prompt batch hashes require an aggregate prompt hash")
+            if len(batch_hashes) != len(set(batch_hashes)):
+                raise ValueError("prompt batch hashes must be unique per purpose")
+            if any(not _looks_like_sha256(value) for value in batch_hashes):
+                raise ValueError("prompt batch hashes must be SHA-256 values")
+            aggregate = (
+                batch_hashes[0]
+                if len(batch_hashes) == 1
+                else sha256_text(canonical_json(batch_hashes))
+            )
+            if self.prompt_hashes[purpose] != aggregate:
+                raise ValueError("prompt batch aggregate hash mismatch")
+        return self
 
 
 class DailyAnalysis(StrictModel):

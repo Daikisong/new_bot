@@ -22,7 +22,17 @@ from news_scalping_lab.brain.compiler import (
     current_brain_version,
 )
 from news_scalping_lab.config import Settings
+from news_scalping_lab.contracts.memory_context import (
+    EventClusterManifest,
+    NewsCoverageManifest,
+)
+from news_scalping_lab.contracts.models import OpenWorldFirstAnalysis
 from news_scalping_lab.contracts.schemas import SCHEMA_MODELS
+from news_scalping_lab.inference.analyzer import (
+    OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION,
+)
+from news_scalping_lab.inference.event_clustering import EVENT_CLUSTERING_VERSION
+from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.llm.openai_provider import DEFAULT_OPENAI_EMBEDDING_MODEL
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
 from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
@@ -1410,6 +1420,7 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
     missing_prompt_hash_manifests: list[str] = []
     invalid_prompt_hash_manifests: list[dict[str, Any]] = []
     duplicate_prompt_hash_manifests: list[dict[str, Any]] = []
+    invalid_phase1_coverage_manifests: list[dict[str, Any]] = []
     manifest_prompt_hashes: set[str] = set()
     manifest_prompt_hash_fields: dict[str, set[str]] = {}
     for manifest_path in manifest_paths:
@@ -1463,6 +1474,15 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
                     "duplicate_hashes": prompt_hash_status.duplicate_hashes,
                 }
             )
+        phase1_findings = _phase1_coverage_evidence_findings(root, manifest)
+        if phase1_findings:
+            invalid_phase1_coverage_manifests.append(
+                {
+                    "path": relative_path,
+                    "run_id": manifest.get("run_id"),
+                    "findings": phase1_findings,
+                }
+            )
 
     trace_evidence = _production_llm_trace_evidence_status(
         root,
@@ -1499,6 +1519,11 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
             f"context manifest prompt_hashes contains duplicate hashes: "
             f"{manifest['path']} ({len(manifest['duplicate_hashes'])})"
         )
+    for manifest in invalid_phase1_coverage_manifests:
+        findings.append(
+            f"Phase 1 coverage evidence invalid in {manifest['path']}: "
+            f"{', '.join(manifest['findings'])}"
+        )
     findings.extend(trace_evidence["findings"])
 
     return {
@@ -1532,6 +1557,10 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
             for manifest in duplicate_prompt_hash_manifests
         ),
         "duplicate_prompt_hash_manifests": duplicate_prompt_hash_manifests,
+        "invalid_phase1_coverage_manifest_count": len(
+            invalid_phase1_coverage_manifests
+        ),
+        "invalid_phase1_coverage_manifests": invalid_phase1_coverage_manifests,
         "referenced_prompt_hash_count": len(manifest_prompt_hashes),
         "checked_trace_count": trace_evidence["checked_trace_count"],
         "unreadable_trace_count": trace_evidence["unreadable_trace_count"],
@@ -1578,6 +1607,206 @@ def _production_llm_evidence_status(root: Path) -> dict[str, Any]:
     }
 
 
+def _phase1_coverage_evidence_findings(
+    root: Path,
+    manifest: dict[str, Any],
+) -> list[str]:
+    summary = manifest.get("event_cluster_summary")
+    model_config = manifest.get("model_config")
+    phase1 = (
+        isinstance(model_config, dict)
+        and model_config.get("event_clustering_version") == EVENT_CLUSTERING_VERSION
+    ) or (
+        isinstance(summary, dict)
+        and summary.get("cluster_method") == EVENT_CLUSTERING_VERSION
+    )
+    if not phase1:
+        return []
+    if not isinstance(summary, dict) or summary.get("cluster_method") != EVENT_CLUSTERING_VERSION:
+        return ["event_cluster_summary_method_mismatch"]
+    findings: list[str] = []
+    payloads: dict[str, dict[str, Any]] = {}
+    for label, artifact_field, sha_field in (
+        (
+            "news_coverage",
+            "news_coverage_manifest_artifact",
+            "news_coverage_manifest_sha256",
+        ),
+        (
+            "event_cluster",
+            "event_cluster_manifest_artifact",
+            "event_cluster_manifest_sha256",
+        ),
+        (
+            "open_world",
+            "open_world_first_analysis_artifact",
+            "open_world_first_analysis_sha256",
+        ),
+    ):
+        path = _project_relative_artifact_path(root, manifest.get(artifact_field))
+        expected_hash = manifest.get(sha_field)
+        if path is None or not path.is_file():
+            findings.append(f"{label}_artifact_missing")
+            continue
+        if (
+            not isinstance(expected_hash, str)
+            or sha256_text(path.read_text(encoding="utf-8")) != expected_hash
+        ):
+            findings.append(f"{label}_hash_mismatch")
+            continue
+        try:
+            payloads[label] = _read_json_object(path)
+        except ValueError:
+            findings.append(f"{label}_artifact_invalid")
+    if set(payloads) != {"news_coverage", "event_cluster", "open_world"}:
+        return findings
+    try:
+        coverage = NewsCoverageManifest.model_validate(payloads["news_coverage"])
+        clusters = EventClusterManifest.model_validate(payloads["event_cluster"])
+        open_world = OpenWorldFirstAnalysis.model_validate(payloads["open_world"])
+    except ValidationError:
+        findings.append("coverage_contract_invalid")
+        return findings
+    if (
+        coverage.run_id != manifest.get("run_id")
+        or coverage.input_news_sha256 != manifest.get("news_sha256")
+        or coverage.covered_row_count != coverage.input_row_count
+        or coverage.missing_row_count != 0
+    ):
+        findings.append("news_coverage_identity_mismatch")
+    model_config = manifest.get("model_config")
+    if (
+        clusters.run_id != manifest.get("run_id")
+        or clusters.input_row_count != coverage.input_row_count
+        or clusters.unassigned_row_count != 0
+        or clusters.duplicate_assignment_count != 0
+        or not isinstance(model_config, dict)
+        or clusters.clustering_version != model_config.get("event_clustering_version")
+        or clusters.embedding_batch_size
+        != model_config.get("event_cluster_embedding_batch_size")
+        or clusters.similarity_threshold
+        != model_config.get("event_cluster_similarity_threshold")
+        or clusters.max_semantic_variants
+        != model_config.get("event_cluster_max_semantic_variants")
+        or clusters.embedding_provider != summary.get("embedding_method")
+        or clusters.embedding_status != summary.get("embedding_status")
+        or clusters.embedding_status not in {"PROVIDER", "DETERMINISTIC_FALLBACK"}
+        or manifest.get("event_clustering_result_sha256")
+        != sha256_text(
+            canonical_json(
+                {
+                    "clustering_version": clusters.clustering_version,
+                    "embedding_method": clusters.embedding_provider,
+                    "embedding_status": clusters.embedding_status,
+                    "clusters": [
+                        {
+                            "cluster_id": cluster.cluster_id,
+                            "disposition": cluster.disposition,
+                            "row_numbers": cluster.member_row_numbers,
+                            "event_ids": cluster.member_event_ids,
+                            "source_ids": cluster.member_source_ids,
+                            "signature": cluster.cluster_signature_sha256,
+                        }
+                        for cluster in clusters.clusters
+                    ],
+                }
+            )
+        )
+    ):
+        findings.append("event_cluster_identity_mismatch")
+    expected = {
+        row_number: (event_id, source_id, cluster.cluster_id)
+        for cluster in clusters.clusters
+        for row_number, event_id, source_id in zip(
+            cluster.member_row_numbers,
+            cluster.member_event_ids,
+            cluster.member_source_ids,
+            strict=True,
+        )
+    }
+    observed = {
+        row.row_number: (
+            row.event_id,
+            row.source_id,
+            row.primary_cluster_id or row.duplicate_parent_cluster_id,
+        )
+        for row in coverage.rows
+    }
+    if expected != observed:
+        findings.append("row_cluster_lineage_mismatch")
+    material_cluster_ids = [
+        cluster.cluster_id
+        for cluster in clusters.clusters
+        if cluster.disposition == "MATERIAL_FULL_RETRIEVAL"
+    ]
+    if (
+        open_world.run_id != manifest.get("run_id")
+        or open_world.prompt_version
+        != OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION
+        or open_world.source_cluster_ids != material_cluster_ids
+        or open_world.analyzed_cluster_ids != material_cluster_ids
+        or open_world.uncovered_cluster_ids
+        or [finding.cluster_id for finding in open_world.cluster_findings]
+        != material_cluster_ids
+        or (
+            not material_cluster_ids
+            and open_world.analysis_batch_count != 0
+        )
+        or (
+            bool(material_cluster_ids)
+            and open_world.analysis_batch_count < 1
+        )
+    ):
+        findings.append("open_world_cluster_coverage_mismatch")
+    news_path = _project_relative_artifact_path(root, manifest.get("news_file"))
+    trade_date_value = manifest.get("trade_date")
+    window_start = _diagnostic_datetime(manifest.get("news_window_start_at"))
+    window_end = _diagnostic_datetime(manifest.get("news_window_end_at"))
+    if (
+        news_path is None
+        or not news_path.is_file()
+        or not isinstance(trade_date_value, str)
+        or window_start is None
+        or window_end is None
+    ):
+        findings.append("news_csv_identity_source_missing")
+        return findings
+    try:
+        news_batch = load_news_csv(
+            news_path,
+            trade_date=date.fromisoformat(trade_date_value),
+        )
+    except (OSError, ValueError):
+        findings.append("news_csv_identity_source_invalid")
+        return findings
+    coverage_by_row = {row.row_number: row for row in coverage.rows}
+    if any(
+        (coverage_row := coverage_by_row.get(item.row_number)) is None
+        or coverage_row.event_id != item.event_id
+        or coverage_row.source_id != item.source_id
+        or (
+            not window_start <= item.published_at <= window_end
+            and (
+                coverage_row.disposition != "AUDIT_ONLY"
+                or coverage_row.primary_cluster_id is None
+                or coverage_row.duplicate_parent_cluster_id is not None
+            )
+        )
+        for item in news_batch.items
+    ):
+        findings.append("news_csv_row_identity_or_cutoff_mismatch")
+    return findings
+
+
+def _diagnostic_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return parse_datetime(value)
+    except ValueError:
+        return None
+
+
 def _mock_model_config_values(model_config: dict[str, Any]) -> list[str]:
     values: list[str] = []
     for key in ("configured_provider", "provider", "provider_class", "model"):
@@ -1599,13 +1828,41 @@ def _manifest_prompt_hash_status(manifest: dict[str, Any]) -> ManifestPromptHash
     values: set[str] = set()
     invalid_fields: list[str] = []
     fields_by_hash: dict[str, set[str]] = {}
+    prompt_batch_hashes = manifest.get("prompt_batch_hashes")
     for key, value in prompt_hashes.items():
         field = str(key)
-        if isinstance(value, str) and value:
-            values.add(value)
-            fields_by_hash.setdefault(value, set()).add(field)
-        else:
+        if not isinstance(value, str) or not value:
             invalid_fields.append(field)
+            continue
+        declared_batches = (
+            prompt_batch_hashes.get(field)
+            if isinstance(prompt_batch_hashes, dict)
+            else None
+        )
+        if isinstance(declared_batches, list):
+            if not all(isinstance(item, str) and item for item in declared_batches):
+                invalid_fields.append(f"prompt_batch_hashes.{field}")
+                continue
+            normalized_batches = [str(item) for item in declared_batches]
+            aggregate = (
+                normalized_batches[0]
+                if len(normalized_batches) == 1
+                else sha256_text(canonical_json(normalized_batches))
+            )
+            if value != aggregate:
+                invalid_fields.append(f"prompt_batch_hashes.{field}.aggregate")
+                continue
+            for index, batch_hash in enumerate(normalized_batches, start=1):
+                batch_field = (
+                    field
+                    if len(normalized_batches) == 1
+                    else f"{field}.batch_{index:04d}"
+                )
+                values.add(batch_hash)
+                fields_by_hash.setdefault(batch_hash, set()).add(batch_field)
+            continue
+        values.add(value)
+        fields_by_hash.setdefault(value, set()).add(field)
     return ManifestPromptHashStatus(
         values=values,
         invalid_fields=sorted(invalid_fields),

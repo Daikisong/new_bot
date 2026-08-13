@@ -25,6 +25,12 @@ limits:
   max_concurrency: 4
   shard_episode_count: 20
   max_news_items_for_mock: 12
+  event_cluster_embedding_batch_size: 128
+  event_cluster_similarity_threshold: 0.9
+  event_cluster_max_semantic_variants: 32
+  open_world_max_prompt_chars: 120000
+  open_world_cluster_batch_size: 12
+  novelty_cluster_batch_size: 12
   cluster_coverage_record_limit_per_query: 3
   cluster_coverage_record_limit_per_lane: 3
   cluster_coverage_lanes:

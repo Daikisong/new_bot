@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from news_scalping_lab.contracts.memory_context import (
     ArtifactReference,
     DailyMemoryContext,
+    EventClusterEntry,
     MemoryCoverageManifest,
     NewsCoverageManifest,
     NewsRowCoverage,
@@ -13,7 +14,12 @@ from news_scalping_lab.contracts.memory_context import (
     PopulationOutcomeSummary,
     RecordRoutingMetadata,
 )
-from news_scalping_lab.utils import KST
+from news_scalping_lab.contracts.models import (
+    ContextManifest,
+    OpenWorldClusterFinding,
+    PriceSnapshot,
+)
+from news_scalping_lab.utils import KST, canonical_json, sha256_text
 
 
 def test_record_routing_metadata_is_strict_and_versioned() -> None:
@@ -90,6 +96,7 @@ def test_news_coverage_rejects_count_and_assignment_conflicts() -> None:
     row = NewsRowCoverage(
         row_number=1,
         event_id="EV-1",
+        source_id="SRC-1",
         primary_cluster_id="CL-1",
         disposition="MATERIAL_FULL_RETRIEVAL",
     )
@@ -111,9 +118,45 @@ def test_news_coverage_rejects_count_and_assignment_conflicts() -> None:
         NewsRowCoverage(
             row_number=1,
             event_id="EV-1",
+            source_id="SRC-1",
             primary_cluster_id="CL-1",
             duplicate_parent_cluster_id="CL-0",
             disposition="DUPLICATE",
+        )
+
+
+def test_event_cluster_uses_row_identity_for_exact_duplicate_articles() -> None:
+    cluster = EventClusterEntry(
+        cluster_id="CL-1",
+        representative_event_id="EV-SAME",
+        member_event_ids=["EV-SAME", "EV-SAME"],
+        member_source_ids=["SRC-1", "SRC-2"],
+        member_row_numbers=[1, 2],
+        disposition="MATERIAL_FULL_RETRIEVAL",
+        exact_duplicate_count=1,
+        cluster_signature_sha256="a" * 64,
+    )
+
+    assert cluster.member_row_numbers == [1, 2]
+    with pytest.raises(ValidationError):
+        EventClusterEntry(
+            cluster_id="CL-1",
+            representative_event_id="EV-SAME",
+            member_event_ids=["EV-SAME"],
+            member_source_ids=["SRC-1", "SRC-2"],
+            member_row_numbers=[1, 2],
+            disposition="MATERIAL_FULL_RETRIEVAL",
+            cluster_signature_sha256="a" * 64,
+        )
+
+
+def test_open_world_cluster_finding_rejects_blank_semantics() -> None:
+    with pytest.raises(ValidationError):
+        OpenWorldClusterFinding(
+            cluster_id="CL-1",
+            event_summary="event",
+            mechanisms=["   "],
+            uncertainties=[],
         )
 
 
@@ -164,4 +207,33 @@ def test_population_rejects_impossible_outcome_counts() -> None:
                 high_return_10_count=0,
                 high_return_20_count=0,
             ),
+        )
+
+
+def test_context_manifest_binds_batch_prompt_hashes_to_aggregate() -> None:
+    batches = ["a" * 64, "b" * 64]
+    aggregate = sha256_text(canonical_json(batches))
+    common = {
+        "run_id": "RUN-1",
+        "mode": "fast",
+        "trade_date": date(2030, 1, 10),
+        "cutoff_at": datetime(2030, 1, 10, 8, 59, tzinfo=KST),
+        "as_of": datetime(2030, 1, 10, 8, 59, tzinfo=KST),
+        "accepted_episode_count": 0,
+        "swept_episode_count": 0,
+        "price_snapshot": PriceSnapshot(source_name="mock"),
+    }
+
+    manifest = ContextManifest(
+        **common,
+        prompt_hashes={"open_world_first_analysis": aggregate},
+        prompt_batch_hashes={"open_world_first_analysis": batches},
+    )
+
+    assert manifest.prompt_batch_hashes["open_world_first_analysis"] == batches
+    with pytest.raises(ValidationError):
+        ContextManifest(
+            **common,
+            prompt_hashes={"open_world_first_analysis": "c" * 64},
+            prompt_batch_hashes={"open_world_first_analysis": batches},
         )

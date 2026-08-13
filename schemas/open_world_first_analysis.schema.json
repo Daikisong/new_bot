@@ -1,6 +1,67 @@
 {
+  "$defs": {
+    "OpenWorldClusterFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "cluster_id": {
+          "title": "Cluster Id",
+          "type": "string"
+        },
+        "direct_candidates": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Direct Candidates",
+          "type": "array"
+        },
+        "event_summary": {
+          "title": "Event Summary",
+          "type": "string"
+        },
+        "mechanisms": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Mechanisms",
+          "type": "array"
+        },
+        "potential_sectors": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Potential Sectors",
+          "type": "array"
+        },
+        "uncertainties": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Uncertainties",
+          "type": "array"
+        }
+      },
+      "required": [
+        "cluster_id",
+        "event_summary"
+      ],
+      "title": "OpenWorldClusterFinding",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
   "properties": {
+    "analysis_batch_count": {
+      "default": 0,
+      "title": "Analysis Batch Count",
+      "type": "integer"
+    },
+    "analyzed_cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Analyzed Cluster Ids",
+      "type": "array"
+    },
     "beneficiary_investigation_questions": {
       "items": {
         "type": "string"
@@ -13,6 +74,13 @@
         "type": "string"
       },
       "title": "Beneficiary Transmission Paths",
+      "type": "array"
+    },
+    "cluster_findings": {
+      "items": {
+        "$ref": "#/$defs/OpenWorldClusterFinding"
+      },
+      "title": "Cluster Findings",
       "type": "array"
     },
     "created_at": {
@@ -101,15 +169,30 @@
       "type": "string"
     },
     "schema_version": {
-      "default": "nslab.open_world_first_analysis.v1",
+      "const": "nslab.open_world_first_analysis.v2",
+      "default": "nslab.open_world_first_analysis.v2",
       "title": "Schema Version",
       "type": "string"
+    },
+    "source_cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Cluster Ids",
+      "type": "array"
     },
     "uncertainties": {
       "items": {
         "type": "string"
       },
       "title": "Uncertainties",
+      "type": "array"
+    },
+    "uncovered_cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Uncovered Cluster Ids",
       "type": "array"
     }
   },

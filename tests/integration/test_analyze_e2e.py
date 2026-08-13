@@ -12,9 +12,14 @@ import news_scalping_lab.inference.analyzer as analyzer_module
 from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.brain.compiler import BrainCompiler
+from news_scalping_lab.cli import _inspect_context_manifest
 from news_scalping_lab.config import Settings, ensure_project_dirs
 from news_scalping_lab.context.final_synthesis import final_synthesis_input_summary
 from news_scalping_lab.context.sweep import MEMORY_SWEEP_PROMPT_VERSION, SweepResult
+from news_scalping_lab.contracts.memory_context import (
+    EventClusterManifest,
+    NewsCoverageManifest,
+)
 from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     BlindPrediction,
@@ -29,6 +34,7 @@ from news_scalping_lab.contracts.models import (
     NewsNoveltyFinding,
     NewsNoveltyLabel,
     NewsNoveltyReview,
+    OpenWorldClusterFinding,
     OpenWorldFirstAnalysis,
     OutcomeLabels,
     PathType,
@@ -42,6 +48,7 @@ from news_scalping_lab.contracts.models import (
 from news_scalping_lab.inference.analyzer import (
     DailyAnalyzer,
     ExhaustiveCoverageError,
+    OpenWorldCoverageError,
 )
 from news_scalping_lab.prices.base import PriceRecord
 from news_scalping_lab.research_import.importer import ResearchImporter
@@ -115,10 +122,12 @@ class RecordingBlindLLM:
         *,
         expected_final_prompt_substring: str | None = None,
         forbidden_final_prompt_substrings: list[str] | None = None,
+        fail_embedding: bool = False,
     ) -> None:
         self.calls: list[dict[str, object]] = []
         self.expected_final_prompt_substring = expected_final_prompt_substring
         self.forbidden_final_prompt_substrings = forbidden_final_prompt_substrings or []
+        self.fail_embedding = fail_embedding
 
     async def generate_text(self, *, prompt: str, purpose: str) -> str:
         raise AssertionError("daily analyzer should request structured output")
@@ -128,6 +137,7 @@ class RecordingBlindLLM:
             {"prompt": prompt, "response_model": response_model, "purpose": purpose}
         )
         if response_model is OpenWorldFirstAnalysis:
+            cluster_ids = _open_world_prompt_cluster_ids(prompt)
             analysis = OpenWorldFirstAnalysis(
                 run_id="RUN-provider-open-world",
                 prompt_version="test",
@@ -135,6 +145,19 @@ class RecordingBlindLLM:
                 created_at=datetime(1999, 1, 1, 8, 25, 0, tzinfo=KST),
                 cutoff_at=datetime(1999, 1, 1, 8, 59, 59, tzinfo=KST),
                 event_ids=["EVT-provider"],
+                source_cluster_ids=cluster_ids,
+                analyzed_cluster_ids=cluster_ids,
+                uncovered_cluster_ids=[],
+                analysis_batch_count=1,
+                cluster_findings=[
+                    OpenWorldClusterFinding(
+                        cluster_id=cluster_id,
+                        event_summary=f"provider summary for {cluster_id}",
+                        mechanisms=["provider current news -> open-world candidate"],
+                        uncertainties=["provider first-pass uncertainty"],
+                    )
+                    for cluster_id in cluster_ids
+                ],
                 event_clusters=["provider current-news cluster"],
                 direct_company_events=["ProviderCandidate direct current-news event"],
                 policy_industry_events=["provider policy or industry route"],
@@ -324,7 +347,52 @@ class RecordingBlindLLM:
         return prediction  # type: ignore[return-value]
 
     async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
+        if self.fail_embedding:
+            raise RuntimeError("transient embedding failure")
         return [[0.0] for _ in texts]
+
+
+class MissingOpenWorldCoverageLLM(RecordingBlindLLM):
+    async def generate_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[T],
+        purpose: str,
+    ) -> T:
+        result = await super().generate_structured(
+            prompt=prompt,
+            response_model=response_model,
+            purpose=purpose,
+        )
+        if isinstance(result, OpenWorldFirstAnalysis):
+            return result.model_copy(update={"analyzed_cluster_ids": []})  # type: ignore[return-value]
+        return result
+
+
+class EmptyOpenWorldSemanticsLLM(RecordingBlindLLM):
+    async def generate_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[T],
+        purpose: str,
+    ) -> T:
+        result = await super().generate_structured(
+            prompt=prompt,
+            response_model=response_model,
+            purpose=purpose,
+        )
+        if isinstance(result, OpenWorldFirstAnalysis):
+            return result.model_copy(
+                update={
+                    "event_clusters": [],
+                    "mechanisms": [],
+                    "uncertainties": [],
+                    "direct_candidates": [],
+                }
+            )  # type: ignore[return-value]
+        return result
 
 
 def _first_prompt_cluster_id(prompt: str) -> str:
@@ -335,6 +403,21 @@ def _first_prompt_cluster_id(prompt: str) -> str:
         if isinstance(cluster_id, str):
             return cluster_id
     return "EVCL-provider"
+
+
+def _open_world_prompt_cluster_ids(prompt: str) -> list[str]:
+    marker = "---OPEN_WORLD_FIRST_ANALYSIS_PAYLOAD---"
+    if marker not in prompt:
+        return []
+    payload = json.loads(prompt.split(marker, maxsplit=1)[-1])
+    if not isinstance(payload, dict):
+        return []
+    return [
+        cluster_id
+        for cluster in payload.get("current_event_clusters", [])
+        if isinstance(cluster, dict)
+        and isinstance(cluster_id := cluster.get("cluster_id"), str)
+    ]
 
 
 def _first_prompt_cluster_source_ids(prompt: str) -> list[str]:
@@ -541,11 +624,18 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_manifest["model_config"] == {
         "analysis_mode": "exhaustive",
         "configured_provider": "mock",
+        "event_cluster_embedding_batch_size": 128,
+        "event_cluster_max_semantic_variants": 32,
+        "event_cluster_similarity_threshold": 0.9,
+        "event_clustering_version": "semantic_complete_link_v1",
         "max_output_tokens": 4096,
         "max_concurrency": 4,
         "max_retries": 0,
         "model": "deterministic-mock",
         "provider_class": "DeterministicMockLLMProvider",
+        "open_world_cluster_batch_size": 12,
+        "open_world_max_prompt_chars": 120000,
+        "novelty_cluster_batch_size": 12,
         "reasoning_effort": "low",
         "shard_episode_count": 20,
     }
@@ -624,11 +714,17 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert saved_manifest["event_cluster_count"] == 1
     assert saved_manifest["event_cluster_summary"] == {
         "source_row_count": 1,
+        "all_input_row_count": 3,
+        "audit_only_row_count": 2,
         "cluster_count": 1,
         "exact_duplicate_count": 0,
         "exact_duplicate_cluster_count": 0,
+        "semantic_duplicate_count": 0,
         "semantic_duplicate_cluster_count": 0,
-        "cluster_method": "exact_normalized_title_body_v1",
+        "cluster_method": "semantic_complete_link_v1",
+            "embedding_method": "DeterministicMockLLMProvider:deterministic-mock",
+        "embedding_status": "PROVIDER",
+        "warnings": [],
         "novelty_review_required": True,
     }
     event_cluster_path = tmp_path / saved_manifest["event_cluster_artifact"]
@@ -655,6 +751,29 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     assert "body" not in event_clusters[0]
     assert event_clusters[0]["representative_title_sha256"]
     assert event_clusters[0]["representative_body_sha256"]
+    coverage_path = tmp_path / saved_manifest["news_coverage_manifest_artifact"]
+    event_manifest_path = tmp_path / saved_manifest["event_cluster_manifest_artifact"]
+    assert sha256_text(coverage_path.read_text(encoding="utf-8")) == saved_manifest["news_coverage_manifest_sha256"]
+    assert (
+        sha256_text(event_manifest_path.read_text(encoding="utf-8")) == saved_manifest["event_cluster_manifest_sha256"]
+    )
+    coverage = NewsCoverageManifest.model_validate(read_json(coverage_path))
+    event_manifest = EventClusterManifest.model_validate(read_json(event_manifest_path))
+    assert coverage.input_row_count == coverage.covered_row_count == 3
+    assert coverage.missing_row_count == 0
+    assert coverage.disposition_counts == {
+        "AUDIT_ONLY": 2,
+        "MATERIAL_FULL_RETRIEVAL": 1,
+    }
+    assert event_manifest.input_row_count == 3
+    assert event_manifest.cluster_count == 3
+    assert event_manifest.material_cluster_count == 1
+    open_world_path = tmp_path / saved_manifest["open_world_first_analysis_artifact"]
+    open_world = read_json(open_world_path)
+    assert open_world["source_cluster_ids"] == [event_clusters[0]["cluster_id"]]
+    assert open_world["analyzed_cluster_ids"] == [event_clusters[0]["cluster_id"]]
+    assert open_world["uncovered_cluster_ids"] == []
+    assert open_world["analysis_batch_count"] == 1
     assert saved_manifest["news_novelty_review_artifact"]
     assert saved_manifest["news_novelty_review_count"] == 1
     assert saved_manifest["news_novelty_review_summary"] == {
@@ -1393,13 +1512,189 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert any(trace["purpose"] == "red_team_candidate_review" for trace in traces)
     assert any(trace["purpose"] == "final_synthesis" for trace in traces)
     prompt_versions = {trace["purpose"]: trace["prompt_version"] for trace in traces}
-    assert prompt_versions["open_world_first_analysis"] == "open_world_first_analysis.v1"
+    assert prompt_versions["open_world_first_analysis"] == "open_world_first_analysis.v2"
     assert prompt_versions["news_novelty_review"] == "news_novelty_review.v1"
     assert prompt_versions["semantic_retrieval_plan"] == "semantic_retrieval_plan.v2"
     assert prompt_versions["candidate_expansion"] == "candidate_expansion.v1"
     assert prompt_versions["daily_blind_analysis"] == "daily_blind_analysis.v1"
     assert prompt_versions["red_team_candidate_review"] == "red_team.candidate_attack.v2"
     assert prompt_versions["final_synthesis"] == "synthesis.final.v1"
+
+
+@pytest.mark.asyncio
+async def test_analyze_batches_every_material_cluster_beyond_legacy_twelve_cap(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    settings.limits.event_cluster_similarity_threshold = 1.0
+    settings.limits.open_world_cluster_batch_size = 12
+    settings.limits.novelty_cluster_batch_size = 12
+    ensure_project_dirs(settings)
+    csv_path = tmp_path / "news.csv"
+    rows = [
+        (f'1,{index},"2030-01-10","08:{index:02d}:00","회사{index}, 사건 {index}","서로 다른 현재 뉴스 본문 {index}"\n')
+        for index in range(1, 26)
+    ]
+    csv_path.write_text(
+        "page,row,date,time,title,body\n" + "".join(rows),
+        encoding="utf-8",
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    llm = RecordingBlindLLM()
+
+    analysis = await DailyAnalyzer(settings, llm=llm).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="fast",
+        web_search=False,
+    )
+
+    manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
+    coverage = NewsCoverageManifest.model_validate(read_json(tmp_path / manifest["news_coverage_manifest_artifact"]))
+    clusters = EventClusterManifest.model_validate(read_json(tmp_path / manifest["event_cluster_manifest_artifact"]))
+    open_world = read_json(tmp_path / manifest["open_world_first_analysis_artifact"])
+    assert coverage.input_row_count == coverage.covered_row_count == 25
+    assert coverage.missing_row_count == 0
+    assert clusters.material_cluster_count == 25
+    assert len(open_world["source_cluster_ids"]) == 25
+    assert open_world["analyzed_cluster_ids"] == open_world["source_cluster_ids"]
+    assert open_world["uncovered_cluster_ids"] == []
+    assert open_world["analysis_batch_count"] == 3
+    assert len(manifest["prompt_batch_hashes"]["open_world_first_analysis"]) == 3
+    assert len(manifest["prompt_batch_hashes"]["news_novelty_review"]) == 3
+    manifest_path = tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json"
+    inspection = _inspect_context_manifest(tmp_path, manifest_path, manifest)
+    assert inspection["reproducibility_checks_passed"] is True
+    assert audit_provenance(tmp_path)["passed"] is True
+    purposes = [str(call["purpose"]) for call in llm.calls]
+    assert sum(purpose.startswith("open_world_first_analysis.batch_") for purpose in purposes) == 3
+    assert sum(purpose.startswith("news_novelty_review.batch_") for purpose in purposes) == 3
+
+
+@pytest.mark.asyncio
+async def test_analyze_rejects_unattested_open_world_cluster_coverage(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","가상기업 신규 사건","현재 뉴스"\n',
+        encoding="utf-8",
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    with pytest.raises(OpenWorldCoverageError):
+        await DailyAnalyzer(settings, llm=MissingOpenWorldCoverageLLM()).analyze(
+            news_csv=csv_path,
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            mode="fast",
+            web_search=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_analyze_rejects_empty_real_open_world_semantics(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","가상기업 신규 사건","현재 뉴스"\n',
+        encoding="utf-8",
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    with pytest.raises(OpenWorldCoverageError):
+        await DailyAnalyzer(settings, llm=EmptyOpenWorldSemanticsLLM()).analyze(
+            news_csv=csv_path,
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            mode="fast",
+            web_search=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_analyze_fails_closed_when_one_cluster_exceeds_prompt_budget(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    settings.limits.open_world_max_prompt_chars = 2_000
+    ensure_project_dirs(settings)
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        + '1,1,"2030-01-10","08:00:00","가상기업 신규 사건","'
+        + ("\\" * 4_000)
+        + '"\n',
+        encoding="utf-8",
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    with pytest.raises(OpenWorldCoverageError, match="prompt budget"):
+        await DailyAnalyzer(settings, llm=RecordingBlindLLM()).analyze(
+            news_csv=csv_path,
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            mode="fast",
+            web_search=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_analyze_preserves_all_audit_only_rows_without_fake_llm_batches(
+    tmp_path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-09","14:00:00","윈도우 이전 뉴스","감사 전용 이전 행"\n'
+        '1,2,"2030-01-10","09:30:00","cutoff 이후 뉴스","감사 전용 이후 행"\n',
+        encoding="utf-8",
+    )
+    BrainCompiler(tmp_path).rebuild(mode="full")
+
+    analysis = await DailyAnalyzer(settings, llm=RecordingBlindLLM()).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="fast",
+        web_search=False,
+    )
+
+    manifest_path = tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json"
+    manifest = read_json(manifest_path)
+    coverage = NewsCoverageManifest.model_validate(read_json(tmp_path / manifest["news_coverage_manifest_artifact"]))
+    clusters = EventClusterManifest.model_validate(read_json(tmp_path / manifest["event_cluster_manifest_artifact"]))
+    open_world = read_json(tmp_path / manifest["open_world_first_analysis_artifact"])
+    assert coverage.input_row_count == coverage.covered_row_count == 2
+    assert coverage.disposition_counts == {"AUDIT_ONLY": 2}
+    assert clusters.material_cluster_count == 0
+    assert clusters.cluster_count == 2
+    assert open_world["source_cluster_ids"] == []
+    assert open_world["analyzed_cluster_ids"] == []
+    assert open_world["analysis_batch_count"] == 0
+    assert manifest["prompt_batch_hashes"]["open_world_first_analysis"] == []
+    assert manifest["prompt_batch_hashes"]["news_novelty_review"] == []
+    assert _inspect_context_manifest(tmp_path, manifest_path, manifest)["reproducibility_checks_passed"] is True
+    assert audit_provenance(tmp_path)["passed"] is True
+    missing_open_world = dict(manifest)
+    missing_open_world.pop("open_world_first_analysis_artifact")
+    missing_open_world.pop("open_world_first_analysis_sha256")
+    assert (
+        _inspect_context_manifest(
+            tmp_path,
+            manifest_path,
+            missing_open_world,
+        )["reproducibility_checks_passed"]
+        is False
+    )
+    write_json(manifest_path, missing_open_world)
+    assert audit_provenance(tmp_path)["passed"] is False
 
 
 @pytest.mark.asyncio
@@ -1438,6 +1733,74 @@ async def test_run_id_changes_when_llm_model_config_changes(tmp_path) -> None:
     second_manifest = read_json(tmp_path / "runs" / "manifests" / f"{second.run_id}.json")
     assert first_manifest["model_config"]["configured_provider"] == "mock-a"
     assert second_manifest["model_config"]["configured_provider"] == "mock-b"
+
+
+@pytest.mark.asyncio
+async def test_run_id_changes_when_phase1_clustering_config_changes(tmp_path) -> None:
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","가상기업 계약 체결","재현 설정 결속"\n',
+        encoding="utf-8",
+    )
+    settings_a = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings_a)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    first = await DailyAnalyzer(settings_a, llm=RecordingBlindLLM()).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="fast",
+        web_search=False,
+    )
+
+    settings_b = Settings(project_root=tmp_path)
+    settings_b.limits.event_cluster_similarity_threshold = 0.99
+    settings_b.limits.open_world_cluster_batch_size = 7
+    second = await DailyAnalyzer(settings_b, llm=RecordingBlindLLM()).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="fast",
+        web_search=False,
+    )
+
+    assert first.run_id != second.run_id
+
+
+@pytest.mark.asyncio
+async def test_run_id_binds_runtime_embedding_fallback_result(tmp_path) -> None:
+    csv_path = tmp_path / "news.csv"
+    csv_path.write_text(
+        "page,row,date,time,title,body\n"
+        '1,1,"2030-01-10","08:00:00","가상기업 계약 체결","실행 결과 결속"\n',
+        encoding="utf-8",
+    )
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    BrainCompiler(tmp_path).rebuild(mode="full")
+    fallback = await DailyAnalyzer(
+        settings,
+        llm=RecordingBlindLLM(fail_embedding=True),
+    ).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="fast",
+        web_search=False,
+    )
+    successful = await DailyAnalyzer(
+        settings,
+        llm=RecordingBlindLLM(),
+    ).analyze(
+        news_csv=csv_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        mode="fast",
+        web_search=False,
+    )
+
+    assert successful.run_id != fallback.run_id
 
 
 @pytest.mark.asyncio

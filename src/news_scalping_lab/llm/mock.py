@@ -27,6 +27,7 @@ from news_scalping_lab.contracts.models import (
     NewsNoveltyFinding,
     NewsNoveltyLabel,
     NewsNoveltyReview,
+    OpenWorldClusterFinding,
     OpenWorldFirstAnalysis,
     PathType,
     Postmortem,
@@ -501,6 +502,68 @@ class DeterministicMockLLMProvider:
         cutoff_at = self._payload_datetime(payload, "cutoff_at") or now_kst()
         current_news = self._payload_string_list(payload, "current_news")
         event_ids = self._payload_string_list(payload, "event_ids")
+        current_clusters = payload.get("current_event_clusters")
+        cluster_ids: list[str] = []
+        cluster_findings: list[OpenWorldClusterFinding] = []
+        if isinstance(current_clusters, list):
+            current_news = []
+            for cluster in current_clusters:
+                if not isinstance(cluster, dict):
+                    continue
+                member_news = self._payload_string_list(cluster, "member_news")
+                representative = cluster.get("representative_news")
+                current_news.extend(
+                    member_news
+                    or ([representative] if isinstance(representative, str) else [])
+                )
+            event_ids = self._dedupe_strings(
+                [
+                    str(event_id)
+                    for cluster in current_clusters
+                    if isinstance(cluster, dict)
+                    for event_id in cluster.get("event_ids", [])
+                    if isinstance(event_id, str)
+                ]
+            )
+            cluster_ids = self._dedupe_strings(
+                [
+                    str(cluster.get("cluster_id"))
+                    for cluster in current_clusters
+                    if isinstance(cluster, dict) and isinstance(cluster.get("cluster_id"), str)
+                ]
+            )
+            for cluster in current_clusters:
+                if not isinstance(cluster, dict):
+                    continue
+                cluster_id = cluster.get("cluster_id")
+                if not isinstance(cluster_id, str):
+                    continue
+                member_news = self._payload_string_list(cluster, "member_news")
+                representative = cluster.get("representative_news")
+                cluster_news = member_news or (
+                    [representative] if isinstance(representative, str) else []
+                )
+                cluster_mechanisms = self.infer_mechanisms(
+                    "\n---NEWS---\n".join(cluster_news) or cluster_id
+                )
+                cluster_findings.append(
+                    OpenWorldClusterFinding(
+                        cluster_id=cluster_id,
+                        event_summary=(
+                            cluster_news[0].splitlines()[0][:240]
+                            if cluster_news
+                            else "current cluster requires review"
+                        ),
+                        mechanisms=cluster_mechanisms,
+                        direct_candidates=self.extract_company_mentions(
+                            cluster_news,
+                            limit=6,
+                        ),
+                        uncertainties=[
+                            "mock cluster semantics require cutoff-safe verification"
+                        ],
+                    )
+                )
         mechanisms = self.infer_mechanisms("\n---NEWS---\n".join(current_news) or prompt)
         mentions = self.extract_company_mentions(current_news or [prompt], limit=6)
         clusters = [
@@ -517,6 +580,11 @@ class DeterministicMockLLMProvider:
             created_at=now_kst(),
             cutoff_at=cutoff_at,
             event_ids=event_ids,
+            source_cluster_ids=cluster_ids,
+            analyzed_cluster_ids=cluster_ids,
+            uncovered_cluster_ids=[],
+            analysis_batch_count=1,
+            cluster_findings=cluster_findings,
             event_clusters=clusters,
             direct_company_events=[
                 f"{mention}: direct current-news mention needs listing and economics verification"

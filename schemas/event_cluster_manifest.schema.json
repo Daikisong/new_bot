@@ -43,6 +43,13 @@
           "title": "Member Row Numbers",
           "type": "array"
         },
+        "member_source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Member Source Ids",
+          "type": "array"
+        },
         "representative_event_id": {
           "title": "Representative Event Id",
           "type": "string"
@@ -92,17 +99,18 @@
       "title": "Duplicate Assignment Count",
       "type": "integer"
     },
+    "embedding_batch_size": {
+      "minimum": 1,
+      "title": "Embedding Batch Size",
+      "type": "integer"
+    },
     "embedding_provider": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Embedding Provider"
+      "title": "Embedding Provider",
+      "type": "string"
+    },
+    "embedding_status": {
+      "title": "Embedding Status",
+      "type": "string"
     },
     "input_row_count": {
       "minimum": 0,
@@ -114,6 +122,11 @@
       "title": "Material Cluster Count",
       "type": "integer"
     },
+    "max_semantic_variants": {
+      "minimum": 1,
+      "title": "Max Semantic Variants",
+      "type": "integer"
+    },
     "run_id": {
       "title": "Run Id",
       "type": "string"
@@ -123,6 +136,12 @@
       "default": "nslab.event_cluster_manifest.v2",
       "title": "Schema Version",
       "type": "string"
+    },
+    "similarity_threshold": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Similarity Threshold",
+      "type": "number"
     },
     "trade_date": {
       "format": "date",
@@ -140,6 +159,11 @@
     "trade_date",
     "cutoff_at",
     "clustering_version",
+    "embedding_provider",
+    "embedding_status",
+    "embedding_batch_size",
+    "similarity_threshold",
+    "max_semantic_variants",
     "input_row_count",
     "cluster_count",
     "material_cluster_count",

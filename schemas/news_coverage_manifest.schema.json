@@ -45,11 +45,16 @@
           "minimum": 1,
           "title": "Row Number",
           "type": "integer"
+        },
+        "source_id": {
+          "title": "Source Id",
+          "type": "string"
         }
       },
       "required": [
         "row_number",
         "event_id",
+        "source_id",
         "disposition"
       ],
       "title": "NewsRowCoverage",

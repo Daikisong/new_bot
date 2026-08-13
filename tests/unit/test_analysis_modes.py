@@ -72,10 +72,10 @@ class FirstPassTrackingAnalyzer(DailyAnalyzer):
         self.first_pass_state = first_pass_state
         super().__init__(settings, retrieval=retrieval)
 
-    def _infer_first_pass_mechanisms(self, news_texts: list[str]) -> list[str]:
-        mechanisms = super()._infer_first_pass_mechanisms(news_texts)
+    async def _run_open_world_first_analysis(self, **kwargs: object):  # type: ignore[no-untyped-def]
+        result = await super()._run_open_world_first_analysis(**kwargs)  # type: ignore[arg-type]
         self.first_pass_state["completed"] = True
-        return mechanisms
+        return result
 
 
 class EmptyRecordRetrieval:
@@ -672,7 +672,7 @@ async def test_daily_analyzer_runs_current_news_first_pass_before_past_retrieval
     first_pass_payload = read_json(
         tmp_path / manifest.open_world_first_analysis_artifact
     )
-    assert first_pass_payload["schema_version"] == "nslab.open_world_first_analysis.v1"
+    assert first_pass_payload["schema_version"] == "nslab.open_world_first_analysis.v2"
     assert first_pass_payload["run_id"] == manifest.run_id
     assert first_pass_payload["mechanisms"]
     assert first_pass_payload["beneficiary_investigation_questions"]
