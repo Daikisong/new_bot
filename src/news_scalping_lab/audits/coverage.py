@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.contracts.models import ResearchEpisode
+from news_scalping_lab.memory.index import inspect_current_memory_index
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.store import inspect_vector_index
 from news_scalping_lab.storage import ResearchStore
@@ -32,6 +33,7 @@ def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
     )
     records = BrainRecordStore(root).list_records()
     vector_index = inspect_vector_index(root)
+    production_memory_index = inspect_current_memory_index(root)
     warehouse_counts = WarehouseStore(root).counts()
     warehouse_research_episode_count = _int_value(
         warehouse_counts.get("research_episodes.parquet")
@@ -71,6 +73,14 @@ def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
     ]
     warehouse_missing_columns = _warehouse_missing_columns(root)
     vector_index_current = vector_index.get("status") == "current"
+    production_memory_index_configured = production_memory_index.get("pointer_exists") is True
+    production_memory_index_current = (
+        not production_memory_index_configured
+        or (
+            production_memory_index.get("status") == "current_as_of"
+            and production_memory_index.get("passed") is True
+        )
+    )
     warehouse_synced = warehouse_research_episode_count == accepted_episode_count
     warehouse_projection_synced = not warehouse_count_mismatches and not (
         warehouse_identity_mismatches
@@ -88,6 +98,11 @@ def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
             findings.append(formatted)
     if not vector_index_current:
         findings.append(f"vector_index: status is {vector_index.get('status')}")
+    if not production_memory_index_current:
+        findings.append(
+            "production_memory_index: status is "
+            f"{production_memory_index.get('status')}"
+        )
     if not warehouse_synced:
         findings.append(
             "warehouse: research_episodes.parquet count "
@@ -131,6 +146,7 @@ def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
         "passed": (
             brain_audit_passed
             and vector_index_current
+            and production_memory_index_current
             and warehouse_synced
             and warehouse_projection_synced
             and warehouse_required_files_present
@@ -142,6 +158,8 @@ def audit_coverage(root: Path, *, deep: bool = False) -> dict[str, object]:
         "accepted_episode_store_findings": accepted_store_findings,
         "vector_index": vector_index,
         "vector_index_current": vector_index_current,
+        "production_memory_index": production_memory_index,
+        "production_memory_index_current": production_memory_index_current,
         "warehouse_counts": warehouse_counts,
         "warehouse_expected_source_counts": warehouse_expected_source_counts,
         "warehouse_count_mismatches": warehouse_count_mismatches,

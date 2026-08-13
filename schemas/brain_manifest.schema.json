@@ -5,6 +5,19 @@
       "title": "Accepted Episode Count",
       "type": "integer"
     },
+    "brain_record_cutoff_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Brain Record Cutoff At"
+    },
     "brain_version": {
       "title": "Brain Version",
       "type": "string"
@@ -63,6 +76,40 @@
       "title": "Deprecated Mode Alias",
       "type": "boolean"
     },
+    "excluded_future_episode_count": {
+      "default": 0,
+      "title": "Excluded Future Episode Count",
+      "type": "integer"
+    },
+    "excluded_future_episode_ids_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Excluded Future Episode Ids Sha256"
+    },
+    "excluded_future_record_count": {
+      "default": 0,
+      "title": "Excluded Future Record Count",
+      "type": "integer"
+    },
+    "excluded_future_record_ids_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Excluded Future Record Ids Sha256"
+    },
     "last_full_rebuild_at": {
       "anyOf": [
         {
@@ -80,6 +127,55 @@
       "default": false,
       "title": "Production Eligible",
       "type": "boolean"
+    },
+    "production_memory_as_of_cutoff": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Production Memory As Of Cutoff"
+    },
+    "production_memory_corpus_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Production Memory Corpus Sha256"
+    },
+    "production_memory_snapshot_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Production Memory Snapshot Id"
+    },
+    "production_memory_source_generation_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Production Memory Source Generation Sha256"
     },
     "schema_version": {
       "default": "nslab.brain_manifest.v1",

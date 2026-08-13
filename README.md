@@ -34,6 +34,17 @@ python -m news_scalping_lab.cli evaluate --trade-date 2026-06-24
 python -m news_scalping_lab.cli brain update --episode 2026-06-24 --mode catalog --allow-catalog
 ```
 
+## Production Memory Index
+
+The deterministic JSONL vector index is for local tests. Production uses a real
+embedding provider and immutable DuckDB FTS/HNSW memory-cell snapshots.
+
+```bash
+python -m news_scalping_lab.cli memory rebuild-index --production
+python -m news_scalping_lab.cli memory inspect-index
+python -m news_scalping_lab.cli memory search-cells "event mechanism" --cutoff-at 2026-06-24T08:59:59+09:00
+```
+
 ## Quality Gates
 
 ```bash

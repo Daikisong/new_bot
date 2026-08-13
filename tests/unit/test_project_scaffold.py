@@ -34,6 +34,8 @@ EXPECTED_SCHEMA_FILES = {
     "final_synthesis_context.schema.json",
     "mechanism_memory.schema.json",
     "memory_cell_manifest.schema.json",
+    "memory_cell_membership.schema.json",
+    "memory_cell_snapshot_manifest.schema.json",
     "memory_claim.schema.json",
     "memory_coverage_manifest.schema.json",
     "news_coverage_manifest.schema.json",

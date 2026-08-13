@@ -45,9 +45,11 @@ class AsyncEmbeddingProviderAdapter:
         provider: EmbeddingProvider,
         *,
         embedding_method: str,
+        production_capability_attested: bool = False,
     ) -> None:
         self.provider = provider
         self.embedding_method = embedding_method
+        self.production_capability_attested = production_capability_attested
         self.dimensions = 0
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:

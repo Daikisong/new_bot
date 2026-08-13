@@ -85,6 +85,56 @@ def _cli_brain_record(record_id: str = "BRAIN-CLI") -> BrainRecordEnvelope:
     )
 
 
+def test_memory_search_cells_cli_does_not_scan_source_records(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Provider:
+        embedding_model = "embed-v1"
+
+        async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
+            return [[0.0] * 32 for _text in texts]
+
+    class _Index:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        def search_cells(self, *args: Any, **kwargs: Any) -> list[Any]:
+            return []
+
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="fixture",
+        llm={
+            "provider": "fixture",
+            "model": "fixture-model",
+            "embedding_model": "embed-v1",
+        },
+    )
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli_module, "create_llm_provider", lambda _settings: _Provider())
+    monkeypatch.setattr(cli_module, "ProductionMemoryIndex", _Index)
+    monkeypatch.setattr(
+        cli_module.BrainRecordStore,
+        "list_records",
+        lambda self: (_ for _ in ()).throw(AssertionError("online corpus scan")),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "search-cells",
+            "supply contract",
+            "--cutoff-at",
+            "2030-01-10T08:59:59+09:00",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["candidate_count"] == 0
+
+
 def test_context_price_snapshot_contract_requires_source_ref() -> None:
     manifest = {
         "trade_date": "2030-01-10",
@@ -1665,7 +1715,7 @@ def test_memory_rebuild_index_production_rejects_mock_provider(
     result = CliRunner().invoke(app, ["memory", "rebuild-index", "--production"])
 
     assert result.exit_code == 1
-    assert "production vector index rebuild requires a real LLM provider" in result.output
+    assert "production memory index requires a real LLM provider" in result.output
 
 
 def test_memory_rebuild_index_production_requires_openai_api_key(
@@ -1685,7 +1735,7 @@ def test_memory_rebuild_index_production_requires_openai_api_key(
     result = CliRunner().invoke(app, ["memory", "rebuild-index", "--production"])
 
     assert result.exit_code == 1
-    assert "production vector index rebuild requires OPENAI_API_KEY" in result.output
+    assert "production memory index requires OPENAI_API_KEY" in result.output
 
 
 def test_memory_rebuild_index_production_requires_openai_sdk(

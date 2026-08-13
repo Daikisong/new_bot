@@ -1869,6 +1869,11 @@ def test_imported_bundle_llm_full_rebuild_passes_deep_brain_audit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        compiler_module,
+        "now_kst",
+        lambda: datetime(2031, 1, 1, tzinfo=KST),
+    )
     bundle = _write_synthetic_bundle_file(
         tmp_path,
         text=_synthetic_v11_bundle(

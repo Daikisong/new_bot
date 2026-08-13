@@ -35,6 +35,7 @@ from news_scalping_lab.inference.analyzer import (
 from news_scalping_lab.inference.event_clustering import EVENT_CLUSTERING_VERSION
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.llm.openai_provider import DEFAULT_OPENAI_EMBEDDING_MODEL
+from news_scalping_lab.memory.index import inspect_current_memory_index
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
 from news_scalping_lab.records.hashing import (
     brain_record_envelope_hashes,
@@ -347,12 +348,18 @@ def production_readiness_report(
     )
     if warehouse["passed"] is not True:
         findings.extend(f"warehouse: {finding}" for finding in warehouse["findings"])
-    vector_index = report.get("vector_index")
-    semantic_index = _production_semantic_index_status(
-        vector_index,
-        settings=settings,
-        expected_source_record_count=expected_source_record_count,
-    )
+    if "production_memory_index" in report:
+        semantic_index = _production_memory_index_status(
+            report.get("production_memory_index"),
+            settings=settings,
+            expected_source_record_count=expected_source_record_count,
+        )
+    else:
+        semantic_index = _production_semantic_index_status(
+            report.get("vector_index"),
+            settings=settings,
+            expected_source_record_count=expected_source_record_count,
+        )
     if semantic_index["passed"] is not True:
         findings.extend(f"embedding: {finding}" for finding in semantic_index["findings"])
     training_exports = _production_training_export_status(settings)
@@ -1151,6 +1158,7 @@ def build_doctor_report(
             "audit": _brain_audit_status(coverage_audit),
         },
         "vector_index": inspect_vector_index(settings.project_root),
+        "production_memory_index": inspect_current_memory_index(settings.project_root),
         "schemas": {
             "path": schema_dir.as_posix(),
             "exists": schema_dir.exists(),
@@ -3440,6 +3448,105 @@ def _production_record_coverage_status(
         "record_store_training_eligible_record_count_as_of": (store_training_eligible_as_of_count),
         "unknown_swept_record_ids": unknown_swept_record_ids,
         "missing_swept_record_ids": missing_swept_record_ids,
+    }
+
+
+def _production_memory_index_status(
+    index: object,
+    *,
+    settings: Settings,
+    expected_source_record_count: int | None,
+) -> dict[str, Any]:
+    findings: list[str] = []
+    manifest = index.get("manifest") if isinstance(index, dict) else None
+    if not isinstance(index, dict):
+        findings.append("production memory index status is missing")
+    elif index.get("status") != "current_as_of" or index.get("passed") is not True:
+        findings.append("production memory index is not a current as-of snapshot")
+    elif index.get("source_partition_verified") is not True:
+        findings.append("production memory index source partition is not verified")
+    if not isinstance(manifest, dict):
+        findings.append("production memory index manifest is missing")
+        manifest = {}
+    if manifest.get("production_ready") is not True:
+        findings.append("production memory index is not marked production ready")
+    brain_manifest = _read_optional_json(
+        settings.project_root / "brain" / "current" / "brain_manifest.json"
+    )
+    if isinstance(brain_manifest, dict) and brain_manifest.get("build_mode") == "llm-full":
+        cross_checks = {
+            "snapshot_id": brain_manifest.get("production_memory_snapshot_id"),
+            "corpus_manifest_sha256": brain_manifest.get(
+                "production_memory_corpus_sha256"
+            ),
+            "source_generation_sha256": brain_manifest.get(
+                "production_memory_source_generation_sha256"
+            ),
+            "as_of_cutoff": brain_manifest.get("production_memory_as_of_cutoff"),
+        }
+        for field, expected in cross_checks.items():
+            if manifest.get(field) != expected:
+                findings.append(
+                    f"production memory index {field} does not match current brain"
+                )
+    for field in (
+        "metadata_index_ready",
+        "fts_index_ready",
+        "hnsw_index_ready",
+        "provenance_graph_ready",
+    ):
+        if manifest.get(field) is not True:
+            findings.append(f"production memory index {field} is false")
+    embedding_method = manifest.get("embedding_model")
+    configured_embedding_model = _production_configured_embedding_model(settings)
+    observed_embedding_model = (
+        _llm_embedding_model_from_method(embedding_method)
+        if isinstance(embedding_method, str)
+        else None
+    )
+    expected_prefix = f"llm_embedding:{settings.llm_provider.strip().lower()}:"
+    if not isinstance(embedding_method, str) or not embedding_method.startswith(expected_prefix):
+        findings.append("production memory index provider does not match configured provider")
+    elif configured_embedding_model and observed_embedding_model != configured_embedding_model:
+        findings.append("production memory index embedding model does not match configured model")
+    record_count = _int_from_mapping(manifest, "record_count")
+    excluded_future_record_count = _int_from_mapping(
+        manifest,
+        "excluded_future_record_count",
+    )
+    if (
+        isinstance(expected_source_record_count, int)
+        and (
+            record_count is None
+            or excluded_future_record_count is None
+            or record_count + excluded_future_record_count
+            != expected_source_record_count
+        )
+    ):
+        findings.append("production memory index source partition does not match coverage")
+    if manifest.get("polarity_classifier_version") != POLARITY_CLASSIFIER_VERSION:
+        findings.append("production memory index routing classifier version is stale")
+    return {
+        "schema_version": "nslab.production_semantic_index.v2",
+        "status": "ready" if not findings else "attention",
+        "passed": not findings,
+        "finding_count": len(findings),
+        "findings": findings,
+        "snapshot_id": manifest.get("snapshot_id"),
+        "embedding_method": embedding_method,
+        "embedding_model": observed_embedding_model,
+        "configured_embedding_model": configured_embedding_model,
+        "record_count": record_count,
+        "excluded_future_record_count": excluded_future_record_count,
+        "as_of_cutoff": manifest.get("as_of_cutoff"),
+        "expected_source_record_count": expected_source_record_count,
+        "source_partition_verified": (
+            index.get("source_partition_verified")
+            if isinstance(index, dict)
+            else None
+        ),
+        "cell_count": manifest.get("cell_count"),
+        "index_status": index.get("status") if isinstance(index, dict) else None,
     }
 
 
@@ -5986,8 +6093,20 @@ def _llm_full_brain_status(
     compile_run = compile_report.get("llm_compile_run") if isinstance(compile_report, dict) else None
     compile_run = compile_run if isinstance(compile_run, dict) else None
     record_id_stats = _brain_record_store_id_stats(settings.project_root)
-    known_record_ids = record_id_stats["record_ids"] if record_id_stats["readable"] is True else None
     known_records_by_id = record_id_stats["records_by_id"] if record_id_stats["readable"] is True else None
+    current_manifest = _read_optional_json(current_dir / "brain_manifest.json")
+    cutoff_raw = current_manifest.get("brain_record_cutoff_at") if isinstance(current_manifest, dict) else None
+    try:
+        brain_cutoff = parse_datetime(str(cutoff_raw)) if cutoff_raw is not None else None
+    except ValueError:
+        brain_cutoff = None
+    if isinstance(known_records_by_id, dict) and brain_cutoff is not None:
+        known_records_by_id = {
+            record_id: record
+            for record_id, record in known_records_by_id.items()
+            if record.available_from <= brain_cutoff
+        }
+    known_record_ids = set(known_records_by_id) if isinstance(known_records_by_id, dict) else None
     compiled_claim_stats = _compiled_claim_file_stats(
         compiled_claims_path,
         known_record_ids=known_record_ids,
@@ -6016,6 +6135,12 @@ def _llm_full_brain_status(
     compiled_claim_count = compiled_claim_stats["line_count"]
     valid_compiled_claim_count = compiled_claim_stats["valid_claim_count"]
     findings: list[str] = []
+    phase4_brain = (
+        isinstance(current_manifest, dict)
+        and current_manifest.get("production_memory_snapshot_id") is not None
+    )
+    if build_mode == "llm-full" and phase4_brain and brain_cutoff is None:
+        findings.append("llm-full brain cutoff is missing or invalid")
     status = {
         "schema_version": "nslab.production_llm_full_brain.v1",
         "build_mode": build_mode if isinstance(build_mode, str) else None,
@@ -6190,7 +6315,15 @@ def _llm_full_brain_status(
         source_record_count = status["source_record_count"]
         if not isinstance(source_record_count, int) or source_record_count <= 0:
             findings.append("llm-full compile source records are missing")
-        elif isinstance(expected_source_record_count, int) and source_record_count != expected_source_record_count:
+        elif (
+            brain_cutoff is not None
+            and known_record_ids is not None
+            and source_record_count != len(known_record_ids)
+        ) or (
+            brain_cutoff is None
+            and isinstance(expected_source_record_count, int)
+            and source_record_count != expected_source_record_count
+        ):
             findings.append("llm-full compile source record count does not match coverage")
         manifest_claim_count = status["compiled_claim_count"]
         if not isinstance(manifest_claim_count, int) or manifest_claim_count <= 0:

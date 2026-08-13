@@ -17,6 +17,15 @@ from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text
 T = TypeVar("T", bound=BaseModel)
 
 
+@pytest.fixture(autouse=True)
+def _llm_full_fixture_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        compiler_module,
+        "now_kst",
+        lambda: datetime(2031, 1, 1, tzinfo=KST),
+    )
+
+
 class RecordingBrainLLM:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
@@ -221,6 +230,8 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     compile_report = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")
     brain_manifest = read_json(tmp_path / "brain" / "current" / "brain_manifest.json")
     vector_manifest = read_json(tmp_path / "memory" / "vector_index" / "manifest.json")
+    production_pointer = read_json(tmp_path / "memory" / "retrieval_index" / "current.json")
+    production_manifest = read_json(tmp_path / production_pointer["manifest_path"])
     compiled_claims = [
         json.loads(line)
         for line in (tmp_path / "brain" / "current" / "compiled_claims.jsonl").read_text(encoding="utf-8").splitlines()
@@ -337,8 +348,13 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
         category for category in compile_manifest["categories"] if category["category"] == "single_event"
     )
     assert single_event_category["compiled_claim_ids"] == [compiled_claims_by_record["BRAIN-DIRECT"]["claim_id"]]
-    assert vector_manifest["embedding_method"] == "llm_embedding:openai:embed-brain-test"
-    assert vector_manifest["dimensions"] == 2
+    assert vector_manifest["embedding_method"] == "deterministic_hashing_v1"
+    assert production_manifest["embedding_model"] == "llm_embedding:openai:embed-brain-test"
+    assert production_manifest["production_ready"] is True
+    assert production_manifest["hnsw_index_ready"] is True
+    assert production_manifest["fts_index_ready"] is True
+    assert vector_manifest["dimensions"] == 32
+    assert production_manifest["embedding_dimensions"] == 2
     assert llm.embed_calls
     single_event = (tmp_path / "brain" / "current" / "01_single_event_patterns.md").read_text(encoding="utf-8")
     assert "## Category Synthesis" in single_event
@@ -353,7 +369,7 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
 
     assert second_manifest.brain_version == manifest.brain_version
     assert llm.calls == []
-    assert llm.embed_calls
+    assert llm.embed_calls == []
     assert second_compile_manifest["llm_generation_count"] == 1 + len(BRAIN_FILES) * 2
     assert second_compile_manifest == compile_manifest
     assert second_compile_report["llm_compile_run"]["llm_live_call_count"] == 0
@@ -620,9 +636,37 @@ def test_full_rebuild_from_raw_is_reproducible_with_cache(
     assert second_claims == first_claims
     assert sorted(path.name for path in (tmp_path / "brain" / "llm_cache").glob("*.json")) == (cache_files)
     assert llm.calls == []
-    assert llm.embed_calls
+    assert llm.embed_calls == []
     assert second_compile_report["llm_compile_run"]["llm_live_call_count"] == 0
     assert second_compile_report["llm_compile_run"]["all_outputs_from_cache"] is True
+
+
+def test_llm_full_embedding_model_change_creates_new_brain_version(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    llm, first = _rebuild_llm_full_fixture(
+        tmp_path,
+        monkeypatch,
+        [
+            _record(
+                "BRAIN-EMBEDDING-VERSION",
+                record_type="supervised_direct_event_case",
+                training_target="direct_event_response",
+                response_class="positive_high10",
+                payload_extra={"title": "issuer supply contract signed"},
+            )
+        ],
+    )
+    llm.embedding_model = "embed-brain-test-v2"
+
+    second = BrainCompiler(tmp_path).rebuild(mode="llm-full")
+
+    assert second.brain_version != first.brain_version
+    assert (
+        second.production_memory_snapshot_id
+        != first.production_memory_snapshot_id
+    )
 
 
 def test_llm_full_requires_real_provider(
@@ -742,6 +786,49 @@ def _write_openai_config(root: Path) -> None:
     _write_llm_config(root, llm_provider="openai")
 
 
+def test_llm_full_publish_rolls_back_every_mutable_projection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_record = _record(
+        "BRAIN-TRANSACTION-1",
+        record_type="supervised_direct_event_case",
+        training_target="direct_event_response",
+        response_class="positive_high10",
+        payload_extra={
+            "title": "issuer supply contract signed",
+            "outcome_high_return_pct": 12.0,
+        },
+    )
+    _rebuild_llm_full_fixture(tmp_path, monkeypatch, [first_record])
+    before = _llm_full_mutable_state(tmp_path)
+    second_record = _record(
+        "BRAIN-TRANSACTION-2",
+        record_type="negative_control_case",
+        training_target="negative_control_calibration",
+        response_class="negative_control",
+        payload_extra={
+            "title": "issuer supply contract failed",
+            "outcome_high_return_pct": -2.0,
+        },
+    )
+    _write_records(tmp_path, [first_record, second_record])
+
+    def fail_activation(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("injected memory activation failure")
+
+    monkeypatch.setattr(
+        compiler_module.ProductionMemoryIndex,
+        "activate",
+        fail_activation,
+    )
+
+    with pytest.raises(RuntimeError, match="injected memory activation failure"):
+        BrainCompiler(tmp_path).rebuild(mode="llm-full")
+
+    assert _llm_full_mutable_state(tmp_path) == before
+
+
 def _write_llm_config(
     root: Path,
     *,
@@ -789,6 +876,34 @@ def _write_records(root: Path, records: list[BrainRecordEnvelope]) -> None:
         "".join(record.model_dump_json() + "\n" for record in records),
         encoding="utf-8",
     )
+
+
+def _llm_full_mutable_state(root: Path) -> dict[str, bytes]:
+    paths = (
+        root / "brain" / "current",
+        root / "brain" / "claims" / "claims.jsonl",
+        root / "brain" / "memory" / "current",
+        root / "brain" / "shards" / "current",
+        root / "brain" / "HEAD",
+        root / "brain" / "diffs",
+        root / "diagnostics" / "brain_compile_report.json",
+        root / "diagnostics" / "brain_compile_report.md",
+        root / "diagnostics" / "record_coverage_report.json",
+        root / "diagnostics" / "record_coverage_report.md",
+        root / "memory" / "retrieval_index" / "current.json",
+        root / "memory" / "retrieval_index" / "as_of_registry.json",
+        root / "memory" / "vector_index",
+        root / "warehouse",
+    )
+    state: dict[str, bytes] = {}
+    for path in paths:
+        if path.is_file():
+            state[path.relative_to(root).as_posix()] = path.read_bytes()
+        elif path.is_dir():
+            for child in sorted(path.rglob("*")):
+                if child.is_file():
+                    state[child.relative_to(root).as_posix()] = child.read_bytes()
+    return state
 
 
 def _record(

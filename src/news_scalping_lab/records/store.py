@@ -6,11 +6,13 @@ import json
 import shutil
 from collections import Counter
 from collections.abc import Iterator
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from news_scalping_lab.records.hashing import brain_record_envelope_sha256
 from news_scalping_lab.records.models import (
     VALID_OUTCOME_LABEL_QUALITIES,
     BrainRecordEnvelope,
@@ -26,6 +28,7 @@ from news_scalping_lab.utils import (
     as_kst,
     canonical_json,
     file_sha256,
+    parse_datetime,
     read_json,
     sha256_text,
     write_json,
@@ -351,14 +354,40 @@ class BrainRecordStore:
 
     def rebuild_indexes(self) -> dict[str, Any]:
         records = self.list_records()
+        previous_index = _read_json_dict(self.record_index_dir / "by_record_id.json") or {}
+        previous_manifest = _read_json_dict(self.record_index_dir / "manifest.json") or {}
         by_record_id = _record_id_index(records)
         counts_by_type = Counter(record.record_type for record in records)
         counts_by_phase = Counter(record.evidence_phase for record in records)
         counts_by_target = Counter(
             record.training_target or "UNKNOWN" for record in records
         )
+        full_envelope_hashes = {
+            record.record_id: brain_record_envelope_sha256(record)
+            for record in sorted(records, key=lambda item: item.record_id)
+        }
+        for record_id, full_hash in full_envelope_hashes.items():
+            by_record_id[record_id]["canonical_full_envelope_sha256"] = full_hash
+        full_envelope_root = sha256_text(canonical_json(full_envelope_hashes))
+        structural_evidence_root = _structural_evidence_root_sha256(
+            self.research_episodes_dir
+        )
+        generation_root = sha256_text(
+            canonical_json(
+                {
+                    "full_envelope_root_sha256": full_envelope_root,
+                    "structural_evidence_root_sha256": structural_evidence_root,
+                }
+            )
+        )
+        generation_history = _record_generation_history(
+            previous_index=previous_index,
+            previous_manifest=previous_manifest,
+            current_index=by_record_id,
+            current_root=generation_root,
+        )
         manifest = {
-            "schema_version": "nslab.record_index_manifest.v1",
+            "schema_version": "nslab.record_index_manifest.v2",
             "record_count": len(records),
             "episode_count": len({record.episode_id for record in records}),
             "training_eligible_record_count": sum(
@@ -369,6 +398,16 @@ class BrainRecordStore:
             "record_counts_by_training_target": dict(sorted(counts_by_target.items())),
             "records_sha256": sha256_text(
                 "\n".join(record.normalized_payload_sha256 for record in records)
+            ),
+            "record_hash_kind": "canonical_full_envelope_sha256",
+            "full_envelope_root_sha256": full_envelope_root,
+            "structural_evidence_root_sha256": structural_evidence_root,
+            "generation_root_sha256": generation_root,
+            "generation_history": generation_history,
+            "max_available_from": (
+                max(record.available_from for record in records).isoformat()
+                if records
+                else None
             ),
         }
         write_json(self.record_index_dir / "by_record_id.json", by_record_id)
@@ -1683,6 +1722,98 @@ def _record_id_index(records: list[BrainRecordEnvelope]) -> dict[str, dict[str, 
         }
         for record in records
     }
+
+
+def _record_generation_history(
+    *,
+    previous_index: dict[str, Any],
+    previous_manifest: dict[str, Any],
+    current_index: dict[str, dict[str, str]],
+    current_root: str,
+) -> dict[str, str]:
+    previous_root = previous_manifest.get("generation_root_sha256")
+    if not isinstance(previous_root, str) or previous_root == current_root:
+        history = previous_manifest.get("generation_history")
+        return {
+            str(root): str(value)
+            for root, value in history.items()
+            if isinstance(root, str) and isinstance(value, str)
+        } if isinstance(history, dict) else {}
+
+    changed_available_from: list[datetime] = []
+    for record_id in set(previous_index) | set(current_index):
+        previous = previous_index.get(record_id)
+        current = current_index.get(record_id)
+        previous_hash = (
+            previous.get("canonical_full_envelope_sha256")
+            if isinstance(previous, dict)
+            else None
+        )
+        current_hash = (
+            current.get("canonical_full_envelope_sha256")
+            if isinstance(current, dict)
+            else None
+        )
+        if previous_hash == current_hash:
+            continue
+        for row in (previous, current):
+            if not isinstance(row, dict):
+                continue
+            available_from = row.get("available_from")
+            if isinstance(available_from, str):
+                with suppress(ValueError):
+                    changed_available_from.append(parse_datetime(available_from))
+    if not changed_available_from:
+        changed_available_from = [
+            parse_datetime(str(row["available_from"]))
+            for row in current_index.values()
+            if isinstance(row.get("available_from"), str)
+        ]
+    if not changed_available_from:
+        return {}
+    changed_min = min(changed_available_from).isoformat()
+    prior = previous_manifest.get("generation_history")
+    history = {
+        str(root): str(value)
+        for root, value in prior.items()
+        if isinstance(root, str) and isinstance(value, str)
+    } if isinstance(prior, dict) else {}
+    updated: dict[str, str] = {}
+    for root, value in history.items():
+        try:
+            updated[root] = min(parse_datetime(value), parse_datetime(changed_min)).isoformat()
+        except ValueError:
+            updated[root] = changed_min
+    updated[previous_root] = changed_min
+    return dict(sorted(updated.items()))
+
+
+def _structural_evidence_root_sha256(research_episodes_dir: Path) -> str:
+    hashes: dict[str, str] = {}
+    for envelope_path in sorted(
+        research_episodes_dir.glob("*/bundle_envelope.json")
+    ):
+        try:
+            envelope = read_json(envelope_path)
+        except (OSError, ValueError):
+            envelope = None
+        cutoff_at = envelope.get("cutoff_at") if isinstance(envelope, dict) else None
+        key = envelope_path.relative_to(research_episodes_dir).as_posix()
+        hashes[f"{key}:cutoff_at"] = sha256_text(canonical_json(cutoff_at))
+    for path in sorted(research_episodes_dir.glob("*/raw_blocks/*")):
+        lowered = path.name.lower()
+        if (
+            not path.is_file()
+            or path.suffix.lower() not in {".json", ".jsonl"}
+            or not any(
+                token in lowered
+                for token in ("source", "fact", "inference", "observation")
+            )
+            or any(token in lowered for token in ("outcome", "postmortem", "audit"))
+        ):
+            continue
+        hashes[path.relative_to(research_episodes_dir).as_posix()] = file_sha256(path)
+    return sha256_text(canonical_json(hashes))
 
 
 def _safe_block_filename(name: str) -> str:

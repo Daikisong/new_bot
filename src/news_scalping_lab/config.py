@@ -136,6 +136,7 @@ DEFAULT_PROJECT_DIRS = [
     "memory/company_memory",
     "memory/shard_brains",
     "memory/vector_index",
+    "memory/retrieval_index/snapshots",
     "brain/snapshots",
     "brain/current",
     "brain/diffs",

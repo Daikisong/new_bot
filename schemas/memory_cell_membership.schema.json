@@ -1,0 +1,72 @@
+{
+  "additionalProperties": false,
+  "description": "One record's versioned membership in an as-of memory-cell snapshot.",
+  "properties": {
+    "available_from": {
+      "format": "date-time",
+      "title": "Available From",
+      "type": "string"
+    },
+    "independent_unit_id": {
+      "title": "Independent Unit Id",
+      "type": "string"
+    },
+    "membership_rule": {
+      "title": "Membership Rule",
+      "type": "string"
+    },
+    "membership_rule_version": {
+      "title": "Membership Rule Version",
+      "type": "string"
+    },
+    "membership_score": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Membership Score",
+      "type": "number"
+    },
+    "primary_cell_id": {
+      "title": "Primary Cell Id",
+      "type": "string"
+    },
+    "record_id": {
+      "title": "Record Id",
+      "type": "string"
+    },
+    "routing_disposition": {
+      "enum": [
+        "REASONING",
+        "CONTEXT",
+        "AUDIT",
+        "QUARANTINED"
+      ],
+      "title": "Routing Disposition",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.memory_cell_membership.v1",
+      "default": "nslab.memory_cell_membership.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "secondary_cell_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Secondary Cell Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "record_id",
+    "primary_cell_id",
+    "independent_unit_id",
+    "membership_score",
+    "membership_rule",
+    "membership_rule_version",
+    "available_from",
+    "routing_disposition"
+  ],
+  "title": "MemoryCellMembership",
+  "type": "object"
+}

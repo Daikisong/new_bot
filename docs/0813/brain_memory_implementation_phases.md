@@ -1,6 +1,6 @@
 # NSLAB 장기기억 두뇌 구현 단계
 
-상태: Phase 0~3 구현·검증·독립감사 승인 완료, Phase 4 착수 대기
+상태: Phase 0~4 구현·검증·독립감사 승인 완료, Phase 5 착수 전
 
 기준 문서:
 
@@ -392,11 +392,33 @@ incremental import update
 
 ```text
 online query에서 Python full corpus scan 0회
-50k/200k/600k ANN benchmark 통과
+production-code streaming build/audit 600건 통과
+10,001+ bounded audit 재현 artifact는 Phase 8에서 생성
+50k/200k/600k 축소 SQL query microbenchmark 통과
+600k 1536D production-shape peak RSS/API profile은 Phase 8/9에서 측정
 모든 reasoning-eligible record primary cell coverage
 context/audit record 명시 disposition coverage
 as-of replay가 future membership을 사용하지 않음
 ```
+
+### 구현 결과
+
+상세 결과는 `phase4_production_memory_index_report.md`에 기록했다.
+
+```text
+DuckDB metadata/FTS/HNSW/provenance graph snapshot 구현
+primary membership 전수 1:1 및 bounded secondary membership 구현
+full-envelope/cutoff/model/version content-addressed snapshot 구현
+동일 embedding model 증분 vector 재사용 구현
+online query source JSONL 전수 scan 0회 검증
+600 production-code streaming build/audit 통과
+streaming-audit branch tamper 회귀 통과
+50k/200k/600k 축소 SQL query microbenchmark 통과(Phase 4 성능 종료 증거 아님)
+600k 1536D production-shape builder 실측은 Phase 8/9 blocker로 유지
+```
+
+Phase 4 독립감사는 `APPROVE`이며 P0/P1 잔여 이슈는 없다. 600k 1536D 실측과 검색 품질
+평가는 문서대로 Phase 8/9의 별도 종료 조건으로 유지한다.
 
 ## 8. Phase 5: PopulationRetriever와 통계 cube
 

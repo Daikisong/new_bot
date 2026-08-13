@@ -20,6 +20,8 @@ from pydantic import (
     model_validator,
 )
 
+from news_scalping_lab.utils import as_kst
+
 
 class StrictMemoryContextModel(BaseModel):
     model_config = ConfigDict(
@@ -283,6 +285,191 @@ class MemoryCellManifest(StrictMemoryContextModel):
     membership_manifest: ArtifactReference
     parent_cell_ids: list[str] = Field(default_factory=list)
     child_cell_ids: list[str] = Field(default_factory=list)
+
+
+class MemoryCellMembership(StrictMemoryContextModel):
+    """One record's versioned membership in an as-of memory-cell snapshot."""
+
+    schema_version: Literal["nslab.memory_cell_membership.v1"] = (
+        "nslab.memory_cell_membership.v1"
+    )
+    record_id: str
+    primary_cell_id: str
+    secondary_cell_ids: list[str] = Field(default_factory=list)
+    independent_unit_id: str
+    membership_score: float = Field(ge=0.0, le=1.0)
+    membership_rule: str
+    membership_rule_version: str
+    available_from: AwareDatetime
+    routing_disposition: RoutingDisposition
+
+    @model_validator(mode="after")
+    def validate_cell_membership(self) -> Self:
+        required = (
+            self.record_id,
+            self.primary_cell_id,
+            self.independent_unit_id,
+            self.membership_rule,
+            self.membership_rule_version,
+        )
+        if any(not value.strip() for value in required):
+            raise ValueError("memory cell membership identifiers must be non-empty")
+        if len(set(self.secondary_cell_ids)) != len(self.secondary_cell_ids):
+            raise ValueError("secondary cell identifiers must be unique")
+        if self.primary_cell_id in self.secondary_cell_ids:
+            raise ValueError("primary cell cannot also be a secondary cell")
+        if any(not cell_id.strip() for cell_id in self.secondary_cell_ids):
+            raise ValueError("secondary cell identifiers must be non-empty")
+        return self
+
+
+class MemoryCellEntry(StrictMemoryContextModel):
+    """Compact cell metadata; full member rows live in the membership artifact."""
+
+    schema_version: Literal["nslab.memory_cell_entry.v1"] = (
+        "nslab.memory_cell_entry.v1"
+    )
+    cell_id: str
+    signature: str
+    primary_member_count: int = Field(ge=1)
+    reasoning_member_count: int = Field(ge=0)
+    secondary_member_count: int = Field(ge=0)
+    independent_unit_count: int = Field(ge=1)
+    centroid_sha256: Sha256
+    reasoning_centroid_sha256: Sha256 | None = None
+
+    @model_validator(mode="after")
+    def validate_cell_entry(self) -> Self:
+        if not self.cell_id.strip() or not self.signature.strip():
+            raise ValueError("memory cell identifiers must be non-empty")
+        if self.independent_unit_count > self.primary_member_count:
+            raise ValueError("independent units cannot exceed primary members")
+        if self.reasoning_member_count > self.primary_member_count:
+            raise ValueError("reasoning members cannot exceed primary members")
+        if (self.reasoning_member_count > 0) is not (
+            self.reasoning_centroid_sha256 is not None
+        ):
+            raise ValueError("reasoning centroid presence must match reasoning members")
+        return self
+
+
+class MemoryCellSnapshotManifest(StrictMemoryContextModel):
+    """Immutable logical identity for metadata, FTS, HNSW, and cell membership."""
+
+    schema_version: Literal["nslab.memory_cell_snapshot_manifest.v1"] = (
+        "nslab.memory_cell_snapshot_manifest.v1"
+    )
+    snapshot_id: str
+    corpus_manifest_sha256: Sha256
+    source_generation_sha256: Sha256
+    as_of_cutoff: AwareDatetime
+    cutoff_identity: str
+    max_available_from: AwareDatetime
+    embedding_provider: str
+    embedding_model: str
+    real_embedding: bool
+    embedding_dimensions: int = Field(ge=1)
+    clustering_version: str
+    normalizer_version: str
+    cell_schema_version: str
+    polarity_classifier_version: str
+    routing_metadata_sha256: Sha256
+    record_hash_kind: Literal["canonical_full_envelope_sha256"] = (
+        "canonical_full_envelope_sha256"
+    )
+    record_count: int = Field(ge=0)
+    excluded_future_record_count: int = Field(ge=0)
+    next_available_from: AwareDatetime | None = None
+    reasoning_record_count: int = Field(ge=0)
+    context_record_count: int = Field(ge=0)
+    audit_record_count: int = Field(ge=0)
+    quarantined_record_count: int = Field(ge=0)
+    cell_count: int = Field(ge=0)
+    primary_membership_count: int = Field(ge=0)
+    secondary_membership_count: int = Field(ge=0)
+    independent_unit_count: int = Field(ge=0)
+    parent_snapshot_id: str | None = None
+    retained_record_count: int = Field(ge=0)
+    added_record_count: int = Field(ge=0)
+    source_record_hashes: ArtifactReference
+    excluded_future_record_hashes: ArtifactReference
+    routing_metadata: ArtifactReference
+    embedding_hashes: ArtifactReference
+    cell_entries: ArtifactReference
+    memberships: ArtifactReference
+    database: ArtifactReference
+    metadata_index_ready: bool
+    fts_index_ready: bool
+    hnsw_index_ready: bool
+    provenance_graph_ready: bool
+    production_ready: bool
+
+    @model_validator(mode="after")
+    def validate_snapshot(self) -> Self:
+        required = (
+            self.snapshot_id,
+            self.cutoff_identity,
+            self.embedding_provider,
+            self.embedding_model,
+            self.clustering_version,
+            self.normalizer_version,
+            self.cell_schema_version,
+            self.polarity_classifier_version,
+        )
+        if any(not value.strip() for value in required):
+            raise ValueError("memory cell snapshot identifiers must be non-empty")
+        explicit_cutoff_identity = f"explicit:{self.as_of_cutoff.isoformat()}"
+        if self.cutoff_identity not in {"live_partition", explicit_cutoff_identity}:
+            raise ValueError("memory snapshot cutoff identity is invalid")
+        disposition_total = (
+            self.reasoning_record_count
+            + self.context_record_count
+            + self.audit_record_count
+            + self.quarantined_record_count
+        )
+        if disposition_total != self.record_count:
+            raise ValueError("routing disposition counts must equal record_count")
+        if self.primary_membership_count != self.record_count:
+            raise ValueError("every indexed record requires exactly one primary membership")
+        if self.source_record_hashes.item_count != self.record_count:
+            raise ValueError("source record hash artifact count mismatch")
+        if (
+            self.excluded_future_record_hashes.item_count
+            != self.excluded_future_record_count
+        ):
+            raise ValueError("future record hash artifact count mismatch")
+        if (self.excluded_future_record_count > 0) is not (
+            self.next_available_from is not None
+        ):
+            raise ValueError("next_available_from must match future record presence")
+        if (
+            self.next_available_from is not None
+            and as_kst(self.next_available_from) <= as_kst(self.as_of_cutoff)
+        ):
+            raise ValueError("next_available_from must be after as_of_cutoff")
+        if self.routing_metadata.item_count != self.record_count:
+            raise ValueError("routing metadata artifact count mismatch")
+        if self.embedding_hashes.item_count != self.record_count:
+            raise ValueError("embedding hash artifact count mismatch")
+        if self.memberships.item_count != self.record_count:
+            raise ValueError("membership artifact count mismatch")
+        if self.cell_entries.item_count != self.cell_count:
+            raise ValueError("cell entry artifact count mismatch")
+        if self.database.item_count != self.record_count:
+            raise ValueError("database artifact count mismatch")
+        if self.retained_record_count + self.added_record_count != self.record_count:
+            raise ValueError("retained plus added records must equal record_count")
+        readiness = (
+            self.real_embedding
+            and self.record_count > 0
+            and self.metadata_index_ready
+            and self.fts_index_ready
+            and self.hnsw_index_ready
+            and self.provenance_graph_ready
+        )
+        if self.production_ready is not readiness:
+            raise ValueError("production_ready conflicts with index readiness")
+        return self
 
 
 class PopulationOutcomeSummary(StrictMemoryContextModel):

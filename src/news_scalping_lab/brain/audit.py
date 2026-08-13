@@ -24,7 +24,10 @@ from news_scalping_lab.brain.compiler import (
 )
 from news_scalping_lab.contracts.models import MechanismMemory, MemoryClaim, ResearchEpisode
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
-from news_scalping_lab.records.hashing import brain_record_routing_root_sha256
+from news_scalping_lab.records.hashing import (
+    brain_record_envelope_sha256,
+    brain_record_routing_root_sha256,
+)
 from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
 from news_scalping_lab.records.routing import (
     record_is_positive_support,
@@ -34,6 +37,7 @@ from news_scalping_lab.records.routing import (
 from news_scalping_lab.records.store import BrainRecordStore, audit_record_store
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
+    canonical_json,
     file_sha256,
     is_available_as_of,
     parse_datetime,
@@ -64,12 +68,66 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
     ]
     records = BrainRecordStore(root).list_records()
     build_mode = _brain_build_mode(brain_manifest or coverage_manifest)
-    accepted_ids = {episode.episode_id for episode in accepted}
+    cutoff_raw = brain_manifest.get("brain_record_cutoff_at")
+    try:
+        brain_cutoff = (
+            parse_datetime(str(cutoff_raw)) if cutoff_raw is not None else None
+        )
+    except ValueError:
+        brain_cutoff = None
+    phase4_brain = brain_manifest.get("production_memory_snapshot_id") is not None
+    if build_mode == "llm-full" and phase4_brain and brain_cutoff is None:
+        artifact_read_findings.append(
+            "llm-full brain manifest brain_record_cutoff_at is missing or invalid"
+        )
+    cutoff_accepted = (
+        [episode for episode in accepted if episode.available_from <= brain_cutoff]
+        if build_mode == "llm-full" and brain_cutoff is not None
+        else accepted
+    )
+    cutoff_records = (
+        [record for record in records if record.available_from <= brain_cutoff]
+        if build_mode == "llm-full" and brain_cutoff is not None
+        else records
+    )
+    accepted_ids = {episode.episode_id for episode in cutoff_accepted}
     expected_episode_ids = set(accepted_ids)
     if build_mode == "llm-full":
-        expected_episode_ids.update(record.episode_id for record in records)
+        expected_episode_ids.update(record.episode_id for record in cutoff_records)
     covered = set(_string_list(coverage_manifest.get("covered_episode_ids", [])))
-    source_hashes = store.accepted_hashes()
+    all_source_hashes = store.accepted_hashes()
+    source_hashes = {
+        episode.episode_id: all_source_hashes[episode.episode_id]
+        for episode in cutoff_accepted
+    }
+    if build_mode == "llm-full" and brain_cutoff is not None:
+        future_episodes = [
+            episode for episode in accepted if episode.available_from > brain_cutoff
+        ]
+        expected_future_episode_hash = sha256_text(
+            canonical_json(
+                {
+                    episode.episode_id: all_source_hashes[episode.episode_id]
+                    for episode in sorted(
+                        future_episodes,
+                        key=lambda item: item.episode_id,
+                    )
+                }
+            )
+        )
+        if brain_manifest.get("excluded_future_episode_count") != len(
+            future_episodes
+        ):
+            artifact_read_findings.append(
+                "brain manifest excluded future episode count mismatch"
+            )
+        if (
+            brain_manifest.get("excluded_future_episode_ids_sha256")
+            != expected_future_episode_hash
+        ):
+            artifact_read_findings.append(
+                "brain manifest excluded future episode hash mismatch"
+            )
     missing = sorted(expected_episode_ids - covered)
     extra = sorted(covered - expected_episode_ids)
     episode_coverage_audit = _audit_episode_coverage_manifest(
@@ -78,20 +136,20 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         expected_episode_ids=expected_episode_ids,
     )
     record_support_available_from: dict[str, datetime] = {}
-    for record in records:
+    for record in cutoff_records:
         current = record_support_available_from.get(record.episode_id)
         if current is None or record.available_from < current:
             record_support_available_from[record.episode_id] = record.available_from
     claim_audit = _audit_claims(
         root,
-        accepted,
+        cutoff_accepted,
         record_support_available_from=(record_support_available_from if build_mode == "llm-full" else None),
     )
-    mechanism_audit = _audit_mechanisms(root, accepted)
+    mechanism_audit = _audit_mechanisms(root, cutoff_accepted)
     determinism_audit = _audit_deterministic_brain_state(
         root=root,
         current_manifest=brain_manifest,
-        accepted=accepted,
+        accepted=cutoff_accepted,
         source_hashes=source_hashes,
     )
     record_audit = _audit_record_coverage(root, current_manifest=brain_manifest)
@@ -734,7 +792,23 @@ def _audit_llm_compile_manifest(
     shard_count_mismatches: list[str] = []
     compiled_claim_count_mismatches: list[str] = []
     shard_record_ids: set[str] = set()
-    record_ids = {record.record_id for record in BrainRecordStore(root).list_records()}
+    all_records = BrainRecordStore(root).list_records()
+    cutoff_raw = current_manifest.get("brain_record_cutoff_at")
+    try:
+        cutoff = parse_datetime(str(cutoff_raw)) if cutoff_raw is not None else None
+    except ValueError:
+        cutoff = None
+    records = (
+        [record for record in all_records if record.available_from <= cutoff]
+        if cutoff is not None
+        else all_records
+    )
+    record_ids = {record.record_id for record in records}
+    future_records = (
+        [record for record in all_records if record.available_from > cutoff]
+        if cutoff is not None
+        else []
+    )
     if not manifest:
         if _brain_build_mode(current_manifest) == "llm-full":
             findings.append("llm-full compile manifest is missing")
@@ -766,6 +840,18 @@ def _audit_llm_compile_manifest(
     source_count = _int_value(manifest.get("source_record_count"))
     if source_count is None or source_count != len(record_ids):
         findings.append("llm compile manifest source_record_count does not match record store")
+    expected_future_hash = sha256_text(
+        canonical_json(
+            {
+                record.record_id: brain_record_envelope_sha256(record)
+                for record in sorted(future_records, key=lambda item: item.record_id)
+            }
+        )
+    )
+    if current_manifest.get("excluded_future_record_count") != len(future_records):
+        findings.append("brain manifest excluded future record count mismatch")
+    if current_manifest.get("excluded_future_record_ids_sha256") != expected_future_hash:
+        findings.append("brain manifest excluded future record hash mismatch")
     compiled_claim_count = _int_value(manifest.get("compiled_claim_count"))
     if not compiled_claim_file_present:
         findings.append("llm compile manifest exists without compiled claims file")
@@ -1023,6 +1109,13 @@ def _audit_deterministic_brain_state(
     manifest_version = _string_value(current_manifest.get("brain_version"))
     build_mode = _brain_build_mode(current_manifest)
     records = BrainRecordStore(root).list_records()
+    cutoff_raw = current_manifest.get("brain_record_cutoff_at")
+    try:
+        cutoff = parse_datetime(str(cutoff_raw)) if cutoff_raw is not None else None
+    except ValueError:
+        cutoff = None
+    if build_mode == "llm-full" and cutoff is not None:
+        records = [record for record in records if record.available_from <= cutoff]
     expected_covered_episode_ids = [episode.episode_id for episode in accepted]
     expected_source_hashes = source_hashes
     llm_manifest = _read_llm_compile_manifest(root) if build_mode == "llm-full" else {}
@@ -1037,7 +1130,10 @@ def _audit_deterministic_brain_state(
             **source_hashes,
             **{
                 f"record:{record_id}": record_hash
-                for record_id, record_hash in _brain_record_hashes(root).items()
+                for record_id, record_hash in {
+                    record.record_id: brain_record_envelope_sha256(record)
+                    for record in records
+                }.items()
             },
         }
     manifest_source_hashes = _string_dict(current_manifest.get("source_hashes"))
@@ -1057,6 +1153,12 @@ def _audit_deterministic_brain_state(
                 model=model,
                 provider=provider,
                 routing_metadata_sha256=brain_record_routing_root_sha256(records),
+                production_memory_snapshot_id=(
+                    _string_value(
+                        current_manifest.get("production_memory_snapshot_id")
+                    )
+                    or ""
+                ),
             )
             if provider is not None and model is not None
             else None

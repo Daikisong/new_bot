@@ -593,6 +593,15 @@ class BrainManifest(StrictModel):
     covered_episode_ids: list[str] = Field(default_factory=list)
     claim_ids: list[str] = Field(default_factory=list)
     source_hashes: dict[str, str] = Field(default_factory=dict)
+    brain_record_cutoff_at: datetime | None = None
+    excluded_future_record_count: int = 0
+    excluded_future_record_ids_sha256: str | None = None
+    excluded_future_episode_count: int = 0
+    excluded_future_episode_ids_sha256: str | None = None
+    production_memory_snapshot_id: str | None = None
+    production_memory_corpus_sha256: str | None = None
+    production_memory_source_generation_sha256: str | None = None
+    production_memory_as_of_cutoff: datetime | None = None
     coverage_complete: bool
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import shutil
+import tempfile
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -13,6 +14,7 @@ from typing import Any
 
 from news_scalping_lab.brain.diff import write_rebuild_diff
 from news_scalping_lab.config import Settings, load_settings
+from news_scalping_lab.contracts.memory_context import MemoryCellSnapshotManifest
 from news_scalping_lab.contracts.models import (
     BrainManifest,
     ClaimStatus,
@@ -27,6 +29,7 @@ from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
+from news_scalping_lab.memory.index import ProductionMemoryIndex
 from news_scalping_lab.records.hashing import (
     brain_record_envelope_hashes,
     brain_record_envelope_sha256,
@@ -51,6 +54,7 @@ from news_scalping_lab.utils import (
     canonical_json,
     file_sha256,
     is_available_as_of,
+    now_kst,
     read_json,
     sha256_text,
     stable_id,
@@ -241,6 +245,14 @@ class LLMFullCompileResult:
     run_metadata: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class _PathBackup:
+    path: Path
+    backup_path: Path
+    existed: bool
+    was_directory: bool
+
+
 class BrainCompiler:
     def __init__(
         self,
@@ -347,7 +359,18 @@ class BrainCompiler:
             raise ValueError("llm-full brain rebuild requires a real LLM provider")
         if settings.llm.provider.strip().lower() == "mock":
             raise ValueError("llm-full brain rebuild requires a non-mock model profile")
-        records = BrainRecordStore(self.root).list_records()
+        live_cutoff_at = now_kst()
+        all_records = BrainRecordStore(self.root).list_records()
+        records = [
+            record
+            for record in all_records
+            if record.available_from <= live_cutoff_at
+        ]
+        excluded_future_records = [
+            record
+            for record in all_records
+            if record.available_from > live_cutoff_at
+        ]
         if not records:
             raise ValueError("llm-full brain rebuild requires normalized brain records")
         base_provider = create_llm_provider(settings)
@@ -355,7 +378,24 @@ class BrainCompiler:
             raise ValueError("llm-full brain rebuild cannot use the mock LLM provider")
         provider = _trace_brain_llm_provider(settings, base_provider)
         previous_version = current_brain_version(self.root)
-        accepted_episodes = self.store.list_accepted()
+        all_accepted_episodes = self.store.list_accepted()
+        accepted_episodes = [
+            episode
+            for episode in all_accepted_episodes
+            if episode.available_from <= live_cutoff_at
+        ]
+        excluded_future_episodes = [
+            episode
+            for episode in all_accepted_episodes
+            if episode.available_from > live_cutoff_at
+        ]
+        brain_record_cutoff_at = max(
+            [
+                *[record.available_from for record in records],
+                *[episode.available_from for episode in accepted_episodes],
+            ]
+        )
+        accepted_hashes = self.store.accepted_hashes()
         covered_ids = sorted(
             {
                 *[episode.episode_id for episode in accepted_episodes],
@@ -363,9 +403,32 @@ class BrainCompiler:
             }
         )
         source_hashes = {
-            **self.store.accepted_hashes(),
+            **{
+                episode.episode_id: accepted_hashes[episode.episode_id]
+                for episode in accepted_episodes
+            },
             **{f"record:{record.record_id}": brain_record_envelope_sha256(record) for record in records},
         }
+        production_index = ProductionMemoryIndex(
+            self.root,
+            embedding_provider=AsyncEmbeddingProviderAdapter(
+                provider,
+                embedding_method=_llm_embedding_method(
+                    provider_name=settings.llm_provider,
+                    model=_embedding_model_name(base_provider)
+                    or settings.llm.embedding_model
+                    or "configured",
+                ),
+                production_capability_attested=True,
+            ),
+            production=True,
+        )
+        memory_snapshot = production_index.build(
+            as_of=brain_record_cutoff_at,
+            promote_current=False,
+            stage_only=True,
+            cutoff_mode="live",
+        )
         created_at = max(record.available_from for record in records)
         version = expected_llm_full_brain_version(
             covered_episode_ids=covered_ids,
@@ -373,6 +436,7 @@ class BrainCompiler:
             model=settings.llm.model,
             provider=settings.llm_provider,
             routing_metadata_sha256=brain_record_routing_root_sha256(records),
+            production_memory_snapshot_id=memory_snapshot.snapshot_id,
         )
         claims = self._claims_from_records(records)
         compiled_claims = _compiled_claims_from_records(records)
@@ -391,6 +455,31 @@ class BrainCompiler:
             covered_episode_ids=covered_ids,
             claim_ids=[claim.claim_id for claim in claims],
             source_hashes=source_hashes,
+            brain_record_cutoff_at=brain_record_cutoff_at,
+            excluded_future_record_count=len(excluded_future_records),
+            excluded_future_record_ids_sha256=sha256_text(
+                canonical_json(
+                    {
+                        record.record_id: brain_record_envelope_sha256(record)
+                        for record in sorted(
+                            excluded_future_records,
+                            key=lambda item: item.record_id,
+                        )
+                    }
+                )
+            ),
+            excluded_future_episode_count=len(excluded_future_episodes),
+            excluded_future_episode_ids_sha256=sha256_text(
+                canonical_json(
+                    {
+                        episode.episode_id: accepted_hashes[episode.episode_id]
+                        for episode in sorted(
+                            excluded_future_episodes,
+                            key=lambda item: item.episode_id,
+                        )
+                    }
+                )
+            ),
             coverage_complete=True,
         )
         llm_compile = asyncio.run(
@@ -404,32 +493,107 @@ class BrainCompiler:
                 compiled_claims=compiled_claims,
             )
         )
-        self._write_current(
-            manifest,
-            claims,
-            category_outputs=llm_compile.category_outputs,
-            llm_compile_metadata=llm_compile.manifest,
-            llm_compile_run_metadata=llm_compile.run_metadata,
-            compiled_claims=compiled_claims,
-        )
-        self._write_mechanism_memory(manifest, [])
-        self._write_shard_brains(manifest, accepted_episodes)
-        self._write_immutable_snapshot(version)
-        (self.root / "brain" / "HEAD").write_text(version + "\n", encoding="utf-8")
-        if previous_version != version:
-            write_rebuild_diff(self.root, previous_version, version)
-        LocalRetrievalStore(
-            self.root,
-            embedding_provider=AsyncEmbeddingProviderAdapter(
-                provider,
-                embedding_method=_llm_embedding_method(
-                    provider_name=settings.llm_provider,
-                    model=_embedding_model_name(base_provider) or settings.llm.embedding_model or "configured",
+        manifest = manifest.model_copy(
+            update={
+                "production_memory_snapshot_id": memory_snapshot.snapshot_id,
+                "production_memory_corpus_sha256": (
+                    memory_snapshot.corpus_manifest_sha256
                 ),
-            ),
-        ).rebuild_index()
-        WarehouseStore(self.root).rebuild_all()
+                "production_memory_source_generation_sha256": (
+                    memory_snapshot.source_generation_sha256
+                ),
+                "production_memory_as_of_cutoff": memory_snapshot.as_of_cutoff,
+            }
+        )
+        self._publish_llm_full_transaction(
+            manifest=manifest,
+            claims=claims,
+            accepted_episodes=accepted_episodes,
+            compiled_claims=compiled_claims,
+            llm_compile=llm_compile,
+            previous_version=previous_version,
+            production_index=production_index,
+            memory_snapshot=memory_snapshot,
+            source_records=records,
+        )
         return manifest
+
+    def _publish_llm_full_transaction(
+        self,
+        *,
+        manifest: BrainManifest,
+        claims: list[MemoryClaim],
+        accepted_episodes: list[ResearchEpisode],
+        compiled_claims: list[CompiledBrainClaim],
+        llm_compile: LLMFullCompileResult,
+        previous_version: str | None,
+        production_index: ProductionMemoryIndex,
+        memory_snapshot: MemoryCellSnapshotManifest,
+        source_records: list[BrainRecordEnvelope],
+    ) -> None:
+        current_dir = self.root / "brain" / "current"
+        head_path = self.root / "brain" / "HEAD"
+        immutable_paths = (
+            self.snapshots_dir / manifest.brain_version,
+            self.mechanisms_dir / manifest.brain_version,
+            self.shard_brains_dir / manifest.brain_version,
+        )
+        immutable_preexisting = {path: path.exists() for path in immutable_paths}
+        mutable_paths = (
+            current_dir,
+            self.claims_dir / "claims.jsonl",
+            self.current_mechanisms_dir,
+            self.current_shard_brains_dir,
+            head_path,
+            self.diffs_dir,
+            self.root / "diagnostics" / "brain_compile_report.json",
+            self.root / "diagnostics" / "brain_compile_report.md",
+            self.root / "diagnostics" / "record_coverage_report.json",
+            self.root / "diagnostics" / "record_coverage_report.md",
+            production_index.current_pointer_path,
+            production_index.as_of_registry_path,
+            self.root / "memory" / "vector_index",
+            self.root / "warehouse",
+        )
+        backup_root = Path(
+            tempfile.mkdtemp(prefix=".llm-full-publish-", dir=self.root)
+        )
+        backups = _snapshot_paths(mutable_paths, backup_root=backup_root)
+        try:
+            LocalRetrievalStore(self.root).rebuild_index()
+            WarehouseStore(self.root).rebuild_all()
+            self._write_current(
+                manifest,
+                claims,
+                category_outputs=llm_compile.category_outputs,
+                llm_compile_metadata=llm_compile.manifest,
+                llm_compile_run_metadata=llm_compile.run_metadata,
+                compiled_claims=compiled_claims,
+                source_records=source_records,
+            )
+            self._write_mechanism_memory(manifest, [])
+            self._write_shard_brains(manifest, accepted_episodes)
+            self._write_immutable_snapshot(manifest.brain_version)
+            production_index.activate(
+                memory_snapshot,
+                requested_cutoff=manifest.brain_record_cutoff_at,
+            )
+            head_path.write_text(manifest.brain_version + "\n", encoding="utf-8")
+            if previous_version != manifest.brain_version:
+                write_rebuild_diff(
+                    self.root,
+                    previous_version,
+                    manifest.brain_version,
+                )
+        except Exception:
+            _restore_paths(backups)
+            for path, existed in immutable_preexisting.items():
+                if not existed and path.exists():
+                    shutil.rmtree(path)
+            raise
+        finally:
+            if backup_root.exists():
+                shutil.rmtree(backup_root)
 
     def update(self, *, episode_id: str, mode: str = "full") -> BrainManifest:
         if mode not in {"full", "catalog", "llm-full"}:
@@ -691,6 +855,7 @@ class BrainCompiler:
         llm_compile_metadata: dict[str, Any] | None = None,
         compiled_claims: list[CompiledBrainClaim] | None = None,
         llm_compile_run_metadata: dict[str, Any] | None = None,
+        source_records: list[BrainRecordEnvelope] | None = None,
     ) -> None:
         self.current_dir.mkdir(parents=True, exist_ok=True)
         for file_name in BRAIN_FILES:
@@ -717,7 +882,7 @@ class BrainCompiler:
         elif compiled_claims_path.exists():
             compiled_claims_path.unlink()
         write_json(self.current_dir / "coverage_manifest.json", self._coverage_manifest(manifest))
-        records = BrainRecordStore(self.root).list_records()
+        records = source_records or BrainRecordStore(self.root).list_records()
         record_coverage = self._record_coverage_manifest(manifest, records=records)
         write_json(self.current_dir / "record_coverage_manifest.json", record_coverage)
         llm_manifest_path = self.current_dir / "llm_compile_manifest.json"
@@ -1060,15 +1225,17 @@ def expected_llm_full_brain_version(
     model: str,
     provider: str,
     routing_metadata_sha256: str,
+    production_memory_snapshot_id: str,
 ) -> str:
     return stable_id(
         "brain",
         canonical_json(
             {
-                "schema": "nslab.brain.llm_full.v1",
+                "schema": "nslab.brain.llm_full.v2",
                 "compiler_version": LLM_FULL_COMPILER_VERSION,
                 "polarity_classifier_version": POLARITY_CLASSIFIER_VERSION,
                 "routing_metadata_sha256": routing_metadata_sha256,
+                "production_memory_snapshot_id": production_memory_snapshot_id,
                 "covered_episode_ids": covered_episode_ids,
                 "source_hashes": source_hashes,
                 "model": model,
@@ -1294,6 +1461,43 @@ def _copy_immutable_directory(*, source_dir: Path, target_dir: Path, label: str)
             raise ValueError(f"immutable {label} already exists with different content: {target_dir.name}")
         return
     shutil.copytree(source_dir, target_dir)
+
+
+def _snapshot_paths(paths: tuple[Path, ...], *, backup_root: Path) -> list[_PathBackup]:
+    backups: list[_PathBackup] = []
+    for index, path in enumerate(paths):
+        backup_path = backup_root / f"item-{index:03d}"
+        existed = path.exists()
+        was_directory = existed and path.is_dir()
+        if was_directory:
+            shutil.copytree(path, backup_path)
+        elif existed:
+            backup_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup_path)
+        backups.append(
+            _PathBackup(
+                path=path,
+                backup_path=backup_path,
+                existed=existed,
+                was_directory=was_directory,
+            )
+        )
+    return backups
+
+
+def _restore_paths(backups: list[_PathBackup]) -> None:
+    for item in reversed(backups):
+        if item.path.is_dir():
+            shutil.rmtree(item.path)
+        elif item.path.exists():
+            item.path.unlink()
+        if not item.existed:
+            continue
+        item.path.parent.mkdir(parents=True, exist_ok=True)
+        if item.was_directory:
+            shutil.copytree(item.backup_path, item.path)
+        else:
+            shutil.copy2(item.backup_path, item.path)
 
 
 def _brain_category(file_name: str) -> str:

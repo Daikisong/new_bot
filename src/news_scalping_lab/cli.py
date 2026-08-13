@@ -64,6 +64,10 @@ from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.memory.company import CompanyMemoryStore
+from news_scalping_lab.memory.index import (
+    ProductionMemoryIndex,
+    inspect_current_memory_index,
+)
 from news_scalping_lab.records.hashing import (
     brain_record_envelope_sha256,
     brain_record_routing_root_sha256,
@@ -7974,6 +7978,39 @@ def _require_openai_embedding_runtime() -> None:
         raise ValueError("production vector index rebuild requires an openai SDK exposing AsyncOpenAI")
 
 
+def _production_embedding_provider(
+    settings: Any,
+    *,
+    require_records: bool,
+) -> AsyncEmbeddingProviderAdapter:
+    if settings.llm_provider.strip().lower() == "mock":
+        raise ValueError("production memory index requires a real LLM provider")
+    if settings.llm.provider.strip().lower() == "mock":
+        raise ValueError("production memory index requires a non-mock model profile")
+    if (
+        require_records
+        and next(BrainRecordStore(settings.project_root).iter_records(), None) is None
+    ):
+        raise ValueError("production memory index requires normalized brain records")
+    if settings.llm_provider.strip().lower() in OPENAI_LLM_PROVIDER_ALIASES and not settings.env_value(
+        "OPENAI_API_KEY"
+    ):
+        raise ValueError("production memory index requires OPENAI_API_KEY")
+    if settings.llm_provider.strip().lower() in OPENAI_LLM_PROVIDER_ALIASES:
+        _require_openai_embedding_runtime()
+    provider = create_llm_provider(settings)
+    if isinstance(provider, DeterministicMockLLMProvider):
+        raise ValueError("production memory index cannot use the mock LLM provider")
+    embedding_model = getattr(provider, "embedding_model", None) or settings.llm.embedding_model or "configured"
+    return AsyncEmbeddingProviderAdapter(
+        provider,
+        embedding_method=(
+            f"llm_embedding:{settings.llm_provider.strip().lower()}:{embedding_model}"
+        ),
+        production_capability_attested=True,
+    )
+
+
 @memory_app.command("rebuild-index")
 def memory_rebuild_index(
     production: Annotated[
@@ -7983,39 +8020,32 @@ def memory_rebuild_index(
             help="Use the configured real LLM embedding provider instead of the deterministic local index.",
         ),
     ] = False,
+    as_of: Annotated[
+        str | None,
+        typer.Option("--as-of", help="Build only records available at this ISO datetime."),
+    ] = None,
 ) -> None:
     settings = load_settings()
     mode = "deterministic"
-    embedding_provider = None
     try:
         if production:
-            if settings.llm_provider.strip().lower() == "mock":
-                raise ValueError("production vector index rebuild requires a real LLM provider")
-            if settings.llm.provider.strip().lower() == "mock":
-                raise ValueError("production vector index rebuild requires a non-mock model profile")
-            if not BrainRecordStore(settings.project_root).list_records():
-                raise ValueError("production vector index rebuild requires normalized brain records")
-            if settings.llm_provider.strip().lower() in OPENAI_LLM_PROVIDER_ALIASES and not settings.env_value(
-                "OPENAI_API_KEY"
-            ):
-                raise ValueError("production vector index rebuild requires OPENAI_API_KEY")
-            if settings.llm_provider.strip().lower() in OPENAI_LLM_PROVIDER_ALIASES:
-                _require_openai_embedding_runtime()
-            provider = create_llm_provider(settings)
-            if isinstance(provider, DeterministicMockLLMProvider):
-                raise ValueError("production vector index rebuild cannot use the mock LLM provider")
-            embedding_model = getattr(provider, "embedding_model", None) or settings.llm.embedding_model or "configured"
-            embedding_provider = AsyncEmbeddingProviderAdapter(
-                provider,
-                embedding_method=(f"llm_embedding:{settings.llm_provider.strip().lower()}:{embedding_model}"),
+            embedding_provider = _production_embedding_provider(
+                settings,
+                require_records=True,
+            )
+            manifest_model = ProductionMemoryIndex(
+                settings.project_root,
+                embedding_provider=embedding_provider,
+                production=True,
+            ).build(
+                as_of=parse_datetime(as_of) if as_of is not None else None,
             )
             mode = "production"
-        store = (
-            LocalRetrievalStore(settings.project_root, embedding_provider=embedding_provider)
-            if embedding_provider is not None
-            else LocalRetrievalStore(settings.project_root)
-        )
-        manifest = store.rebuild_index()
+            manifest = manifest_model.model_dump(mode="json")
+            index_path = settings.project_root / "memory" / "retrieval_index"
+        else:
+            manifest = LocalRetrievalStore(settings.project_root).rebuild_index()
+            index_path = settings.project_root / "memory" / "vector_index"
     except (OSError, RuntimeError, ValueError) as exc:
         _exit_with_error(exc)
     _echo(
@@ -8023,15 +8053,90 @@ def memory_rebuild_index(
             "mode": mode,
             "production": production,
             "index_path": relative_to_root(
-                settings.project_root / "memory" / "vector_index",
+                index_path,
                 settings.project_root,
             ),
-            "embedding_method": manifest.get("embedding_method"),
+            "embedding_method": manifest.get("embedding_method") or manifest.get("embedding_model"),
             "accepted_episode_count": manifest.get("accepted_episode_count"),
             "brain_record_count": manifest.get("brain_record_count"),
+            "record_count": manifest.get("record_count"),
+            "cell_count": manifest.get("cell_count"),
+            "snapshot_id": manifest.get("snapshot_id"),
+            "production_ready": manifest.get("production_ready"),
             "manifest": manifest,
         }
     )
+
+
+@memory_app.command("inspect-index")
+def memory_inspect_index() -> None:
+    settings = load_settings()
+    _echo(
+        {
+            "production_memory_index": inspect_current_memory_index(settings.project_root),
+            "local_vector_index": LocalRetrievalStore(settings.project_root).inspect_index(),
+        }
+    )
+
+
+@memory_app.command("search-cells")
+def memory_search_cells(
+    query: Annotated[str, typer.Argument(help="Semantic query text.")],
+    cutoff_at: Annotated[str, typer.Option("--cutoff-at")],
+    limit: Annotated[int, typer.Option("--limit", min=1)] = 12,
+    include_members: Annotated[bool, typer.Option("--include-members")] = False,
+    routing_disposition: Annotated[
+        list[str] | None,
+        typer.Option("--routing-disposition"),
+    ] = None,
+) -> None:
+    settings = load_settings()
+    try:
+        embedding_provider = _production_embedding_provider(
+            settings,
+            require_records=False,
+        )
+        index = ProductionMemoryIndex(
+            settings.project_root,
+            embedding_provider=embedding_provider,
+            production=True,
+        )
+        cutoff = parse_datetime(cutoff_at)
+        candidates = index.search_cells(query, cutoff_at=cutoff, limit=limit)
+        payload: dict[str, Any] = {
+            "query": query,
+            "cutoff_at": cutoff.isoformat(),
+            "candidate_count": len(candidates),
+            "cell_candidates": [
+                {
+                    "cell_id": item.cell_id,
+                    "score": item.score,
+                    "ann_score": item.ann_score,
+                    "fts_score": item.fts_score,
+                    "primary_member_count": item.primary_member_count,
+                    "independent_unit_count": item.independent_unit_count,
+                }
+                for item in candidates
+            ],
+        }
+        if include_members:
+            dispositions = tuple(routing_disposition or ["REASONING"])
+            members = index.members_for_cells(
+                [item.cell_id for item in candidates],
+                cutoff_at=cutoff,
+                routing_dispositions=dispositions,
+            )
+            payload["members"] = [
+                {
+                    **item.__dict__,
+                    "available_from": item.available_from.isoformat(),
+                }
+                for item in members
+            ]
+            payload["member_count"] = len(members)
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(payload)
 
 
 @memory_app.command("apply-company-deltas")

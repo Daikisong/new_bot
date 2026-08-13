@@ -1,0 +1,287 @@
+{
+  "$defs": {
+    "ArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "item_count": {
+          "minimum": 0,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.memory_artifact_reference.v1",
+          "default": "nslab.memory_artifact_reference.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_path",
+        "sha256",
+        "item_count"
+      ],
+      "title": "ArtifactReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Immutable logical identity for metadata, FTS, HNSW, and cell membership.",
+  "properties": {
+    "added_record_count": {
+      "minimum": 0,
+      "title": "Added Record Count",
+      "type": "integer"
+    },
+    "as_of_cutoff": {
+      "format": "date-time",
+      "title": "As Of Cutoff",
+      "type": "string"
+    },
+    "audit_record_count": {
+      "minimum": 0,
+      "title": "Audit Record Count",
+      "type": "integer"
+    },
+    "cell_count": {
+      "minimum": 0,
+      "title": "Cell Count",
+      "type": "integer"
+    },
+    "cell_entries": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "cell_schema_version": {
+      "title": "Cell Schema Version",
+      "type": "string"
+    },
+    "clustering_version": {
+      "title": "Clustering Version",
+      "type": "string"
+    },
+    "context_record_count": {
+      "minimum": 0,
+      "title": "Context Record Count",
+      "type": "integer"
+    },
+    "corpus_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Corpus Manifest Sha256",
+      "type": "string"
+    },
+    "cutoff_identity": {
+      "title": "Cutoff Identity",
+      "type": "string"
+    },
+    "database": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "embedding_dimensions": {
+      "minimum": 1,
+      "title": "Embedding Dimensions",
+      "type": "integer"
+    },
+    "embedding_hashes": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "embedding_model": {
+      "title": "Embedding Model",
+      "type": "string"
+    },
+    "embedding_provider": {
+      "title": "Embedding Provider",
+      "type": "string"
+    },
+    "excluded_future_record_count": {
+      "minimum": 0,
+      "title": "Excluded Future Record Count",
+      "type": "integer"
+    },
+    "excluded_future_record_hashes": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "fts_index_ready": {
+      "title": "Fts Index Ready",
+      "type": "boolean"
+    },
+    "hnsw_index_ready": {
+      "title": "Hnsw Index Ready",
+      "type": "boolean"
+    },
+    "independent_unit_count": {
+      "minimum": 0,
+      "title": "Independent Unit Count",
+      "type": "integer"
+    },
+    "max_available_from": {
+      "format": "date-time",
+      "title": "Max Available From",
+      "type": "string"
+    },
+    "memberships": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "metadata_index_ready": {
+      "title": "Metadata Index Ready",
+      "type": "boolean"
+    },
+    "next_available_from": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Next Available From"
+    },
+    "normalizer_version": {
+      "title": "Normalizer Version",
+      "type": "string"
+    },
+    "parent_snapshot_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Snapshot Id"
+    },
+    "polarity_classifier_version": {
+      "title": "Polarity Classifier Version",
+      "type": "string"
+    },
+    "primary_membership_count": {
+      "minimum": 0,
+      "title": "Primary Membership Count",
+      "type": "integer"
+    },
+    "production_ready": {
+      "title": "Production Ready",
+      "type": "boolean"
+    },
+    "provenance_graph_ready": {
+      "title": "Provenance Graph Ready",
+      "type": "boolean"
+    },
+    "quarantined_record_count": {
+      "minimum": 0,
+      "title": "Quarantined Record Count",
+      "type": "integer"
+    },
+    "real_embedding": {
+      "title": "Real Embedding",
+      "type": "boolean"
+    },
+    "reasoning_record_count": {
+      "minimum": 0,
+      "title": "Reasoning Record Count",
+      "type": "integer"
+    },
+    "record_count": {
+      "minimum": 0,
+      "title": "Record Count",
+      "type": "integer"
+    },
+    "record_hash_kind": {
+      "const": "canonical_full_envelope_sha256",
+      "default": "canonical_full_envelope_sha256",
+      "title": "Record Hash Kind",
+      "type": "string"
+    },
+    "retained_record_count": {
+      "minimum": 0,
+      "title": "Retained Record Count",
+      "type": "integer"
+    },
+    "routing_metadata": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "routing_metadata_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Routing Metadata Sha256",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.memory_cell_snapshot_manifest.v1",
+      "default": "nslab.memory_cell_snapshot_manifest.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "secondary_membership_count": {
+      "minimum": 0,
+      "title": "Secondary Membership Count",
+      "type": "integer"
+    },
+    "snapshot_id": {
+      "title": "Snapshot Id",
+      "type": "string"
+    },
+    "source_generation_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Generation Sha256",
+      "type": "string"
+    },
+    "source_record_hashes": {
+      "$ref": "#/$defs/ArtifactReference"
+    }
+  },
+  "required": [
+    "snapshot_id",
+    "corpus_manifest_sha256",
+    "source_generation_sha256",
+    "as_of_cutoff",
+    "cutoff_identity",
+    "max_available_from",
+    "embedding_provider",
+    "embedding_model",
+    "real_embedding",
+    "embedding_dimensions",
+    "clustering_version",
+    "normalizer_version",
+    "cell_schema_version",
+    "polarity_classifier_version",
+    "routing_metadata_sha256",
+    "record_count",
+    "excluded_future_record_count",
+    "reasoning_record_count",
+    "context_record_count",
+    "audit_record_count",
+    "quarantined_record_count",
+    "cell_count",
+    "primary_membership_count",
+    "secondary_membership_count",
+    "independent_unit_count",
+    "retained_record_count",
+    "added_record_count",
+    "source_record_hashes",
+    "excluded_future_record_hashes",
+    "routing_metadata",
+    "embedding_hashes",
+    "cell_entries",
+    "memberships",
+    "database",
+    "metadata_index_ready",
+    "fts_index_ready",
+    "hnsw_index_ready",
+    "provenance_graph_ready",
+    "production_ready"
+  ],
+  "title": "MemoryCellSnapshotManifest",
+  "type": "object"
+}
