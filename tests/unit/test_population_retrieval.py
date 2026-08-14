@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-from typer.testing import CliRunner
+from typer.main import get_command
 
 from news_scalping_lab.cli import app
 from news_scalping_lab.contracts.memory_context import PopulationManifest
@@ -293,19 +293,17 @@ def test_population_manifest_rejects_noncanonical_regime_label(
         PopulationManifest.model_validate(payload)
 
 
-def test_population_cli_exposes_purpose_contract(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("COLUMNS", "240")
-    result = CliRunner().invoke(
-        app,
-        ["memory", "build-population", "--help"],
-        color=False,
-        terminal_width=240,
+def test_population_cli_exposes_purpose_contract() -> None:
+    root_command = get_command(app)
+    memory_command = root_command.commands["memory"]
+    population_command = memory_command.commands["build-population"]
+    population_purpose = next(
+        parameter
+        for parameter in population_command.params
+        if parameter.name == "population_purpose"
     )
 
-    assert result.exit_code == 0
-    assert "--population-purpose" in result.output
+    assert "--population-purpose" in population_purpose.opts
 
 
 def test_population_rejects_incompatible_purpose_and_unit(

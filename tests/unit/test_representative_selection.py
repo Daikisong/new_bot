@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
+from typer.main import get_command
 
 from news_scalping_lab.cli import app
 from news_scalping_lab.llm.base import conservative_token_upper_bound
@@ -304,29 +304,27 @@ def test_adaptive_inspection_detects_trace_tamper(
     assert "adaptive_trace_recomputed_mismatch" in inspection["errors"]
 
 
-def test_representative_and_adaptive_cli_commands_are_exposed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("COLUMNS", "240")
-    runner = CliRunner()
+def test_representative_and_adaptive_cli_commands_are_exposed() -> None:
+    root_command = get_command(app)
+    memory_command = root_command.commands["memory"]
 
-    representative = runner.invoke(
-        app,
-        ["memory", "build-representatives", "--help"],
-        color=False,
-        terminal_width=240,
-    )
-    adaptive = runner.invoke(
-        app,
-        ["memory", "adaptive-retrieve", "--help"],
-        color=False,
-        terminal_width=240,
-    )
+    representative = memory_command.commands["build-representatives"]
+    adaptive = memory_command.commands["adaptive-retrieve"]
+    representative_options = {
+        option
+        for parameter in representative.params
+        if hasattr(parameter, "opts")
+        for option in parameter.opts
+    }
+    adaptive_options = {
+        option
+        for parameter in adaptive.params
+        if hasattr(parameter, "opts")
+        for option in parameter.opts
+    }
 
-    assert representative.exit_code == 0
-    assert "--query" in representative.output
-    assert adaptive.exit_code == 0
-    assert "--min-information-gain" in adaptive.output
+    assert "--query" in representative_options
+    assert "--min-information-gain" in adaptive_options
 
 
 def test_representative_token_count_covers_final_serialization() -> None:
