@@ -12,6 +12,7 @@ from ctypes import wintypes
 from datetime import date, datetime
 from pathlib import Path
 from time import perf_counter
+from typing import Any
 
 from news_scalping_lab.memory.index import PopulationCellMember, ProductionMemoryIndex
 from news_scalping_lab.memory.population import PopulationRetriever, _compute_population
@@ -40,16 +41,19 @@ class _ProcessMemoryCounters(ctypes.Structure):
 def _peak_working_set_bytes() -> int | None:
     if os.name != "nt":
         return None
+    windll: Any = getattr(ctypes, "windll", None)
+    if windll is None:
+        return None
     counters = _ProcessMemoryCounters()
     counters.cb = ctypes.sizeof(counters)
-    get_process_memory_info = ctypes.windll.psapi.GetProcessMemoryInfo
+    get_process_memory_info = windll.psapi.GetProcessMemoryInfo
     get_process_memory_info.argtypes = [
         wintypes.HANDLE,
         ctypes.POINTER(_ProcessMemoryCounters),
         wintypes.DWORD,
     ]
     get_process_memory_info.restype = wintypes.BOOL
-    get_current_process = ctypes.windll.kernel32.GetCurrentProcess
+    get_current_process = windll.kernel32.GetCurrentProcess
     get_current_process.restype = wintypes.HANDLE
     success = get_process_memory_info(
         get_current_process(),
