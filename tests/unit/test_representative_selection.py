@@ -304,11 +304,24 @@ def test_adaptive_inspection_detects_trace_tamper(
     assert "adaptive_trace_recomputed_mismatch" in inspection["errors"]
 
 
-def test_representative_and_adaptive_cli_commands_are_exposed() -> None:
+def test_representative_and_adaptive_cli_commands_are_exposed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("COLUMNS", "240")
     runner = CliRunner()
 
-    representative = runner.invoke(app, ["memory", "build-representatives", "--help"])
-    adaptive = runner.invoke(app, ["memory", "adaptive-retrieve", "--help"])
+    representative = runner.invoke(
+        app,
+        ["memory", "build-representatives", "--help"],
+        color=False,
+        terminal_width=240,
+    )
+    adaptive = runner.invoke(
+        app,
+        ["memory", "adaptive-retrieve", "--help"],
+        color=False,
+        terminal_width=240,
+    )
 
     assert representative.exit_code == 0
     assert "--query" in representative.output

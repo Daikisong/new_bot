@@ -293,8 +293,16 @@ def test_population_manifest_rejects_noncanonical_regime_label(
         PopulationManifest.model_validate(payload)
 
 
-def test_population_cli_exposes_purpose_contract() -> None:
-    result = CliRunner().invoke(app, ["memory", "build-population", "--help"])
+def test_population_cli_exposes_purpose_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("COLUMNS", "240")
+    result = CliRunner().invoke(
+        app,
+        ["memory", "build-population", "--help"],
+        color=False,
+        terminal_width=240,
+    )
 
     assert result.exit_code == 0
     assert "--population-purpose" in result.output
