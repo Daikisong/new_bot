@@ -12,6 +12,7 @@ import news_scalping_lab.brain.compiler as compiler_module
 from news_scalping_lab.brain.compiler import BRAIN_FILES, BrainCompiler
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.records.models import BrainRecordEnvelope
+from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
 from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text
 
 T = TypeVar("T", bound=BaseModel)
@@ -23,6 +24,11 @@ def _llm_full_fixture_clock(monkeypatch: pytest.MonkeyPatch) -> None:
         compiler_module,
         "now_kst",
         lambda: datetime(2031, 1, 1, tzinfo=KST),
+    )
+    monkeypatch.setattr(
+        compiler_module,
+        "create_production_embedding_provider",
+        _test_production_embedding_provider,
     )
 
 
@@ -48,6 +54,26 @@ class RecordingBrainLLM:
     async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
         self.embed_calls.append((purpose, list(texts)))
         return [[float(index + 1), float(len(text) % 7)] for index, text in enumerate(texts)]
+
+
+def _test_production_embedding_provider(
+    settings: object,
+    *,
+    require_records: bool,
+    provider: object | None = None,
+) -> AsyncEmbeddingProviderAdapter:
+    del require_records
+    if provider is None:
+        raise AssertionError("llm-full fixture must pass its embedding provider")
+    model = getattr(provider, "embedding_model", None)
+    if not isinstance(model, str) or not model:
+        raise AssertionError("llm-full fixture provider must expose embedding_model")
+    configured_provider = getattr(settings, "embedding_provider", "openai")
+    return AsyncEmbeddingProviderAdapter(
+        provider,
+        embedding_method=f"real_embedding:{configured_provider}:{model}",
+        production_capability_attested=True,
+    )
 
 
 def test_ineligible_record_is_tentative_boundary_not_positive_support() -> None:
@@ -351,7 +377,7 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     )
     assert single_event_category["compiled_claim_ids"] == [compiled_claims_by_record["BRAIN-DIRECT"]["claim_id"]]
     assert vector_manifest["embedding_method"] == "deterministic_hashing_v1"
-    assert production_manifest["embedding_model"] == "llm_embedding:openai:embed-brain-test"
+    assert production_manifest["embedding_model"] == "real_embedding:openai:embed-brain-test"
     assert production_manifest["production_ready"] is True
     assert production_manifest["hnsw_index_ready"] is True
     assert production_manifest["fts_index_ready"] is True
@@ -742,6 +768,61 @@ def test_llm_full_requires_real_provider(
         assert not (root / "brain" / "current" / "llm_compile_manifest.json").exists()
 
 
+@pytest.mark.parametrize(
+    ("configured_line", "replacement", "message"),
+    [
+        (
+            "evidence_policy: csv-memory-only-strict",
+            "evidence_policy: postclose-web-audit-optional",
+            "requires CSV_MEMORY_ONLY_STRICT",
+        ),
+        (
+            "web_provider: disabled",
+            "web_provider: mock",
+            "requires disabled web",
+        ),
+        (
+            "event_cluster_fallback_policy: fail-closed",
+            "event_cluster_fallback_policy: allow-deterministic-fallback",
+            "requires fail-closed embeddings",
+        ),
+    ],
+)
+def test_llm_full_requires_strict_production_policies(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    configured_line: str,
+    replacement: str,
+    message: str,
+) -> None:
+    _write_openai_config(tmp_path)
+    config_path = tmp_path / "configs" / "default.yaml"
+    config_path.write_text(
+        config_path.read_text(encoding="utf-8").replace(
+            configured_line,
+            replacement,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("NSLAB_LLM_PROVIDER", "openai")
+    _write_records(
+        tmp_path,
+        [
+            _record(
+                "BRAIN-POLICY",
+                record_type="supervised_direct_event_case",
+                training_target="direct_event_response",
+                response_class="positive_high10",
+            )
+        ],
+    )
+
+    with pytest.raises(ValueError, match=message):
+        BrainCompiler(tmp_path).rebuild(mode="llm-full")
+
+    assert not (tmp_path / "brain" / "current" / "brain_manifest.json").exists()
+
+
 def test_llm_full_brain_compile_rejects_mock_provider_object(
     tmp_path: Path,
     monkeypatch,
@@ -896,7 +977,16 @@ def _write_llm_config(
     configs = root / "configs"
     configs.mkdir(parents=True, exist_ok=True)
     (configs / "default.yaml").write_text(
-        f"llm_provider: {llm_provider}\n",
+        "\n".join(
+            [
+                f"llm_provider: {llm_provider}",
+                "evidence_policy: csv-memory-only-strict",
+                "embedding_provider: openai",
+                "event_cluster_fallback_policy: fail-closed",
+                "web_provider: disabled",
+            ]
+        )
+        + "\n",
         encoding="utf-8",
     )
     (configs / "models.yaml").write_text(
@@ -905,6 +995,7 @@ def _write_llm_config(
                 "openai:",
                 f"  provider: {model_provider or 'openai'}",
                 "  model: test-brain-model",
+                "  embedding_model: embed-brain-test",
                 "  max_retries: 0",
             ]
         )

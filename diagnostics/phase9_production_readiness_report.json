@@ -1,30 +1,32 @@
 {
   "active_release_id": null,
-  "blocker_count": 10,
+  "blocker_count": 5,
   "blockers": [
     "Phase 8 production shadow gate is not ready",
     "current record store does not match import-ready inventory",
     "production batch import has not been staged",
-    "production embedding provider is not configured",
-    "production llm provider is not configured",
-    "production llm_model provider is not configured",
-    "production price provider is not configured",
-    "production promotion HMAC key is missing",
-    "production release is not active",
-    "production web provider is not configured"
+    "production import inventory is not attested",
+    "production release is not active"
   ],
+  "codex_oauth_health": {
+    "logged_in": true,
+    "login_method": "chatgpt",
+    "status": "PASS"
+  },
   "current_record_count": 968,
+  "embedding_fallback_policy": "fail-closed",
+  "evidence_policy": "csv-memory-only-strict",
   "inventory_attested": false,
   "inventory_current": true,
   "inventory_id": "P9INV-974A99B55B152FF02040",
   "inventory_manifest_path": "runs/production_import/inventories/P9INV-974A99B55B152FF02040/production_import_inventory.json",
   "inventory_ready": true,
   "provider_configured": {
-    "embedding": false,
-    "llm": false,
-    "llm_model": false,
-    "price": false,
-    "web": false
+    "embedding": true,
+    "llm": true,
+    "llm_model": true,
+    "price": true,
+    "web": true
   },
   "ready": false,
   "ready_bundle_count": 1127,
@@ -38,27 +40,23 @@
       "actual_a_to_f_source_closure_available",
       "llm_full_production_brain",
       "minimum_calibration_and_holdout_days",
-      "production_memory_snapshot_ready",
-      "real_llm_provider_configured",
-      "real_price_provider_configured",
-      "real_web_provider_configured",
-      "shadow_pre_registration_key_configured",
-      "shadow_runner_attestation_key_configured",
-      "shadow_truth_attestation_key_configured"
+      "production_memory_snapshot_ready"
     ],
     "brain_build_mode": "catalog",
     "brain_version": "brain-cc5af5ba71",
     "checks": {
       "actual_a_to_f_source_closure_available": false,
+      "csv_memory_only_evidence_policy": true,
       "llm_full_production_brain": false,
       "minimum_calibration_and_holdout_days": false,
       "production_memory_snapshot_ready": false,
-      "real_llm_provider_configured": false,
-      "real_price_provider_configured": false,
-      "real_web_provider_configured": false,
-      "shadow_pre_registration_key_configured": false,
-      "shadow_runner_attestation_key_configured": false,
-      "shadow_truth_attestation_key_configured": false
+      "real_llm_provider_configured": true,
+      "real_price_provider_configured": true,
+      "real_web_provider_configured": true,
+      "shadow_pre_registration_key_configured": true,
+      "shadow_runner_attestation_key_configured": true,
+      "shadow_truth_attestation_key_configured": true,
+      "web_disabled_by_design": true
     },
     "memory_snapshot_id": null,
     "memory_status": "missing",
@@ -72,5 +70,8 @@
     "ready": false,
     "schema_version": "nslab.shadow_replay_readiness.v1"
   },
-  "staged_import_receipt_count": 0
+  "staged_import_receipt_count": 0,
+  "web_policy_status": "READY_DISABLED_BY_DESIGN",
+  "web_provider": "disabled",
+  "web_required": false
 }

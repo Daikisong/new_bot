@@ -105,6 +105,7 @@ def test_memory_search_cells_cli_does_not_scan_source_records(
     settings = Settings(
         project_root=tmp_path,
         llm_provider="fixture",
+        embedding_provider="llm",
         llm={
             "provider": "fixture",
             "model": "fixture-model",
@@ -1733,18 +1734,32 @@ def test_memory_rebuild_index_production_rejects_mock_provider(
     records_path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
     monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
 
-    result = CliRunner().invoke(app, ["memory", "rebuild-index", "--production"])
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "rebuild-index",
+            "--production",
+            "--as-of",
+            "2030-01-11T00:00:00+09:00",
+        ],
+    )
 
     assert result.exit_code == 1
-    assert "production memory index requires a real LLM provider" in result.output
+    assert "production cannot use deterministic hash embeddings" in result.output
 
 
 def test_memory_rebuild_index_production_requires_openai_api_key(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        embedding_provider="openai",
+    )
     settings.llm.provider = "openai"
+    settings.llm.embedding_model = "text-embedding-3-small"
     ensure_project_dirs(settings)
     record = _cli_brain_record()
     records_path = tmp_path / "memory" / "records" / "EP-cli.jsonl"
@@ -1753,7 +1768,16 @@ def test_memory_rebuild_index_production_requires_openai_api_key(
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
 
-    result = CliRunner().invoke(app, ["memory", "rebuild-index", "--production"])
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "rebuild-index",
+            "--production",
+            "--as-of",
+            "2030-01-11T00:00:00+09:00",
+        ],
+    )
 
     assert result.exit_code == 1
     assert "production memory index requires OPENAI_API_KEY" in result.output
@@ -1763,8 +1787,13 @@ def test_memory_rebuild_index_production_requires_openai_sdk(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        embedding_provider="openai",
+    )
     settings.llm.provider = "openai"
+    settings.llm.embedding_model = "text-embedding-3-small"
     ensure_project_dirs(settings)
     record = _cli_brain_record()
     records_path = tmp_path / "memory" / "records" / "EP-cli.jsonl"
@@ -1780,7 +1809,16 @@ def test_memory_rebuild_index_production_requires_openai_sdk(
 
     monkeypatch.setattr(cli_module, "import_module", missing_sdk)
 
-    result = CliRunner().invoke(app, ["memory", "rebuild-index", "--production"])
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "rebuild-index",
+            "--production",
+            "--as-of",
+            "2030-01-11T00:00:00+09:00",
+        ],
+    )
 
     assert result.exit_code == 1
     assert "production vector index rebuild requires the openai SDK" in result.output
@@ -1790,8 +1828,13 @@ def test_memory_rebuild_index_production_requires_async_openai(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        embedding_provider="openai",
+    )
     settings.llm.provider = "openai"
+    settings.llm.embedding_model = "text-embedding-3-small"
     ensure_project_dirs(settings)
     record = _cli_brain_record()
     records_path = tmp_path / "memory" / "records" / "EP-cli.jsonl"
@@ -1801,7 +1844,16 @@ def test_memory_rebuild_index_production_requires_async_openai(
     monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
     monkeypatch.setattr(cli_module, "import_module", lambda name: object())
 
-    result = CliRunner().invoke(app, ["memory", "rebuild-index", "--production"])
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "rebuild-index",
+            "--production",
+            "--as-of",
+            "2030-01-11T00:00:00+09:00",
+        ],
+    )
 
     assert result.exit_code == 1
     assert "requires an openai SDK exposing AsyncOpenAI" in result.output

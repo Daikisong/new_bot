@@ -233,6 +233,11 @@ class ShadowExecutionIdentity(StrictMemoryContextModel):
     started_at: AwareDatetime
     completed_at: AwareDatetime
     production_provider_attested: bool
+    evidence_policy: Literal["csv-memory-only-strict"] = (
+        "csv-memory-only-strict"
+    )
+    web_provider: Literal["disabled"] = "disabled"
+    web_required: Literal[False] = False
 
     @model_validator(mode="after")
     def validate_execution(self) -> Self:
@@ -270,6 +275,8 @@ class ShadowArmObservation(StrictMemoryContextModel):
     as_of_snapshot: ShadowAsOfSnapshot | None = None
     source_artifacts: list[ArtifactReference] = Field(default_factory=list, min_length=1)
     telemetry: ShadowSystemObservation
+    blind_web_call_count: int = Field(default=0, ge=0)
+    external_web_evidence_count: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def validate_arm(self) -> Self:
@@ -327,6 +334,8 @@ class ShadowArmObservation(StrictMemoryContextModel):
             or any(candidate.memory_record_ids for candidate in self.candidates)
         ):
             raise ValueError("no-memory arm cannot contain memory provenance")
+        if self.blind_web_call_count != 0 or self.external_web_evidence_count != 0:
+            raise ValueError("shadow arms must use CSV/memory-only evidence")
         return self
 
 
@@ -411,6 +420,9 @@ class ShadowReplayCase(StrictMemoryContextModel):
                 item.prompt_version,
                 item.inference_config_sha256,
                 item.production_provider_attested,
+                item.evidence_policy,
+                item.web_provider,
+                item.web_required,
             )
             for item in executions
         }
@@ -876,6 +888,13 @@ class ShadowEvaluationManifest(StrictMemoryContextModel):
     load_profiles: list[ShadowLoadProfile] = Field(min_length=3, max_length=3)
     exit_gate: ShadowExitGate
     production_ready: bool
+    evidence_policy: Literal["csv-memory-only-strict"] = (
+        "csv-memory-only-strict"
+    )
+    web_provider: Literal["disabled"] = "disabled"
+    web_required: Literal[False] = False
+    blind_web_call_count: Literal[0] = 0
+    external_web_evidence_count: Literal[0] = 0
 
     @model_validator(mode="after")
     def validate_manifest(self) -> Self:

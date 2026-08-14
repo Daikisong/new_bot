@@ -188,6 +188,12 @@
           ],
           "default": null
         },
+        "blind_web_call_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Blind Web Call Count",
+          "type": "integer"
+        },
         "candidates": {
           "items": {
             "$ref": "#/$defs/ShadowCandidateObservation"
@@ -201,6 +207,12 @@
         },
         "execution_attestation": {
           "$ref": "#/$defs/ShadowArmAttestation"
+        },
+        "external_web_evidence_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "External Web Evidence Count",
+          "type": "integer"
         },
         "features": {
           "$ref": "#/$defs/ShadowArmFeatures"
@@ -507,6 +519,12 @@
           "title": "Completed At",
           "type": "string"
         },
+        "evidence_policy": {
+          "const": "csv-memory-only-strict",
+          "default": "csv-memory-only-strict",
+          "title": "Evidence Policy",
+          "type": "string"
+        },
         "execution_mode": {
           "enum": [
             "SYNTHETIC_CONTRACT",
@@ -550,6 +568,18 @@
           "format": "date-time",
           "title": "Started At",
           "type": "string"
+        },
+        "web_provider": {
+          "const": "disabled",
+          "default": "disabled",
+          "title": "Web Provider",
+          "type": "string"
+        },
+        "web_required": {
+          "const": false,
+          "default": false,
+          "title": "Web Required",
+          "type": "boolean"
         }
       },
       "required": [

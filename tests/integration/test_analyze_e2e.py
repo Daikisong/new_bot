@@ -65,7 +65,7 @@ from news_scalping_lab.utils import (
     sha256_text,
     write_json,
 )
-from news_scalping_lab.web.provider import WebSearchResult
+from news_scalping_lab.web.provider import UnexpectedWebAccessError, WebSearchResult
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -635,7 +635,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         "event_cluster_embedding_batch_size": 128,
         "event_cluster_max_semantic_variants": 32,
         "event_cluster_similarity_threshold": 0.9,
-        "event_clustering_version": "semantic_complete_link_v1",
+            "event_clustering_version": "semantic_complete_link_v2",
         "final_synthesis_prompt_version": "synthesis.final.v2",
         "final_synthesis_token_budget": 80000,
         "max_output_tokens": 4096,
@@ -732,10 +732,22 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         "exact_duplicate_cluster_count": 0,
         "semantic_duplicate_count": 0,
         "semantic_duplicate_cluster_count": 0,
-        "cluster_method": "semantic_complete_link_v1",
+            "cluster_method": "semantic_complete_link_v2",
             "embedding_method": "DeterministicMockLLMProvider:deterministic-mock",
-        "embedding_status": "PROVIDER",
-        "warnings": [],
+            "embedding_status": "PROVIDER",
+            "embedding_provider": "DeterministicMockLLMProvider",
+            "embedding_model": None,
+            "embedding_revision": None,
+            "embedding_artifact_sha256": None,
+            "embedding_dimensions": 12,
+            "embedding_fallback_policy": "allow-deterministic-fallback",
+            "deterministic_fallback_used": False,
+            "embedding_retry_count": 0,
+            "embedding_failure_type": None,
+            "production_runtime_identity": (
+                "DeterministicMockLLMProvider:deterministic-mock"
+            ),
+            "warnings": [],
         "novelty_review_required": True,
     }
     event_cluster_path = tmp_path / saved_manifest["event_cluster_artifact"]
@@ -1106,11 +1118,12 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         for check in finding["attack_checks"]
     )
     assert audit_lookahead(tmp_path, trade_date=date(2030, 1, 10))["passed"]
-    assert audit_provenance(tmp_path)["passed"]
+    provenance_audit = audit_provenance(tmp_path)
+    assert provenance_audit["passed"], provenance_audit["findings"]
 
 
 @pytest.mark.asyncio
-async def test_blind_web_search_keeps_only_cutoff_safe_sources(
+async def test_blind_web_search_fails_before_provider_call(
     tmp_path,
 ) -> None:
     settings = Settings(project_root=tmp_path)
@@ -1125,13 +1138,22 @@ async def test_blind_web_search_keeps_only_cutoff_safe_sources(
     BrainCompiler(tmp_path).rebuild(mode="full")
     web_provider = MixedTemporalWebProvider()
 
-    analysis = await DailyAnalyzer(settings, web_provider=web_provider).analyze(
-        news_csv=csv_path,
-        trade_date=date(2030, 1, 10),
-        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
-        mode="exhaustive",
-        web_search=True,
-    )
+    with pytest.raises(UnexpectedWebAccessError):
+        analysis = await DailyAnalyzer(
+            settings,
+            web_provider=web_provider,
+        ).analyze(
+            news_csv=csv_path,
+            trade_date=date(2030, 1, 10),
+            cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+            mode="exhaustive",
+            web_search=True,
+        )
+
+    assert web_provider.search_calls == []
+    assert web_provider.open_calls == []
+    assert list((tmp_path / "runs" / "manifests").glob("*.json")) == []
+    return
 
     expected_candidate_web_subjects = (
         len(analysis.blind_prediction.candidates)
@@ -1431,21 +1453,19 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
         encoding="utf-8",
     )
     llm = RecordingBlindLLM(
-        expected_final_prompt_substring="cutoff-safe opened verification text",
+        expected_final_prompt_substring="SafeMemoryCo",
         forbidden_final_prompt_substrings=[
             "FutureMemoryCo",
             "future market context must not reach synthesis",
             "unscoped market context must not reach synthesis",
         ],
     )
-    web_provider = MixedTemporalWebProvider()
-
-    analysis = await DailyAnalyzer(settings, llm=llm, web_provider=web_provider).analyze(
+    analysis = await DailyAnalyzer(settings, llm=llm).analyze(
         news_csv=csv_path,
         trade_date=date(2030, 1, 10),
         cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
         mode="exhaustive",
-        web_search=True,
+        web_search=False,
     )
 
     assert [call["purpose"] for call in llm.calls] == [

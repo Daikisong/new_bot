@@ -5,6 +5,7 @@ from __future__ import annotations
 from news_scalping_lab.config import Settings
 from news_scalping_lab.web.provider import (
     BraveSearchWebResearchProvider,
+    DisabledWebResearchProvider,
     MockWebResearchProvider,
     WebResearchProvider,
 )
@@ -14,6 +15,8 @@ def create_web_provider(settings: Settings) -> WebResearchProvider:
     provider = settings.web_provider.strip().lower()
     if provider == "mock":
         return MockWebResearchProvider()
+    if provider in {"disabled", "none", "off"}:
+        return DisabledWebResearchProvider()
     if provider in {"brave", "brave-search", "brave-news"}:
         api_key = settings.env_value(settings.brave_search_api_key_env)
         if not api_key:

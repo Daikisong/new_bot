@@ -46,12 +46,14 @@ from news_scalping_lab.memory.index import (
     inspect_current_memory_index,
 )
 from news_scalping_lab.memory.runtime import create_production_embedding_provider
+from news_scalping_lab.policies import EvidencePolicy
 from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.production.importer import (
     PRODUCTION_RECORD_ARTIFACT_FILE,
     inspect_production_batch_import,
     verify_production_record_artifacts,
 )
+from news_scalping_lab.retrieval.production_embedding import embedding_identity
 from news_scalping_lab.utils import (
     as_kst,
     canonical_json,
@@ -402,7 +404,22 @@ def _complete_release_transaction(
         shadow_evaluation_id=str(projection["shadow_evaluation_id"]),
         llm_provider=str(projection["llm_provider"]),
         llm_model=str(projection["llm_model"]),
+        evidence_policy=str(projection["evidence_policy"]),
+        web_required=bool(projection["web_required"]),
+        codex_cli_version=projection["codex_cli_version"],
+        reasoning_effort=projection["reasoning_effort"],
+        oauth_health_check_status=projection["oauth_health_check_status"],
+        live_agent_call_count=int(projection["live_agent_call_count"]),
+        embedding_provider=str(projection["embedding_provider"]),
         embedding_model=str(projection["embedding_model"]),
+        embedding_revision=projection["embedding_revision"],
+        embedding_artifact_sha256=projection["embedding_artifact_sha256"],
+        embedding_dimensions=int(projection["embedding_dimensions"]),
+        embedding_normalization=projection["embedding_normalization"],
+        embedding_device=projection["embedding_device"],
+        embedding_fallback_policy=str(
+            projection["embedding_fallback_policy"]
+        ),
         web_provider=str(projection["web_provider"]),
         price_provider=str(projection["price_provider"]),
         audit_results=dict(projection["audit_results"]),
@@ -565,7 +582,28 @@ def inspect_production_release(
             "shadow_evaluation_id": projection["shadow_evaluation_id"],
             "llm_provider": projection["llm_provider"],
             "llm_model": projection["llm_model"],
+            "evidence_policy": projection["evidence_policy"],
+            "web_required": projection["web_required"],
+            "codex_cli_version": projection["codex_cli_version"],
+            "reasoning_effort": projection["reasoning_effort"],
+            "oauth_health_check_status": projection[
+                "oauth_health_check_status"
+            ],
+            "live_agent_call_count": projection["live_agent_call_count"],
+            "embedding_provider": projection["embedding_provider"],
             "embedding_model": projection["embedding_model"],
+            "embedding_revision": projection["embedding_revision"],
+            "embedding_artifact_sha256": projection[
+                "embedding_artifact_sha256"
+            ],
+            "embedding_dimensions": projection["embedding_dimensions"],
+            "embedding_normalization": projection[
+                "embedding_normalization"
+            ],
+            "embedding_device": projection["embedding_device"],
+            "embedding_fallback_policy": projection[
+                "embedding_fallback_policy"
+            ],
             "web_provider": projection["web_provider"],
             "price_provider": projection["price_provider"],
             "release_artifact_root_sha256": projection[
@@ -875,18 +913,32 @@ def _fast_active_release_errors(
     expected_provider_fields = {
         "llm_provider": settings.llm_provider,
         "llm_model": settings.llm.model,
+        "evidence_policy": settings.evidence_policy.value,
+        "web_required": False,
         "web_provider": settings.web_provider,
         "price_provider": settings.price_provider,
+        "embedding_fallback_policy": (
+            settings.event_cluster_fallback_policy.value
+        ),
     }
     manifest_payload = manifest.model_dump(mode="json")
     for field, expected_value in expected_provider_fields.items():
         if manifest_payload.get(field) != expected_value:
             errors.append(f"production_current_{field}_mismatch")
-    expected_embedding_method = (
-        f"llm_embedding:{settings.llm_provider}:"
-        f"{settings.llm.embedding_model}"
+    selected_embedding = settings.embedding_provider.strip().lower()
+    expected_embedding_provider = (
+        "local-production" if selected_embedding == "auto" else selected_embedding
     )
-    if manifest.embedding_model != expected_embedding_method:
+    if manifest.embedding_provider != expected_embedding_provider:
+        errors.append("production_current_embedding_provider_mismatch")
+    if (
+        expected_embedding_provider == "local-production"
+        and (
+            manifest.embedding_revision != settings.local_embedding_revision
+            or settings.local_embedding_model not in manifest.embedding_model
+            or settings.local_embedding_revision not in manifest.embedding_model
+        )
+    ):
         errors.append("production_current_embedding_model_mismatch")
     references = {
         "release_transaction": manifest.release_transaction,
@@ -1007,6 +1059,12 @@ def _release_projection(
         resolve_production=False,
         dotenv_root=dotenv_root,
     )
+    if settings.evidence_policy is not EvidencePolicy.CSV_MEMORY_ONLY_STRICT:
+        findings.append("evidence_policy_not_csv_memory_only_strict")
+    if settings.web_provider.strip().lower() != "disabled":
+        findings.append("strict_evidence_web_provider_not_disabled")
+    if settings.event_cluster_fallback_policy.value != "fail-closed":
+        findings.append("production_embedding_not_fail_closed")
     company_memory_errors = CompanyMemoryStore(
         project_root,
         create=False,
@@ -1022,6 +1080,18 @@ def _release_projection(
         brain = BrainManifest.model_validate(read_json(brain_path))
     except (OSError, ValueError) as exc:
         raise ValueError(f"production brain manifest is invalid: {exc}") from exc
+    if (
+        brain.evidence_policy != settings.evidence_policy.value
+        or brain.web_provider != settings.web_provider.strip().lower()
+        or brain.web_required is not False
+    ):
+        findings.append("brain_evidence_policy_identity_mismatch")
+    if settings.llm_provider.strip().lower() in {"codex-oauth", "codex_oauth"} and (
+        brain.llm_provider != settings.llm_provider
+        or brain.live_agent_call_count < 1
+        or brain.oauth_health_check_status != "PASS"
+    ):
+        findings.append("brain_codex_oauth_identity_not_ready")
     brain_inspection = audit_brain(project_root, deep=True)
     if brain_inspection.get("passed") is not True:
         findings.append("brain_deep_audit_failed")
@@ -1042,6 +1112,22 @@ def _release_projection(
         provider_factory=create_llm_provider,
         module_loader=import_module,
     )
+    embedding_runtime = embedding_identity(embedding_provider)
+    expected_brain_embedding = {
+        "embedding_provider": embedding_runtime["embedding_provider"],
+        "embedding_model": embedding_runtime["embedding_model"],
+        "embedding_revision": embedding_runtime["embedding_revision"],
+        "embedding_artifact_sha256": embedding_runtime[
+            "embedding_artifact_sha256"
+        ],
+        "embedding_dimensions": memory.embedding_dimensions,
+        "embedding_normalization": embedding_runtime["normalization"],
+        "embedding_device": embedding_runtime["device"],
+    }
+    brain_payload = brain.model_dump(mode="json")
+    for field, expected_value in expected_brain_embedding.items():
+        if brain_payload.get(field) != expected_value:
+            findings.append(f"brain_{field}_identity_mismatch")
     memory_index = ProductionMemoryIndex(
         project_root,
         embedding_provider=embedding_provider,
@@ -1108,7 +1194,24 @@ def _release_projection(
         "shadow_evaluation_id": shadow.evaluation_id,
         "llm_provider": settings.llm_provider,
         "llm_model": settings.llm.model,
+        "evidence_policy": settings.evidence_policy.value,
+        "web_required": False,
+        "codex_cli_version": brain.codex_cli_version,
+        "reasoning_effort": brain.reasoning_effort,
+        "oauth_health_check_status": brain.oauth_health_check_status,
+        "live_agent_call_count": brain.live_agent_call_count,
+        "embedding_provider": embedding_runtime["embedding_provider"],
         "embedding_model": memory.embedding_model,
+        "embedding_revision": embedding_runtime["embedding_revision"],
+        "embedding_artifact_sha256": embedding_runtime[
+            "embedding_artifact_sha256"
+        ],
+        "embedding_dimensions": memory.embedding_dimensions,
+        "embedding_normalization": embedding_runtime["normalization"],
+        "embedding_device": embedding_runtime["device"],
+        "embedding_fallback_policy": (
+            settings.event_cluster_fallback_policy.value
+        ),
         "web_provider": settings.web_provider,
         "price_provider": settings.price_provider,
         "audit_results": audit_results,
@@ -1150,7 +1253,26 @@ def _release_identity(
         "doctor_report_sha256": projection["doctor_report_sha256"],
         "llm_provider": projection["llm_provider"],
         "llm_model": projection["llm_model"],
+        "evidence_policy": projection["evidence_policy"],
+        "web_required": projection["web_required"],
+        "codex_cli_version": projection["codex_cli_version"],
+        "reasoning_effort": projection["reasoning_effort"],
+        "oauth_health_check_status": projection[
+            "oauth_health_check_status"
+        ],
+        "live_agent_call_count": projection["live_agent_call_count"],
+        "embedding_provider": projection["embedding_provider"],
         "embedding_model": projection["embedding_model"],
+        "embedding_revision": projection["embedding_revision"],
+        "embedding_artifact_sha256": projection[
+            "embedding_artifact_sha256"
+        ],
+        "embedding_dimensions": projection["embedding_dimensions"],
+        "embedding_normalization": projection["embedding_normalization"],
+        "embedding_device": projection["embedding_device"],
+        "embedding_fallback_policy": projection[
+            "embedding_fallback_policy"
+        ],
         "web_provider": projection["web_provider"],
         "price_provider": projection["price_provider"],
         "release_artifact_root_sha256": projection[

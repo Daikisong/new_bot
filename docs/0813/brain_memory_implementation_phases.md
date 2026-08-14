@@ -1,6 +1,6 @@
 # NSLAB 장기기억 두뇌 구현 단계
 
-상태: Phase 0~9 bounded 구현·검증·외부 독립감사 APPROVE, 실제 production activation은 readiness 10개 blocker로 차단
+상태: Phase 0~9 bounded 구현·검증·외부 독립감사 APPROVE, Codex OAuth/CSV-only/local embedding bootstrap PASS, 실제 production activation은 readiness 5개 blocker로 차단
 
 기준 문서:
 
@@ -977,11 +977,13 @@ attestation으로 결속해 원자 기록한다. warehouse daily projection과 p
 가변 산출물이며, 봉인 doctor snapshot과 현재 readiness는 deep inspection에서 각각 검증한다. analyze/evaluate는
 outer operator root에서 해석한 Settings를 active release까지 그대로 전달한다.
 
-현재는 promotion key, real provider, production memory/llm-full brain, 40일 A~F shadow가 없으므로 실제
-import/activation을 실행하지 않았다. live store는 968 records이고 Phase 9 readiness는 10 blockers로
-`ready=false`다. 상세 근거는 `phase9_production_import_and_promotion_report.md`에 기록했다.
+현재 로컬 deployment checkout에는 promotion key 5종, Codex OAuth, pinned real local embedding,
+stock-web research_daily, CSV-only/disabled-web 정책이 준비되어 production preflight가 통과했다. 실제
+import/activation은 실행하지 않았고 live store는 968 records이다. Phase 9 readiness는 inventory attestation,
+current-store 정합 import, staged import, 40일 A~F shadow, active release의 5 blockers로 `ready=false`다.
+상세 근거는 `phase9_production_import_and_promotion_report.md`에 기록했다.
 최신 고정 tree의 외부 독립감사는 `APPROVE`이며 잔여 P0/P1 finding은 없다.
-최종 gate는 `ruff check .`, `mypy` 114 modules, schema parity, 전체 pytest 1,483개 통과다.
+bootstrap 변경 tree의 gate는 `ruff check .`, `mypy` 119 modules, schema parity, 전체 pytest 1,526개 통과다.
 
 ## 13. phase별 작업 원칙
 

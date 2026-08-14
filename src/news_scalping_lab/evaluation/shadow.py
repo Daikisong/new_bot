@@ -44,6 +44,7 @@ from news_scalping_lab.contracts.shadow_evaluation import (
 )
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.llm.base import LLMProvider
+from news_scalping_lab.llm.codex_oauth_provider import CodexOAuthProvider
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.openai_provider import OpenAIResponsesProvider
 from news_scalping_lab.memory.index import (
@@ -55,6 +56,7 @@ from news_scalping_lab.memory.index import (
     inspect_memory_snapshot,
 )
 from news_scalping_lab.memory.runtime import create_production_memory_index
+from news_scalping_lab.policies import EvidencePolicy
 from news_scalping_lab.prices.base import OutcomeUniversePriceSource, PriceSource
 from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
@@ -740,7 +742,11 @@ class ShadowReplayEvaluator:
         dataset: ShadowReplayDataset,
     ) -> list[str]:
         errors: list[str] = []
-        if type(self.llm_provider) is not OpenAIResponsesProvider:
+        provider = self.llm_provider
+        if type(provider) not in {
+            OpenAIResponsesProvider,
+            CodexOAuthProvider,
+        }:
             errors.append("shadow_real_llm_provider_required")
         else:
             expected_models = {
@@ -748,7 +754,7 @@ class ShadowReplayEvaluator:
                 for case in dataset.cases
                 for arm in case.arms
             }
-            if expected_models != {self.llm_provider.model}:
+            if expected_models != {getattr(provider, "model", None)}:
                 errors.append("shadow_llm_provider_model_mismatch")
         if type(self.price_source) is not StockWebPriceSource:
             errors.append("shadow_real_price_provider_required")
@@ -1295,6 +1301,11 @@ class ShadowReplayEvaluator:
             or context.no_d_outcome_exposed is not True
             or context.blind_current_price_access_count != 0
             or context.errors
+            or context.evidence_policy != "csv-memory-only-strict"
+            or context.web_provider != "disabled"
+            or context.web_required is not False
+            or context.blind_web_search_call_count != 0
+            or context.external_web_evidence_count != 0
         ):
             errors.append(f"shadow_context_identity_mismatch:{label}")
         expected_config = {
@@ -1318,7 +1329,11 @@ class ShadowReplayEvaluator:
         if (
             configured_provider != arm.execution.llm_provider
             or configured_model != arm.execution.llm_model
-            or provider_class != OpenAIResponsesProvider.__name__
+            or provider_class
+            not in {
+                OpenAIResponsesProvider.__name__,
+                CodexOAuthProvider.__name__,
+            }
             or configured_provider.lower() in {"mock", "deterministic", "test"}
         ):
             errors.append(f"shadow_context_provider_attestation_mismatch:{label}")
@@ -1402,8 +1417,17 @@ def shadow_replay_readiness(root: Path) -> dict[str, Any]:
         not in {"", "mock"},
         "real_price_provider_configured": settings.price_provider.strip().lower()
         not in {"", "mock"},
-        "real_web_provider_configured": settings.web_provider.strip().lower()
-        not in {"", "mock"},
+        "csv_memory_only_evidence_policy": (
+            settings.evidence_policy is EvidencePolicy.CSV_MEMORY_ONLY_STRICT
+        ),
+        "web_disabled_by_design": (
+            settings.web_provider.strip().lower() == "disabled"
+        ),
+        "real_web_provider_configured": (
+            settings.evidence_policy is EvidencePolicy.CSV_MEMORY_ONLY_STRICT
+            and settings.web_provider.strip().lower() == "disabled"
+        )
+        or settings.web_provider.strip().lower() not in {"", "mock", "disabled"},
         "shadow_pre_registration_key_configured": bool(
             settings.env_value(SHADOW_SPLIT_HMAC_KEY_ENV)
         ),

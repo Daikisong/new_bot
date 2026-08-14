@@ -11,10 +11,10 @@ from collections.abc import Iterable
 from datetime import date, datetime
 from importlib import import_module
 from pathlib import Path
-from typing import Annotated, Any, NoReturn, cast
+from typing import Annotated, Any, Literal, NoReturn, cast
 
 import typer
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from news_scalping_lab.audits.coverage import audit_coverage
 from news_scalping_lab.audits.hardcoding import audit_hardcoding
@@ -73,6 +73,13 @@ from news_scalping_lab.inference.analyzer import (
 )
 from news_scalping_lab.inference.event_clustering import EVENT_CLUSTERING_VERSION
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
+from news_scalping_lab.llm.codex_oauth_provider import (
+    CodexOAuthError,
+    CodexOAuthInteractiveLoginRequired,
+    CodexOAuthProvider,
+    codex_login_status,
+    run_interactive_codex_login,
+)
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.memory.adaptive_retrieval import AdaptiveRetriever
 from news_scalping_lab.memory.beneficiary import inspect_beneficiary_graph
@@ -88,6 +95,11 @@ from news_scalping_lab.memory.runtime import (
     create_production_embedding_provider as _create_production_embedding_provider,
 )
 from news_scalping_lab.prices.factory import create_price_source
+from news_scalping_lab.production.bootstrap import (
+    bootstrap_local_environment,
+    prepare_local_production,
+    production_preflight_report,
+)
 from news_scalping_lab.production.importer import (
     inspect_production_batch_import,
     stage_production_batch_import,
@@ -154,6 +166,8 @@ from news_scalping_lab.utils import (
     write_json,
 )
 from news_scalping_lab.warehouse import WarehouseStore
+from news_scalping_lab.web.factory import create_web_provider
+from news_scalping_lab.web.postclose import run_postclose_web_audit
 
 app = typer.Typer(help="news-scalping-lab CLI")
 news_app = typer.Typer(help="News CSV commands")
@@ -165,6 +179,7 @@ training_app = typer.Typer(help="Training export commands")
 warehouse_app = typer.Typer(help="Warehouse projection commands")
 memory_app = typer.Typer(help="Brain record memory commands")
 production_app = typer.Typer(help="Production import and release commands")
+auth_app = typer.Typer(help="Supported provider authentication checks")
 
 
 def _production_embedding_provider(
@@ -188,6 +203,14 @@ app.add_typer(training_app, name="training")
 app.add_typer(warehouse_app, name="warehouse")
 app.add_typer(memory_app, name="memory")
 app.add_typer(production_app, name="production")
+app.add_typer(auth_app, name="auth")
+
+
+class _CodexSmokeResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["ok"]
+    provider: Literal["codex-oauth"]
 
 WEB_SOURCE_REQUIRED_FIELDS = {
     "schema_version",
@@ -429,6 +452,13 @@ def doctor(
             help="Run production readiness checks for llm-full brain usage.",
         ),
     ] = False,
+    production_preflight: Annotated[
+        bool,
+        typer.Option(
+            "--production-preflight",
+            help="Check local OAuth/embedding/secret preparation without activation.",
+        ),
+    ] = False,
 ) -> None:
     settings = load_settings()
     report = build_doctor_report(settings, production=production)
@@ -440,15 +470,106 @@ def doctor(
             production_report,
         )
         report["production_readiness"] = production_report
+    if production_preflight:
+        report["production_preflight"] = production_preflight_report(settings)
     _echo(report)
     readiness = report.get("readiness")
     production_readiness = report.get("production_readiness")
+    preflight = report.get("production_preflight")
     if strict and (not isinstance(readiness, dict) or readiness.get("passed") is not True):
         raise typer.Exit(code=1)
-    if production and (not isinstance(production_readiness, dict) or production_readiness.get("passed") is not True):
+    if production and (
+        not isinstance(production_readiness, dict)
+        or production_readiness.get("passed") is not True
+    ):
+        raise typer.Exit(code=1)
+    if production_preflight and (
+        not isinstance(preflight, dict) or preflight.get("passed") is not True
+    ):
         raise typer.Exit(code=1)
 
 
+@auth_app.command("codex-status")
+def auth_codex_status() -> None:
+    settings = load_settings(resolve_production=False)
+    try:
+        status = codex_login_status(settings.codex_command)
+    except (OSError, CodexOAuthError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            **status,
+            "provider": "codex-oauth",
+            "command": settings.codex_command,
+            "credential_files_read": False,
+        }
+    )
+    if status.get("logged_in") is not True:
+        raise typer.Exit(code=1)
+
+
+@auth_app.command("codex-login")
+def auth_codex_login() -> None:
+    settings = load_settings(resolve_production=False)
+    interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    try:
+        exit_code = run_interactive_codex_login(
+            settings.codex_command,
+            interactive=interactive,
+        )
+    except CodexOAuthInteractiveLoginRequired:
+        _echo(
+            {
+                "status": "CODEX_OAUTH_INTERACTIVE_LOGIN_REQUIRED",
+                "completed": False,
+                "credential_files_read": False,
+            }
+        )
+        raise typer.Exit(code=1) from None
+    if exit_code != 0:
+        _echo({"status": "LOGIN_FAILED", "completed": False})
+        raise typer.Exit(code=exit_code)
+    _echo({"status": "PASS", "completed": True})
+
+
+@auth_app.command("codex-smoke")
+def auth_codex_smoke() -> None:
+    settings = load_settings(resolve_production=False)
+    try:
+        provider = CodexOAuthProvider(
+            command=settings.codex_command,
+            model=settings.llm.model,
+            reasoning_effort=(
+                settings.llm.reasoning_effort or settings.codex_reasoning_effort
+            ),
+            max_output_tokens=256,
+            structured_repair_retries=0,
+        )
+        health = provider.health_status()
+        if health.get("logged_in") is not True:
+            raise CodexOAuthInteractiveLoginRequired(
+                "CODEX_OAUTH_INTERACTIVE_LOGIN_REQUIRED"
+            )
+        result = asyncio.run(
+            provider.generate_structured(
+                prompt=(
+                    "Return the JSON object required by the supplied schema. "
+                    "Set status to ok and provider to codex-oauth. Do not use tools."
+                ),
+                response_model=_CodexSmokeResult,
+                purpose="codex_oauth_health_smoke",
+            )
+        )
+    except (OSError, CodexOAuthError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "status": "PASS",
+            "result": result.model_dump(mode="json"),
+            "identity": provider.identity(),
+            "credential_files_read": False,
+        }
+    )
 @app.command("full-check")
 def full_check() -> None:
     results: list[dict[str, object]] = []
@@ -468,7 +589,7 @@ def demo(
     trade_date: Annotated[str, typer.Option("--trade-date")] = "2026-06-24",
     cutoff: Annotated[str, typer.Option("--cutoff")] = "2026-06-24T08:59:59+09:00",
     mode: Annotated[str, typer.Option("--mode")] = "exhaustive",
-    web_search: Annotated[bool, typer.Option("--web-search/--no-web-search")] = True,
+    web_search: Annotated[bool, typer.Option("--web-search/--no-web-search")] = False,
 ) -> None:
     _parse_date(trade_date)
     _parse_cutoff(cutoff)
@@ -6961,6 +7082,21 @@ def _event_cluster_manifest_result_sha256(
                 "clustering_version": manifest.clustering_version,
                 "embedding_method": manifest.embedding_provider,
                 "embedding_status": manifest.embedding_status,
+                "embedding_model": manifest.embedding_model,
+                "embedding_revision": manifest.embedding_revision,
+                "embedding_artifact_sha256": (
+                    manifest.embedding_artifact_sha256
+                ),
+                "embedding_dimensions": manifest.embedding_dimensions,
+                "embedding_fallback_policy": (
+                    manifest.embedding_fallback_policy
+                ),
+                "deterministic_fallback_used": (
+                    manifest.deterministic_fallback_used
+                ),
+                "production_runtime_identity": (
+                    manifest.production_runtime_identity
+                ),
                 "clusters": [
                     {
                         "cluster_id": cluster.cluster_id,
@@ -7720,6 +7856,40 @@ def audit_coverage_cmd() -> None:
         raise typer.Exit(code=1)
 
 
+@audit_app.command("postclose-web")
+def audit_postclose_web_cmd(
+    trade_date: Annotated[str, typer.Option("--trade-date")],
+    query: Annotated[list[str], typer.Option("--query")],
+) -> None:
+    settings = load_settings()
+    if settings.evidence_policy.value != "postclose-web-audit-optional":
+        _exit_with_error(
+            ValueError(
+                "post-close web audit requires "
+                "NSLAB_EVIDENCE_POLICY=postclose-web-audit-optional"
+            )
+        )
+    try:
+        artifact, path = asyncio.run(
+            run_postclose_web_audit(
+                settings.project_root,
+                trade_date=_parse_date(trade_date),
+                queries=query,
+                provider=create_web_provider(settings),
+            )
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "artifact_path": relative_to_root(path, settings.project_root),
+            "source_count": artifact["source_count"],
+            "blind_prediction_mutated": False,
+            "training_record_created": False,
+        }
+    )
+
+
 @training_app.command("export-sft")
 def training_export_sft() -> None:
     _export_training_kind("sft")
@@ -8238,7 +8408,7 @@ def memory_rebuild_index(
         bool,
         typer.Option(
             "--production",
-            help="Use the configured real LLM embedding provider instead of the deterministic local index.",
+            help="Use the configured real production embedding provider instead of the deterministic local index.",
         ),
     ] = False,
     as_of: Annotated[
@@ -8938,6 +9108,74 @@ def memory_audit(
     result = {**result, "diagnostic_report": report_paths}
     _echo(result)
     if not result.get("passed", False):
+        raise typer.Exit(code=1)
+
+
+@production_app.command("bootstrap-local")
+def production_bootstrap_local(
+    evidence_policy: Annotated[
+        str,
+        typer.Option("--evidence-policy"),
+    ] = "csv-memory-only-strict",
+    llm_provider: Annotated[
+        str,
+        typer.Option("--llm-provider"),
+    ] = "codex-oauth",
+    embedding_provider: Annotated[
+        str,
+        typer.Option("--embedding-provider"),
+    ] = "auto",
+    stock_web_path: Annotated[
+        Path | None,
+        typer.Option("--stock-web-path"),
+    ] = None,
+    rotate_secrets: Annotated[
+        bool,
+        typer.Option("--rotate-secrets"),
+    ] = False,
+) -> None:
+    settings = load_settings(resolve_production=False)
+    try:
+        result = bootstrap_local_environment(
+            settings.project_root,
+            evidence_policy=evidence_policy,
+            llm_provider=llm_provider,
+            embedding_provider=embedding_provider,
+            stock_web_path=stock_web_path,
+            rotate_secrets=rotate_secrets,
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(result)
+
+
+@production_app.command("prepare-local")
+def production_prepare_local(
+    stock_web_path: Annotated[
+        Path | None,
+        typer.Option("--stock-web-path"),
+    ] = None,
+    rotate_secrets: Annotated[
+        bool,
+        typer.Option("--rotate-secrets"),
+    ] = False,
+    live_oauth_smoke: Annotated[
+        bool,
+        typer.Option("--live-oauth-smoke/--no-live-oauth-smoke"),
+    ] = True,
+) -> None:
+    settings = load_settings(resolve_production=False)
+    try:
+        result = prepare_local_production(
+            settings.project_root,
+            rotate_secrets=rotate_secrets,
+            stock_web_path=stock_web_path,
+            live_oauth_smoke=live_oauth_smoke,
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(result)
+    if result.get("passed") is not True:
         raise typer.Exit(code=1)
 
 

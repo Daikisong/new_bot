@@ -11,6 +11,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+from news_scalping_lab.policies import EmbeddingFallbackPolicy, EvidencePolicy
+
 ENV_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
@@ -68,6 +70,11 @@ class Settings(BaseModel):
     project_root: Path = Field(default_factory=lambda: Path.cwd())
     project_name: str = "news-scalping-lab"
     llm_provider: str = "mock"
+    evidence_policy: EvidencePolicy = EvidencePolicy.CSV_MEMORY_ONLY_STRICT
+    embedding_provider: str = "mock"
+    event_cluster_fallback_policy: EmbeddingFallbackPolicy = (
+        EmbeddingFallbackPolicy.ALLOW_DETERMINISTIC_FALLBACK
+    )
     web_provider: str = "mock"
     price_provider: str = "mock"
     brave_search_api_key_env: str = "BRAVE_SEARCH_API_KEY"
@@ -80,6 +87,14 @@ class Settings(BaseModel):
     stock_web_remote_url: str = "https://github.com/Songdaiki/stock-web.git"
     stock_web_cache_path: Path = Path("data/cache/stock-web")
     stock_web_cache_enabled: bool = False
+    codex_command: str = "codex"
+    codex_model: str | None = None
+    codex_reasoning_effort: str = "high"
+    local_embedding_model: str = (
+        "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    )
+    local_embedding_revision: str = "e8f8c211226b894fcb81acc59f3b34ba3efd5f42"
+    local_embedding_cache_path: Path = Path("data/cache/local-embedding")
     default_mode: str = "exhaustive"
     timezone: str = "Asia/Seoul"
     output_dirs: OutputDirs = Field(default_factory=OutputDirs)
@@ -150,6 +165,9 @@ DEFAULT_CONFIG_FILES: dict[str, dict[str, Any]] = {
     "default.yaml": {
         "project_name": "news-scalping-lab",
         "llm_provider": "mock",
+        "evidence_policy": "csv-memory-only-strict",
+        "embedding_provider": "mock",
+        "event_cluster_fallback_policy": "allow-deterministic-fallback",
         "web_provider": "mock",
         "price_provider": "mock",
         "brave_search_api_key_env": "BRAVE_SEARCH_API_KEY",
@@ -162,6 +180,16 @@ DEFAULT_CONFIG_FILES: dict[str, dict[str, Any]] = {
         "stock_web_remote_url": "https://github.com/Songdaiki/stock-web.git",
         "stock_web_cache_path": "data/cache/stock-web",
         "stock_web_cache_enabled": False,
+        "codex_command": "codex",
+        "codex_model": None,
+        "codex_reasoning_effort": "high",
+        "local_embedding_model": (
+            "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+        ),
+        "local_embedding_revision": (
+            "e8f8c211226b894fcb81acc59f3b34ba3efd5f42"
+        ),
+        "local_embedding_cache_path": "data/cache/local-embedding",
         "default_mode": "exhaustive",
         "timezone": "Asia/Seoul",
         "output_dirs": {
@@ -214,6 +242,13 @@ DEFAULT_CONFIG_FILES: dict[str, dict[str, Any]] = {
             "reasoning_effort": "medium",
             "max_output_tokens": 8192,
             "max_retries": 2,
+        },
+        "codex-oauth": {
+            "provider": "codex-oauth",
+            "model": "gpt-5.4",
+            "reasoning_effort": "high",
+            "max_output_tokens": 8192,
+            "max_retries": 1,
         },
     },
     "context_budget.yaml": {
@@ -317,12 +352,30 @@ def load_settings(
         data["stock_web_path"] = Path(str(data["stock_web_path"]))
     if "stock_web_cache_path" in data and data["stock_web_cache_path"] is not None:
         data["stock_web_cache_path"] = Path(str(data["stock_web_cache_path"]))
+    if (
+        "local_embedding_cache_path" in data
+        and data["local_embedding_cache_path"] is not None
+    ):
+        data["local_embedding_cache_path"] = Path(
+            str(data["local_embedding_cache_path"])
+        )
 
     settings = Settings(project_root=root, dotenv_values=dotenv_values, **data)
 
     llm_provider = effective_env.get("NSLAB_LLM_PROVIDER")
     if llm_provider:
         settings.llm_provider = llm_provider
+    evidence_policy = effective_env.get("NSLAB_EVIDENCE_POLICY")
+    if evidence_policy:
+        settings.evidence_policy = EvidencePolicy.parse(evidence_policy)
+    embedding_provider = effective_env.get("NSLAB_EMBEDDING_PROVIDER")
+    if embedding_provider:
+        settings.embedding_provider = embedding_provider
+    fallback_policy = effective_env.get("NSLAB_EVENT_CLUSTER_FALLBACK_POLICY")
+    if fallback_policy:
+        settings.event_cluster_fallback_policy = EmbeddingFallbackPolicy.parse(
+            fallback_policy
+        )
     web_provider = effective_env.get("NSLAB_WEB_PROVIDER")
     if web_provider:
         settings.web_provider = web_provider
@@ -361,6 +414,28 @@ def load_settings(
     stock_remote_url = effective_env.get("NSLAB_STOCK_WEB_REMOTE_URL")
     if stock_remote_url:
         settings.stock_web_remote_url = stock_remote_url
+    codex_command = effective_env.get("NSLAB_CODEX_COMMAND")
+    if codex_command:
+        settings.codex_command = codex_command
+    codex_model = effective_env.get("NSLAB_CODEX_MODEL")
+    if codex_model:
+        settings.codex_model = codex_model
+    codex_reasoning_effort = effective_env.get("NSLAB_CODEX_REASONING_EFFORT")
+    if codex_reasoning_effort:
+        settings.codex_reasoning_effort = codex_reasoning_effort
+    local_embedding_model = effective_env.get("NSLAB_LOCAL_EMBEDDING_MODEL")
+    if local_embedding_model:
+        settings.local_embedding_model = local_embedding_model
+    local_embedding_revision = effective_env.get(
+        "NSLAB_LOCAL_EMBEDDING_REVISION"
+    )
+    if local_embedding_revision:
+        settings.local_embedding_revision = local_embedding_revision
+    local_embedding_cache_path = effective_env.get(
+        "NSLAB_LOCAL_EMBEDDING_CACHE_PATH"
+    )
+    if local_embedding_cache_path:
+        settings.local_embedding_cache_path = Path(local_embedding_cache_path)
     max_concurrency = effective_env.get("NSLAB_MAX_CONCURRENCY")
     if max_concurrency:
         settings.limits.max_concurrency = int(max_concurrency)
@@ -387,6 +462,8 @@ def _model_profile_key(provider: str) -> str:
     normalized = provider.strip().lower()
     if normalized in {"openai", "responses", "openai-responses"}:
         return "openai"
+    if normalized in {"codex-oauth", "codex_oauth"}:
+        return "codex-oauth"
     return normalized or "default"
 
 
@@ -394,6 +471,10 @@ def _apply_llm_env_overrides(settings: Settings, env: Mapping[str, str]) -> None
     model = env.get("NSLAB_LLM_MODEL")
     if model:
         settings.llm.model = model
+    if _model_profile_key(settings.llm_provider) == "codex-oauth":
+        if settings.codex_model:
+            settings.llm.model = settings.codex_model
+        settings.llm.reasoning_effort = settings.codex_reasoning_effort
     if _model_profile_key(settings.llm_provider) == "openai":
         openai_model = env.get("NSLAB_OPENAI_MODEL")
         if openai_model:

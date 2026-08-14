@@ -390,7 +390,20 @@ class ProductionReleaseManifest(StrictMemoryContextModel):
     shadow_evaluation_id: str
     llm_provider: str
     llm_model: str
+    evidence_policy: str = "legacy-pre-policy"
+    web_required: bool = True
+    codex_cli_version: str | None = None
+    reasoning_effort: str | None = None
+    oauth_health_check_status: str | None = None
+    live_agent_call_count: int = 0
+    embedding_provider: str | None = None
     embedding_model: str
+    embedding_revision: str | None = None
+    embedding_artifact_sha256: Sha256 | None = None
+    embedding_dimensions: int = 0
+    embedding_normalization: str | None = None
+    embedding_device: str | None = None
+    embedding_fallback_policy: str = "legacy-pre-policy"
     web_provider: str
     price_provider: str
     audit_results: dict[str, bool]
@@ -425,6 +438,19 @@ class ProductionReleaseManifest(StrictMemoryContextModel):
             for token in ("mock", "deterministic", "fixture", "test")
         ):
             raise ValueError("production release cannot use a test or mock provider")
+        if self.evidence_policy == "csv-memory-only-strict":
+            if self.web_required or self.web_provider != "disabled":
+                raise ValueError(
+                    "CSV memory-only production releases require disabled web"
+                )
+            if self.embedding_fallback_policy != "fail-closed":
+                raise ValueError(
+                    "CSV memory-only production releases require fail-closed embeddings"
+                )
+            if self.embedding_dimensions < 1:
+                raise ValueError(
+                    "production release requires semantic embedding dimensions"
+                )
         return self
 
 

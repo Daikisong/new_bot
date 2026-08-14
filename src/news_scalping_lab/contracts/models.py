@@ -613,6 +613,24 @@ class BrainManifest(StrictModel):
     catalog_mode_reason: str | None = None
     deprecated_mode_alias: bool = False
     production_eligible: bool = False
+    evidence_policy: str = "csv-memory-only-strict"
+    web_provider: str = "disabled"
+    web_required: bool = False
+    llm_provider: str | None = None
+    llm_model: str | None = None
+    codex_cli_version: str | None = None
+    reasoning_effort: str | None = None
+    live_agent_call_count: int = 0
+    cache_hit_count: int = 0
+    structured_validation_status: str | None = None
+    oauth_health_check_status: str | None = None
+    embedding_provider: str | None = None
+    embedding_model: str | None = None
+    embedding_revision: str | None = None
+    embedding_artifact_sha256: str | None = None
+    embedding_dimensions: int = 0
+    embedding_normalization: str | None = None
+    embedding_device: str | None = None
     last_full_rebuild_at: datetime | None = None
     updated_episode_id: str | None = None
     accepted_episode_count: int
@@ -661,7 +679,14 @@ class ContextManifest(StrictModel):
     included_news_row_count: int = 0
     excluded_news_row_count: int = 0
     blind_context_mode: str = "NEWS_ONLY_STRICT"
+    evidence_policy: Literal[
+        "csv-memory-only-strict",
+        "postclose-web-audit-optional",
+    ] = "csv-memory-only-strict"
+    web_provider: str = "disabled"
+    web_required: bool = False
     blind_web_search_call_count: int = 0
+    external_web_evidence_count: int = 0
     blind_price_repository_access_count: int = 0
     blind_current_price_access_count: int = 0
     blind_artifact_sha256: str | None = None
@@ -865,6 +890,23 @@ class ContextManifest(StrictModel):
             str(self.beneficiary_graph_sha256)
         ):
             raise ValueError("beneficiary graph hash must be SHA-256")
+        if self.evidence_policy == "csv-memory-only-strict":
+            if self.web_required:
+                raise ValueError("CSV memory-only evidence cannot require web")
+            if self.blind_web_search_call_count != 0:
+                raise ValueError("CSV memory-only evidence forbids BLIND web calls")
+            if self.external_web_evidence_count != 0:
+                raise ValueError(
+                    "CSV memory-only evidence forbids external web evidence"
+                )
+            if (
+                self.web_sources
+                or self.candidate_web_source_ids
+                or self.candidate_web_check_count
+            ):
+                raise ValueError(
+                    "CSV memory-only evidence cannot bind web-derived sources"
+                )
         return self
 
 

@@ -20,20 +20,12 @@ def test_readme_quick_start_block_matches_exercised_commands() -> None:
         "python -m news_scalping_lab.cli init",
         "python -m news_scalping_lab.cli doctor",
         "python -m news_scalping_lab.cli news inspect docs/csv/news_20260624.csv",
-        "python -m news_scalping_lab.cli brain rebuild --mode catalog --allow-catalog",
-        "python -m news_scalping_lab.cli brain audit",
-        "python -m news_scalping_lab.cli warehouse rebuild",
-        "python -m news_scalping_lab.cli warehouse verify",
         (
             "python -m news_scalping_lab.cli analyze --news docs/csv/news_20260624.csv "
             "--trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 "
-            "--mode exhaustive --web-search"
+            "--mode exhaustive"
         ),
         "python -m news_scalping_lab.cli evaluate --trade-date 2026-06-24",
-        (
-            "python -m news_scalping_lab.cli brain update --episode 2026-06-24 "
-            "--mode catalog --allow-catalog"
-        ),
     ]
 
 
@@ -77,11 +69,10 @@ def test_readme_quick_start_commands_produce_demo_outputs(
             "2026-06-24",
             "--cutoff",
             "2026-06-24T08:59:59+09:00",
-            "--mode",
-            "exhaustive",
-            "--web-search",
-        ],
-    )
+                "--mode",
+                "exhaustive",
+            ],
+        )
 
     assert init.exit_code == 0, init.output
     assert doctor.exit_code == 0, doctor.output
@@ -125,7 +116,7 @@ def test_readme_quick_start_commands_produce_demo_outputs(
     assert (tmp_path / "runs" / "manifests" / f"{run_id}.json").exists()
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{run_id}.json")
     assert saved_manifest["mode"] == "exhaustive"
-    assert saved_manifest["blind_context_mode"] == "CUTOFF_SAFE_WEB_BLIND"
+    assert saved_manifest["blind_context_mode"] == "NEWS_ONLY_STRICT"
     assert saved_manifest["accepted_episode_count"] == saved_manifest["swept_episode_count"]
 
     inspected_context = RUNNER.invoke(app, ["context", "inspect", run_id])

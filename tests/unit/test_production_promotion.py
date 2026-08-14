@@ -139,7 +139,10 @@ def _importable_inventory_fixture(root: Path) -> Path:
                 "NSLAB_LLM_PROVIDER=openai",
                 "NSLAB_OPENAI_MODEL=gpt-5",
                 "NSLAB_OPENAI_EMBEDDING_MODEL=text-embedding-3-small",
-                "NSLAB_WEB_PROVIDER=brave",
+                "NSLAB_EVIDENCE_POLICY=csv-memory-only-strict",
+                "NSLAB_EMBEDDING_PROVIDER=openai",
+                "NSLAB_EVENT_CLUSTER_FALLBACK_POLICY=fail-closed",
+                "NSLAB_WEB_PROVIDER=disabled",
                 "NSLAB_PRICE_PROVIDER=stock-web",
                 "OPENAI_API_KEY=fixture-openai-key",
                 "NSLAB_SHADOW_EVALUATION_HMAC_KEY=fixture-shadow-key",
@@ -377,8 +380,21 @@ def _fixture_release_projection(
         "shadow_evaluation_id": "SHADOW-fixture",
         "llm_provider": "openai",
         "llm_model": "gpt-5",
-        "embedding_model": "llm_embedding:openai:text-embedding-3-small",
-        "web_provider": "brave",
+        "evidence_policy": "csv-memory-only-strict",
+        "web_required": False,
+        "codex_cli_version": None,
+        "reasoning_effort": "medium",
+        "oauth_health_check_status": "NOT_REQUIRED",
+        "live_agent_call_count": 1,
+        "embedding_provider": "openai",
+        "embedding_model": "real_embedding:openai:text-embedding-3-small",
+        "embedding_revision": None,
+        "embedding_artifact_sha256": None,
+        "embedding_dimensions": 1536,
+        "embedding_normalization": "provider-defined",
+        "embedding_device": "remote-api",
+        "embedding_fallback_policy": "fail-closed",
+        "web_provider": "disabled",
         "price_provider": "stock-web",
         "audit_results": {"all": True},
         "findings": [],
@@ -971,7 +987,7 @@ def test_production_activation_is_one_signed_pointer_switch(
         shadow_evaluation_id="SHADOW-production",
         llm_provider="openai",
         llm_model="gpt-5",
-        embedding_model="llm_embedding:openai:text-embedding-3-small",
+        embedding_model="real_embedding:openai:text-embedding-3-small",
         web_provider="brave",
         price_provider="stock-web",
         audit_results={"all": True},
@@ -1389,7 +1405,9 @@ def test_finalize_release_moves_verified_stage_without_activation(
         promotion_key=_INVENTORY_KEY,
         deep=False,
     )
-    assert current_after_normal_daily_outputs["passed"] is True
+    assert current_after_normal_daily_outputs["passed"] is True, (
+        current_after_normal_daily_outputs
+    )
 
     unsigned_company_memory = (
         release_project_root / "memory" / "company_memory" / "CM-attacker.json"

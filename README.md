@@ -25,19 +25,41 @@ python -m pip install -e ".[dev]"
 python -m news_scalping_lab.cli init
 python -m news_scalping_lab.cli doctor
 python -m news_scalping_lab.cli news inspect docs/csv/news_20260624.csv
-python -m news_scalping_lab.cli brain rebuild --mode catalog --allow-catalog
-python -m news_scalping_lab.cli brain audit
-python -m news_scalping_lab.cli warehouse rebuild
-python -m news_scalping_lab.cli warehouse verify
-python -m news_scalping_lab.cli analyze --news docs/csv/news_20260624.csv --trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 --mode exhaustive --web-search
+python -m news_scalping_lab.cli analyze --news docs/csv/news_20260624.csv --trade-date 2026-06-24 --cutoff 2026-06-24T08:59:59+09:00 --mode exhaustive
 python -m news_scalping_lab.cli evaluate --trade-date 2026-06-24
-python -m news_scalping_lab.cli brain update --episode 2026-06-24 --mode catalog --allow-catalog
 ```
+
+## Production Preparation
+
+Production BLIND analysis uses `CSV_MEMORY_ONLY_STRICT`: current CSV, cutoff-safe
+memory and brain artifacts, and D-1 stock-web data. General web search is disabled
+and a Brave key is not a production requirement. Post-close web review is a
+separate audit artifact and cannot mutate the sealed prediction.
+
+Authenticate with the installed Codex CLI, then prepare the deployment checkout:
+
+```bash
+codex login
+python -m news_scalping_lab.cli auth codex-status
+python -m news_scalping_lab.cli production bootstrap-local --evidence-policy csv-memory-only-strict --llm-provider codex-oauth --embedding-provider auto --stock-web-path <STOCK_WEB_PATH>
+python -m news_scalping_lab.cli production prepare-local --stock-web-path <STOCK_WEB_PATH>
+python -m news_scalping_lab.cli doctor --production-preflight
+```
+
+`bootstrap-local` creates five distinct HMAC keys in the ignored local `.env`.
+It never reads or copies Codex OAuth credentials. `prepare-local` uses the official
+Codex CLI login, probes embedding capability, and prepares the pinned local
+sentence-transformer when Codex exposes no embedding command. These commands do
+not import 606,737 records, run the 40-day shadow gate, or activate a release.
+
+See [production_activation_runbook.md](docs/0813/production_activation_runbook.md)
+for the attested import, shadow evaluation, finalize, activate, and rollback flow.
 
 ## Production Memory Index
 
-The deterministic JSONL vector index is for local tests. Production uses a real
-embedding provider and immutable DuckDB FTS/HNSW memory-cell snapshots.
+The deterministic JSONL vector index is for local tests only. Production uses the
+pinned real embedding provider with `FAIL_CLOSED` policy and immutable DuckDB
+FTS/HNSW memory-cell snapshots.
 
 ```bash
 python -m news_scalping_lab.cli memory rebuild-index --production

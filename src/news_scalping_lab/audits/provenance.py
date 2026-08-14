@@ -3429,6 +3429,21 @@ def _event_cluster_manifest_result_sha256(
                 "clustering_version": manifest.clustering_version,
                 "embedding_method": manifest.embedding_provider,
                 "embedding_status": manifest.embedding_status,
+                "embedding_model": manifest.embedding_model,
+                "embedding_revision": manifest.embedding_revision,
+                "embedding_artifact_sha256": (
+                    manifest.embedding_artifact_sha256
+                ),
+                "embedding_dimensions": manifest.embedding_dimensions,
+                "embedding_fallback_policy": (
+                    manifest.embedding_fallback_policy
+                ),
+                "deterministic_fallback_used": (
+                    manifest.deterministic_fallback_used
+                ),
+                "production_runtime_identity": (
+                    manifest.production_runtime_identity
+                ),
                 "clusters": [
                     {
                         "cluster_id": cluster.cluster_id,

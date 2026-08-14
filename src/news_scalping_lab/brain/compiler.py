@@ -34,6 +34,8 @@ from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.memory.index import ProductionMemoryIndex
+from news_scalping_lab.memory.runtime import create_production_embedding_provider
+from news_scalping_lab.policies import EvidencePolicy
 from news_scalping_lab.records.hashing import (
     brain_record_envelope_hashes,
     brain_record_envelope_sha256,
@@ -50,7 +52,7 @@ from news_scalping_lab.records.routing import (
     record_routing_metadata,
 )
 from news_scalping_lab.records.store import BrainRecordStore
-from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
+from news_scalping_lab.retrieval.production_embedding import embedding_identity
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
@@ -222,6 +224,11 @@ def _brain_llm_model_config(
     max_output_tokens = getattr(provider, "max_output_tokens", None)
     if isinstance(max_output_tokens, int) and not isinstance(max_output_tokens, bool):
         config["max_output_tokens"] = max_output_tokens
+    identity = getattr(provider, "identity", None)
+    if callable(identity):
+        payload = identity()
+        if isinstance(payload, dict):
+            config["agent_identity"] = payload
     return config
 
 
@@ -230,6 +237,49 @@ def _embedding_model_name(provider: LLMProvider) -> str | None:
         provider = provider.provider
     value = getattr(provider, "embedding_model", None)
     return value if isinstance(value, str) and value else None
+
+
+def _require_codex_oauth_health(
+    provider_name: str,
+    provider: LLMProvider,
+) -> dict[str, Any]:
+    if provider_name.strip().lower() not in {"codex-oauth", "codex_oauth"}:
+        return {}
+    health_status = getattr(provider, "health_status", None)
+    if not callable(health_status):
+        raise ValueError("Codex OAuth provider does not expose a health check")
+    health = health_status()
+    if not isinstance(health, dict) or health.get("logged_in") is not True:
+        raise ValueError("Codex OAuth health check is not ready")
+    return health
+
+
+def _previous_agent_identity(
+    root: Path,
+    *,
+    llm_provider: str,
+    llm_model: str,
+) -> dict[str, Any]:
+    path = root / "brain" / "current" / "brain_manifest.json"
+    try:
+        manifest = BrainManifest.model_validate(read_json(path))
+    except (OSError, ValueError):
+        return {}
+    if (
+        manifest.build_mode != "llm-full"
+        or manifest.llm_provider != llm_provider
+        or manifest.llm_model != llm_model
+        or manifest.live_agent_call_count < 1
+        or manifest.oauth_health_check_status != "PASS"
+    ):
+        return {}
+    return {
+        "codex_cli_version": manifest.codex_cli_version,
+        "live_agent_call_count": manifest.live_agent_call_count,
+        "cache_hit_count": manifest.cache_hit_count,
+        "structured_validation_status": manifest.structured_validation_status,
+        "oauth_health_check_status": manifest.oauth_health_check_status,
+    }
 
 
 LLM_PROMPT_PAYLOAD_DUPLICATE_FIELDS = {
@@ -360,6 +410,14 @@ class BrainCompiler:
 
     def _rebuild_llm_full(self) -> BrainManifest:
         settings = load_settings(self.root)
+        if settings.evidence_policy is not EvidencePolicy.CSV_MEMORY_ONLY_STRICT:
+            raise ValueError(
+                "llm-full production brain requires CSV_MEMORY_ONLY_STRICT"
+            )
+        if settings.web_provider.strip().lower() != "disabled":
+            raise ValueError("llm-full production brain requires disabled web")
+        if settings.event_cluster_fallback_policy.value != "fail-closed":
+            raise ValueError("llm-full production brain requires fail-closed embeddings")
         if settings.llm_provider.strip().lower() == "mock":
             raise ValueError("llm-full brain rebuild requires a real LLM provider")
         if settings.llm.provider.strip().lower() == "mock":
@@ -381,6 +439,10 @@ class BrainCompiler:
         base_provider = create_llm_provider(settings)
         if isinstance(base_provider, DeterministicMockLLMProvider):
             raise ValueError("llm-full brain rebuild cannot use the mock LLM provider")
+        current_oauth_health = _require_codex_oauth_health(
+            settings.llm_provider,
+            base_provider,
+        )
         provider = _trace_brain_llm_provider(settings, base_provider)
         previous_version = current_brain_version(self.root)
         all_accepted_episodes = self.store.list_accepted()
@@ -416,15 +478,15 @@ class BrainCompiler:
         }
         production_index = ProductionMemoryIndex(
             self.root,
-            embedding_provider=AsyncEmbeddingProviderAdapter(
-                provider,
-                embedding_method=_llm_embedding_method(
-                    provider_name=settings.llm_provider,
-                    model=_embedding_model_name(base_provider)
-                    or settings.llm.embedding_model
-                    or "configured",
+            embedding_provider=create_production_embedding_provider(
+                settings,
+                require_records=True,
+                provider=(
+                    base_provider
+                    if settings.embedding_provider.strip().lower()
+                    in {"openai", "llm"}
+                    else None
                 ),
-                production_capability_attested=True,
             ),
             production=True,
         )
@@ -455,6 +517,7 @@ class BrainCompiler:
         compiled_claims_text = "".join(
             claim.model_dump_json() + "\n" for claim in compiled_claims
         )
+        embedding_runtime = embedding_identity(production_index.embedding_provider)
         manifest = BrainManifest(
             brain_version=version,
             created_at=created_at,
@@ -463,6 +526,21 @@ class BrainCompiler:
             catalog_mode_reason=None,
             deprecated_mode_alias=False,
             production_eligible=True,
+            evidence_policy=settings.evidence_policy.value,
+            web_provider=settings.web_provider.strip().lower(),
+            web_required=False,
+            llm_provider=settings.llm_provider,
+            llm_model=settings.llm.model,
+            reasoning_effort=settings.llm.reasoning_effort,
+            embedding_provider=str(embedding_runtime["embedding_provider"]),
+            embedding_model=str(embedding_runtime["embedding_model"]),
+            embedding_revision=embedding_runtime["embedding_revision"],
+            embedding_artifact_sha256=embedding_runtime[
+                "embedding_artifact_sha256"
+            ],
+            embedding_dimensions=memory_snapshot.embedding_dimensions,
+            embedding_normalization=embedding_runtime["normalization"],
+            embedding_device=embedding_runtime["device"],
             last_full_rebuild_at=created_at,
             updated_episode_id=None,
             accepted_episode_count=len(covered_ids),
@@ -516,6 +594,18 @@ class BrainCompiler:
                 compiled_claims=compiled_claims,
             )
         )
+        provider_identity = getattr(base_provider, "identity", None)
+        agent_identity = provider_identity() if callable(provider_identity) else {}
+        if llm_compile.run_metadata.get("all_outputs_from_cache") is True:
+            previous_identity = _previous_agent_identity(
+                self.root,
+                llm_provider=settings.llm_provider,
+                llm_model=settings.llm.model,
+            )
+            if previous_identity:
+                agent_identity = previous_identity
+        if current_oauth_health:
+            agent_identity["oauth_health_check_status"] = "PASS"
         manifest = manifest.model_copy(
             update={
                 "production_memory_snapshot_id": memory_snapshot.snapshot_id,
@@ -526,6 +616,17 @@ class BrainCompiler:
                     memory_snapshot.source_generation_sha256
                 ),
                 "production_memory_as_of_cutoff": memory_snapshot.as_of_cutoff,
+                "codex_cli_version": agent_identity.get("codex_cli_version"),
+                "live_agent_call_count": agent_identity.get(
+                    "live_agent_call_count", 0
+                ),
+                "cache_hit_count": agent_identity.get("cache_hit_count", 0),
+                "structured_validation_status": agent_identity.get(
+                    "structured_validation_status"
+                ),
+                "oauth_health_check_status": agent_identity.get(
+                    "oauth_health_check_status"
+                ),
             }
         )
         self._publish_llm_full_transaction(

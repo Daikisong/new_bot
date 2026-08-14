@@ -225,6 +225,15 @@ class EventClusterManifest(StrictMemoryContextModel):
     clustering_version: str
     embedding_provider: str
     embedding_status: str
+    embedding_model: str | None = None
+    embedding_revision: str | None = None
+    embedding_artifact_sha256: Sha256 | None = None
+    embedding_dimensions: int = Field(default=0, ge=0)
+    embedding_fallback_policy: str = "allow-deterministic-fallback"
+    deterministic_fallback_used: bool = False
+    embedding_retry_count: int = Field(default=0, ge=0)
+    embedding_failure_type: str | None = None
+    production_runtime_identity: str = "local-or-test"
     embedding_batch_size: int = Field(ge=1)
     similarity_threshold: float = Field(ge=0.0, le=1.0)
     max_semantic_variants: int = Field(ge=1)
@@ -254,6 +263,13 @@ class EventClusterManifest(StrictMemoryContextModel):
             raise ValueError("input rows must equal assigned unique rows plus unassigned")
         if any(row > self.input_row_count for row in members):
             raise ValueError("cluster row number exceeds input_row_count")
+        if self.embedding_fallback_policy == "fail-closed":
+            if self.embedding_status != "PROVIDER":
+                raise ValueError("fail-closed clustering requires provider embeddings")
+            if self.deterministic_fallback_used:
+                raise ValueError("fail-closed clustering forbids deterministic fallback")
+            if self.embedding_dimensions < 1:
+                raise ValueError("fail-closed clustering requires embedding dimensions")
         return self
 
 

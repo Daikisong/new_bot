@@ -1,4 +1,9 @@
 .env
+.env.backup.*
+diagnostics/local_embedding_identity.json
+diagnostics/local_production_bootstrap_report.json
+diagnostics/local_production_bootstrap_report.md
+diagnostics/provider_identity_receipt.json
 .venv/
 __pycache__/
 *.py[cod]

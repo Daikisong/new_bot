@@ -14,10 +14,15 @@ from typing import Any
 from news_scalping_lab.contracts.memory_context import NewsDisposition
 from news_scalping_lab.contracts.models import NewsItem
 from news_scalping_lab.llm.base import EmbeddingProvider
+from news_scalping_lab.policies import EmbeddingFallbackPolicy
 from news_scalping_lab.retrieval.embedding import DeterministicHashEmbeddingProvider
+from news_scalping_lab.retrieval.production_embedding import (
+    ProductionEmbeddingUnavailableError,
+    embedding_identity,
+)
 from news_scalping_lab.utils import canonical_json, sha256_text, stable_id
 
-EVENT_CLUSTERING_VERSION = "semantic_complete_link_v1"
+EVENT_CLUSTERING_VERSION = "semantic_complete_link_v2"
 _NUMBER_PATTERN = re.compile(
     r"(?<![A-Za-z0-9])(?P<number>\d[\d,]*(?:\.\d+)?)\s*"
     r"(?P<unit>%|억원|조원|만원|원|억|조|만|달러)?"
@@ -67,6 +72,16 @@ class EventClusteringResult:
     clustering_version: str
     embedding_method: str
     embedding_status: str
+    embedding_provider: str
+    embedding_model: str | None
+    embedding_revision: str | None
+    embedding_artifact_sha256: str | None
+    embedding_dimensions: int
+    embedding_fallback_policy: str
+    deterministic_fallback_used: bool
+    embedding_retry_count: int
+    embedding_failure_type: str | None
+    production_runtime_identity: str
     input_row_count: int
     cutoff_safe_row_count: int
     audit_only_row_count: int
@@ -111,6 +126,11 @@ async def cluster_news_events(
     embedding_batch_size: int,
     similarity_threshold: float,
     max_semantic_variants: int = 32,
+    fallback_policy: EmbeddingFallbackPolicy | str = (
+        EmbeddingFallbackPolicy.ALLOW_DETERMINISTIC_FALLBACK
+    ),
+    max_retries: int = 0,
+    production_runtime_identity: str | None = None,
 ) -> EventClusteringResult:
     if embedding_batch_size < 1:
         raise ValueError("embedding_batch_size must be positive")
@@ -118,6 +138,9 @@ async def cluster_news_events(
         raise ValueError("similarity_threshold must be between zero and one")
     if max_semantic_variants < 1:
         raise ValueError("max_semantic_variants must be positive")
+    if max_retries < 0:
+        raise ValueError("max_retries cannot be negative")
+    normalized_fallback_policy = EmbeddingFallbackPolicy.parse(fallback_policy)
 
     ordered = sorted(items, key=lambda item: item.row_number)
     cutoff_safe = [item for item in ordered if window_start_at <= item.published_at <= cutoff_at]
@@ -128,21 +151,55 @@ async def cluster_news_events(
     ]
     exact_groups = _exact_groups(cutoff_safe)
     embedding_method = _embedding_provider_identity(embedding_provider)
-    embedding_status = "PROVIDER"
-    warnings: list[str] = []
-    try:
-        vectors = await _embed_in_batches(
-            embedding_provider,
-            [group.text for group in exact_groups],
-            batch_size=embedding_batch_size,
+    provider_identity = embedding_identity(embedding_provider)
+    configured_runtime_identity = (
+        production_runtime_identity or embedding_method
+    )
+    observed_method = provider_identity.get("embedding_method")
+    if (
+        production_runtime_identity is not None
+        and isinstance(observed_method, str)
+        and observed_method != production_runtime_identity
+    ):
+        raise ProductionEmbeddingUnavailableError(
+            "embedding provider runtime identity drift"
         )
-        _validate_vectors(vectors, expected_count=len(exact_groups))
-    except Exception as exc:
-        fallback = DeterministicHashEmbeddingProvider()
-        vectors = fallback.embed_texts([group.text for group in exact_groups])
-        embedding_method = fallback.embedding_method
-        embedding_status = "DETERMINISTIC_FALLBACK"
-        warnings.append(f"semantic_embedding_fallback:{type(exc).__name__}")
+    embedding_status = "PROVIDER"
+    deterministic_fallback_used = False
+    retry_count = 0
+    failure_type: str | None = None
+    warnings: list[str] = []
+    while True:
+        try:
+            vectors = await _embed_in_batches(
+                embedding_provider,
+                [group.text for group in exact_groups],
+                batch_size=embedding_batch_size,
+            )
+            _validate_vectors(vectors, expected_count=len(exact_groups))
+            break
+        except Exception as exc:
+            failure_type = type(exc).__name__
+            if retry_count < max_retries:
+                retry_count += 1
+                continue
+            if (
+                normalized_fallback_policy
+                is EmbeddingFallbackPolicy.FAIL_CLOSED
+            ):
+                raise ProductionEmbeddingUnavailableError(
+                    "production event clustering embedding failed closed: "
+                    f"{failure_type}"
+                ) from exc
+            fallback = DeterministicHashEmbeddingProvider()
+            vectors = fallback.embed_texts(
+                [group.text for group in exact_groups]
+            )
+            embedding_method = fallback.embedding_method
+            embedding_status = "DETERMINISTIC_FALLBACK"
+            deterministic_fallback_used = True
+            warnings.append(f"semantic_embedding_fallback:{failure_type}")
+            break
 
     semantic_groups = _complete_link_clusters(
         exact_groups,
@@ -158,6 +215,22 @@ async def cluster_news_events(
         clustering_version=EVENT_CLUSTERING_VERSION,
         embedding_method=embedding_method,
         embedding_status=embedding_status,
+        embedding_provider=str(
+            provider_identity.get("embedding_provider") or type(embedding_provider).__name__
+        ),
+        embedding_model=_optional_string(provider_identity.get("embedding_model")),
+        embedding_revision=_optional_string(
+            provider_identity.get("embedding_revision")
+        ),
+        embedding_artifact_sha256=_optional_string(
+            provider_identity.get("embedding_artifact_sha256")
+        ),
+        embedding_dimensions=(len(vectors[0]) if vectors else 0),
+        embedding_fallback_policy=normalized_fallback_policy.value,
+        deterministic_fallback_used=deterministic_fallback_used,
+        embedding_retry_count=retry_count,
+        embedding_failure_type=failure_type,
+        production_runtime_identity=configured_runtime_identity,
         input_row_count=len(ordered),
         cutoff_safe_row_count=len(cutoff_safe),
         audit_only_row_count=len(audit_only),
@@ -232,8 +305,18 @@ def _validate_vectors(vectors: Sequence[Sequence[float]], *, expected_count: int
     dimensions = {len(vector) for vector in vectors}
     if expected_count and (not dimensions or 0 in dimensions or len(dimensions) != 1):
         raise ValueError("embedding vectors must have one non-zero dimension")
-    if any(not math.isfinite(value) for vector in vectors for value in vector):
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, int | float)
+        or not math.isfinite(float(value))
+        for vector in vectors
+        for value in vector
+    ):
         raise ValueError("embedding vectors must contain only finite values")
+
+
+def _optional_string(value: object) -> str | None:
+    return value if isinstance(value, str) and value.strip() else None
 
 
 def _complete_link_clusters(

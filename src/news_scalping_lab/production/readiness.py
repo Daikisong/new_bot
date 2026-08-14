@@ -8,6 +8,9 @@ from typing import Any
 from news_scalping_lab.config import load_settings
 from news_scalping_lab.contracts.production import ProductionImportInventoryManifest
 from news_scalping_lab.evaluation.shadow import shadow_replay_readiness
+from news_scalping_lab.llm.codex_oauth_provider import codex_login_status
+from news_scalping_lab.policies import EvidencePolicy, web_required_for_policy
+from news_scalping_lab.production.bootstrap import PROVIDER_IDENTITY_RECEIPT
 from news_scalping_lab.production.inventory import (
     PRODUCTION_INVENTORY_DIR,
     verify_production_inventory_attestation,
@@ -89,6 +92,19 @@ def phase9_production_readiness(root: Path) -> dict[str, Any]:
         resolve_production=False,
         dotenv_root=resolved_root,
     )
+    evidence_policy = EvidencePolicy.parse(settings.evidence_policy)
+    web_required = web_required_for_policy(evidence_policy)
+    provider_receipt = _read_dict(runtime_root / PROVIDER_IDENTITY_RECEIPT)
+    embedding_ready = (
+        settings.embedding_provider.strip().lower()
+        not in {"", "mock", "deterministic", "deterministic-hash"}
+        and provider_receipt.get("embedding_identity") is not None
+    )
+    web_ready = (
+        settings.web_provider.strip().lower() == "disabled"
+        if evidence_policy is EvidencePolicy.CSV_MEMORY_ONLY_STRICT
+        else settings.web_provider.strip().lower() not in {"", "mock", "disabled"}
+    )
     record_index = _read_dict(
         runtime_root / "memory" / "record_index" / "manifest.json"
     )
@@ -103,13 +119,31 @@ def phase9_production_readiness(root: Path) -> dict[str, Any]:
         "llm": settings.llm_provider.strip().lower() not in {"", "mock"},
         "llm_model": settings.llm.model.strip().lower()
         not in {"", "deterministic-mock"},
-        "embedding": bool(settings.llm.embedding_model),
-        "web": settings.web_provider.strip().lower() not in {"", "mock"},
+        "embedding": embedding_ready,
+        "web": web_ready,
         "price": settings.price_provider.strip().lower() not in {"", "mock"},
     }
     for label, configured in provider_configured.items():
         if not configured:
             blockers.append(f"production {label} provider is not configured")
+    if evidence_policy is not EvidencePolicy.CSV_MEMORY_ONLY_STRICT:
+        blockers.append("production evidence policy is not CSV_MEMORY_ONLY_STRICT")
+    if settings.event_cluster_fallback_policy.value != "fail-closed":
+        blockers.append("production embedding fallback policy is not fail-closed")
+    oauth_health: dict[str, Any]
+    if settings.llm_provider.strip().lower() in {"codex-oauth", "codex_oauth"}:
+        try:
+            oauth_health = codex_login_status(settings.codex_command)
+        except OSError as exc:
+            oauth_health = {
+                "logged_in": False,
+                "status": "CLI_UNAVAILABLE",
+                "error": type(exc).__name__,
+            }
+        if oauth_health.get("logged_in") is not True:
+            blockers.append("Codex OAuth health check is not ready")
+    else:
+        oauth_health = {"logged_in": None, "status": "not_selected"}
     shadow = shadow_replay_readiness(runtime_root)
     if shadow.get("ready") is not True:
         blockers.append("Phase 8 production shadow gate is not ready")
@@ -147,6 +181,17 @@ def phase9_production_readiness(root: Path) -> dict[str, Any]:
         "active_release_id": current.get("release_id"),
         "runtime_project_root": relative_to_root(runtime_root, resolved_root),
         "provider_configured": provider_configured,
+        "evidence_policy": evidence_policy.value,
+        "web_required": web_required,
+        "web_provider": settings.web_provider.strip().lower(),
+        "web_policy_status": (
+            "READY_DISABLED_BY_DESIGN"
+            if evidence_policy is EvidencePolicy.CSV_MEMORY_ONLY_STRICT
+            and web_ready
+            else "NOT_READY"
+        ),
+        "embedding_fallback_policy": settings.event_cluster_fallback_policy.value,
+        "codex_oauth_health": oauth_health,
         "shadow_readiness": shadow,
     }
 

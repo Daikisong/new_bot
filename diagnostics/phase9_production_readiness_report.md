@@ -2,19 +2,14 @@
 
 - schema_version: `nslab.phase9_production_readiness.v1`
 - ready: `False`
-- blocker_count: `10`
+- blocker_count: `5`
 ## blockers
 
 - `Phase 8 production shadow gate is not ready`
 - `current record store does not match import-ready inventory`
 - `production batch import has not been staged`
-- `production embedding provider is not configured`
-- `production llm provider is not configured`
-- `production llm_model provider is not configured`
-- `production price provider is not configured`
-- `production promotion HMAC key is missing`
+- `production import inventory is not attested`
 - `production release is not active`
-- `production web provider is not configured`
 
 - inventory_id: `P9INV-974A99B55B152FF02040`
 - inventory_manifest_path: `runs/production_import/inventories/P9INV-974A99B55B152FF02040/production_import_inventory.json`
@@ -31,11 +26,22 @@
 - runtime_project_root: `.`
 ## provider_configured
 
-- llm: `False`
-- llm_model: `False`
-- embedding: `False`
-- web: `False`
-- price: `False`
+- llm: `True`
+- llm_model: `True`
+- embedding: `True`
+- web: `True`
+- price: `True`
+
+- evidence_policy: `csv-memory-only-strict`
+- web_required: `False`
+- web_provider: `disabled`
+- web_policy_status: `READY_DISABLED_BY_DESIGN`
+- embedding_fallback_policy: `fail-closed`
+## codex_oauth_health
+
+- logged_in: `True`
+- login_method: `chatgpt`
+- status: `PASS`
 
 ## shadow_readiness
 
@@ -49,6 +55,6 @@
 - brain_version: `brain-cc5af5ba71`
 - brain_build_mode: `catalog`
 - production_shadow_evaluation_ids: `[]`
-- checks: `{'minimum_calibration_and_holdout_days': False, 'production_memory_snapshot_ready': False, 'llm_full_production_brain': False, 'real_llm_provider_configured': False, 'real_price_provider_configured': False, 'real_web_provider_configured': False, 'shadow_pre_registration_key_configured': False, 'shadow_runner_attestation_key_configured': False, 'shadow_truth_attestation_key_configured': False, 'actual_a_to_f_source_closure_available': False}`
+- checks: `{'minimum_calibration_and_holdout_days': False, 'production_memory_snapshot_ready': False, 'llm_full_production_brain': False, 'real_llm_provider_configured': True, 'real_price_provider_configured': True, 'csv_memory_only_evidence_policy': True, 'web_disabled_by_design': True, 'real_web_provider_configured': True, 'shadow_pre_registration_key_configured': True, 'shadow_runner_attestation_key_configured': True, 'shadow_truth_attestation_key_configured': True, 'actual_a_to_f_source_closure_available': False}`
 - ready: `False`
-- blockers: `['actual_a_to_f_source_closure_available', 'llm_full_production_brain', 'minimum_calibration_and_holdout_days', 'production_memory_snapshot_ready', 'real_llm_provider_configured', 'real_price_provider_configured', 'real_web_provider_configured', 'shadow_pre_registration_key_configured', 'shadow_runner_attestation_key_configured', 'shadow_truth_attestation_key_configured']`
+- blockers: `['actual_a_to_f_source_closure_available', 'llm_full_production_brain', 'minimum_calibration_and_holdout_days', 'production_memory_snapshot_ready']`

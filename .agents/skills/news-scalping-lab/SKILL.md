@@ -45,7 +45,7 @@ nslab brain audit
 Daily blind analysis:
 
 ```bash
-nslab analyze --news path/to/news.csv --trade-date YYYY-MM-DD --cutoff YYYY-MM-DDT08:59:59+09:00 --mode exhaustive --web-search
+nslab analyze --news path/to/news.csv --trade-date YYYY-MM-DD --cutoff YYYY-MM-DDT08:59:59+09:00 --mode exhaustive
 ```
 
 Evaluation:
@@ -61,7 +61,12 @@ nslab audit hardcoding
 nslab audit lookahead --trade-date YYYY-MM-DD
 nslab audit provenance
 nslab audit coverage
+nslab audit postclose-web --trade-date YYYY-MM-DD --query "post-close review"
 ```
+
+Production BLIND analysis uses `CSV_MEMORY_ONLY_STRICT`; never pass
+`--web-search`. Optional web research is post-close only and its isolated audit
+artifact cannot modify a sealed prediction.
 
 ## Expected Outputs
 

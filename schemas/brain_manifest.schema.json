@@ -27,6 +27,11 @@
       "title": "Build Mode",
       "type": "string"
     },
+    "cache_hit_count": {
+      "default": 0,
+      "title": "Cache Hit Count",
+      "type": "integer"
+    },
     "catalog_mode_reason": {
       "anyOf": [
         {
@@ -74,6 +79,18 @@
       },
       "title": "Claim Ids",
       "type": "array"
+    },
+    "codex_cli_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Codex Cli Version"
     },
     "compiled_claim_count": {
       "default": 0,
@@ -124,6 +141,88 @@
       "title": "Deprecated Mode Alias",
       "type": "boolean"
     },
+    "embedding_artifact_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Artifact Sha256"
+    },
+    "embedding_device": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Device"
+    },
+    "embedding_dimensions": {
+      "default": 0,
+      "title": "Embedding Dimensions",
+      "type": "integer"
+    },
+    "embedding_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Model"
+    },
+    "embedding_normalization": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Normalization"
+    },
+    "embedding_provider": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Provider"
+    },
+    "embedding_revision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Revision"
+    },
+    "evidence_policy": {
+      "default": "csv-memory-only-strict",
+      "title": "Evidence Policy",
+      "type": "string"
+    },
     "excluded_future_episode_count": {
       "default": 0,
       "title": "Excluded Future Episode Count",
@@ -170,6 +269,47 @@
       ],
       "default": null,
       "title": "Last Full Rebuild At"
+    },
+    "live_agent_call_count": {
+      "default": 0,
+      "title": "Live Agent Call Count",
+      "type": "integer"
+    },
+    "llm_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Llm Model"
+    },
+    "llm_provider": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Llm Provider"
+    },
+    "oauth_health_check_status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Oauth Health Check Status"
     },
     "production_eligible": {
       "default": false,
@@ -225,6 +365,18 @@
       "default": null,
       "title": "Production Memory Source Generation Sha256"
     },
+    "reasoning_effort": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reasoning Effort"
+    },
     "schema_version": {
       "default": "nslab.brain_manifest.v1",
       "title": "Schema Version",
@@ -237,6 +389,18 @@
       "title": "Source Hashes",
       "type": "object"
     },
+    "structured_validation_status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Structured Validation Status"
+    },
     "updated_episode_id": {
       "anyOf": [
         {
@@ -248,6 +412,16 @@
       ],
       "default": null,
       "title": "Updated Episode Id"
+    },
+    "web_provider": {
+      "default": "disabled",
+      "title": "Web Provider",
+      "type": "string"
+    },
+    "web_required": {
+      "default": false,
+      "title": "Web Required",
+      "type": "boolean"
     }
   },
   "required": [

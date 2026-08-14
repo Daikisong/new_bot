@@ -94,19 +94,90 @@
       "title": "Cutoff At",
       "type": "string"
     },
+    "deterministic_fallback_used": {
+      "default": false,
+      "title": "Deterministic Fallback Used",
+      "type": "boolean"
+    },
     "duplicate_assignment_count": {
       "minimum": 0,
       "title": "Duplicate Assignment Count",
       "type": "integer"
+    },
+    "embedding_artifact_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Artifact Sha256"
     },
     "embedding_batch_size": {
       "minimum": 1,
       "title": "Embedding Batch Size",
       "type": "integer"
     },
+    "embedding_dimensions": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Embedding Dimensions",
+      "type": "integer"
+    },
+    "embedding_failure_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Failure Type"
+    },
+    "embedding_fallback_policy": {
+      "default": "allow-deterministic-fallback",
+      "title": "Embedding Fallback Policy",
+      "type": "string"
+    },
+    "embedding_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Model"
+    },
     "embedding_provider": {
       "title": "Embedding Provider",
       "type": "string"
+    },
+    "embedding_retry_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Embedding Retry Count",
+      "type": "integer"
+    },
+    "embedding_revision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Revision"
     },
     "embedding_status": {
       "title": "Embedding Status",
@@ -126,6 +197,11 @@
       "minimum": 1,
       "title": "Max Semantic Variants",
       "type": "integer"
+    },
+    "production_runtime_identity": {
+      "default": "local-or-test",
+      "title": "Production Runtime Identity",
+      "type": "string"
     },
     "run_id": {
       "title": "Run Id",

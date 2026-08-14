@@ -163,6 +163,8 @@ def test_preopen_report_surfaces_candidate_evidence_and_past_cases() -> None:
     manifest = ContextManifest(
         run_id="RUN-report",
         mode="exhaustive",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="mock",
         trade_date=trade_day,
         cutoff_at=cutoff,
         as_of=cutoff,

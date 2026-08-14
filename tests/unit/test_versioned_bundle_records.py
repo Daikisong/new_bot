@@ -49,6 +49,7 @@ from news_scalping_lab.research_import.versioned_bundle import (
     import_versioned_bundle,
     inspect_versioned_bundle,
 )
+from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import audit_training_exports, export_training
 from news_scalping_lab.utils import KST, canonical_json, file_sha256, sha256_text
@@ -1985,9 +1986,20 @@ def test_imported_bundle_llm_full_rebuild_passes_deep_brain_audit(
     research_store.accept(episode.episode_id)
     configs = tmp_path / "configs"
     configs.mkdir(parents=True, exist_ok=True)
-    (configs / "default.yaml").write_text("llm_provider: openai\n", encoding="utf-8")
+    (configs / "default.yaml").write_text(
+        "llm_provider: openai\n"
+        "evidence_policy: csv-memory-only-strict\n"
+        "embedding_provider: openai\n"
+        "event_cluster_fallback_policy: fail-closed\n"
+        "web_provider: disabled\n",
+        encoding="utf-8",
+    )
     (configs / "models.yaml").write_text(
-        "openai:\n  provider: openai\n  model: audit-brain-model\n  max_retries: 0\n",
+        "openai:\n"
+        "  provider: openai\n"
+        "  model: audit-brain-model\n"
+        "  embedding_model: audit-brain-embedding\n"
+        "  max_retries: 0\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("NSLAB_LLM_PROVIDER", "openai")
@@ -1995,6 +2007,15 @@ def test_imported_bundle_llm_full_rebuild_passes_deep_brain_audit(
         compiler_module,
         "create_llm_provider",
         lambda settings: _AuditBrainLLM(),
+    )
+    monkeypatch.setattr(
+        compiler_module,
+        "create_production_embedding_provider",
+        lambda settings, require_records, provider=None: AsyncEmbeddingProviderAdapter(
+            provider,
+            embedding_method="real_embedding:openai:audit-brain-embedding",
+            production_capability_attested=True,
+        ),
     )
 
     manifest = BrainCompiler(tmp_path).rebuild(mode="llm-full")

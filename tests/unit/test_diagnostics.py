@@ -51,6 +51,7 @@ def test_doctor_report_includes_environment_api_schema_vector_and_warehouse(
     settings = Settings(
         project_root=tmp_path,
         llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
         web_provider="brave",
         stock_web_path=tmp_path / "stock-web",
         stock_web_cache_enabled=True,
@@ -501,7 +502,12 @@ def test_production_readiness_rejects_missing_latest_brain_diversity_summary(
 
 
 def test_production_readiness_rejects_missing_latest_brain_audit(tmp_path) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     report = _production_base_report()
     report["brain"] = {"coverage": {"status": "complete"}}
@@ -722,7 +728,12 @@ def test_doctor_report_exposes_warehouse_duplicate_and_weight_details(
 
 
 def test_production_readiness_requires_synced_warehouse_projection(tmp_path) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     report = {
         "api_connections": {
@@ -907,7 +918,12 @@ def test_doctor_report_readiness_flags_missing_required_api_keys(
 ) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("BRAVE_SEARCH_API_KEY", raising=False)
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     ensure_project_dirs(settings)
     export_json_schemas(tmp_path / "schemas")
@@ -925,7 +941,7 @@ def test_doctor_report_readiness_flags_missing_required_api_keys(
     }
 
 
-def test_doctor_production_report_requires_real_api_connections_for_mock_defaults(
+def test_doctor_production_report_does_not_force_unselected_api_connections(
     tmp_path,
     monkeypatch,
 ) -> None:
@@ -943,10 +959,10 @@ def test_doctor_production_report_requires_real_api_connections_for_mock_default
     assert normal_report["api_connections"]["brave_search"]["required"] is False
     assert normal_report["api_connections"]["brave_search"]["status"] == "not_required"
     assert normal_report["brain"]["audit"]["deep"] is False
-    assert production_report["api_connections"]["openai"]["required"] is True
+    assert production_report["api_connections"]["openai"]["required"] is False
     assert production_report["api_connections"]["openai"]["configured"] is False
-    assert production_report["api_connections"]["openai"]["status"] == "missing_api_key"
-    assert production_report["api_connections"]["brave_search"]["required"] is True
+    assert production_report["api_connections"]["openai"]["status"] == "not_required"
+    assert production_report["api_connections"]["brave_search"]["required"] is False
     assert production_report["api_connections"]["brave_search"]["configured"] is False
     assert production_report["brain"]["audit"]["deep"] is True
     compile_report = json.loads(
@@ -955,15 +971,11 @@ def test_doctor_production_report_requires_real_api_connections_for_mock_default
         )
     )
     assert compile_report["latest_brain_audit"]["deep"] is True
-    assert (
-        production_report["api_connections"]["brave_search"]["status"]
-        == "missing_api_key"
+    assert production_report["api_connections"]["brave_search"]["status"] == (
+        "not_required"
     )
-    assert production_report["readiness"]["passed"] is False
-    assert production_report["readiness"]["findings"] == [
-        "brave_search: required API key is missing",
-        "openai: required API key is missing",
-    ]
+    assert production_report["readiness"]["passed"] is True
+    assert production_report["readiness"]["findings"] == []
 
 
 def test_production_readiness_requires_deep_latest_brain_audit(tmp_path) -> None:
@@ -1734,7 +1746,13 @@ def test_production_readiness_rejects_semantic_index_without_disk_manifest(
 
 
 def test_production_readiness_accepts_semantic_index_record_evidence(tmp_path) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        embedding_provider="openai",
+        event_cluster_fallback_policy="fail-closed",
+        web_provider="disabled",
+    )
     settings.llm.provider = "openai"
     settings.llm.embedding_model = "text-embedding-3-small"
     current = tmp_path / "brain" / "current"
@@ -1749,7 +1767,7 @@ def test_production_readiness_accepts_semantic_index_record_evidence(tmp_path) -
     )
     vector_index = _write_semantic_index_fixture(
         tmp_path,
-        embedding_method="llm_embedding:openai:text-embedding-3-small",
+        embedding_method="real_embedding:openai:text-embedding-3-small",
     )
     report = {
         "api_connections": {"openai": {"status": "configured_not_called"}},
@@ -1773,7 +1791,13 @@ def test_production_readiness_accepts_semantic_index_record_evidence(tmp_path) -
 def test_production_readiness_uses_openai_default_embedding_model_when_unset(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        embedding_provider="openai",
+        event_cluster_fallback_policy="fail-closed",
+        web_provider="disabled",
+    )
     settings.llm.provider = "openai"
     current = tmp_path / "brain" / "current"
     current.mkdir(parents=True)
@@ -1809,7 +1833,13 @@ def test_production_readiness_uses_openai_default_embedding_model_when_unset(
 def test_production_readiness_accepts_matching_on_disk_semantic_index_manifest(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        embedding_provider="openai",
+        event_cluster_fallback_policy="fail-closed",
+        web_provider="disabled",
+    )
     settings.llm.provider = "openai"
     settings.llm.embedding_model = "text-embedding-3-small"
     current = tmp_path / "brain" / "current"
@@ -6488,7 +6518,10 @@ def test_production_readiness_rejects_mock_web_provider(tmp_path) -> None:
     production = production_readiness_report(report, settings)
 
     assert production["passed"] is False
-    assert "web: mock provider cannot supply production evidence" in production["findings"]
+    assert (
+        "web: CSV_MEMORY_ONLY_STRICT requires NSLAB_WEB_PROVIDER=disabled"
+        in production["findings"]
+    )
     assert production["required_environment"]["NSLAB_WEB_PROVIDER"] == "brave"
     assert production["required_environment"]["BRAVE_SEARCH_API_KEY"] == "<required>"
 
@@ -6496,7 +6529,12 @@ def test_production_readiness_rejects_mock_web_provider(tmp_path) -> None:
 def test_production_readiness_rejects_missing_web_context_manifest(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     report = {
         "api_connections": {
@@ -6526,7 +6564,12 @@ def test_production_readiness_rejects_missing_web_context_manifest(
 def test_production_readiness_rejects_missing_web_evidence_artifact_refs(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     manifest_dir.mkdir(parents=True)
@@ -6566,7 +6609,12 @@ def test_production_readiness_rejects_missing_web_evidence_artifact_refs(
 def test_production_readiness_rejects_empty_web_evidence_artifact(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     web_source_path = (
@@ -6618,7 +6666,12 @@ def test_production_readiness_rejects_empty_web_evidence_artifact(
 def test_production_readiness_rejects_web_evidence_source_id_mismatch(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     web_source_path = (
@@ -6687,7 +6740,12 @@ def test_production_readiness_rejects_web_evidence_source_id_mismatch(
 def test_production_readiness_uses_text_hash_for_web_evidence_artifacts(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     web_source_path = (
@@ -6742,7 +6800,12 @@ def test_production_readiness_uses_text_hash_for_web_evidence_artifacts(
 def test_production_readiness_rejects_web_evidence_rows_without_source_id(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     web_source_path = (
@@ -6811,7 +6874,12 @@ def test_production_readiness_rejects_web_evidence_rows_without_source_id(
 def test_production_readiness_rejects_nested_only_web_evidence_source_id(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     web_source_path = (
@@ -6896,7 +6964,12 @@ def test_production_readiness_rejects_nested_only_web_evidence_source_id(
 def test_production_readiness_rejects_invalid_web_evidence_json_artifact(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     context_path = (
@@ -6956,7 +7029,12 @@ def test_production_readiness_rejects_invalid_web_evidence_json_artifact(
 def test_production_readiness_rejects_mock_web_evidence_artifacts(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     web_source_path = (
@@ -7023,7 +7101,12 @@ def test_production_readiness_rejects_mock_web_evidence_artifacts(
 def test_production_readiness_rejects_mock_web_provider_metadata(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     candidate_path = (
@@ -7107,7 +7190,12 @@ def test_production_readiness_rejects_mock_web_provider_metadata(
 def test_production_readiness_rejects_placeholder_web_evidence_urls(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     web_source_path = (
@@ -7172,7 +7260,12 @@ def test_production_readiness_rejects_placeholder_web_evidence_urls(
 def test_production_readiness_accepts_live_web_evidence_artifacts(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     web_source_path = (
@@ -7254,7 +7347,12 @@ def test_production_readiness_accepts_live_web_evidence_artifacts(
 def test_production_readiness_rejects_web_evidence_without_cutoff_verification(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     web_source_path = (
@@ -7321,7 +7419,12 @@ def test_production_readiness_rejects_web_evidence_without_cutoff_verification(
 def test_production_readiness_rejects_cutoff_failed_web_evidence(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     web_source_path = (
@@ -7389,7 +7492,12 @@ def test_production_readiness_rejects_cutoff_failed_web_evidence(
 def test_production_readiness_rejects_web_context_manifest_schema_mismatch(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     web_source_path = (
@@ -7457,7 +7565,12 @@ def test_production_readiness_rejects_web_context_manifest_schema_mismatch(
 def test_production_readiness_rejects_absolute_web_evidence_artifact_refs(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     web_source_path = (
@@ -7524,7 +7637,12 @@ def test_production_readiness_rejects_absolute_web_evidence_artifact_refs(
 def test_production_readiness_rejects_web_evidence_artifact_sha_mismatch(
     tmp_path,
 ) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     manifest_dir = tmp_path / "runs" / "manifests"
     web_source_path = (
@@ -7596,7 +7714,12 @@ def test_production_readiness_rejects_web_evidence_artifact_sha_mismatch(
 
 
 def test_production_readiness_requires_brave_api_key_for_live_web(tmp_path) -> None:
-    settings = Settings(project_root=tmp_path, llm_provider="openai", web_provider="brave")
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="openai",
+        evidence_policy="postclose-web-audit-optional",
+        web_provider="brave",
+    )
     settings.llm.provider = "openai"
     report = {
         "api_connections": {

@@ -116,22 +116,22 @@ ready entries SHA-256    95aee84402dbc3ff5c06161043d388b42b46ae796b595702a420dcd
 
 ## 5. 현재 production readiness
 
-현재 root의 Phase 9 readiness는 `ready=false`이고 blocker는 10개다.
+Codex OAuth/CSV-only/local embedding bootstrap 이후 현재 root의 Phase 9 readiness는
+`ready=false`이고 blocker는 5개다.
 
 ```text
 current live record store                  968 / expected 606,737
-production promotion HMAC key              missing
+production import inventory attestation    missing
+current store vs import-ready inventory    mismatch
 production batch import                    not staged
-real LLM/model/embedding provider          missing
-real web provider                          missing
-real price provider                        missing
 Phase 8 historical A~F production gate     not ready
 active production release                  missing
 ```
 
-세부 Phase 8 blocker에는 paired historical day 1/40, catalog brain, production memory snapshot 부재,
-shadow 세 종류 attestation key 부재가 포함된다. 따라서 inventory는 content 기준 `ready_for_import=true`지만
-operator authorization은 없고, stage import·llm-full build·activation은 실행하지 않았다.
+Codex OAuth health, pinned local real embedding, stock-web price/research_daily, promotion/shadow HMAC,
+CSV-only/disabled-web policy는 준비됐다. 세부 Phase 8 blocker에는 paired historical day 1/40,
+catalog brain, production memory snapshot 부재가 포함된다. 따라서 inventory는 content 기준
+`ready_for_import=true`지만 아직 attestation되지 않았고, stage import·llm-full build·activation은 실행하지 않았다.
 
 ```text
 production import performed      false

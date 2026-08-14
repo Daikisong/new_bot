@@ -1,5 +1,8 @@
 project_name: news-scalping-lab
 llm_provider: mock
+evidence_policy: csv-memory-only-strict
+embedding_provider: mock
+event_cluster_fallback_policy: allow-deterministic-fallback
 web_provider: mock
 price_provider: mock
 brave_search_api_key_env: BRAVE_SEARCH_API_KEY
@@ -12,6 +15,12 @@ stock_web_path: null
 stock_web_remote_url: https://github.com/Songdaiki/stock-web.git
 stock_web_cache_path: data/cache/stock-web
 stock_web_cache_enabled: false
+codex_command: codex
+codex_model: null
+codex_reasoning_effort: high
+local_embedding_model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+local_embedding_revision: e8f8c211226b894fcb81acc59f3b34ba3efd5f42
+local_embedding_cache_path: data/cache/local-embedding
 default_mode: exhaustive
 timezone: Asia/Seoul
 output_dirs:

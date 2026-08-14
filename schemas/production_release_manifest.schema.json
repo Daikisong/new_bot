@@ -49,6 +49,18 @@
       "title": "Brain Version",
       "type": "string"
     },
+    "codex_cli_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Codex Cli Version"
+    },
     "created_at": {
       "format": "date-time",
       "title": "Created At",
@@ -57,8 +69,84 @@
     "doctor_report": {
       "$ref": "#/$defs/ArtifactReference"
     },
+    "embedding_artifact_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Artifact Sha256"
+    },
+    "embedding_device": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Device"
+    },
+    "embedding_dimensions": {
+      "default": 0,
+      "title": "Embedding Dimensions",
+      "type": "integer"
+    },
+    "embedding_fallback_policy": {
+      "default": "legacy-pre-policy",
+      "title": "Embedding Fallback Policy",
+      "type": "string"
+    },
     "embedding_model": {
       "title": "Embedding Model",
+      "type": "string"
+    },
+    "embedding_normalization": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Normalization"
+    },
+    "embedding_provider": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Provider"
+    },
+    "embedding_revision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Embedding Revision"
+    },
+    "evidence_policy": {
+      "default": "legacy-pre-policy",
+      "title": "Evidence Policy",
       "type": "string"
     },
     "finding_count": {
@@ -79,6 +167,11 @@
     "inventory_manifest": {
       "$ref": "#/$defs/ArtifactReference"
     },
+    "live_agent_call_count": {
+      "default": 0,
+      "title": "Live Agent Call Count",
+      "type": "integer"
+    },
     "llm_model": {
       "title": "Llm Model",
       "type": "string"
@@ -94,6 +187,18 @@
     "memory_snapshot_manifest": {
       "$ref": "#/$defs/ArtifactReference"
     },
+    "oauth_health_check_status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Oauth Health Check Status"
+    },
     "policy_version": {
       "const": "production_release_policy.v1",
       "default": "production_release_policy.v1",
@@ -107,6 +212,18 @@
     "production_ready": {
       "title": "Production Ready",
       "type": "boolean"
+    },
+    "reasoning_effort": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reasoning Effort"
     },
     "record_artifact_root_sha256": {
       "pattern": "^[0-9a-f]{64}$",
@@ -163,6 +280,11 @@
     "web_provider": {
       "title": "Web Provider",
       "type": "string"
+    },
+    "web_required": {
+      "default": true,
+      "title": "Web Required",
+      "type": "boolean"
     }
   },
   "required": [

@@ -8,12 +8,13 @@ from typing import Any
 
 from news_scalping_lab.config import Settings
 from news_scalping_lab.llm.factory import create_llm_provider
-from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.memory.index import ProductionMemoryIndex
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
-
-OPENAI_LLM_PROVIDER_ALIASES = {"openai", "responses", "openai-responses"}
+from news_scalping_lab.retrieval.production_embedding import (
+    ProductionEmbeddingUnavailableError,
+    configured_embedding_adapter,
+)
 
 
 def create_production_embedding_provider(
@@ -22,38 +23,42 @@ def create_production_embedding_provider(
     require_records: bool,
     provider: Any | None = None,
     provider_factory: Callable[[Settings], Any] | None = None,
-    module_loader: Callable[[str], Any] = import_module,
+    module_loader: Callable[[str], Any] | None = None,
 ) -> AsyncEmbeddingProviderAdapter:
-    provider_name = settings.llm_provider.strip().lower()
-    if provider_name == "mock" or settings.llm.provider.strip().lower() == "mock":
-        raise ValueError("production memory index requires a real LLM provider")
     if (
         require_records
         and next(BrainRecordStore(settings.project_root).iter_records(), None) is None
     ):
         raise ValueError("production memory index requires normalized brain records")
-    if provider_name in OPENAI_LLM_PROVIDER_ALIASES:
+    selected = settings.embedding_provider.strip().lower()
+    if selected == "openai":
         if not settings.env_value("OPENAI_API_KEY"):
-            raise ValueError("production memory index requires OPENAI_API_KEY")
+            raise ValueError(
+                "production memory index requires OPENAI_API_KEY"
+            )
+        loader = module_loader or import_module
         try:
-            module = module_loader("openai")
+            openai_module = loader("openai")
         except ImportError as exc:
             raise ValueError(
                 "production vector index rebuild requires the openai SDK"
             ) from exc
-        if not hasattr(module, "AsyncOpenAI"):
+        if not hasattr(openai_module, "AsyncOpenAI"):
             raise ValueError(
-                "production memory index requires an openai SDK exposing AsyncOpenAI"
+                "production vector index rebuild requires an openai SDK "
+                "exposing AsyncOpenAI"
             )
-    factory = provider_factory or create_llm_provider
-    provider = provider if provider is not None else factory(settings)
-    if isinstance(provider, DeterministicMockLLMProvider):
-        raise ValueError("production memory index cannot use the mock LLM provider")
-    return AsyncEmbeddingProviderAdapter(
-        provider,
-        embedding_method=production_embedding_method(settings, provider),
-        production_capability_attested=True,
-    )
+    if provider is None and selected in {"openai", "llm"}:
+        factory = provider_factory or create_llm_provider
+        provider = factory(settings)
+    try:
+        return configured_embedding_adapter(
+            settings,
+            production=True,
+            llm_provider=provider,
+        )
+    except ProductionEmbeddingUnavailableError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def create_production_memory_index(
@@ -72,7 +77,13 @@ def create_production_memory_index(
 
 
 def production_embedding_method(settings: Settings, provider: Any) -> str:
+    direct_method = getattr(provider, "embedding_method", None)
+    if isinstance(direct_method, str) and direct_method.strip():
+        return direct_method.strip()
     base_provider = getattr(provider, "provider", provider)
+    direct_method = getattr(base_provider, "embedding_method", None)
+    if isinstance(direct_method, str) and direct_method.strip():
+        return direct_method.strip()
     actual_model = getattr(base_provider, "embedding_model", None)
     configured_model = settings.llm.embedding_model
     if isinstance(actual_model, str) and actual_model.strip():
@@ -83,4 +94,4 @@ def production_embedding_method(settings: Settings, provider: Any) -> str:
         model = configured_model.strip()
     else:
         raise ValueError("production embedding provider identity is unavailable")
-    return f"llm_embedding:{settings.llm_provider.strip().lower()}:{model}"
+    return f"real_embedding:{settings.embedding_provider.strip().lower()}:{model}"

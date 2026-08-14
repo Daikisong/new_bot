@@ -21,6 +21,14 @@ Company memory derived from `company_memory_delta` records must respect both
 `known_at` and `available_from`; never backfill future relationships into a
 historical analysis context.
 
+Production BLIND evidence policy is `CSV_MEMORY_ONLY_STRICT`. General web search
+must remain disabled during BLIND inference, and all Phase 8 arms must use the
+same zero-web evidence surface. Web is allowed only through the separate
+post-close audit command and must not mutate predictions, ranks, or training data.
+Production LLM calls use the official Codex CLI OAuth session without reading or
+copying credential files. Production embedding uses a real provider with
+`FAIL_CLOSED`; deterministic fallback is test/local-only.
+
 Test commands:
 
 ```bash

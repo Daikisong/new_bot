@@ -519,6 +519,15 @@
       "default": null,
       "title": "Event Clustering Result Sha256"
     },
+    "evidence_policy": {
+      "default": "csv-memory-only-strict",
+      "enum": [
+        "csv-memory-only-strict",
+        "postclose-web-audit-optional"
+      ],
+      "title": "Evidence Policy",
+      "type": "string"
+    },
     "excluded_candidate_web_check_artifact": {
       "anyOf": [
         {
@@ -623,6 +632,11 @@
       ],
       "default": null,
       "title": "Excluded Web Source Sha256"
+    },
+    "external_web_evidence_count": {
+      "default": 0,
+      "title": "External Web Evidence Count",
+      "type": "integer"
     },
     "final_synthesis_context_artifact": {
       "anyOf": [
@@ -1365,12 +1379,22 @@
       "title": "Unexpected Swept Record Ids",
       "type": "array"
     },
+    "web_provider": {
+      "default": "disabled",
+      "title": "Web Provider",
+      "type": "string"
+    },
     "web_queries": {
       "items": {
         "type": "string"
       },
       "title": "Web Queries",
       "type": "array"
+    },
+    "web_required": {
+      "default": false,
+      "title": "Web Required",
+      "type": "boolean"
     },
     "web_source_artifact": {
       "anyOf": [

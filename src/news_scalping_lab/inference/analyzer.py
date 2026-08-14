@@ -85,6 +85,7 @@ from news_scalping_lab.inference.red_team import (
 from news_scalping_lab.ingest.news import load_news_csv
 from news_scalping_lab.llm.base import (
     TOKEN_COUNTING_VERSION,
+    EmbeddingProvider,
     LLMProvider,
     count_provider_tokens,
 )
@@ -103,6 +104,7 @@ from news_scalping_lab.memory.index import (
     inspect_current_memory_index,
 )
 from news_scalping_lab.memory.runtime import production_embedding_method
+from news_scalping_lab.policies import EvidencePolicy, web_required_for_policy
 from news_scalping_lab.prices.base import (
     BlindPriceAccessError,
     BlindPriceGuard,
@@ -123,6 +125,10 @@ from news_scalping_lab.records.routing import (
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.reporting.render import render_preopen_report
 from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
+from news_scalping_lab.retrieval.production_embedding import (
+    ProductionEmbeddingUnavailableError,
+    create_configured_embedding_provider,
+)
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
@@ -143,6 +149,7 @@ from news_scalping_lab.warehouse import WarehouseStore
 from news_scalping_lab.web.factory import create_web_provider
 from news_scalping_lab.web.provider import (
     TemporalWebGuard,
+    UnexpectedWebAccessError,
     WebResearchProvider,
     WebSearchExclusion,
     WebSearchResult,
@@ -219,12 +226,20 @@ class DailyAnalyzer:
         retrieval: MemoryStore | None = None,
         price_source: PriceSource | None = None,
         web_provider: WebResearchProvider | None = None,
+        embedding_provider: EmbeddingProvider | None = None,
     ) -> None:
         self.settings = settings
         self.root = settings.project_root
         base_llm = llm or create_llm_provider(settings)
         self.llm_model_config = self._llm_model_config(base_llm)
         self.llm = self._trace_llm(base_llm)
+        self.embedding_provider = embedding_provider or create_configured_embedding_provider(
+            settings,
+            production=(
+                settings.event_cluster_fallback_policy.value == "fail-closed"
+            ),
+            llm_provider=base_llm,
+        )
         self.fallback_llm = DeterministicMockLLMProvider()
         self.retrieval = retrieval or LocalRetrievalStore(self.root)
         self.price_source = price_source or self._configured_blind_price_source(settings)
@@ -269,24 +284,65 @@ class DailyAnalyzer:
         web_search: bool = False,
     ) -> DailyAnalysis:
         mode = normalize_analysis_mode(mode)
+        evidence_policy = EvidencePolicy.parse(self.settings.evidence_policy)
+        if web_search:
+            raise UnexpectedWebAccessError(
+                "BLIND analysis never permits external web search; use the "
+                "separate post-close audit command"
+            )
         full_batch = load_news_csv(news_csv, trade_date=trade_date)
         news_window_start_at = default_news_window_start(trade_date)
         batch = full_batch.within_window(news_window_start_at, cutoff_at)
-        event_clustering = await cluster_news_events(
-            full_batch.items,
-            window_start_at=news_window_start_at,
-            cutoff_at=cutoff_at,
-            embedding_provider=self.llm,
-            embedding_batch_size=(self.settings.limits.event_cluster_embedding_batch_size),
-            similarity_threshold=(self.settings.limits.event_cluster_similarity_threshold),
-            max_semantic_variants=(self.settings.limits.event_cluster_max_semantic_variants),
-        )
+        try:
+            event_clustering = await cluster_news_events(
+                full_batch.items,
+                window_start_at=news_window_start_at,
+                cutoff_at=cutoff_at,
+                embedding_provider=self.embedding_provider,
+                embedding_batch_size=(self.settings.limits.event_cluster_embedding_batch_size),
+                similarity_threshold=(self.settings.limits.event_cluster_similarity_threshold),
+                max_semantic_variants=(self.settings.limits.event_cluster_max_semantic_variants),
+                fallback_policy=self.settings.event_cluster_fallback_policy,
+                max_retries=self.settings.llm.max_retries,
+                production_runtime_identity=(
+                    production_embedding_method(
+                        self.settings,
+                        self.embedding_provider,
+                    )
+                    if self.settings.event_cluster_fallback_policy.value
+                    == "fail-closed"
+                    else None
+                ),
+            )
+        except ProductionEmbeddingUnavailableError as exc:
+            self._write_embedding_failure_receipt(
+                news_sha256=full_batch.sha256,
+                trade_date=trade_date,
+                cutoff_at=cutoff_at,
+                error=exc,
+            )
+            raise
         clustering_result_sha256 = sha256_text(
             canonical_json(
                 {
                     "clustering_version": event_clustering.clustering_version,
                     "embedding_method": event_clustering.embedding_method,
                     "embedding_status": event_clustering.embedding_status,
+                    "embedding_model": event_clustering.embedding_model,
+                    "embedding_revision": event_clustering.embedding_revision,
+                    "embedding_artifact_sha256": (
+                        event_clustering.embedding_artifact_sha256
+                    ),
+                    "embedding_dimensions": event_clustering.embedding_dimensions,
+                    "embedding_fallback_policy": (
+                        event_clustering.embedding_fallback_policy
+                    ),
+                    "deterministic_fallback_used": (
+                        event_clustering.deterministic_fallback_used
+                    ),
+                    "production_runtime_identity": (
+                        event_clustering.production_runtime_identity
+                    ),
                     "clusters": [
                         {
                             "cluster_id": cluster.cluster_id,
@@ -311,6 +367,8 @@ class DailyAnalyzer:
                     "news_sha256": full_batch.sha256,
                     "trade_date": trade_date.isoformat(),
                     "web_search": web_search,
+                    "evidence_policy": evidence_policy.value,
+                    "web_provider": self.settings.web_provider,
                 }
             )
         )
@@ -359,6 +417,9 @@ class DailyAnalyzer:
             retrieved_record_ids=retrieved_record_ids,
             web_queries=web_queries,
         )
+        manifest.evidence_policy = evidence_policy.value
+        manifest.web_provider = self.settings.web_provider.strip().lower()
+        manifest.web_required = web_required_for_policy(evidence_policy)
         manifest.news_file = relative_to_root(full_batch.path, self.root)
         manifest.news_sha256 = full_batch.sha256
         manifest.news_window_start_at = news_window_start_at
@@ -630,6 +691,10 @@ class DailyAnalyzer:
             market_memory_context=market_memory_context,
         )
         prediction = apply_red_team_findings(prediction, red_team.artifact)
+        agent_identity = self._current_agent_identity()
+        if agent_identity:
+            manifest.llm_model_config["agent_identity"] = agent_identity
+        self._enforce_evidence_policy(manifest)
         self._write_source_ledger_artifact(
             news_items=batch.items,
             prediction=prediction,
@@ -1266,6 +1331,16 @@ class DailyAnalyzer:
             "cluster_method": result.clustering_version,
             "embedding_method": result.embedding_method,
             "embedding_status": result.embedding_status,
+            "embedding_provider": result.embedding_provider,
+            "embedding_model": result.embedding_model,
+            "embedding_revision": result.embedding_revision,
+            "embedding_artifact_sha256": result.embedding_artifact_sha256,
+            "embedding_dimensions": result.embedding_dimensions,
+            "embedding_fallback_policy": result.embedding_fallback_policy,
+            "deterministic_fallback_used": result.deterministic_fallback_used,
+            "embedding_retry_count": result.embedding_retry_count,
+            "embedding_failure_type": result.embedding_failure_type,
+            "production_runtime_identity": result.production_runtime_identity,
             "warnings": list(result.warnings),
             "novelty_review_required": True,
         }
@@ -1330,6 +1405,15 @@ class DailyAnalyzer:
             clustering_version=result.clustering_version,
             embedding_provider=result.embedding_method,
             embedding_status=result.embedding_status,
+            embedding_model=result.embedding_model,
+            embedding_revision=result.embedding_revision,
+            embedding_artifact_sha256=result.embedding_artifact_sha256,
+            embedding_dimensions=result.embedding_dimensions,
+            embedding_fallback_policy=result.embedding_fallback_policy,
+            deterministic_fallback_used=result.deterministic_fallback_used,
+            embedding_retry_count=result.embedding_retry_count,
+            embedding_failure_type=result.embedding_failure_type,
+            production_runtime_identity=result.production_runtime_identity,
             embedding_batch_size=self.settings.limits.event_cluster_embedding_batch_size,
             similarity_threshold=self.settings.limits.event_cluster_similarity_threshold,
             max_semantic_variants=self.settings.limits.event_cluster_max_semantic_variants,
@@ -2502,6 +2586,7 @@ class DailyAnalyzer:
         manifest.web_sources = _unique_preserving_order(
             [row["source_id"] for row in rows if isinstance(row.get("source_id"), str)]
         )
+        manifest.external_web_evidence_count = len(rows)
         artifact_relative = Path("runs") / "checkpoints" / "web_sources" / manifest.run_id / "web_sources.jsonl"
         artifact_path = self.root / artifact_relative
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2644,6 +2729,7 @@ class DailyAnalyzer:
         manifest.candidate_web_check_artifact = artifact_relative.as_posix()
         manifest.candidate_web_check_sha256 = sha256_text(payload)
         manifest.candidate_web_check_count = len(rows)
+        manifest.external_web_evidence_count += len(rows)
         manifest.candidate_web_check_summary = {
             "subject_count": len(subjects),
             "final_candidate_subject_count": sum(
@@ -3184,6 +3270,9 @@ class DailyAnalyzer:
             "sealed_at": prediction.sealed_at.isoformat(),
             "phase": "BLIND_SEALED",
             "blind_context_mode": manifest.blind_context_mode,
+            "evidence_policy": manifest.evidence_policy,
+            "web_provider": manifest.web_provider,
+            "web_required": manifest.web_required,
             "blind_artifact_sha256": prediction.blind_artifact_sha256,
             "blind_prediction_path": prediction_relative,
             "row_disposition_sha256": manifest.row_disposition_sha256,
@@ -3192,6 +3281,9 @@ class DailyAnalyzer:
             "no_d_outcome_exposed": manifest.no_d_outcome_exposed,
             "validation": {
                 "blind_web_search_call_count": manifest.blind_web_search_call_count,
+                "external_web_evidence_count": (
+                    manifest.external_web_evidence_count
+                ),
                 "blind_price_repository_access_count": (manifest.blind_price_repository_access_count),
                 "blind_current_price_access_count": manifest.blind_current_price_access_count,
                 "canonical_blind_hash_verified": True,
@@ -3690,13 +3782,16 @@ class DailyAnalyzer:
         embedding_method = snapshot_payload.get("embedding_model")
         if not isinstance(embedding_method, str) or not embedding_method.strip():
             raise ValueError("production memory snapshot embedding model is missing")
-        active_embedding_method = production_embedding_method(self.settings, self.llm)
+        active_embedding_method = production_embedding_method(
+            self.settings,
+            self.embedding_provider,
+        )
         if embedding_method != active_embedding_method:
             raise ValueError(
                 "active embedding provider differs from the production memory snapshot"
             )
         provider = AsyncEmbeddingProviderAdapter(
-            self.llm,
+            self.embedding_provider,
             embedding_method=active_embedding_method,
             production_capability_attested=True,
         )
@@ -4943,6 +5038,76 @@ class DailyAnalyzer:
             max_retries=self.settings.llm.max_retries,
         )
 
+    def _enforce_evidence_policy(self, manifest: ContextManifest) -> None:
+        if (
+            EvidencePolicy.parse(manifest.evidence_policy)
+            is not EvidencePolicy.CSV_MEMORY_ONLY_STRICT
+        ):
+            return
+        if manifest.blind_web_search_call_count != 0:
+            raise UnexpectedWebAccessError(
+                "CSV_MEMORY_ONLY_STRICT observed a BLIND web call"
+            )
+        if (
+            manifest.external_web_evidence_count != 0
+            or manifest.web_sources
+            or manifest.candidate_web_source_ids
+            or manifest.candidate_web_check_count
+        ):
+            raise UnexpectedWebAccessError(
+                "CSV_MEMORY_ONLY_STRICT observed external web evidence"
+            )
+
+    def _write_embedding_failure_receipt(
+        self,
+        *,
+        news_sha256: str,
+        trade_date: date,
+        cutoff_at: datetime,
+        error: ProductionEmbeddingUnavailableError,
+    ) -> None:
+        failure_id = stable_id(
+            "EMBEDFAIL",
+            news_sha256,
+            trade_date.isoformat(),
+            cutoff_at.isoformat(),
+            length=16,
+        )
+        path = (
+            self.root
+            / "runs"
+            / "checkpoints"
+            / "failures"
+            / failure_id
+            / "embedding_failure.json"
+        )
+        write_json(
+            path,
+            {
+                "schema_version": "nslab.production_embedding_failure.v1",
+                "failure_id": failure_id,
+                "trade_date": trade_date.isoformat(),
+                "cutoff_at": cutoff_at.isoformat(),
+                "news_sha256": news_sha256,
+                "embedding_provider": self.settings.embedding_provider,
+                "embedding_fallback_policy": (
+                    self.settings.event_cluster_fallback_policy.value
+                ),
+                "failure_type": type(error).__name__,
+                "normal_prediction_written": False,
+                "daily_memory_context_started": False,
+                "final_synthesis_started": False,
+            },
+        )
+
+    def _current_agent_identity(self) -> dict[str, Any]:
+        provider: Any = self.llm
+        if isinstance(provider, TracingLLMProvider):
+            provider = provider.provider
+        identity = getattr(provider, "identity", None)
+        payload = identity() if callable(identity) else None
+        return payload if isinstance(payload, dict) else {}
+
     def _llm_model_config(self, provider: LLMProvider) -> dict[str, Any]:
         phase1_config = {
             "event_clustering_version": EVENT_CLUSTERING_VERSION,
@@ -4980,6 +5145,11 @@ class DailyAnalyzer:
         if isinstance(max_output_tokens, int):
             config["max_output_tokens"] = max_output_tokens
         config["max_retries"] = self.settings.llm.max_retries
+        identity = getattr(provider, "identity", None)
+        if callable(identity):
+            payload = identity()
+            if isinstance(payload, dict):
+                config["agent_identity"] = payload
         return config
 
     def _make_prediction(

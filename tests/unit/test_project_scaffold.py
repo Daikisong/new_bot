@@ -207,7 +207,7 @@ def test_plans_document_tracks_goal_scope_without_domain_memory() -> None:
     assert re.search(r"\b\d{6}\b", plans) is None
 
 
-def test_env_example_keeps_mock_defaults_and_no_secret_values() -> None:
+def test_env_example_keeps_production_bootstrap_defaults_and_no_secret_values() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     env_text = (repo_root / ".env.example").read_text(encoding="utf-8")
     gitignore = (repo_root / ".gitignore").read_text(encoding="utf-8").splitlines()
@@ -218,25 +218,20 @@ def test_env_example_keeps_mock_defaults_and_no_secret_values() -> None:
     )
 
     required_keys = {
+        "NSLAB_EVIDENCE_POLICY",
         "NSLAB_LLM_PROVIDER",
-        "NSLAB_LLM_REASONING_EFFORT",
-        "NSLAB_LLM_MAX_OUTPUT_TOKENS",
-        "NSLAB_LLM_MAX_RETRIES",
-        "OPENAI_API_KEY",
-        "NSLAB_OPENAI_MODEL",
-        "NSLAB_OPENAI_EMBEDDING_MODEL",
+        "NSLAB_CODEX_COMMAND",
+        "NSLAB_CODEX_MODEL",
+        "NSLAB_CODEX_REASONING_EFFORT",
+        "NSLAB_EMBEDDING_PROVIDER",
+        "NSLAB_LOCAL_EMBEDDING_MODEL",
+        "NSLAB_LOCAL_EMBEDDING_REVISION",
+        "NSLAB_EVENT_CLUSTER_FALLBACK_POLICY",
         "NSLAB_PRICE_PROVIDER",
         "NSLAB_STOCK_WEB_PATH",
-        "NSLAB_STOCK_WEB_CACHE",
-        "NSLAB_STOCK_WEB_CACHE_PATH",
-        "NSLAB_STOCK_WEB_REMOTE_URL",
         "NSLAB_WEB_PROVIDER",
+        "OPENAI_API_KEY",
         "BRAVE_SEARCH_API_KEY",
-        "NSLAB_BRAVE_SEARCH_COUNT",
-        "NSLAB_BRAVE_SEARCH_COUNTRY",
-        "NSLAB_BRAVE_SEARCH_LANG",
-        "NSLAB_BRAVE_SEARCH_UI_LANG",
-        "NSLAB_BRAVE_SEARCH_FRESHNESS_DAYS",
         "NSLAB_MAX_CONCURRENCY",
         "NSLAB_PHASE7_TRANSPORT_HMAC_KEY",
         "NSLAB_SHADOW_EVALUATION_HMAC_KEY",
@@ -246,14 +241,18 @@ def test_env_example_keeps_mock_defaults_and_no_secret_values() -> None:
     }
 
     assert set(env_values) == required_keys
-    assert env_values["NSLAB_LLM_PROVIDER"] == "mock"
-    assert env_values["NSLAB_PRICE_PROVIDER"] == "mock"
-    assert env_values["NSLAB_WEB_PROVIDER"] == "mock"
-    assert env_values["NSLAB_STOCK_WEB_CACHE"] == "0"
+    assert env_values["NSLAB_EVIDENCE_POLICY"] == "csv-memory-only-strict"
+    assert env_values["NSLAB_LLM_PROVIDER"] == "codex-oauth"
+    assert env_values["NSLAB_EMBEDDING_PROVIDER"] == "auto"
+    assert env_values["NSLAB_EVENT_CLUSTER_FALLBACK_POLICY"] == "fail-closed"
+    assert env_values["NSLAB_PRICE_PROVIDER"] == "stock-web"
+    assert env_values["NSLAB_WEB_PROVIDER"] == "disabled"
     assert env_values["OPENAI_API_KEY"] == ""
     assert env_values["BRAVE_SEARCH_API_KEY"] == ""
     assert "OPENAI_API_KEY=..." not in env_text
     assert "BRAVE_SEARCH_API_KEY=..." not in env_text
+    assert "CODEX_OAUTH_TOKEN" not in env_text
+    assert "CODEX_HOME" not in env_text
     assert all("secret" not in value.lower() for value in env_values.values())
     assert ".env" in gitignore
 

@@ -34,9 +34,11 @@ from news_scalping_lab.inference.analyzer import (
 )
 from news_scalping_lab.inference.event_clustering import EVENT_CLUSTERING_VERSION
 from news_scalping_lab.ingest.news import load_news_csv
+from news_scalping_lab.llm.codex_oauth_provider import codex_login_status
 from news_scalping_lab.llm.openai_provider import DEFAULT_OPENAI_EMBEDDING_MODEL
 from news_scalping_lab.memory.index import inspect_current_memory_index
 from news_scalping_lab.memory.statistics import POPULATION_STATISTICS_VERSION
+from news_scalping_lab.policies import EvidencePolicy, web_required_for_policy
 from news_scalping_lab.prices.stock_web import StockWebPriceSource
 from news_scalping_lab.records.hashing import (
     brain_record_envelope_hashes,
@@ -249,21 +251,48 @@ def production_readiness_report(
     openai_status = _nested_dict(report, "api_connections", "openai").get("status")
     if settings.llm_provider.strip().lower() in OPENAI_PROVIDER_ALIASES and openai_status != "configured_not_called":
         findings.append("openai: production llm-full requires configured OpenAI SDK and API key")
+    if settings.llm_provider.strip().lower() in {"codex-oauth", "codex_oauth"}:
+        codex_status = _nested_dict(
+            report, "api_connections", "codex_oauth"
+        )
+        if codex_status.get("status") != "PASS":
+            findings.append("codex_oauth: ChatGPT OAuth health check is not ready")
+    if settings.event_cluster_fallback_policy.value != "fail-closed":
+        findings.append("embedding: production event clustering must fail closed")
+    if settings.embedding_provider.strip().lower() in {
+        "",
+        "mock",
+        "deterministic",
+        "deterministic-hash",
+    }:
+        findings.append("embedding: production semantic provider is not configured")
+    evidence_policy = EvidencePolicy.parse(settings.evidence_policy)
+    web_required = web_required_for_policy(evidence_policy)
     web_provider = settings.web_provider.strip().lower()
     brave_status = _nested_dict(report, "api_connections", "brave_search").get("status")
-    if web_provider == "mock":
-        findings.append("web: mock provider cannot supply production evidence")
-    elif web_provider not in PRODUCTION_WEB_PROVIDER_ALIASES:
-        findings.append(f"web: unsupported production provider {settings.web_provider}")
-    elif brave_status != "configured_not_called":
-        findings.append("brave_search: production web research requires configured Brave Search API key")
+    if evidence_policy is EvidencePolicy.CSV_MEMORY_ONLY_STRICT:
+        if web_provider != "disabled":
+            findings.append(
+                "web: CSV_MEMORY_ONLY_STRICT requires NSLAB_WEB_PROVIDER=disabled"
+            )
+    else:
+        if web_provider == "mock":
+            findings.append("web: mock provider cannot supply production evidence")
+        elif web_provider not in PRODUCTION_WEB_PROVIDER_ALIASES:
+            findings.append(f"web: unsupported production provider {settings.web_provider}")
+        elif brave_status != "configured_not_called":
+            findings.append("brave_search: production web research requires configured Brave Search API key")
     price_data = _production_price_data_status(report, settings)
     if price_data["passed"] is not True:
         findings.extend(f"price: {finding}" for finding in price_data["findings"])
     price_evidence = _production_price_evidence_status(settings.project_root)
     if price_evidence["passed"] is not True:
         findings.extend(f"price_evidence: {finding}" for finding in price_evidence["findings"])
-    web_evidence = _production_web_evidence_status(settings.project_root)
+    web_evidence = (
+        _csv_memory_only_web_status(settings.project_root)
+        if evidence_policy is EvidencePolicy.CSV_MEMORY_ONLY_STRICT
+        else _production_web_evidence_status(settings.project_root)
+    )
     if web_evidence["passed"] is not True:
         findings.extend(f"web_evidence: {finding}" for finding in web_evidence["findings"])
     brain = report.get("brain")
@@ -391,6 +420,15 @@ def production_readiness_report(
         "semantic_index": semantic_index,
         "training_exports": training_exports,
         "web_evidence": web_evidence,
+        "evidence_policy": evidence_policy.value,
+        "web_required": web_required,
+        "web_provider": web_provider,
+        "web_policy_status": (
+            "READY_DISABLED_BY_DESIGN"
+            if evidence_policy is EvidencePolicy.CSV_MEMORY_ONLY_STRICT
+            and web_evidence["passed"] is True
+            else web_evidence.get("status", "attention")
+        ),
         "price_data": price_data,
         "price_evidence": price_evidence,
         "required_environment": remediation["required_environment"],
@@ -1089,6 +1127,10 @@ def build_doctor_report(
     database_status = _database_status(settings, coverage_audit)
     report = {
         "project_root": settings.project_root.as_posix(),
+        "evidence_policy": settings.evidence_policy.value,
+        "web_required": web_required_for_policy(settings.evidence_policy),
+        "embedding_provider": settings.embedding_provider,
+        "embedding_fallback_policy": settings.event_cluster_fallback_policy.value,
         "providers": {
             "llm": settings.llm_provider,
             "web": settings.web_provider,
@@ -1097,6 +1139,7 @@ def build_doctor_report(
         "llm_model": settings.llm.model_dump(exclude_none=True),
         "environment": _environment_status(settings),
         "api_connections": {
+            "codex_oauth": _codex_oauth_status(settings),
             "openai": {
                 "required": _openai_required(settings, production=production),
                 "configured": bool(settings.env_value("OPENAI_API_KEY")),
@@ -3585,7 +3628,7 @@ def _production_semantic_index_status(
         settings.project_root,
         vector_index=vector_index,
         expected_source_record_count=expected_source_record_count,
-        configured_provider=settings.llm_provider,
+        configured_provider=_configured_embedding_provider_name(settings),
         configured_embedding_model=configured_embedding_model,
     )
     if not isinstance(vector_index, dict):
@@ -3600,9 +3643,18 @@ def _production_semantic_index_status(
         elif embedding_method == VECTOR_EMBEDDING_METHOD:
             findings.append("deterministic mock vector index cannot be production semantic index")
         else:
-            expected_prefix = f"llm_embedding:{settings.llm_provider.strip().lower()}:"
-            if not embedding_method.strip().lower().startswith(expected_prefix):
-                findings.append("semantic index provider does not match configured LLM provider")
+            expected_provider = _configured_embedding_provider_name(settings)
+            expected_prefixes = (
+                f"real_embedding:{expected_provider}:",
+                f"llm_embedding:{expected_provider}:",
+            )
+            if not embedding_method.strip().lower().startswith(
+                expected_prefixes
+            ):
+                findings.append(
+                    "semantic index provider does not match configured "
+                    "embedding provider"
+                )
             expected_model = configured_embedding_model
             if not isinstance(embedding_model, str) or not embedding_model:
                 findings.append("semantic index embedding model is missing")
@@ -3631,11 +3683,23 @@ def _production_semantic_index_status(
 
 
 def _production_configured_embedding_model(settings: Settings) -> str | None:
+    selected = settings.embedding_provider.strip().lower()
+    if selected in {"auto", "local-production", "local_production"}:
+        return settings.local_embedding_model
     if settings.llm.embedding_model and settings.llm.embedding_model.strip():
         return settings.llm.embedding_model.strip()
     if settings.llm_provider.strip().lower() in OPENAI_PROVIDER_ALIASES:
         return DEFAULT_OPENAI_EMBEDDING_MODEL
     return None
+
+
+def _configured_embedding_provider_name(settings: Settings) -> str:
+    selected = settings.embedding_provider.strip().lower()
+    if selected == "auto":
+        return "local-production"
+    if selected == "llm":
+        return settings.llm_provider.strip().lower()
+    return selected
 
 
 def _production_semantic_index_manifest_status(
@@ -3911,9 +3975,15 @@ def _production_semantic_index_manifest_status(
     elif embedding_method == VECTOR_EMBEDDING_METHOD:
         findings.append("on-disk deterministic mock vector index cannot be production semantic index")
     else:
-        expected_prefix = f"llm_embedding:{configured_provider.strip().lower()}:"
-        if not embedding_method.strip().lower().startswith(expected_prefix):
-            findings.append("semantic index manifest provider does not match configured LLM provider")
+        expected_prefixes = (
+            f"real_embedding:{configured_provider.strip().lower()}:",
+            f"llm_embedding:{configured_provider.strip().lower()}:",
+        )
+        if not embedding_method.strip().lower().startswith(expected_prefixes):
+            findings.append(
+                "semantic index manifest provider does not match configured "
+                "embedding provider"
+            )
         if not isinstance(embedding_model, str) or not embedding_model:
             findings.append("semantic index manifest embedding model is missing")
         elif configured_embedding_model and embedding_model.strip() != configured_embedding_model.strip():
@@ -5191,7 +5261,10 @@ def _first_not_none(*values: object) -> object:
 
 def _llm_embedding_model_from_method(embedding_method: str) -> str | None:
     parts = embedding_method.strip().split(":", 2)
-    if len(parts) != 3 or parts[0] != "llm_embedding":
+    if len(parts) != 3 or parts[0] not in {
+        "llm_embedding",
+        "real_embedding",
+    }:
         return None
     model = parts[2].strip()
     return model or None
@@ -7050,6 +7123,58 @@ def _environment_status(settings: Settings) -> dict[str, dict[str, object]]:
     return status
 
 
+def _codex_oauth_status(settings: Settings) -> dict[str, Any]:
+    required = settings.llm_provider.strip().lower() in {
+        "codex-oauth",
+        "codex_oauth",
+    }
+    if not required:
+        return {"required": False, "status": "not_required", "logged_in": None}
+    try:
+        status = codex_login_status(settings.codex_command)
+    except OSError as exc:
+        return {
+            "required": True,
+            "status": "cli_unavailable",
+            "logged_in": False,
+            "error": type(exc).__name__,
+        }
+    return {"required": True, **status, "credential_files_read": False}
+
+
+def _csv_memory_only_web_status(root: Path) -> dict[str, Any]:
+    findings: list[str] = []
+    inspected_manifest_count = 0
+    for path in sorted((root / "runs" / "manifests").glob("*.json")):
+        payload = _read_optional_json(path)
+        if payload is None:
+            continue
+        if payload.get("evidence_policy") != "csv-memory-only-strict":
+            continue
+        inspected_manifest_count += 1
+        if payload.get("blind_web_search_call_count") not in {None, 0}:
+            findings.append(f"{path.name}: strict BLIND web call observed")
+        if payload.get("external_web_evidence_count") not in {None, 0}:
+            findings.append(f"{path.name}: strict external web evidence observed")
+        for field in (
+            "web_sources",
+            "candidate_web_source_ids",
+        ):
+            values = payload.get(field)
+            if isinstance(values, list) and values:
+                findings.append(f"{path.name}: strict {field} is non-empty")
+    return {
+        "schema_version": "nslab.csv_memory_only_web_status.v1",
+        "passed": not findings,
+        "status": "ready" if not findings else "attention",
+        "finding_count": len(findings),
+        "findings": findings,
+        "inspected_manifest_count": inspected_manifest_count,
+        "web_required": False,
+        "web_provider": "disabled",
+    }
+
+
 def _openai_status(settings: Settings, *, production: bool = False) -> str:
     if not _openai_required(settings, production=production):
         return "not_required"
@@ -7064,7 +7189,8 @@ def _openai_status(settings: Settings, *, production: bool = False) -> str:
 
 
 def _openai_required(settings: Settings, *, production: bool = False) -> bool:
-    return production or settings.llm_provider.strip().lower() in OPENAI_PROVIDER_ALIASES
+    del production
+    return settings.llm_provider.strip().lower() in OPENAI_PROVIDER_ALIASES
 
 
 def _openai_sdk_status() -> dict[str, Any]:
@@ -7102,6 +7228,11 @@ def _openai_sdk_status() -> dict[str, Any]:
 
 
 def _brave_search_required(settings: Settings, *, production: bool = False) -> bool:
+    if (
+        EvidencePolicy.parse(settings.evidence_policy)
+        is EvidencePolicy.CSV_MEMORY_ONLY_STRICT
+    ):
+        return False
     return production or settings.web_provider.strip().lower() in {
         "brave",
         "brave-search",

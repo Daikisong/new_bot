@@ -49,6 +49,44 @@ class WebResearchProvider(Protocol):
         """Return whether a result is safe to use for a blind run."""
 
 
+class UnexpectedWebAccessError(RuntimeError):
+    """Raised when a strict CSV/memory-only run attempts external web access."""
+
+
+class DisabledWebResearchProvider:
+    """Fail-closed provider for evidence policies that prohibit web access."""
+
+    provider_name = "disabled"
+
+    async def search(
+        self,
+        query: str,
+        *,
+        cutoff_at: datetime,
+    ) -> list[WebSearchResult]:
+        del query, cutoff_at
+        raise UnexpectedWebAccessError(
+            "CSV_MEMORY_ONLY_STRICT forbids BLIND web search"
+        )
+
+    async def open(self, url: str, *, cutoff_at: datetime) -> str:
+        del url, cutoff_at
+        raise UnexpectedWebAccessError(
+            "CSV_MEMORY_ONLY_STRICT forbids opening external web sources"
+        )
+
+    async def verify_timestamp(
+        self,
+        result: WebSearchResult,
+        *,
+        cutoff_at: datetime,
+    ) -> bool:
+        del result, cutoff_at
+        raise UnexpectedWebAccessError(
+            "CSV_MEMORY_ONLY_STRICT forbids external web verification"
+        )
+
+
 class HTTPResponse(Protocol):
     @property
     def text(self) -> str:

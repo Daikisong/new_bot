@@ -84,9 +84,21 @@ async def test_event_cluster_artifact_groups_exact_normalized_duplicates(tmp_pat
         "exact_duplicate_cluster_count": 1,
         "semantic_duplicate_count": 0,
         "semantic_duplicate_cluster_count": 0,
-        "cluster_method": "semantic_complete_link_v1",
+        "cluster_method": "semantic_complete_link_v2",
         "embedding_method": "DeterministicMockLLMProvider:deterministic-mock",
         "embedding_status": "PROVIDER",
+        "embedding_provider": "DeterministicMockLLMProvider",
+        "embedding_model": None,
+        "embedding_revision": None,
+        "embedding_artifact_sha256": None,
+        "embedding_dimensions": 12,
+        "embedding_fallback_policy": "allow-deterministic-fallback",
+        "deterministic_fallback_used": False,
+        "embedding_retry_count": 0,
+        "embedding_failure_type": None,
+        "production_runtime_identity": (
+            "DeterministicMockLLMProvider:deterministic-mock"
+        ),
         "warnings": [],
         "novelty_review_required": True,
     }

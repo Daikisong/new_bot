@@ -659,6 +659,12 @@
       "title": "Bias Audit Version",
       "type": "string"
     },
+    "blind_web_call_count": {
+      "const": 0,
+      "default": 0,
+      "title": "Blind Web Call Count",
+      "type": "integer"
+    },
     "calibration_buckets": {
       "$ref": "#/$defs/ArtifactReference"
     },
@@ -692,8 +698,20 @@
       "title": "Evaluation Id",
       "type": "string"
     },
+    "evidence_policy": {
+      "const": "csv-memory-only-strict",
+      "default": "csv-memory-only-strict",
+      "title": "Evidence Policy",
+      "type": "string"
+    },
     "exit_gate": {
       "$ref": "#/$defs/ShadowExitGate"
+    },
+    "external_web_evidence_count": {
+      "const": 0,
+      "default": 0,
+      "title": "External Web Evidence Count",
+      "type": "integer"
     },
     "holdout_case_count": {
       "minimum": 0,
@@ -733,6 +751,18 @@
     "system_budget_version": {
       "title": "System Budget Version",
       "type": "string"
+    },
+    "web_provider": {
+      "const": "disabled",
+      "default": "disabled",
+      "title": "Web Provider",
+      "type": "string"
+    },
+    "web_required": {
+      "const": false,
+      "default": false,
+      "title": "Web Required",
+      "type": "boolean"
     }
   },
   "required": [
