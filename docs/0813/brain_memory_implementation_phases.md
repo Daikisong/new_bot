@@ -799,6 +799,8 @@ preflight와 zero-write rejection까지 직접 재현했고, 독립 full pytest 
 
 ## 11. Phase 8: shadow replay·부하·편향 평가
 
+상태: bounded evaluator와 source-closure verifier 및 외부 독립감사 완료, 실제 corpus production gate 차단
+
 ### 비교군
 
 ```text
@@ -860,6 +862,47 @@ newsless hallucination 악화 없음
 latency/token budget 충족
 selection bias와 survivorship audit 통과
 ```
+
+### 구현 결과
+
+`ShadowReplayDataset v1`과 `ShadowEvaluationManifest v1`은 A~F feature/snapshot identity, sealed
+build/calibration/holdout split, complete outcome universe, retrieval/system telemetry와 50k/200k/600k load
+profile을 결속한다. split 계획은 calibration 전에 `memory seal-shadow-split` 실제 실행 시각과 HMAC으로
+사전 등록하며 public API의 과거 시각 주입을 허용하지 않는다. 전체 dataset도 별도 HMAC과 canonical
+content-addressed 경로로 봉인한다.
+
+Arm telemetry는 `NSLAB_SHADOW_RUNNER_HMAC_KEY`로 실행 종료 5분 이내 source receipt를 발급하고,
+qualitative/retrieval truth는 `NSLAB_SHADOW_TRUTH_HMAC_KEY`로 cutoff 이후 별도 receipt를 발급한다. Dataset
+sealer는 두 source authority의 서명을 재검증하며 coherent telemetry/truth rewrite를 거부한다.
+Measured load profile도 runner key로 workload·sample·raw metric·summary·snapshot 전체를 aggregate 서명하며,
+마지막 sample 완료 5분 이내 발급과 dataset 생성 이전 완료를 강제한다.
+
+`memory evaluate-shadow`는 full-universe Recall/Brier, failure·newsless·leader/theme 지표, retrieval diversity,
+latency/token/memory/cost를 content-addressed artifact로 만들고 `memory inspect-shadow`가 source부터 exact
+재계산한다. C~F는 canonical production memory snapshot v3 deep audit, B는 frozen top-3 index와 record-store
+generation parity가 필수다. 같은 날짜의 A~F 실행 provider/model/prompt/config와 C~F snapshot은 exact
+동일해야 한다. B~F는 같은 corpus/source generation/cutoff/llm-full brain을 사용하고 C~F retrieved record는
+snapshot DuckDB projection과 일치해야 한다. B top-3 record도 같은 production snapshot DB에서 exact
+projection을 가져야 하며, 모든 날짜·arm source hash와 historical context의 provider/model/class 설정을
+독립 검증한다. Production closure는 factory-issued OpenAI provider와 validated stock-web price source를
+요구하고 구조만 맞춘 fake provider는 거부한다.
+
+합성 20 calibration + 20 holdout A~F 회귀는 E/F Recall@20 1.0, B 0.0, E/F Brier 0.0,
+B 0.75로 metric contract를 통과했다. Historical source closure는 canonical blind prediction/context, cutoff-safe
+news, FULL_MARKET_COMPLETE postmortem의 truth hash/retrieval label 봉인, live full-market price universe, 전체 run
+lookahead audit를 재검증한다. BlindPrediction candidate의 claimed theme/news-cause와 postmortem의 ticker별
+theme/leader/newsless truth도 exact 교차검증한다.
+합성/self-declared dataset은 `production_ready=false`다.
+
+50k/200k/600k measured profile은 canonical raw sample receipt뿐 아니라 고유 run/time/content-addressed workload
+ledger와 같은 record count의 production memory snapshot, real embedding provider/model/dimension,
+corpus/source generation, deep inspection을
+요구한다. 실제 corpus에는 아직 A~F run과 real 1536D profile이 없어 production gate는 닫혀 있다.
+
+실제 corpus readiness는 paired historical date 1, production memory missing, catalog brain, mock provider,
+pre-registration/runner/truth key missing으로 `ready=false`다. 32D reduced-schema 50k/200k/600k query microbenchmark는
+통과했지만 real 1536D end-to-end profile이 아니므로 production load gate에 사용하지 않는다. 상세 근거는
+`phase8_shadow_replay_evaluation_report.md`에 기록했다.
 
 ## 12. Phase 9: 실제 import와 production 승격
 

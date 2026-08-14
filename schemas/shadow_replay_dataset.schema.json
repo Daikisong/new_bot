@@ -1,0 +1,1306 @@
+{
+  "$defs": {
+    "ArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "item_count": {
+          "minimum": 0,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.memory_artifact_reference.v1",
+          "default": "nslab.memory_artifact_reference.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_path",
+        "sha256",
+        "item_count"
+      ],
+      "title": "ArtifactReference",
+      "type": "object"
+    },
+    "NumericDistribution": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "maximum": {
+          "minimum": 0.0,
+          "title": "Maximum",
+          "type": "number"
+        },
+        "mean": {
+          "minimum": 0.0,
+          "title": "Mean",
+          "type": "number"
+        },
+        "minimum": {
+          "minimum": 0.0,
+          "title": "Minimum",
+          "type": "number"
+        },
+        "p50": {
+          "minimum": 0.0,
+          "title": "P50",
+          "type": "number"
+        },
+        "p95": {
+          "minimum": 0.0,
+          "title": "P95",
+          "type": "number"
+        },
+        "p99": {
+          "minimum": 0.0,
+          "title": "P99",
+          "type": "number"
+        }
+      },
+      "required": [
+        "count",
+        "minimum",
+        "mean",
+        "p50",
+        "p95",
+        "p99",
+        "maximum"
+      ],
+      "title": "NumericDistribution",
+      "type": "object"
+    },
+    "ShadowArmAttestation": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "HMAC-SHA256",
+          "default": "HMAC-SHA256",
+          "title": "Algorithm",
+          "type": "string"
+        },
+        "commitment_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Commitment Sha256",
+          "type": "string"
+        },
+        "issued_at": {
+          "format": "date-time",
+          "title": "Issued At",
+          "type": "string"
+        },
+        "key_id": {
+          "pattern": "^[0-9a-f]{16}$",
+          "title": "Key Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "nslab.shadow_arm_attestation.v1",
+          "default": "nslab.shadow_arm_attestation.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "signature": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Signature",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issued_at",
+        "key_id",
+        "commitment_sha256",
+        "signature"
+      ],
+      "title": "ShadowArmAttestation",
+      "type": "object"
+    },
+    "ShadowArmFeatures": {
+      "additionalProperties": false,
+      "properties": {
+        "adaptive_drill_down": {
+          "title": "Adaptive Drill Down",
+          "type": "boolean"
+        },
+        "legacy_top3": {
+          "title": "Legacy Top3",
+          "type": "boolean"
+        },
+        "memory_cells": {
+          "title": "Memory Cells",
+          "type": "boolean"
+        },
+        "population_statistics": {
+          "title": "Population Statistics",
+          "type": "boolean"
+        },
+        "representatives": {
+          "title": "Representatives",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "legacy_top3",
+        "memory_cells",
+        "population_statistics",
+        "representatives",
+        "adaptive_drill_down"
+      ],
+      "title": "ShadowArmFeatures",
+      "type": "object"
+    },
+    "ShadowArmObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "arm_id": {
+          "enum": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+            "F"
+          ],
+          "title": "Arm Id",
+          "type": "string"
+        },
+        "as_of_snapshot": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShadowAsOfSnapshot"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/ShadowCandidateObservation"
+          },
+          "maxItems": 20,
+          "title": "Candidates",
+          "type": "array"
+        },
+        "execution": {
+          "$ref": "#/$defs/ShadowExecutionIdentity"
+        },
+        "execution_attestation": {
+          "$ref": "#/$defs/ShadowArmAttestation"
+        },
+        "features": {
+          "$ref": "#/$defs/ShadowArmFeatures"
+        },
+        "prediction_id": {
+          "title": "Prediction Id",
+          "type": "string"
+        },
+        "retrieved_records": {
+          "items": {
+            "$ref": "#/$defs/ShadowRetrievedRecord"
+          },
+          "title": "Retrieved Records",
+          "type": "array"
+        },
+        "source_artifacts": {
+          "items": {
+            "$ref": "#/$defs/ArtifactReference"
+          },
+          "minItems": 1,
+          "title": "Source Artifacts",
+          "type": "array"
+        },
+        "telemetry": {
+          "$ref": "#/$defs/ShadowSystemObservation"
+        }
+      },
+      "required": [
+        "arm_id",
+        "features",
+        "execution",
+        "execution_attestation",
+        "prediction_id",
+        "telemetry"
+      ],
+      "title": "ShadowArmObservation",
+      "type": "object"
+    },
+    "ShadowAsOfSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of_cutoff": {
+          "format": "date-time",
+          "title": "As Of Cutoff",
+          "type": "string"
+        },
+        "brain_manifest": {
+          "$ref": "#/$defs/ArtifactReference"
+        },
+        "brain_version": {
+          "title": "Brain Version",
+          "type": "string"
+        },
+        "clustering_version": {
+          "title": "Clustering Version",
+          "type": "string"
+        },
+        "corpus_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Corpus Manifest Sha256",
+          "type": "string"
+        },
+        "embedding_model": {
+          "title": "Embedding Model",
+          "type": "string"
+        },
+        "immutable": {
+          "default": true,
+          "title": "Immutable",
+          "type": "boolean"
+        },
+        "normalizer_version": {
+          "title": "Normalizer Version",
+          "type": "string"
+        },
+        "snapshot_id": {
+          "title": "Snapshot Id",
+          "type": "string"
+        },
+        "snapshot_kind": {
+          "enum": [
+            "LEGACY_TOP3_INDEX",
+            "PRODUCTION_MEMORY_CELLS"
+          ],
+          "title": "Snapshot Kind",
+          "type": "string"
+        },
+        "snapshot_manifest": {
+          "$ref": "#/$defs/ArtifactReference"
+        },
+        "source_generation_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Generation Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "snapshot_kind",
+        "snapshot_id",
+        "as_of_cutoff",
+        "corpus_manifest_sha256",
+        "source_generation_sha256",
+        "embedding_model",
+        "clustering_version",
+        "normalizer_version",
+        "snapshot_manifest",
+        "brain_version",
+        "brain_manifest"
+      ],
+      "title": "ShadowAsOfSnapshot",
+      "type": "object"
+    },
+    "ShadowCandidateObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "claimed_theme_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Claimed Theme Id"
+        },
+        "claims_news_cause": {
+          "default": false,
+          "title": "Claims News Cause",
+          "type": "boolean"
+        },
+        "company_name": {
+          "title": "Company Name",
+          "type": "string"
+        },
+        "confidence_label": {
+          "enum": [
+            "very_high",
+            "high",
+            "medium",
+            "low",
+            "speculative"
+          ],
+          "title": "Confidence Label",
+          "type": "string"
+        },
+        "memory_record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Memory Record Ids",
+          "type": "array"
+        },
+        "rank": {
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "ticker": {
+          "title": "Ticker",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rank",
+        "ticker",
+        "company_name",
+        "confidence_label"
+      ],
+      "title": "ShadowCandidateObservation",
+      "type": "object"
+    },
+    "ShadowDatasetAttestation": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "HMAC-SHA256",
+          "default": "HMAC-SHA256",
+          "title": "Algorithm",
+          "type": "string"
+        },
+        "commitment_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Commitment Sha256",
+          "type": "string"
+        },
+        "issued_at": {
+          "format": "date-time",
+          "title": "Issued At",
+          "type": "string"
+        },
+        "key_id": {
+          "pattern": "^[0-9a-f]{16}$",
+          "title": "Key Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "nslab.shadow_dataset_attestation.v1",
+          "default": "nslab.shadow_dataset_attestation.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "signature": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Signature",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issued_at",
+        "key_id",
+        "commitment_sha256",
+        "signature"
+      ],
+      "title": "ShadowDatasetAttestation",
+      "type": "object"
+    },
+    "ShadowDatasetSplit": {
+      "additionalProperties": false,
+      "properties": {
+        "build_end": {
+          "format": "date",
+          "title": "Build End",
+          "type": "string"
+        },
+        "build_start": {
+          "format": "date",
+          "title": "Build Start",
+          "type": "string"
+        },
+        "calibration_dates": {
+          "items": {
+            "format": "date",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Calibration Dates",
+          "type": "array"
+        },
+        "calibration_end": {
+          "format": "date",
+          "title": "Calibration End",
+          "type": "string"
+        },
+        "calibration_start": {
+          "format": "date",
+          "title": "Calibration Start",
+          "type": "string"
+        },
+        "holdout_dates": {
+          "items": {
+            "format": "date",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Holdout Dates",
+          "type": "array"
+        },
+        "holdout_end": {
+          "format": "date",
+          "title": "Holdout End",
+          "type": "string"
+        },
+        "holdout_start": {
+          "format": "date",
+          "title": "Holdout Start",
+          "type": "string"
+        },
+        "pre_registration_attestation": {
+          "$ref": "#/$defs/ShadowSplitAttestation"
+        },
+        "sealed_at": {
+          "format": "date-time",
+          "title": "Sealed At",
+          "type": "string"
+        },
+        "split_manifest": {
+          "$ref": "#/$defs/ArtifactReference"
+        }
+      },
+      "required": [
+        "build_start",
+        "build_end",
+        "calibration_start",
+        "calibration_end",
+        "holdout_start",
+        "holdout_end",
+        "calibration_dates",
+        "holdout_dates",
+        "sealed_at",
+        "pre_registration_attestation",
+        "split_manifest"
+      ],
+      "title": "ShadowDatasetSplit",
+      "type": "object"
+    },
+    "ShadowExecutionIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_at": {
+          "format": "date-time",
+          "title": "Completed At",
+          "type": "string"
+        },
+        "execution_mode": {
+          "enum": [
+            "SYNTHETIC_CONTRACT",
+            "SEALED_HISTORICAL_REPLAY"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "inference_config_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Inference Config Sha256",
+          "type": "string"
+        },
+        "llm_model": {
+          "title": "Llm Model",
+          "type": "string"
+        },
+        "llm_provider": {
+          "title": "Llm Provider",
+          "type": "string"
+        },
+        "production_provider_attested": {
+          "title": "Production Provider Attested",
+          "type": "boolean"
+        },
+        "prompt_version": {
+          "title": "Prompt Version",
+          "type": "string"
+        },
+        "runner_protocol_version": {
+          "title": "Runner Protocol Version",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "nslab.shadow_execution_identity.v1",
+          "default": "nslab.shadow_execution_identity.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "execution_mode",
+        "runner_protocol_version",
+        "llm_provider",
+        "llm_model",
+        "prompt_version",
+        "inference_config_sha256",
+        "started_at",
+        "completed_at",
+        "production_provider_attested"
+      ],
+      "title": "ShadowExecutionIdentity",
+      "type": "object"
+    },
+    "ShadowLoadAttestation": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "HMAC-SHA256",
+          "default": "HMAC-SHA256",
+          "title": "Algorithm",
+          "type": "string"
+        },
+        "commitment_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Commitment Sha256",
+          "type": "string"
+        },
+        "issued_at": {
+          "format": "date-time",
+          "title": "Issued At",
+          "type": "string"
+        },
+        "key_id": {
+          "pattern": "^[0-9a-f]{16}$",
+          "title": "Key Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "nslab.shadow_load_attestation.v1",
+          "default": "nslab.shadow_load_attestation.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "signature": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Signature",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issued_at",
+        "key_id",
+        "commitment_sha256",
+        "signature"
+      ],
+      "title": "ShadowLoadAttestation",
+      "type": "object"
+    },
+    "ShadowLoadProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "blocker_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blocker Reason"
+        },
+        "corpus_manifest_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Corpus Manifest Sha256"
+        },
+        "daily_analysis_latency_ms": {
+          "$ref": "#/$defs/NumericDistribution"
+        },
+        "daily_analysis_latency_samples_ms": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Daily Analysis Latency Samples Ms",
+          "type": "array"
+        },
+        "embedding_dimensions": {
+          "minimum": 0,
+          "title": "Embedding Dimensions",
+          "type": "integer"
+        },
+        "embedding_model": {
+          "title": "Embedding Model",
+          "type": "string"
+        },
+        "embedding_provider": {
+          "title": "Embedding Provider",
+          "type": "string"
+        },
+        "load_attestation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShadowLoadAttestation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "measured": {
+          "title": "Measured",
+          "type": "boolean"
+        },
+        "online_full_scan_count": {
+          "minimum": 0,
+          "title": "Online Full Scan Count",
+          "type": "integer"
+        },
+        "online_full_scan_samples": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Online Full Scan Samples",
+          "type": "array"
+        },
+        "peak_memory_bytes": {
+          "minimum": 0,
+          "title": "Peak Memory Bytes",
+          "type": "integer"
+        },
+        "peak_memory_samples_bytes": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Peak Memory Samples Bytes",
+          "type": "array"
+        },
+        "pre_llm_latency_ms": {
+          "$ref": "#/$defs/NumericDistribution"
+        },
+        "pre_llm_latency_samples_ms": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Pre Llm Latency Samples Ms",
+          "type": "array"
+        },
+        "production_shape": {
+          "title": "Production Shape",
+          "type": "boolean"
+        },
+        "profile_artifact": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "profiler_version": {
+          "title": "Profiler Version",
+          "type": "string"
+        },
+        "real_embedding_provider": {
+          "title": "Real Embedding Provider",
+          "type": "boolean"
+        },
+        "record_count": {
+          "enum": [
+            50000,
+            200000,
+            600000
+          ],
+          "title": "Record Count",
+          "type": "integer"
+        },
+        "sample_artifacts": {
+          "items": {
+            "$ref": "#/$defs/ArtifactReference"
+          },
+          "title": "Sample Artifacts",
+          "type": "array"
+        },
+        "sample_completed_at": {
+          "items": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "title": "Sample Completed At",
+          "type": "array"
+        },
+        "sample_run_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sample Run Ids",
+          "type": "array"
+        },
+        "sample_started_at": {
+          "items": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "title": "Sample Started At",
+          "type": "array"
+        },
+        "source_generation_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Generation Sha256"
+        },
+        "source_snapshot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Snapshot Id"
+        },
+        "source_snapshot_manifest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "workload_artifact": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "workload_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workload Sha256"
+        }
+      },
+      "required": [
+        "record_count",
+        "measured",
+        "production_shape",
+        "real_embedding_provider",
+        "embedding_dimensions",
+        "embedding_provider",
+        "embedding_model",
+        "profiler_version",
+        "pre_llm_latency_ms",
+        "daily_analysis_latency_ms",
+        "peak_memory_bytes",
+        "online_full_scan_count"
+      ],
+      "title": "ShadowLoadProfile",
+      "type": "object"
+    },
+    "ShadowOutcomeTruth": {
+      "additionalProperties": false,
+      "properties": {
+        "actual_theme_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actual Theme Id"
+        },
+        "candidate_relevant": {
+          "title": "Candidate Relevant",
+          "type": "boolean"
+        },
+        "close_return_pct": {
+          "title": "Close Return Pct",
+          "type": "number"
+        },
+        "high_return_pct": {
+          "title": "High Return Pct",
+          "type": "number"
+        },
+        "is_theme_leader": {
+          "default": false,
+          "title": "Is Theme Leader",
+          "type": "boolean"
+        },
+        "newsless": {
+          "default": false,
+          "title": "Newsless",
+          "type": "boolean"
+        },
+        "ticker": {
+          "title": "Ticker",
+          "type": "string"
+        },
+        "upper_limit_touched": {
+          "title": "Upper Limit Touched",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ticker",
+        "high_return_pct",
+        "close_return_pct",
+        "upper_limit_touched",
+        "candidate_relevant"
+      ],
+      "title": "ShadowOutcomeTruth",
+      "type": "object"
+    },
+    "ShadowReplayCase": {
+      "additionalProperties": false,
+      "properties": {
+        "arms": {
+          "items": {
+            "$ref": "#/$defs/ShadowArmObservation"
+          },
+          "maxItems": 6,
+          "minItems": 6,
+          "title": "Arms",
+          "type": "array"
+        },
+        "case_id": {
+          "title": "Case Id",
+          "type": "string"
+        },
+        "counterexample_record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Counterexample Record Ids",
+          "type": "array"
+        },
+        "known_relevant_record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Known Relevant Record Ids",
+          "type": "array"
+        },
+        "long_tail_beneficiary_tickers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Long Tail Beneficiary Tickers",
+          "type": "array"
+        },
+        "negative_control_record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Negative Control Record Ids",
+          "type": "array"
+        },
+        "news_artifact": {
+          "$ref": "#/$defs/ArtifactReference"
+        },
+        "outcome_universe_complete": {
+          "title": "Outcome Universe Complete",
+          "type": "boolean"
+        },
+        "outcomes": {
+          "items": {
+            "$ref": "#/$defs/ShadowOutcomeTruth"
+          },
+          "minItems": 1,
+          "title": "Outcomes",
+          "type": "array"
+        },
+        "postmortem_artifact": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "replay_cutoff_at": {
+          "format": "date-time",
+          "title": "Replay Cutoff At",
+          "type": "string"
+        },
+        "split": {
+          "enum": [
+            "BUILD",
+            "CALIBRATION",
+            "HOLDOUT"
+          ],
+          "title": "Split",
+          "type": "string"
+        },
+        "trade_date": {
+          "format": "date",
+          "title": "Trade Date",
+          "type": "string"
+        },
+        "truth_artifact": {
+          "$ref": "#/$defs/ArtifactReference"
+        },
+        "truth_attestation": {
+          "$ref": "#/$defs/ShadowTruthAttestation"
+        }
+      },
+      "required": [
+        "case_id",
+        "split",
+        "trade_date",
+        "replay_cutoff_at",
+        "news_artifact",
+        "truth_artifact",
+        "truth_attestation",
+        "outcome_universe_complete",
+        "outcomes",
+        "arms"
+      ],
+      "title": "ShadowReplayCase",
+      "type": "object"
+    },
+    "ShadowRetrievedRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "available_from": {
+          "format": "date-time",
+          "title": "Available From",
+          "type": "string"
+        },
+        "evidence_polarity": {
+          "title": "Evidence Polarity",
+          "type": "string"
+        },
+        "independent_unit_id": {
+          "title": "Independent Unit Id",
+          "type": "string"
+        },
+        "memory_lanes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Memory Lanes",
+          "type": "array"
+        },
+        "record_id": {
+          "title": "Record Id",
+          "type": "string"
+        },
+        "record_type": {
+          "title": "Record Type",
+          "type": "string"
+        },
+        "regime_cluster": {
+          "title": "Regime Cluster",
+          "type": "string"
+        },
+        "ticker": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ticker"
+        },
+        "trade_date": {
+          "format": "date",
+          "title": "Trade Date",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_id",
+        "independent_unit_id",
+        "record_type",
+        "evidence_polarity",
+        "trade_date",
+        "available_from",
+        "regime_cluster"
+      ],
+      "title": "ShadowRetrievedRecord",
+      "type": "object"
+    },
+    "ShadowSplitAttestation": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "HMAC-SHA256",
+          "default": "HMAC-SHA256",
+          "title": "Algorithm",
+          "type": "string"
+        },
+        "commitment_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Commitment Sha256",
+          "type": "string"
+        },
+        "issued_at": {
+          "format": "date-time",
+          "title": "Issued At",
+          "type": "string"
+        },
+        "key_id": {
+          "pattern": "^[0-9a-f]{16}$",
+          "title": "Key Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "nslab.shadow_split_attestation.v1",
+          "default": "nslab.shadow_split_attestation.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "signature": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Signature",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issued_at",
+        "key_id",
+        "commitment_sha256",
+        "signature"
+      ],
+      "title": "ShadowSplitAttestation",
+      "type": "object"
+    },
+    "ShadowSystemObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "cache_hit_count": {
+          "minimum": 0,
+          "title": "Cache Hit Count",
+          "type": "integer"
+        },
+        "cache_lookup_count": {
+          "minimum": 0,
+          "title": "Cache Lookup Count",
+          "type": "integer"
+        },
+        "daily_analysis_latency_ms": {
+          "minimum": 0.0,
+          "title": "Daily Analysis Latency Ms",
+          "type": "number"
+        },
+        "embedding_query_count": {
+          "minimum": 0,
+          "title": "Embedding Query Count",
+          "type": "integer"
+        },
+        "estimated_cost_usd": {
+          "minimum": 0.0,
+          "title": "Estimated Cost Usd",
+          "type": "number"
+        },
+        "llm_input_tokens": {
+          "minimum": 0,
+          "title": "Llm Input Tokens",
+          "type": "integer"
+        },
+        "llm_output_tokens": {
+          "minimum": 0,
+          "title": "Llm Output Tokens",
+          "type": "integer"
+        },
+        "online_full_scan_count": {
+          "minimum": 0,
+          "title": "Online Full Scan Count",
+          "type": "integer"
+        },
+        "peak_memory_bytes": {
+          "minimum": 0,
+          "title": "Peak Memory Bytes",
+          "type": "integer"
+        },
+        "pre_llm_latency_ms": {
+          "minimum": 0.0,
+          "title": "Pre Llm Latency Ms",
+          "type": "number"
+        }
+      },
+      "required": [
+        "pre_llm_latency_ms",
+        "daily_analysis_latency_ms",
+        "llm_input_tokens",
+        "llm_output_tokens",
+        "embedding_query_count",
+        "cache_hit_count",
+        "cache_lookup_count",
+        "peak_memory_bytes",
+        "estimated_cost_usd",
+        "online_full_scan_count"
+      ],
+      "title": "ShadowSystemObservation",
+      "type": "object"
+    },
+    "ShadowTruthAttestation": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "HMAC-SHA256",
+          "default": "HMAC-SHA256",
+          "title": "Algorithm",
+          "type": "string"
+        },
+        "commitment_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Commitment Sha256",
+          "type": "string"
+        },
+        "issued_at": {
+          "format": "date-time",
+          "title": "Issued At",
+          "type": "string"
+        },
+        "key_id": {
+          "pattern": "^[0-9a-f]{16}$",
+          "title": "Key Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "nslab.shadow_truth_attestation.v1",
+          "default": "nslab.shadow_truth_attestation.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "signature": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Signature",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issued_at",
+        "key_id",
+        "commitment_sha256",
+        "signature"
+      ],
+      "title": "ShadowTruthAttestation",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/ShadowReplayCase"
+      },
+      "minItems": 2,
+      "title": "Cases",
+      "type": "array"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "dataset_attestation": {
+      "$ref": "#/$defs/ShadowDatasetAttestation"
+    },
+    "dataset_id": {
+      "title": "Dataset Id",
+      "type": "string"
+    },
+    "dataset_kind": {
+      "enum": [
+        "SYNTHETIC_CONTRACT",
+        "SEALED_HISTORICAL_REPLAY"
+      ],
+      "title": "Dataset Kind",
+      "type": "string"
+    },
+    "load_profiles": {
+      "items": {
+        "$ref": "#/$defs/ShadowLoadProfile"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Load Profiles",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "nslab.shadow_replay_dataset.v1",
+      "default": "nslab.shadow_replay_dataset.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "split": {
+      "$ref": "#/$defs/ShadowDatasetSplit"
+    }
+  },
+  "required": [
+    "dataset_id",
+    "dataset_kind",
+    "created_at",
+    "dataset_attestation",
+    "split",
+    "cases",
+    "load_profiles"
+  ],
+  "title": "ShadowReplayDataset",
+  "type": "object"
+}

@@ -43,6 +43,14 @@ from news_scalping_lab.contracts.models import (
     RedTeamFinding,
     ResearchEpisode,
 )
+from news_scalping_lab.contracts.shadow_evaluation import (
+    ShadowArmAttestation,
+    ShadowEvaluationManifest,
+    ShadowExecutionIdentity,
+    ShadowLoadAttestation,
+    ShadowReplayDataset,
+    ShadowTruthAttestation,
+)
 
 __all__ = [
     "AdaptiveRetrievalTrace",
@@ -84,4 +92,10 @@ __all__ = [
     "RepresentativeRecord",
     "RepresentativeSetManifest",
     "ResearchEpisode",
+    "ShadowEvaluationManifest",
+    "ShadowExecutionIdentity",
+    "ShadowLoadAttestation",
+    "ShadowArmAttestation",
+    "ShadowReplayDataset",
+    "ShadowTruthAttestation",
 ]

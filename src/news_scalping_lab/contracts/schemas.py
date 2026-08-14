@@ -48,6 +48,10 @@ from news_scalping_lab.contracts.models import (
     ResearchEpisode,
     SemanticRetrievalPlan,
 )
+from news_scalping_lab.contracts.shadow_evaluation import (
+    ShadowEvaluationManifest,
+    ShadowReplayDataset,
+)
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
 from news_scalping_lab.utils import write_json
 
@@ -91,6 +95,8 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "category_claim_inclusion_proof.schema.json": CategoryClaimInclusionProof,
     "category_brain_index_manifest.schema.json": CategoryBrainIndexManifest,
     "daily_memory_context.schema.json": DailyMemoryContext,
+    "shadow_replay_dataset.schema.json": ShadowReplayDataset,
+    "shadow_evaluation_manifest.schema.json": ShadowEvaluationManifest,
 }
 
 

@@ -58,6 +58,8 @@ EXPECTED_SCHEMA_FILES = {
     "research_episode.schema.json",
     "semantic_retrieval_plan.schema.json",
     "semantic_research_draft.schema.json",
+    "shadow_evaluation_manifest.schema.json",
+    "shadow_replay_dataset.schema.json",
 }
 
 
@@ -228,6 +230,9 @@ def test_env_example_keeps_mock_defaults_and_no_secret_values() -> None:
         "NSLAB_BRAVE_SEARCH_FRESHNESS_DAYS",
         "NSLAB_MAX_CONCURRENCY",
         "NSLAB_PHASE7_TRANSPORT_HMAC_KEY",
+        "NSLAB_SHADOW_EVALUATION_HMAC_KEY",
+        "NSLAB_SHADOW_RUNNER_HMAC_KEY",
+        "NSLAB_SHADOW_TRUTH_HMAC_KEY",
     }
 
     assert set(env_values) == required_keys

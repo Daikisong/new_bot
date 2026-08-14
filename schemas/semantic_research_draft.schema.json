@@ -10,6 +10,23 @@
           "title": "Causal Chain",
           "type": "array"
         },
+        "claimed_theme_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Claimed Theme Id"
+        },
+        "claims_news_cause": {
+          "default": false,
+          "title": "Claims News Cause",
+          "type": "boolean"
+        },
         "company_name": {
           "title": "Company Name",
           "type": "string"

@@ -61,6 +61,12 @@ from news_scalping_lab.diagnostics import (
     real_bundle_smoke_report,
 )
 from news_scalping_lab.evaluation.evaluator import Evaluator
+from news_scalping_lab.evaluation.shadow import (
+    ShadowReplayEvaluator,
+    seal_shadow_dataset,
+    seal_shadow_split,
+    shadow_replay_readiness,
+)
 from news_scalping_lab.inference.analyzer import (
     OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION,
     DailyAnalyzer,
@@ -81,6 +87,7 @@ from news_scalping_lab.memory.population import PopulationRetriever
 from news_scalping_lab.memory.runtime import (
     create_production_embedding_provider as _create_production_embedding_provider,
 )
+from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.records.hashing import (
     brain_record_envelope_sha256,
     brain_record_routing_root_sha256,
@@ -8634,6 +8641,242 @@ def memory_inspect_beneficiary_graph(
     _echo(result)
     if not result.get("passed", False):
         raise typer.Exit(code=1)
+
+
+@memory_app.command("evaluate-shadow")
+def memory_evaluate_shadow(
+    dataset_path: Annotated[Path, typer.Argument()],
+) -> None:
+    settings = load_settings()
+    resolved = _resolve_project_artifact(
+        settings.project_root,
+        dataset_path.as_posix(),
+    )
+    if resolved is None:
+        _exit_with_error(ValueError("shadow replay dataset escapes the project root"))
+    try:
+        memory_index = _shadow_memory_index_for_dataset(settings, resolved)
+        price_source = _shadow_price_source_for_dataset(settings, resolved)
+        llm_provider = _shadow_llm_provider_for_dataset(settings, resolved)
+        result = ShadowReplayEvaluator(
+            settings.project_root,
+            pre_registration_key=settings.env_value(
+                "NSLAB_SHADOW_EVALUATION_HMAC_KEY"
+            ),
+            memory_index=memory_index,
+            price_source=price_source,
+            llm_provider=llm_provider,
+            runner_attestation_key=settings.env_value(
+                "NSLAB_SHADOW_RUNNER_HMAC_KEY"
+            ),
+            truth_attestation_key=settings.env_value(
+                "NSLAB_SHADOW_TRUTH_HMAC_KEY"
+            ),
+        ).evaluate(resolved)
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "evaluation_id": result.manifest.evaluation_id,
+            "manifest_path": relative_to_root(
+                result.manifest_path,
+                settings.project_root,
+            ),
+            "production_ready": result.manifest.production_ready,
+            "exit_gate": result.manifest.exit_gate.model_dump(mode="json"),
+        }
+    )
+
+
+@memory_app.command("seal-shadow-split")
+def memory_seal_shadow_split(
+    plan_path: Annotated[Path, typer.Argument()],
+) -> None:
+    settings = load_settings()
+    resolved = _resolve_project_artifact(
+        settings.project_root,
+        plan_path.as_posix(),
+    )
+    if resolved is None:
+        _exit_with_error(ValueError("shadow split plan escapes the project root"))
+    try:
+        split, path = seal_shadow_split(
+            settings.project_root,
+            resolved,
+            key_value=settings.env_value("NSLAB_SHADOW_EVALUATION_HMAC_KEY"),
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "split_manifest_path": relative_to_root(path, settings.project_root),
+            "split": split.model_dump(mode="json"),
+        }
+    )
+
+
+@memory_app.command("seal-shadow-dataset")
+def memory_seal_shadow_dataset(
+    unsigned_dataset_path: Annotated[Path, typer.Argument()],
+) -> None:
+    settings = load_settings()
+    resolved = _resolve_project_artifact(
+        settings.project_root,
+        unsigned_dataset_path.as_posix(),
+    )
+    if resolved is None:
+        _exit_with_error(ValueError("unsigned shadow dataset escapes the project root"))
+    try:
+        memory_index = _shadow_memory_index_for_dataset(settings, resolved)
+        price_source = _shadow_price_source_for_dataset(settings, resolved)
+        llm_provider = _shadow_llm_provider_for_dataset(settings, resolved)
+        dataset, path = seal_shadow_dataset(
+            settings.project_root,
+            resolved,
+            key_value=settings.env_value("NSLAB_SHADOW_EVALUATION_HMAC_KEY"),
+            memory_index=memory_index,
+            price_source=price_source,
+            llm_provider=llm_provider,
+            runner_attestation_key=settings.env_value(
+                "NSLAB_SHADOW_RUNNER_HMAC_KEY"
+            ),
+            truth_attestation_key=settings.env_value(
+                "NSLAB_SHADOW_TRUTH_HMAC_KEY"
+            ),
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "dataset_path": relative_to_root(path, settings.project_root),
+            "dataset_id": dataset.dataset_id,
+            "dataset_attestation": dataset.dataset_attestation.model_dump(
+                mode="json"
+            ),
+        }
+    )
+
+
+@memory_app.command("shadow-readiness")
+def memory_shadow_readiness() -> None:
+    settings = load_settings()
+    try:
+        result = shadow_replay_readiness(settings.project_root)
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(result)
+    if not result.get("ready", False):
+        raise typer.Exit(code=1)
+
+
+@memory_app.command("inspect-shadow")
+def memory_inspect_shadow(
+    manifest_path: Annotated[Path, typer.Argument()],
+) -> None:
+    settings = load_settings()
+    resolved = _resolve_project_artifact(
+        settings.project_root,
+        manifest_path.as_posix(),
+    )
+    if resolved is None:
+        _exit_with_error(ValueError("shadow evaluation manifest escapes the project root"))
+    try:
+        manifest_payload = read_json(resolved)
+        source_ref = (
+            manifest_payload.get("source_dataset")
+            if isinstance(manifest_payload, dict)
+            else None
+        )
+        source_path = (
+            _resolve_project_artifact(
+                settings.project_root,
+                str(source_ref.get("artifact_path", "")),
+            )
+            if isinstance(source_ref, dict)
+            else None
+        )
+        memory_index = (
+            _shadow_memory_index_for_dataset(settings, source_path)
+            if source_path is not None
+            else None
+        )
+        price_source = (
+            _shadow_price_source_for_dataset(settings, source_path)
+            if source_path is not None
+            else None
+        )
+        llm_provider = (
+            _shadow_llm_provider_for_dataset(settings, source_path)
+            if source_path is not None
+            else None
+        )
+        result = ShadowReplayEvaluator(
+            settings.project_root,
+            pre_registration_key=settings.env_value(
+                "NSLAB_SHADOW_EVALUATION_HMAC_KEY"
+            ),
+            memory_index=memory_index,
+            price_source=price_source,
+            llm_provider=llm_provider,
+            runner_attestation_key=settings.env_value(
+                "NSLAB_SHADOW_RUNNER_HMAC_KEY"
+            ),
+            truth_attestation_key=settings.env_value(
+                "NSLAB_SHADOW_TRUTH_HMAC_KEY"
+            ),
+        ).inspect(resolved)
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(result)
+    if not result.get("passed", False):
+        raise typer.Exit(code=1)
+
+
+def _shadow_memory_index_for_dataset(
+    settings: Any,
+    dataset_path: Path,
+) -> ProductionMemoryIndex | None:
+    payload = read_json(dataset_path)
+    if not isinstance(payload, dict) or payload.get("dataset_kind") != (
+        "SEALED_HISTORICAL_REPLAY"
+    ):
+        return None
+    return ProductionMemoryIndex(
+        settings.project_root,
+        embedding_provider=_production_embedding_provider(
+            settings,
+            require_records=False,
+        ),
+        production=True,
+    )
+
+
+def _shadow_price_source_for_dataset(
+    settings: Any,
+    dataset_path: Path,
+) -> Any | None:
+    payload = read_json(dataset_path)
+    if not isinstance(payload, dict) or payload.get("dataset_kind") != (
+        "SEALED_HISTORICAL_REPLAY"
+    ):
+        return None
+    if settings.price_provider.strip().lower() == "mock":
+        raise ValueError("historical shadow replay requires a real price provider")
+    return create_price_source(settings)
+
+
+def _shadow_llm_provider_for_dataset(
+    settings: Any,
+    dataset_path: Path,
+) -> Any | None:
+    payload = read_json(dataset_path)
+    if not isinstance(payload, dict) or payload.get("dataset_kind") != (
+        "SEALED_HISTORICAL_REPLAY"
+    ):
+        return None
+    if settings.llm_provider.strip().lower() == "mock":
+        raise ValueError("historical shadow replay requires a real LLM provider")
+    return create_llm_provider(settings)
 
 
 @memory_app.command("apply-company-deltas")

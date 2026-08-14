@@ -129,6 +129,8 @@ class Candidate(StrictModel):
     company_name: str
     path_type: PathType
     event_ids: list[str] = Field(default_factory=list)
+    claimed_theme_id: str | None = None
+    claims_news_cause: bool = False
     thesis: str
     why_now: str
     causal_chain: list[str] = Field(default_factory=list)
@@ -154,6 +156,13 @@ class Candidate(StrictModel):
     def rank_is_positive(cls, value: int) -> int:
         if value < 1:
             raise ValueError("rank must be positive")
+        return value
+
+    @field_validator("claimed_theme_id")
+    @classmethod
+    def claimed_theme_id_is_not_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("claimed_theme_id cannot be blank")
         return value
 
 
