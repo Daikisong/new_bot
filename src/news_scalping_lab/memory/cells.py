@@ -25,7 +25,7 @@ from news_scalping_lab.utils import as_kst, canonical_json, parse_datetime, sha2
 
 MEMORY_CELL_CLUSTERING_VERSION = "semantic_sign_lsh.v1"
 MEMORY_CELL_NORMALIZER_VERSION = "cutoff_safe_structural_projection.v4"
-MEMORY_CELL_SCHEMA_VERSION = "memory_cell_snapshot.v2"
+MEMORY_CELL_SCHEMA_VERSION = "memory_cell_snapshot.v3"
 MEMORY_CELL_MEMBERSHIP_RULE = "semantic_sign_primary_adjacent_secondary"
 MEMORY_CELL_MEMBERSHIP_RULE_VERSION = "v2"
 MEMORY_CELL_SIGNATURE_BITS = 10

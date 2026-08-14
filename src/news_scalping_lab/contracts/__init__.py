@@ -12,6 +12,7 @@ from news_scalping_lab.contracts.memory_context import (
     PopulationObservedRate,
     PopulationPurpose,
     RecordRoutingMetadata,
+    RepresentativeRecord,
     RepresentativeSetManifest,
 )
 from news_scalping_lab.contracts.models import (
@@ -68,6 +69,7 @@ __all__ = [
     "RedTeamArtifact",
     "RedTeamFinding",
     "RecordRoutingMetadata",
+    "RepresentativeRecord",
     "RepresentativeSetManifest",
     "ResearchEpisode",
 ]

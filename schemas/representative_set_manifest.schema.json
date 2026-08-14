@@ -1,5 +1,37 @@
 {
   "$defs": {
+    "ArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "item_count": {
+          "minimum": 0,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.memory_artifact_reference.v1",
+          "default": "nslab.memory_artifact_reference.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_path",
+        "sha256",
+        "item_count"
+      ],
+      "title": "ArtifactReference",
+      "type": "object"
+    },
     "RepresentativeStratum": {
       "additionalProperties": false,
       "properties": {
@@ -10,6 +42,11 @@
           "title": "Independent Unit Ids",
           "type": "array"
         },
+        "population_unit_count": {
+          "minimum": 0,
+          "title": "Population Unit Count",
+          "type": "integer"
+        },
         "record_ids": {
           "items": {
             "type": "string"
@@ -17,13 +54,20 @@
           "title": "Record Ids",
           "type": "array"
         },
+        "selected_unit_count": {
+          "minimum": 0,
+          "title": "Selected Unit Count",
+          "type": "integer"
+        },
         "stratum": {
           "title": "Stratum",
           "type": "string"
         }
       },
       "required": [
-        "stratum"
+        "stratum",
+        "population_unit_count",
+        "selected_unit_count"
       ],
       "title": "RepresentativeStratum",
       "type": "object"
@@ -31,20 +75,89 @@
   },
   "additionalProperties": false,
   "properties": {
+    "candidate_pool_count": {
+      "minimum": 0,
+      "title": "Candidate Pool Count",
+      "type": "integer"
+    },
+    "cluster_id": {
+      "title": "Cluster Id",
+      "type": "string"
+    },
+    "corpus_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Corpus Manifest Sha256",
+      "type": "string"
+    },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "distribution_share_error_tolerance": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Distribution Share Error Tolerance",
+      "type": "number"
+    },
     "diversity_coverage_ratio": {
       "maximum": 1.0,
       "minimum": 0.0,
       "title": "Diversity Coverage Ratio",
       "type": "number"
     },
+    "embedding_model": {
+      "title": "Embedding Model",
+      "type": "string"
+    },
     "estimated_token_count": {
       "minimum": 0,
       "title": "Estimated Token Count",
       "type": "integer"
     },
+    "max_candidate_pool_count": {
+      "minimum": 1,
+      "title": "Max Candidate Pool Count",
+      "type": "integer"
+    },
+    "max_distribution_share_error": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Max Distribution Share Error",
+      "type": "number"
+    },
+    "max_selected_record_count": {
+      "minimum": 1,
+      "title": "Max Selected Record Count",
+      "type": "integer"
+    },
+    "max_token_count": {
+      "minimum": 1,
+      "title": "Max Token Count",
+      "type": "integer"
+    },
+    "max_trade_date_concentration": {
+      "minimum": 1,
+      "title": "Max Trade Date Concentration",
+      "type": "integer"
+    },
+    "max_unit_key_concentration": {
+      "minimum": 1,
+      "title": "Max Unit Key Concentration",
+      "type": "integer"
+    },
+    "memory_snapshot_id": {
+      "title": "Memory Snapshot Id",
+      "type": "string"
+    },
     "omitted_population_record_count": {
       "minimum": 0,
       "title": "Omitted Population Record Count",
+      "type": "integer"
+    },
+    "omitted_population_unit_count": {
+      "minimum": 0,
+      "title": "Omitted Population Unit Count",
       "type": "integer"
     },
     "population_id": {
@@ -56,15 +169,53 @@
       "title": "Population Manifest Sha256",
       "type": "string"
     },
+    "population_record_count": {
+      "minimum": 0,
+      "title": "Population Record Count",
+      "type": "integer"
+    },
+    "population_unit_count": {
+      "minimum": 0,
+      "title": "Population Unit Count",
+      "type": "integer"
+    },
+    "query_embedding_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Query Embedding Sha256",
+      "type": "string"
+    },
+    "query_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Query Sha256",
+      "type": "string"
+    },
+    "query_text": {
+      "title": "Query Text",
+      "type": "string"
+    },
+    "representative_records": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
     "representative_set_id": {
       "title": "Representative Set Id",
       "type": "string"
     },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
     "schema_version": {
-      "const": "nslab.representative_set_manifest.v1",
-      "default": "nslab.representative_set_manifest.v1",
+      "const": "nslab.representative_set_manifest.v3",
+      "default": "nslab.representative_set_manifest.v3",
       "title": "Schema Version",
       "type": "string"
+    },
+    "selected_independent_unit_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Selected Independent Unit Ids",
+      "type": "array"
     },
     "selected_record_count": {
       "minimum": 0,
@@ -78,8 +229,18 @@
       "title": "Selected Record Ids",
       "type": "array"
     },
+    "selected_unit_count": {
+      "minimum": 0,
+      "title": "Selected Unit Count",
+      "type": "integer"
+    },
     "selection_version": {
       "title": "Selection Version",
+      "type": "string"
+    },
+    "source_generation_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Generation Sha256",
       "type": "string"
     },
     "strata": {
@@ -88,17 +249,46 @@
       },
       "title": "Strata",
       "type": "array"
+    },
+    "target_selected_record_count": {
+      "minimum": 1,
+      "title": "Target Selected Record Count",
+      "type": "integer"
     }
   },
   "required": [
     "representative_set_id",
+    "run_id",
+    "cluster_id",
+    "cutoff_at",
+    "query_text",
+    "query_sha256",
+    "query_embedding_sha256",
     "population_id",
     "population_manifest_sha256",
+    "memory_snapshot_id",
+    "source_generation_sha256",
+    "corpus_manifest_sha256",
     "selection_version",
+    "embedding_model",
+    "candidate_pool_count",
+    "target_selected_record_count",
+    "population_record_count",
+    "population_unit_count",
     "selected_record_count",
+    "selected_unit_count",
     "omitted_population_record_count",
+    "omitted_population_unit_count",
+    "max_selected_record_count",
+    "max_candidate_pool_count",
+    "max_token_count",
+    "max_trade_date_concentration",
+    "max_unit_key_concentration",
     "estimated_token_count",
-    "diversity_coverage_ratio"
+    "diversity_coverage_ratio",
+    "max_distribution_share_error",
+    "distribution_share_error_tolerance",
+    "representative_records"
   ],
   "title": "RepresentativeSetManifest",
   "type": "object"

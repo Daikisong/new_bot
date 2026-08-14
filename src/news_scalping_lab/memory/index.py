@@ -78,7 +78,7 @@ from news_scalping_lab.utils import (
     write_json,
 )
 
-MEMORY_INDEX_SCHEMA_VERSION = "nslab.production_memory_index.v2"
+MEMORY_INDEX_SCHEMA_VERSION = "nslab.production_memory_index.v3"
 MEMORY_INDEX_ROOT = Path("memory/retrieval_index")
 MEMORY_SNAPSHOT_DIR = "snapshots"
 MEMORY_CURRENT_POINTER = "current.json"
@@ -177,6 +177,15 @@ class PopulationCellMember:
         )
         if self.outcome_observed is not observed:
             raise ValueError("outcome_observed conflicts with metric statuses")
+
+
+@dataclass(frozen=True)
+class RepresentativeSourceRecord:
+    record_id: str
+    embedding: tuple[float, ...]
+    document: str
+    source_sha256: str
+    provenance_source_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -762,22 +771,36 @@ class ProductionMemoryIndex:
         *,
         cutoff_at: datetime,
         limit: int = 12,
+        query_vector: list[float] | None = None,
+        included_memory_lanes: tuple[str, ...] | None = None,
+        included_regime_clusters: tuple[str, ...] | None = None,
     ) -> list[MemoryCellCandidate]:
         if not query.strip() or limit < 1:
             return []
         manifest = self.resolve_snapshot(cutoff_at=cutoff_at)
         if self.production and not manifest.production_ready:
             raise ValueError("selected memory snapshot is not production ready")
-        vector = self._embed_batches([query])[0]
-        if len(vector) != manifest.embedding_dimensions:
+        vector = (
+            query_vector
+            if query_vector is not None
+            else self._embed_batches([query])[0]
+        )
+        if len(vector) != manifest.embedding_dimensions or any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            for value in vector
+        ):
             raise ValueError("query embedding dimension does not match memory snapshot")
         database_path = self.root / manifest.database.artifact_path
         self._verify_runtime_database(manifest)
         connection = _connect_index(database_path, read_only=True)
         try:
+            filtered_metadata: list[tuple[Any, ...]] | None = None
             candidate_limit = max(limit, limit * MEMORY_INDEX_QUERY_CANDIDATE_MULTIPLIER)
             vector_type = _vector_type(manifest.embedding_dimensions)
-            ann_rows = connection.execute(
+            ann_limit = candidate_limit
+            broad_ann_rows = connection.execute(
                 f"""
                 SELECT cell_id,
                        1.0 - array_cosine_distance(centroid, ?::{vector_type}) AS score,
@@ -787,28 +810,133 @@ class ProductionMemoryIndex:
                 ORDER BY array_cosine_distance(centroid, ?::{vector_type})
                 LIMIT ?
                 """,
-                [vector, vector, candidate_limit],
+                [vector, vector, ann_limit],
             ).fetchall()
-            fts_rows = connection.execute(
-                """
-                SELECT primary_cell_id, MAX(score) AS score
-                FROM (
-                    SELECT primary_cell_id,
-                           fts_main_reasoning_records.match_bm25(record_id, ?) AS score
-                    FROM reasoning_records
-                ) matched
-                WHERE score IS NOT NULL
-                GROUP BY primary_cell_id
-                ORDER BY score DESC
-                LIMIT ?
-                """,
-                [query, candidate_limit],
-            ).fetchall()
+            if included_memory_lanes is None and included_regime_clusters is None:
+                ann_rows = broad_ann_rows
+                fts_rows = connection.execute(
+                    """
+                    SELECT primary_cell_id, MAX(score) AS score
+                    FROM (
+                        SELECT primary_cell_id,
+                               fts_main_reasoning_records.match_bm25(record_id, ?) AS score
+                        FROM reasoning_records
+                    ) matched
+                    WHERE score IS NOT NULL
+                    GROUP BY primary_cell_id
+                    ORDER BY score DESC
+                    LIMIT ?
+                    """,
+                    [query, candidate_limit],
+                ).fetchall()
+            else:
+                filter_sql, filter_parameters = _cell_search_filter(
+                    included_memory_lanes=included_memory_lanes,
+                    included_regime_clusters=included_regime_clusters,
+                )
+                facets = _cell_facets(
+                    included_memory_lanes=included_memory_lanes,
+                    included_regime_clusters=included_regime_clusters,
+                )
+                facet_scores: dict[str, float] = {}
+                for facet_kind, facet_value in facets:
+                    facet_rows = connection.execute(
+                        f"""
+                        SELECT cell_id,
+                               1.0 - array_cosine_distance(
+                                   centroid, ?::{vector_type}
+                               ) AS score
+                        FROM reasoning_cell_facets
+                        WHERE facet_kind = ? AND facet_value = ?
+                        ORDER BY array_cosine_distance(
+                            centroid, ?::{vector_type}
+                        )
+                        LIMIT ?
+                        """,
+                        [
+                            vector,
+                            facet_kind,
+                            facet_value,
+                            vector,
+                            ann_limit,
+                        ],
+                    ).fetchall()
+                    for cell_id, score in facet_rows:
+                        key = str(cell_id)
+                        facet_scores[key] = max(
+                            facet_scores.get(key, 0.0),
+                            float(score),
+                        )
+                facet_ann_rows = sorted(
+                    facet_scores.items(),
+                    key=lambda item: (-item[1], item[0]),
+                )[:ann_limit]
+                fts_rows = connection.execute(
+                    f"""
+                    SELECT r.primary_cell_id,
+                           MAX(fts_main_reasoning_records.match_bm25(
+                               r.record_id, ?
+                           )) AS score
+                    FROM reasoning_records r
+                    WHERE {filter_sql.removeprefix(' AND ')}
+                    GROUP BY r.primary_cell_id
+                    HAVING score IS NOT NULL
+                    ORDER BY score DESC, r.primary_cell_id
+                    LIMIT ?
+                    """,
+                    [query, *filter_parameters, candidate_limit],
+                ).fetchall()
+                candidate_cell_ids = sorted(
+                    {str(row[0]) for row in facet_ann_rows}
+                    | {str(row[0]) for row in fts_rows}
+                )
+                if candidate_cell_ids:
+                    filtered_metadata = connection.execute(
+                        f"""
+                        SELECT primary_cell_id,
+                               COUNT(*) AS primary_member_count,
+                               COUNT(DISTINCT independent_unit_id)
+                                   AS independent_unit_count
+                        FROM records
+                        WHERE routing_disposition = 'REASONING'
+                          AND primary_cell_id IN (
+                              SELECT UNNEST(?::VARCHAR[])
+                          ) {filter_sql}
+                        GROUP BY primary_cell_id
+                        """,
+                        [candidate_cell_ids, *filter_parameters],
+                    ).fetchall()
+                    metadata_by_cell = {
+                        str(row[0]): (int(row[1]), int(row[2]))
+                        for row in filtered_metadata
+                    }
+                    ann_rows = [
+                        (
+                            str(row[0]),
+                            float(row[1]),
+                            metadata_by_cell[str(row[0])][0],
+                            metadata_by_cell[str(row[0])][1],
+                        )
+                        for row in facet_ann_rows
+                        if str(row[0]) in metadata_by_cell
+                    ]
+                    ann_rows.sort(key=lambda row: (-float(row[1]), str(row[0])))
+                    ann_rows = ann_rows[:candidate_limit]
+                    fts_rows = [
+                        row for row in fts_rows if str(row[0]) in metadata_by_cell
+                    ]
+                else:
+                    ann_rows = []
+                    fts_rows = []
+                    filtered_metadata = []
             return _merge_cell_candidates(
                 connection,
                 ann_rows=ann_rows,
                 fts_rows=fts_rows,
                 limit=limit,
+                metadata_rows=(
+                    filtered_metadata
+                ),
             )
         finally:
             connection.close()
@@ -1089,6 +1217,62 @@ class ProductionMemoryIndex:
                 sample_weight_status=str(row[22]),
             )
             for row, matched_cells in (grouped[key] for key in sorted(grouped))
+        ]
+
+    def representative_source_records(
+        self,
+        record_ids: list[str],
+        *,
+        cutoff_at: datetime,
+        force_database_verification: bool = False,
+    ) -> tuple[MemoryCellSnapshotManifest, list[RepresentativeSourceRecord]]:
+        """Load a bounded representative pool from the active snapshot DB."""
+
+        selected_ids = sorted(set(record_ids))
+        if not selected_ids:
+            raise ValueError("representative source retrieval requires record IDs")
+        if len(selected_ids) > 2_048:
+            raise ValueError("representative source retrieval exceeds its record budget")
+        manifest = self.resolve_snapshot(cutoff_at=cutoff_at)
+        self._verify_runtime_database(
+            manifest,
+            force=force_database_verification,
+        )
+        connection = _connect_index(
+            self.root / manifest.database.artifact_path,
+            read_only=True,
+        )
+        try:
+            rows = connection.execute(
+                """
+                SELECT r.record_id,
+                       r.embedding,
+                       r.document,
+                       r.source_sha256,
+                       list(p.source_id ORDER BY p.source_id) AS provenance_source_ids
+                FROM records r
+                LEFT JOIN provenance_edges p USING (record_id)
+                WHERE r.record_id IN (SELECT UNNEST(?::VARCHAR[]))
+                  AND r.available_from <= ?
+                GROUP BY r.record_id, r.embedding, r.document, r.source_sha256
+                ORDER BY r.record_id
+                """,
+                [selected_ids, as_kst(cutoff_at).isoformat()],
+            ).fetchall()
+        finally:
+            connection.close()
+        observed_ids = {str(row[0]) for row in rows}
+        if observed_ids != set(selected_ids):
+            raise ValueError("representative source records are absent from the snapshot")
+        return manifest, [
+            RepresentativeSourceRecord(
+                record_id=str(row[0]),
+                embedding=tuple(float(value) for value in row[1]),
+                document=str(row[2]),
+                source_sha256=str(row[3]),
+                provenance_source_ids=tuple(str(value) for value in row[4]),
+            )
+            for row in rows
         ]
 
     def _verify_runtime_database(
@@ -1543,12 +1727,15 @@ def inspect_memory_snapshot(root: Path, snapshot_id: str) -> dict[str, object]:
     if (
         isinstance(raw_manifest, dict)
         and raw_manifest.get("schema_version")
-        == "nslab.memory_cell_snapshot_manifest.v1"
+        in {
+            "nslab.memory_cell_snapshot_manifest.v1",
+            "nslab.memory_cell_snapshot_manifest.v2",
+        }
     ):
         return {
             **base,
             "status": "stale",
-            "errors": ["snapshot_schema_legacy_v1"],
+            "errors": ["snapshot_schema_legacy"],
             "manifest": raw_manifest,
             "production_ready": False,
             "legacy_read_compatible": True,
@@ -2502,12 +2689,17 @@ def _database_index_readiness_errors(
         "records_disposition_idx",
         "records_type_idx",
         "records_primary_cell_idx",
+        "reasoning_facets_value_idx",
+        "reasoning_facets_cell_idx",
         "secondary_cell_idx",
         "provenance_source_idx",
     }
     if manifest.metadata_index_ready and not required <= index_names:
         errors.append("database_metadata_indexes_missing")
-    if manifest.hnsw_index_ready and "reasoning_cells_hnsw_idx" not in index_names:
+    if manifest.hnsw_index_ready and not {
+        "reasoning_cells_hnsw_idx",
+        "reasoning_cell_facets_hnsw_idx",
+    } <= index_names:
         errors.append("database_hnsw_indexes_missing")
     schema_names = {
         str(row[0])
@@ -2520,14 +2712,78 @@ def _database_index_readiness_errors(
     try:
         reasoning_projection_mismatch = _sql_symmetric_difference_count(
             connection,
-            "SELECT record_id, primary_cell_id, document FROM reasoning_records",
-            "SELECT record_id, primary_cell_id, document FROM records "
+            "SELECT record_id, primary_cell_id, memory_lanes, regime_cluster, "
+            "document FROM reasoning_records",
+            "SELECT record_id, primary_cell_id, memory_lanes, regime_cluster, "
+            "document FROM records "
             "WHERE routing_disposition = 'REASONING'",
         )
     except duckdb.Error:
         reasoning_projection_mismatch = 1
     if reasoning_projection_mismatch:
         errors.append("database_reasoning_fts_projection_mismatch")
+    errors.extend(_reasoning_cell_facet_errors(connection))
+    return errors
+
+
+def _reasoning_cell_facet_errors(
+    connection: duckdb.DuckDBPyConnection,
+) -> list[str]:
+    expected = """
+        SELECT 'lane' AS facet_kind,
+               lane.lane_value AS facet_value,
+               primary_cell_id AS cell_id,
+               COUNT(*) AS primary_member_count,
+               COUNT(DISTINCT independent_unit_id) AS independent_unit_count
+        FROM records
+        CROSS JOIN UNNEST(
+            from_json(memory_lanes, '["VARCHAR"]')
+        ) AS lane(lane_value)
+        WHERE routing_disposition = 'REASONING'
+        GROUP BY lane.lane_value, primary_cell_id
+        UNION ALL
+        SELECT 'regime' AS facet_kind,
+               upper(trim(regime_cluster)) AS facet_value,
+               primary_cell_id AS cell_id,
+               COUNT(*) AS primary_member_count,
+               COUNT(DISTINCT independent_unit_id) AS independent_unit_count
+        FROM records
+        WHERE routing_disposition = 'REASONING'
+          AND trim(regime_cluster) != ''
+        GROUP BY upper(trim(regime_cluster)), primary_cell_id
+        UNION ALL
+        SELECT 'lane_regime' AS facet_kind,
+               lane.lane_value || '|' || upper(trim(regime_cluster))
+                   AS facet_value,
+               primary_cell_id AS cell_id,
+               COUNT(*) AS primary_member_count,
+               COUNT(DISTINCT independent_unit_id) AS independent_unit_count
+        FROM records
+        CROSS JOIN UNNEST(
+            from_json(memory_lanes, '["VARCHAR"]')
+        ) AS lane(lane_value)
+        WHERE routing_disposition = 'REASONING'
+          AND trim(regime_cluster) != ''
+        GROUP BY lane.lane_value, upper(trim(regime_cluster)), primary_cell_id
+    """
+    observed = (
+        "SELECT facet_kind, facet_value, cell_id, primary_member_count, "
+        "independent_unit_count FROM reasoning_cell_facets"
+    )
+    errors = []
+    try:
+        if _sql_symmetric_difference_count(connection, expected, observed):
+            errors.append("database_reasoning_cell_facets_mismatch")
+        centroid_mismatch = _fetch_count(
+            connection,
+            "SELECT COUNT(*) FROM reasoning_cell_facets facets "
+            "JOIN reasoning_cells cells USING (cell_id) "
+            "WHERE facets.centroid != cells.centroid",
+        )
+        if centroid_mismatch:
+            errors.append("database_reasoning_cell_facet_centroid_mismatch")
+    except duckdb.Error:
+        errors.append("database_reasoning_cell_facets_missing")
     return errors
 
 
@@ -2796,12 +3052,17 @@ def _database_integrity_errors(
         "records_type_idx",
         "records_primary_cell_idx",
         "records_unit_type_idx",
+        "reasoning_facets_value_idx",
+        "reasoning_facets_cell_idx",
         "secondary_cell_idx",
         "provenance_source_idx",
     }
     if manifest.metadata_index_ready and not metadata_indexes <= index_names:
         errors.append("database_metadata_indexes_missing")
-    if manifest.hnsw_index_ready and "reasoning_cells_hnsw_idx" not in index_names:
+    if manifest.hnsw_index_ready and not {
+        "reasoning_cells_hnsw_idx",
+        "reasoning_cell_facets_hnsw_idx",
+    } <= index_names:
         errors.append("database_hnsw_indexes_missing")
     schema_names = {
         str(row[0])
@@ -2814,6 +3075,7 @@ def _database_integrity_errors(
         and "fts_main_reasoning_records" not in schema_names
     ):
         errors.append("database_fts_index_missing")
+    errors.extend(_reasoning_cell_facet_errors(connection))
     unsupported_count, unsupported_hash = _unsupported_reasoning_identity(connection)
     if (
         unsupported_count != manifest.unsupported_reasoning_record_count
@@ -3135,12 +3397,16 @@ def _finalize_database_indexes(
         "hnsw_index_ready": False,
         "provenance_graph_ready": False,
     }
+    _create_reasoning_retrieval_tables(connection)
     for statement in (
         "CREATE INDEX records_available_idx ON records(available_from)",
         "CREATE INDEX records_disposition_idx ON records(routing_disposition)",
         "CREATE INDEX records_type_idx ON records(record_type)",
         "CREATE INDEX records_primary_cell_idx ON records(primary_cell_id)",
         "CREATE INDEX records_unit_type_idx ON records(independent_unit_type)",
+        "CREATE INDEX reasoning_facets_value_idx "
+        "ON reasoning_cell_facets(facet_kind, facet_value)",
+        "CREATE INDEX reasoning_facets_cell_idx ON reasoning_cell_facets(cell_id)",
         "CREATE INDEX secondary_cell_idx ON secondary_memberships(cell_id)",
         "CREATE INDEX provenance_source_idx ON provenance_edges(source_id)",
     ):
@@ -3150,11 +3416,6 @@ def _finalize_database_indexes(
     try:
         connection.execute("INSTALL fts")
         connection.execute("LOAD fts")
-        connection.execute(
-            "CREATE TABLE reasoning_records AS "
-            "SELECT record_id, primary_cell_id, document FROM records "
-            "WHERE routing_disposition = 'REASONING'"
-        )
         connection.execute(
             "PRAGMA create_fts_index('reasoning_records', 'record_id', 'document', "
             "stemmer='none', stopwords='none', ignore='', overwrite=1)"
@@ -3171,11 +3432,91 @@ def _finalize_database_indexes(
             "CREATE INDEX reasoning_cells_hnsw_idx ON reasoning_cells USING HNSW (centroid) "
             "WITH (metric = 'cosine')"
         )
+        connection.execute(
+            "CREATE INDEX reasoning_cell_facets_hnsw_idx "
+            "ON reasoning_cell_facets USING HNSW (centroid) "
+            "WITH (metric = 'cosine')"
+        )
         readiness["hnsw_index_ready"] = True
     except duckdb.Error:
         if require_extensions:
             raise
     return readiness
+
+
+def _create_reasoning_retrieval_tables(
+    connection: duckdb.DuckDBPyConnection,
+) -> None:
+    connection.execute(
+        "CREATE TABLE reasoning_records AS "
+        "SELECT record_id, primary_cell_id, memory_lanes, regime_cluster, document "
+        "FROM records WHERE routing_disposition = 'REASONING'"
+    )
+    connection.execute(
+        """
+        CREATE TABLE reasoning_cell_facets AS
+        SELECT 'lane' AS facet_kind,
+               lane_value AS facet_value,
+               grouped.primary_cell_id AS cell_id,
+               grouped.primary_member_count,
+               grouped.independent_unit_count,
+               cells.centroid
+        FROM (
+            SELECT primary_cell_id,
+                   lane.lane_value,
+                   COUNT(*) AS primary_member_count,
+                   COUNT(DISTINCT independent_unit_id) AS independent_unit_count
+            FROM records
+            CROSS JOIN UNNEST(
+                from_json(memory_lanes, '["VARCHAR"]')
+            ) AS lane(lane_value)
+            WHERE routing_disposition = 'REASONING'
+            GROUP BY primary_cell_id, lane.lane_value
+        ) grouped
+        JOIN reasoning_cells cells ON cells.cell_id = grouped.primary_cell_id
+        UNION ALL
+        SELECT 'regime' AS facet_kind,
+               regime_value AS facet_value,
+               grouped.primary_cell_id AS cell_id,
+               grouped.primary_member_count,
+               grouped.independent_unit_count,
+               cells.centroid
+        FROM (
+            SELECT primary_cell_id,
+                   upper(trim(regime_cluster)) AS regime_value,
+                   COUNT(*) AS primary_member_count,
+                   COUNT(DISTINCT independent_unit_id) AS independent_unit_count
+            FROM records
+            WHERE routing_disposition = 'REASONING'
+              AND trim(regime_cluster) != ''
+            GROUP BY primary_cell_id, upper(trim(regime_cluster))
+        ) grouped
+        JOIN reasoning_cells cells ON cells.cell_id = grouped.primary_cell_id
+        UNION ALL
+        SELECT 'lane_regime' AS facet_kind,
+               lane_value || '|' || regime_value AS facet_value,
+               grouped.primary_cell_id AS cell_id,
+               grouped.primary_member_count,
+               grouped.independent_unit_count,
+               cells.centroid
+        FROM (
+            SELECT primary_cell_id,
+                   lane.lane_value,
+                   upper(trim(regime_cluster)) AS regime_value,
+                   COUNT(*) AS primary_member_count,
+                   COUNT(DISTINCT independent_unit_id) AS independent_unit_count
+            FROM records
+            CROSS JOIN UNNEST(
+                from_json(memory_lanes, '["VARCHAR"]')
+            ) AS lane(lane_value)
+            WHERE routing_disposition = 'REASONING'
+              AND trim(regime_cluster) != ''
+            GROUP BY primary_cell_id, lane.lane_value,
+                     upper(trim(regime_cluster))
+        ) grouped
+        JOIN reasoning_cells cells ON cells.cell_id = grouped.primary_cell_id
+        """
+    )
 
 
 def _write_jsonl_row(handle: BinaryIO, row: dict[str, Any]) -> None:
@@ -3434,12 +3775,16 @@ def _build_database(
                 "INSERT INTO provenance_edges VALUES (?, ?)",
                 provenance_rows,
             )
+        _create_reasoning_retrieval_tables(connection)
         for statement in (
             "CREATE INDEX records_available_idx ON records(available_from)",
             "CREATE INDEX records_disposition_idx ON records(routing_disposition)",
             "CREATE INDEX records_type_idx ON records(record_type)",
             "CREATE INDEX records_primary_cell_idx ON records(primary_cell_id)",
             "CREATE INDEX records_unit_type_idx ON records(independent_unit_type)",
+            "CREATE INDEX reasoning_facets_value_idx "
+            "ON reasoning_cell_facets(facet_kind, facet_value)",
+            "CREATE INDEX reasoning_facets_cell_idx ON reasoning_cell_facets(cell_id)",
             "CREATE INDEX secondary_cell_idx ON secondary_memberships(cell_id)",
             "CREATE INDEX provenance_source_idx ON provenance_edges(source_id)",
         ):
@@ -3450,11 +3795,6 @@ def _build_database(
         try:
             connection.execute("INSTALL fts")
             connection.execute("LOAD fts")
-            connection.execute(
-                "CREATE TABLE reasoning_records AS "
-                "SELECT record_id, primary_cell_id, document FROM records "
-                "WHERE routing_disposition = 'REASONING'"
-            )
             connection.execute(
                 "PRAGMA create_fts_index('reasoning_records', 'record_id', 'document', "
                 "stemmer='none', stopwords='none', ignore='', overwrite=1)"
@@ -3471,6 +3811,11 @@ def _build_database(
                 connection.execute("SET hnsw_enable_experimental_persistence = true")
                 connection.execute(
                     "CREATE INDEX reasoning_cells_hnsw_idx ON reasoning_cells USING HNSW (centroid) "
+                    "WITH (metric = 'cosine')"
+                )
+                connection.execute(
+                    "CREATE INDEX reasoning_cell_facets_hnsw_idx "
+                    "ON reasoning_cell_facets USING HNSW (centroid) "
                     "WITH (metric = 'cosine')"
                 )
                 readiness["hnsw_index_ready"] = True
@@ -3500,9 +3845,14 @@ def _merge_cell_candidates(
     ann_rows: list[tuple[Any, ...]],
     fts_rows: list[tuple[Any, ...]],
     limit: int,
+    metadata_rows: list[tuple[Any, ...]] | None = None,
 ) -> list[MemoryCellCandidate]:
     scores: dict[str, dict[str, float | None]] = {}
     metadata: dict[str, tuple[int, int]] = {}
+    if metadata_rows is not None:
+        metadata.update(
+            {str(row[0]): (int(row[1]), int(row[2])) for row in metadata_rows}
+        )
     for cell_id, score, primary_count, unit_count in ann_rows:
         key = str(cell_id)
         scores.setdefault(key, {"ann": None, "fts": None})["ann"] = float(score)
@@ -3541,6 +3891,67 @@ def _merge_cell_candidates(
         )
     candidates.sort(key=lambda item: (-item.score, item.cell_id))
     return candidates[:limit]
+
+
+def _cell_search_filter(
+    *,
+    included_memory_lanes: tuple[str, ...] | None,
+    included_regime_clusters: tuple[str, ...] | None,
+) -> tuple[str, list[object]]:
+    clauses = []
+    parameters: list[object] = []
+    if included_memory_lanes is not None:
+        lanes = sorted({value.strip() for value in included_memory_lanes if value.strip()})
+        if not lanes:
+            raise ValueError("cell search memory lane filter cannot be empty")
+        clauses.append(
+            "list_has_any(from_json(memory_lanes, '[\"VARCHAR\"]'), ?::VARCHAR[])"
+        )
+        parameters.append(lanes)
+    if included_regime_clusters is not None:
+        regimes = sorted(
+            {value.strip().upper() for value in included_regime_clusters if value.strip()}
+        )
+        if not regimes:
+            raise ValueError("cell search regime filter cannot be empty")
+        clauses.append("upper(regime_cluster) IN (SELECT UNNEST(?::VARCHAR[]))")
+        parameters.append(regimes)
+    return (
+        " AND " + " AND ".join(clauses) if clauses else "",
+        parameters,
+    )
+
+
+def _cell_facets(
+    *,
+    included_memory_lanes: tuple[str, ...] | None,
+    included_regime_clusters: tuple[str, ...] | None,
+) -> list[tuple[str, str]]:
+    lanes: list[str] = []
+    regimes: list[str] = []
+    if included_memory_lanes is not None:
+        lanes = sorted({value.strip() for value in included_memory_lanes if value.strip()})
+        if not lanes:
+            raise ValueError("cell search memory lane filter cannot be empty")
+    if included_regime_clusters is not None:
+        regimes = sorted(
+            {value.strip().upper() for value in included_regime_clusters if value.strip()}
+        )
+        if not regimes:
+            raise ValueError("cell search regime filter cannot be empty")
+    if lanes and regimes:
+        return [
+            ("lane_regime", f"{lane}|{regime}")
+            for lane in lanes
+            for regime in regimes
+        ]
+    if lanes:
+        return [("lane", lane) for lane in lanes]
+    if regimes:
+        return [("regime", regime) for regime in regimes]
+    if not lanes and not regimes:
+        raise ValueError("cell facet filter requires at least one dimension")
+    raise AssertionError("unreachable cell facet state")
 
 
 def _fetch_count(
@@ -3612,7 +4023,7 @@ def _snapshot_identity_from_manifest(
 
 def _manifest_versions_current(manifest: MemoryCellSnapshotManifest) -> bool:
     return (
-        manifest.schema_version == "nslab.memory_cell_snapshot_manifest.v2"
+        manifest.schema_version == "nslab.memory_cell_snapshot_manifest.v3"
         and manifest.clustering_version == MEMORY_CELL_CLUSTERING_VERSION
         and manifest.normalizer_version == MEMORY_CELL_NORMALIZER_VERSION
         and manifest.cell_schema_version == MEMORY_CELL_SCHEMA_VERSION

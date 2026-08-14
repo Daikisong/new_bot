@@ -46,6 +46,7 @@ EXPECTED_SCHEMA_FILES = {
     "population_manifest.schema.json",
     "red_team_artifact.schema.json",
     "record_routing_metadata.schema.json",
+    "representative_record.schema.json",
     "representative_set_manifest.schema.json",
     "research_episode.schema.json",
     "semantic_retrieval_plan.schema.json",

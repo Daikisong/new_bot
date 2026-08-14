@@ -7,6 +7,7 @@ from news_scalping_lab.context.final_synthesis import (
     phase2_memory_coverage_required,
 )
 from news_scalping_lab.contracts.memory_context import (
+    AdaptiveRetrievalTrace,
     ArtifactReference,
     DailyMemoryContext,
     EventClusterEntry,
@@ -17,6 +18,7 @@ from news_scalping_lab.contracts.memory_context import (
     PopulationObservedRate,
     PopulationOutcomeSummary,
     RecordRoutingMetadata,
+    RepresentativeSetManifest,
 )
 from news_scalping_lab.contracts.models import (
     ContextManifest,
@@ -257,6 +259,97 @@ def test_population_rejects_impossible_outcome_counts() -> None:
             member_records=artifact,
             independent_units=artifact,
             cube_rows=artifact.model_copy(update={"item_count": 1}),
+        )
+
+
+def test_representative_contract_rejects_query_hash_mismatch() -> None:
+    artifact = ArtifactReference(
+        artifact_path="runs/representatives/records.jsonl",
+        sha256="a" * 64,
+        item_count=1,
+    )
+    with pytest.raises(ValidationError, match="query text and hash conflict"):
+        RepresentativeSetManifest(
+            representative_set_id="REP-1",
+            run_id="RUN-1",
+            cluster_id="CL-1",
+            cutoff_at=datetime(2030, 1, 10, tzinfo=KST),
+            query_text="query",
+            query_sha256="b" * 64,
+            query_embedding_sha256="c" * 64,
+            population_id="POP-1",
+            population_manifest_sha256="d" * 64,
+            memory_snapshot_id="MEMIDX-1",
+            source_generation_sha256="e" * 64,
+            corpus_manifest_sha256="f" * 64,
+            selection_version="v1",
+            embedding_model="embedding",
+            candidate_pool_count=1,
+            target_selected_record_count=1,
+            population_record_count=1,
+            population_unit_count=1,
+            selected_record_count=1,
+            selected_unit_count=1,
+            omitted_population_record_count=0,
+            omitted_population_unit_count=0,
+            max_selected_record_count=1,
+            max_candidate_pool_count=1,
+            max_token_count=100,
+            max_trade_date_concentration=1,
+            max_unit_key_concentration=1,
+            estimated_token_count=10,
+            diversity_coverage_ratio=1.0,
+            max_distribution_share_error=0.0,
+            distribution_share_error_tolerance=0.25,
+            selected_record_ids=["REC-1"],
+            selected_independent_unit_ids=["UNIT-1"],
+            representative_records=artifact,
+        )
+
+
+def test_adaptive_contract_rejects_noncontiguous_iterations() -> None:
+    artifact = ArtifactReference(
+        artifact_path="runs/adaptive/manifest.json",
+        sha256="a" * 64,
+        item_count=1,
+    )
+    with pytest.raises(ValidationError):
+        AdaptiveRetrievalTrace(
+            trace_id="ADAPT-1",
+            run_id="RUN-1",
+            cluster_id="CL-1",
+            cutoff_at=datetime(2030, 1, 10, tzinfo=KST),
+            query_text="query",
+            query_sha256=sha256_text("query"),
+            query_embedding_sha256="b" * 64,
+            policy_version="v1",
+            initial_population_manifest=artifact,
+            initial_representative_set_manifest=artifact,
+            initial_cell_ids=["CELL-1"],
+            iterations=[
+                {
+                    "iteration": 2,
+                    "trigger_reasons": ["POLARITY_CONFLICT"],
+                    "expansion_query_sha256": "c" * 64,
+                    "added_cell_ids": ["CELL-2"],
+                    "added_record_ids": ["REC-2"],
+                    "total_cell_count": 2,
+                    "total_record_count": 2,
+                    "population_manifest": artifact,
+                    "representative_set_manifest": artifact,
+                    "information_gain": 0.1,
+                    "cumulative_token_count": 10,
+                }
+            ],
+            max_depth=2,
+            max_cell_count=2,
+            max_record_count=2,
+            max_token_count=100,
+            min_information_gain=0.03,
+            final_cell_ids=["CELL-1", "CELL-2"],
+            final_population_manifest=artifact,
+            final_representative_set_manifest=artifact,
+            stopped_reason="MAX_DEPTH",
         )
 
 

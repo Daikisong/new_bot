@@ -231,7 +231,7 @@ def test_v1_snapshot_manifest_is_reported_as_legacy_stale(
     inspection = inspect_memory_snapshot(tmp_path, manifest.snapshot_id)
 
     assert inspection["status"] == "stale"
-    assert inspection["errors"] == ["snapshot_schema_legacy_v1"]
+    assert inspection["errors"] == ["snapshot_schema_legacy"]
     assert inspection["legacy_read_compatible"] is True
 
 

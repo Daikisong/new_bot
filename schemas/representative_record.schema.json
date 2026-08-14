@@ -1,0 +1,98 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "context_excerpt": {
+      "title": "Context Excerpt",
+      "type": "string"
+    },
+    "distribution_score": {
+      "title": "Distribution Score",
+      "type": "number"
+    },
+    "diversity_score": {
+      "title": "Diversity Score",
+      "type": "number"
+    },
+    "estimated_token_count": {
+      "minimum": 1,
+      "title": "Estimated Token Count",
+      "type": "integer"
+    },
+    "facility_score": {
+      "title": "Facility Score",
+      "type": "number"
+    },
+    "independent_unit_id": {
+      "title": "Independent Unit Id",
+      "type": "string"
+    },
+    "provenance_source_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Provenance Source Ids",
+      "type": "array"
+    },
+    "rank": {
+      "minimum": 1,
+      "title": "Rank",
+      "type": "integer"
+    },
+    "record_id": {
+      "title": "Record Id",
+      "type": "string"
+    },
+    "record_label_quality": {
+      "title": "Record Label Quality",
+      "type": "string"
+    },
+    "relevance_score": {
+      "title": "Relevance Score",
+      "type": "number"
+    },
+    "schema_version": {
+      "const": "nslab.representative_record.v1",
+      "default": "nslab.representative_record.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selection_score": {
+      "title": "Selection Score",
+      "type": "number"
+    },
+    "source_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Sha256",
+      "type": "string"
+    },
+    "strata": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Strata",
+      "type": "array"
+    },
+    "trade_date": {
+      "format": "date",
+      "title": "Trade Date",
+      "type": "string"
+    }
+  },
+  "required": [
+    "rank",
+    "record_id",
+    "independent_unit_id",
+    "trade_date",
+    "source_sha256",
+    "record_label_quality",
+    "context_excerpt",
+    "relevance_score",
+    "diversity_score",
+    "facility_score",
+    "distribution_score",
+    "selection_score",
+    "estimated_token_count"
+  ],
+  "title": "RepresentativeRecord",
+  "type": "object"
+}

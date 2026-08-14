@@ -222,8 +222,8 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "nslab.memory_cell_snapshot_manifest.v2",
-      "default": "nslab.memory_cell_snapshot_manifest.v2",
+      "const": "nslab.memory_cell_snapshot_manifest.v3",
+      "default": "nslab.memory_cell_snapshot_manifest.v3",
       "title": "Schema Version",
       "type": "string"
     },

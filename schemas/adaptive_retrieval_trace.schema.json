@@ -22,14 +22,55 @@
           "title": "Cumulative Token Count",
           "type": "integer"
         },
+        "expansion_embedding_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Expansion Embedding Sha256",
+          "type": "string"
+        },
+        "expansion_memory_lanes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Expansion Memory Lanes",
+          "type": "array"
+        },
+        "expansion_query_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Expansion Query Sha256",
+          "type": "string"
+        },
+        "expansion_regime_clusters": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Expansion Regime Clusters",
+          "type": "array"
+        },
         "information_gain": {
+          "maximum": 1.0,
           "minimum": 0.0,
           "title": "Information Gain",
           "type": "number"
         },
         "iteration": {
-          "minimum": 0,
+          "minimum": 1,
           "title": "Iteration",
+          "type": "integer"
+        },
+        "population_manifest": {
+          "$ref": "#/$defs/ArtifactReference"
+        },
+        "representative_set_manifest": {
+          "$ref": "#/$defs/ArtifactReference"
+        },
+        "total_cell_count": {
+          "minimum": 0,
+          "title": "Total Cell Count",
+          "type": "integer"
+        },
+        "total_record_count": {
+          "minimum": 0,
+          "title": "Total Record Count",
           "type": "integer"
         },
         "trigger_reasons": {
@@ -42,10 +83,48 @@
       },
       "required": [
         "iteration",
+        "expansion_query_sha256",
+        "expansion_embedding_sha256",
+        "total_cell_count",
+        "total_record_count",
+        "population_manifest",
+        "representative_set_manifest",
         "information_gain",
         "cumulative_token_count"
       ],
       "title": "AdaptiveRetrievalIteration",
+      "type": "object"
+    },
+    "ArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "item_count": {
+          "minimum": 0,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.memory_artifact_reference.v1",
+          "default": "nslab.memory_artifact_reference.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_path",
+        "sha256",
+        "item_count"
+      ],
+      "title": "ArtifactReference",
       "type": "object"
     }
   },
@@ -55,12 +134,36 @@
       "title": "Cluster Id",
       "type": "string"
     },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "final_cell_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Final Cell Ids",
+      "type": "array"
+    },
+    "final_population_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "final_representative_set_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
     "initial_cell_ids": {
       "items": {
         "type": "string"
       },
       "title": "Initial Cell Ids",
       "type": "array"
+    },
+    "initial_population_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "initial_representative_set_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
     },
     "iterations": {
       "items": {
@@ -70,27 +173,47 @@
       "type": "array"
     },
     "max_cell_count": {
-      "minimum": 0,
+      "minimum": 1,
       "title": "Max Cell Count",
       "type": "integer"
     },
     "max_depth": {
-      "minimum": 0,
+      "minimum": 1,
       "title": "Max Depth",
       "type": "integer"
     },
     "max_record_count": {
-      "minimum": 0,
+      "minimum": 1,
       "title": "Max Record Count",
       "type": "integer"
     },
     "max_token_count": {
-      "minimum": 0,
+      "minimum": 1,
       "title": "Max Token Count",
       "type": "integer"
     },
+    "min_information_gain": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Min Information Gain",
+      "type": "number"
+    },
     "policy_version": {
       "title": "Policy Version",
+      "type": "string"
+    },
+    "query_embedding_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Query Embedding Sha256",
+      "type": "string"
+    },
+    "query_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Query Sha256",
+      "type": "string"
+    },
+    "query_text": {
+      "title": "Query Text",
       "type": "string"
     },
     "run_id": {
@@ -98,24 +221,38 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "nslab.adaptive_retrieval_trace.v1",
-      "default": "nslab.adaptive_retrieval_trace.v1",
+      "const": "nslab.adaptive_retrieval_trace.v3",
+      "default": "nslab.adaptive_retrieval_trace.v3",
       "title": "Schema Version",
       "type": "string"
     },
     "stopped_reason": {
       "title": "Stopped Reason",
       "type": "string"
+    },
+    "trace_id": {
+      "title": "Trace Id",
+      "type": "string"
     }
   },
   "required": [
+    "trace_id",
     "run_id",
     "cluster_id",
+    "cutoff_at",
+    "query_text",
+    "query_sha256",
+    "query_embedding_sha256",
     "policy_version",
+    "initial_population_manifest",
+    "initial_representative_set_manifest",
     "max_depth",
     "max_cell_count",
     "max_record_count",
     "max_token_count",
+    "min_information_gain",
+    "final_population_manifest",
+    "final_representative_set_manifest",
     "stopped_reason"
   ],
   "title": "AdaptiveRetrievalTrace",

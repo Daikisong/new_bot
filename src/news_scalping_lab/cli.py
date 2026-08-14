@@ -66,7 +66,9 @@ from news_scalping_lab.inference.event_clustering import EVENT_CLUSTERING_VERSIO
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
+from news_scalping_lab.memory.adaptive_retrieval import AdaptiveRetriever
 from news_scalping_lab.memory.company import CompanyMemoryStore
+from news_scalping_lab.memory.diversity import RepresentativeSelector
 from news_scalping_lab.memory.index import (
     ProductionMemoryIndex,
     inspect_current_memory_index,
@@ -8226,6 +8228,172 @@ def memory_inspect_population(
             settings.project_root,
             memory_index=index,
         ).inspect(manifest_path)
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(result)
+    if not result.get("passed", False):
+        raise typer.Exit(code=1)
+
+
+@memory_app.command("build-representatives")
+def memory_build_representatives(
+    population_manifest_path: Annotated[Path, typer.Argument()],
+    query: Annotated[str, typer.Option("--query")],
+) -> None:
+    settings = load_settings()
+    resolved = _resolve_project_artifact(
+        settings.project_root,
+        population_manifest_path.as_posix(),
+    )
+    if resolved is None:
+        _exit_with_error(ValueError("population manifest escapes the project root"))
+    try:
+        index = ProductionMemoryIndex(
+            settings.project_root,
+            embedding_provider=_production_embedding_provider(
+                settings,
+                require_records=False,
+            ),
+            production=True,
+        )
+        result = RepresentativeSelector(
+            settings.project_root,
+            memory_index=index,
+        ).build(
+            population_manifest_path=resolved,
+            query=query,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "manifest_path": relative_to_root(
+                result.manifest_path,
+                settings.project_root,
+            ),
+            "manifest": result.manifest.model_dump(mode="json"),
+        }
+    )
+
+
+@memory_app.command("inspect-representatives")
+def memory_inspect_representatives(
+    manifest_path: Annotated[Path, typer.Argument()],
+) -> None:
+    settings = load_settings()
+    resolved = _resolve_project_artifact(
+        settings.project_root,
+        manifest_path.as_posix(),
+    )
+    if resolved is None:
+        _exit_with_error(ValueError("representative manifest escapes the project root"))
+    try:
+        index = ProductionMemoryIndex(
+            settings.project_root,
+            embedding_provider=_production_embedding_provider(
+                settings,
+                require_records=False,
+            ),
+            production=True,
+        )
+        result = RepresentativeSelector(
+            settings.project_root,
+            memory_index=index,
+        ).inspect(resolved)
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(result)
+    if not result.get("passed", False):
+        raise typer.Exit(code=1)
+
+
+@memory_app.command("adaptive-retrieve")
+def memory_adaptive_retrieve(
+    population_manifest_path: Annotated[
+        Path,
+        typer.Option("--population-manifest"),
+    ],
+    representative_manifest_path: Annotated[
+        Path,
+        typer.Option("--representative-manifest"),
+    ],
+    query: Annotated[str, typer.Option("--query")],
+    max_depth: Annotated[int, typer.Option("--max-depth")] = 2,
+    max_cell_count: Annotated[int, typer.Option("--max-cell-count")] = 12,
+    max_record_count: Annotated[int, typer.Option("--max-record-count")] = 32,
+    max_token_count: Annotated[int, typer.Option("--max-token-count")] = 72_000,
+    min_information_gain: Annotated[
+        float,
+        typer.Option("--min-information-gain"),
+    ] = 0.03,
+) -> None:
+    settings = load_settings()
+    population_path = _resolve_project_artifact(
+        settings.project_root,
+        population_manifest_path.as_posix(),
+    )
+    representative_path = _resolve_project_artifact(
+        settings.project_root,
+        representative_manifest_path.as_posix(),
+    )
+    if population_path is None or representative_path is None:
+        _exit_with_error(ValueError("adaptive input manifest escapes the project root"))
+    try:
+        index = ProductionMemoryIndex(
+            settings.project_root,
+            embedding_provider=_production_embedding_provider(
+                settings,
+                require_records=False,
+            ),
+            production=True,
+        )
+        trace, trace_path = AdaptiveRetriever(
+            settings.project_root,
+            memory_index=index,
+        ).run(
+            initial_population_manifest_path=population_path,
+            initial_representative_set_manifest_path=representative_path,
+            query=query,
+            max_depth=max_depth,
+            max_cell_count=max_cell_count,
+            max_record_count=max_record_count,
+            max_token_count=max_token_count,
+            min_information_gain=min_information_gain,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "trace_path": relative_to_root(trace_path, settings.project_root),
+            "trace": trace.model_dump(mode="json"),
+        }
+    )
+
+
+@memory_app.command("inspect-adaptive")
+def memory_inspect_adaptive(
+    trace_path: Annotated[Path, typer.Argument()],
+) -> None:
+    settings = load_settings()
+    resolved = _resolve_project_artifact(
+        settings.project_root,
+        trace_path.as_posix(),
+    )
+    if resolved is None:
+        _exit_with_error(ValueError("adaptive trace escapes the project root"))
+    try:
+        index = ProductionMemoryIndex(
+            settings.project_root,
+            embedding_provider=_production_embedding_provider(
+                settings,
+                require_records=False,
+            ),
+            production=True,
+        )
+        result = AdaptiveRetriever(
+            settings.project_root,
+            memory_index=index,
+        ).inspect(resolved)
     except (OSError, RuntimeError, ValueError) as exc:
         _exit_with_error(exc)
     _echo(result)

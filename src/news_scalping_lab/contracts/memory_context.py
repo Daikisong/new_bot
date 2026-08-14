@@ -21,7 +21,7 @@ from pydantic import (
     model_validator,
 )
 
-from news_scalping_lab.utils import as_kst
+from news_scalping_lab.utils import as_kst, sha256_text
 
 
 class StrictMemoryContextModel(BaseModel):
@@ -390,8 +390,8 @@ class MemoryCellEntry(StrictMemoryContextModel):
 class MemoryCellSnapshotManifest(StrictMemoryContextModel):
     """Immutable logical identity for metadata, FTS, HNSW, and cell membership."""
 
-    schema_version: Literal["nslab.memory_cell_snapshot_manifest.v2"] = (
-        "nslab.memory_cell_snapshot_manifest.v2"
+    schema_version: Literal["nslab.memory_cell_snapshot_manifest.v3"] = (
+        "nslab.memory_cell_snapshot_manifest.v3"
     )
     snapshot_id: str
     corpus_manifest_sha256: Sha256
@@ -786,31 +786,154 @@ class PopulationManifest(StrictMemoryContextModel):
 
 class RepresentativeStratum(StrictMemoryContextModel):
     stratum: str
+    population_unit_count: int = Field(ge=0)
+    selected_unit_count: int = Field(ge=0)
     record_ids: list[str] = Field(default_factory=list)
     independent_unit_ids: list[str] = Field(default_factory=list)
 
+    @model_validator(mode="after")
+    def validate_stratum(self) -> Self:
+        if not self.stratum.strip():
+            raise ValueError("representative stratum must be non-empty")
+        if self.selected_unit_count != len(set(self.independent_unit_ids)):
+            raise ValueError("selected stratum units must match independent unit IDs")
+        if self.selected_unit_count > self.population_unit_count:
+            raise ValueError("selected stratum units cannot exceed population units")
+        if len(self.record_ids) != len(set(self.record_ids)):
+            raise ValueError("representative stratum record IDs must be unique")
+        return self
+
+
+class RepresentativeRecord(StrictMemoryContextModel):
+    schema_version: Literal["nslab.representative_record.v1"] = (
+        "nslab.representative_record.v1"
+    )
+    rank: int = Field(ge=1)
+    record_id: str
+    independent_unit_id: str
+    trade_date: date
+    source_sha256: Sha256
+    provenance_source_ids: list[str] = Field(default_factory=list)
+    record_label_quality: str
+    strata: list[str] = Field(default_factory=list)
+    context_excerpt: str
+    relevance_score: float
+    diversity_score: float
+    facility_score: float
+    distribution_score: float
+    selection_score: float
+    estimated_token_count: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def validate_representative_record(self) -> Self:
+        required = (
+            self.record_id,
+            self.independent_unit_id,
+            self.record_label_quality,
+            self.context_excerpt,
+        )
+        if any(not value.strip() for value in required):
+            raise ValueError("representative record identifiers and excerpt are required")
+        if not self.provenance_source_ids or any(
+            not value.strip() for value in self.provenance_source_ids
+        ):
+            raise ValueError("representative record provenance must be non-empty")
+        if not self.strata or len(self.strata) != len(set(self.strata)):
+            raise ValueError("representative record strata must be non-empty and unique")
+        for score in (
+            self.relevance_score,
+            self.diversity_score,
+            self.facility_score,
+            self.distribution_score,
+            self.selection_score,
+        ):
+            if not math.isfinite(score):
+                raise ValueError("representative scores must be finite")
+        return self
+
 
 class RepresentativeSetManifest(StrictMemoryContextModel):
-    schema_version: Literal["nslab.representative_set_manifest.v1"] = (
-        "nslab.representative_set_manifest.v1"
+    schema_version: Literal["nslab.representative_set_manifest.v3"] = (
+        "nslab.representative_set_manifest.v3"
     )
     representative_set_id: str
+    run_id: str
+    cluster_id: str
+    cutoff_at: AwareDatetime
+    query_text: str
+    query_sha256: Sha256
+    query_embedding_sha256: Sha256
     population_id: str
     population_manifest_sha256: Sha256
+    memory_snapshot_id: str
+    source_generation_sha256: Sha256
+    corpus_manifest_sha256: Sha256
     selection_version: str
+    embedding_model: str
+    candidate_pool_count: int = Field(ge=0)
+    target_selected_record_count: int = Field(ge=1)
+    population_record_count: int = Field(ge=0)
+    population_unit_count: int = Field(ge=0)
     selected_record_count: int = Field(ge=0)
+    selected_unit_count: int = Field(ge=0)
     omitted_population_record_count: int = Field(ge=0)
+    omitted_population_unit_count: int = Field(ge=0)
+    max_selected_record_count: int = Field(ge=1)
+    max_candidate_pool_count: int = Field(ge=1)
+    max_token_count: int = Field(ge=1)
+    max_trade_date_concentration: int = Field(ge=1)
+    max_unit_key_concentration: int = Field(ge=1)
     estimated_token_count: int = Field(ge=0)
     diversity_coverage_ratio: float = Field(ge=0.0, le=1.0)
+    max_distribution_share_error: float = Field(ge=0.0, le=1.0)
+    distribution_share_error_tolerance: float = Field(ge=0.0, le=1.0)
     strata: list[RepresentativeStratum] = Field(default_factory=list)
     selected_record_ids: list[str] = Field(default_factory=list)
+    selected_independent_unit_ids: list[str] = Field(default_factory=list)
+    representative_records: ArtifactReference
 
     @model_validator(mode="after")
     def validate_selection_counts(self) -> Self:
         if self.selected_record_count != len(self.selected_record_ids):
             raise ValueError("selected_record_count must equal selected IDs")
+        if not self.query_text.strip() or self.query_sha256 != sha256_text(
+            self.query_text
+        ):
+            raise ValueError("representative query text and hash conflict")
+        if self.selected_unit_count != len(self.selected_independent_unit_ids):
+            raise ValueError("selected_unit_count must equal selected unit IDs")
         if len(set(self.selected_record_ids)) != len(self.selected_record_ids):
             raise ValueError("selected record IDs must be unique")
+        if len(set(self.selected_independent_unit_ids)) != len(
+            self.selected_independent_unit_ids
+        ):
+            raise ValueError("selected independent unit IDs must be unique")
+        if self.selected_record_count != self.selected_unit_count:
+            raise ValueError("representative selection requires one record per unit")
+        if self.population_record_count != (
+            self.selected_record_count + self.omitted_population_record_count
+        ):
+            raise ValueError("representative population record counts conflict")
+        if self.population_unit_count != (
+            self.selected_unit_count + self.omitted_population_unit_count
+        ):
+            raise ValueError("representative population unit counts conflict")
+        if self.candidate_pool_count > self.population_record_count:
+            raise ValueError("candidate pool cannot exceed population records")
+        if self.selected_record_count > self.max_selected_record_count:
+            raise ValueError("representative selection exceeds record budget")
+        if self.target_selected_record_count > self.max_selected_record_count:
+            raise ValueError("representative target exceeds record budget")
+        if self.selected_record_count < self.target_selected_record_count:
+            raise ValueError("representative selection did not reach its target")
+        if self.candidate_pool_count > self.max_candidate_pool_count:
+            raise ValueError("representative candidate pool exceeds budget")
+        if self.estimated_token_count > self.max_token_count:
+            raise ValueError("representative selection exceeds token budget")
+        if self.max_distribution_share_error > self.distribution_share_error_tolerance:
+            raise ValueError("representative distribution error exceeds tolerance")
+        if self.representative_records.item_count != self.selected_record_count:
+            raise ValueError("representative artifact count mismatch")
         stratum_ids = {
             record_id for stratum in self.strata for record_id in stratum.record_ids
         }
@@ -820,28 +943,96 @@ class RepresentativeSetManifest(StrictMemoryContextModel):
 
 
 class AdaptiveRetrievalIteration(StrictMemoryContextModel):
-    iteration: int = Field(ge=0)
+    iteration: int = Field(ge=1)
     trigger_reasons: list[str] = Field(default_factory=list)
+    expansion_query_sha256: Sha256
+    expansion_embedding_sha256: Sha256
+    expansion_memory_lanes: list[str] = Field(default_factory=list)
+    expansion_regime_clusters: list[str] = Field(default_factory=list)
     added_cell_ids: list[str] = Field(default_factory=list)
     added_record_ids: list[str] = Field(default_factory=list)
-    information_gain: float = Field(ge=0.0)
+    total_cell_count: int = Field(ge=0)
+    total_record_count: int = Field(ge=0)
+    population_manifest: ArtifactReference
+    representative_set_manifest: ArtifactReference
+    information_gain: float = Field(ge=0.0, le=1.0)
     cumulative_token_count: int = Field(ge=0)
 
 
 class AdaptiveRetrievalTrace(StrictMemoryContextModel):
-    schema_version: Literal["nslab.adaptive_retrieval_trace.v1"] = (
-        "nslab.adaptive_retrieval_trace.v1"
+    schema_version: Literal["nslab.adaptive_retrieval_trace.v3"] = (
+        "nslab.adaptive_retrieval_trace.v3"
     )
+    trace_id: str
     run_id: str
     cluster_id: str
+    cutoff_at: AwareDatetime
+    query_text: str
+    query_sha256: Sha256
+    query_embedding_sha256: Sha256
     policy_version: str
+    initial_population_manifest: ArtifactReference
+    initial_representative_set_manifest: ArtifactReference
     initial_cell_ids: list[str] = Field(default_factory=list)
     iterations: list[AdaptiveRetrievalIteration] = Field(default_factory=list)
-    max_depth: int = Field(ge=0)
-    max_cell_count: int = Field(ge=0)
-    max_record_count: int = Field(ge=0)
-    max_token_count: int = Field(ge=0)
+    max_depth: int = Field(ge=1)
+    max_cell_count: int = Field(ge=1)
+    max_record_count: int = Field(ge=1)
+    max_token_count: int = Field(ge=1)
+    min_information_gain: float = Field(ge=0.0, le=1.0)
+    final_cell_ids: list[str] = Field(default_factory=list)
+    final_population_manifest: ArtifactReference
+    final_representative_set_manifest: ArtifactReference
     stopped_reason: str
+
+    @model_validator(mode="after")
+    def validate_adaptive_trace(self) -> Self:
+        if not self.query_text.strip() or self.query_sha256 != sha256_text(
+            self.query_text
+        ):
+            raise ValueError("adaptive query text and hash conflict")
+        if [item.iteration for item in self.iterations] != list(
+            range(1, len(self.iterations) + 1)
+        ):
+            raise ValueError("adaptive iterations must be contiguous")
+        if len(self.iterations) > self.max_depth:
+            raise ValueError("adaptive trace exceeds depth budget")
+        for artifact in (
+            self.initial_population_manifest,
+            self.initial_representative_set_manifest,
+            self.final_population_manifest,
+            self.final_representative_set_manifest,
+        ):
+            if artifact.item_count != 1:
+                raise ValueError("adaptive manifest references must contain one item")
+        if len(set(self.initial_cell_ids)) != len(self.initial_cell_ids) or len(
+            set(self.final_cell_ids)
+        ) != len(self.final_cell_ids):
+            raise ValueError("adaptive cell identifiers must be unique")
+        if not set(self.initial_cell_ids).issubset(set(self.final_cell_ids)):
+            raise ValueError("adaptive final cells must retain initial cells")
+        if len(self.final_cell_ids) > self.max_cell_count:
+            raise ValueError("adaptive trace exceeds cell budget")
+        if self.iterations:
+            cumulative_tokens = [
+                item.cumulative_token_count for item in self.iterations
+            ]
+            if cumulative_tokens != sorted(cumulative_tokens):
+                raise ValueError("adaptive token counts must be monotonic")
+            if any(
+                item.population_manifest.item_count != 1
+                or item.representative_set_manifest.item_count != 1
+                for item in self.iterations
+            ):
+                raise ValueError("adaptive iteration references must contain one item")
+            final = self.iterations[-1]
+            if final.total_record_count > self.max_record_count:
+                raise ValueError("adaptive trace exceeds record budget")
+            if final.cumulative_token_count > self.max_token_count:
+                raise ValueError("adaptive trace exceeds token budget")
+        if not self.stopped_reason.strip():
+            raise ValueError("adaptive trace requires a stopped reason")
+        return self
 
 
 class DailyMemoryContext(StrictMemoryContextModel):

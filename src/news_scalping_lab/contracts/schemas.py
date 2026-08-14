@@ -18,6 +18,7 @@ from news_scalping_lab.contracts.memory_context import (
     PopulationCubeRow,
     PopulationManifest,
     RecordRoutingMetadata,
+    RepresentativeRecord,
     RepresentativeSetManifest,
 )
 from news_scalping_lab.contracts.models import (
@@ -72,6 +73,7 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "memory_cell_snapshot_manifest.schema.json": MemoryCellSnapshotManifest,
     "population_manifest.schema.json": PopulationManifest,
     "population_cube_row.schema.json": PopulationCubeRow,
+    "representative_record.schema.json": RepresentativeRecord,
     "representative_set_manifest.schema.json": RepresentativeSetManifest,
     "adaptive_retrieval_trace.schema.json": AdaptiveRetrievalTrace,
     "daily_memory_context.schema.json": DailyMemoryContext,

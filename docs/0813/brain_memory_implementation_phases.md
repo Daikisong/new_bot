@@ -541,6 +541,8 @@ pytest 1,397 PASS
 
 ## 9. Phase 6: diverse representatives와 adaptive drill-down
 
+진행 상태: bounded implementation 완료, 외부 독립감사 APPROVE
+
 ### 목적
 
 모집단 분포를 왜곡하지 않는 대표 사례를 token budget 안에서 제공한다.
@@ -593,6 +595,10 @@ leader pair disagreement
 low representative coverage
 ```
 
+`multi-hop beneficiary`와 `leader pair disagreement`는 Phase 6에서 근거 없는 문자열 hint로
+받지 않는다. 두 신호는 current-event graph/pair artifact, cutoff, source provenance를 함께
+검증할 수 있는 Phase 7 typed trigger evidence로 구현한다.
+
 종료 조건:
 
 ```text
@@ -610,6 +616,40 @@ single date/ticker concentration 제한
 minority polarity 보존
 drill-down 무한 반복 불가
 대표 record 전부 population member/provenance 결속
+```
+
+### 구현 결과
+
+```text
+unit 내부 member별 lane/role/path/quality 후보를 보존하고 최종 선택만 one-unit-one-record
+unit-balanced 512 record pool -> 필수 minority strata -> MMR + bounded facility-location
+entropy 기반 초기 8~16, distribution error가 남으면 최대 32
+population stratum share 최대 오차 0.25 / token upper bound 24,000
+trade-date concentration 8 / issuer-theme key concentration 4
+adaptive depth 2 / cells 12 / records 32 / cumulative tokens 72,000
+small ESS, polarity, regime, optional coverage, unexplained trigger만 Phase 6에서 확장
+lane/regime/lane-regime facet HNSW + FTS union, online record-vector full scan 0
+모든 iteration population/representative manifest hash 결속
+explicit inspect에서 selection과 trace 전체 재계산
+```
+
+측정:
+
+```text
+50,000 synthetic units compute-only: 5.781초, peak 100.556 MiB
+candidate pool 512, selected 16
+real 1536D end-to-end는 Phase 5 production blocker 해소 전 미실측
+compute-only 수치는 production latency PASS 근거가 아님
+```
+
+검증:
+
+```text
+ruff PASS
+mypy 101 modules PASS
+pytest 1,413 PASS
+schema parity PASS
+외부 독립감사 APPROVE (bounded Phase 6)
 ```
 
 ## 10. Phase 7: category brain·beneficiary graph·final synthesis 통합
