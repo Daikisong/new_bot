@@ -21,9 +21,11 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "mypy>=1.10",
+    "pyarrow-stubs>=20.0.0.20260625,<21",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.6",
+    "types-PyYAML>=6.0",
 ]
 openai = [
     "openai>=1.50",

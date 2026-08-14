@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from datetime import date
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import duckdb
 import pyarrow as pa
@@ -858,10 +858,10 @@ class WarehouseStore:
                 [pa.array([], type=pa.string())],
                 names=["_empty"],
             )
-            pq.write_table(table, path)  # type: ignore[no-untyped-call]
+            pq.write_table(table, path)
             return
         table = pa.Table.from_pylist(rows)
-        pq.write_table(table, path)  # type: ignore[no-untyped-call]
+        pq.write_table(table, path)
 
     def _write_rows_with_schema(
         self,
@@ -877,7 +877,7 @@ class WarehouseStore:
             [pa.array([], type=pa.string()) for _ in columns],
             names=list(columns),
         )
-        pq.write_table(table, path)  # type: ignore[no-untyped-call]
+        pq.write_table(table, path)
 
 
 def _read_accepted_episodes_for_warehouse(
@@ -901,8 +901,8 @@ def _read_accepted_episodes_for_warehouse(
 
 
 def _read_rows(path: Path) -> list[dict[str, Any]]:
-    table = pq.read_table(path)  # type: ignore[no-untyped-call]
-    rows = cast(list[dict[str, Any]], table.to_pylist())
+    table = pq.read_table(path)
+    rows = table.to_pylist()
     if not rows:
         return []
     if set(rows[0]) == {"_empty"}:
@@ -922,7 +922,7 @@ def _loads_json_object(value: object) -> dict[str, Any]:
 
 def _parquet_has_only_empty_marker(path: Path) -> bool:
     try:
-        table = pq.read_table(path)  # type: ignore[no-untyped-call]
+        table = pq.read_table(path)
     except (OSError, pa.ArrowInvalid):
         return False
     return bool(table.num_columns == 1 and table.column_names == ["_empty"])
