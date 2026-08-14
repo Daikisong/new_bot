@@ -796,6 +796,16 @@ def _read_company_memory_as_of(root: Path, cutoff_at: datetime) -> TemporalMemor
             )
             errors.append(f"session pack excluded future company memory: {relative_path}")
             continue
+        if not is_available_as_of(memory.available_from, cutoff_at):
+            omitted.append(
+                {
+                    "path": relative_path,
+                    "reason": "company_memory_available_after_cutoff",
+                    "available_from": memory.available_from.isoformat(),
+                }
+            )
+            errors.append(f"session pack excluded unavailable company memory: {relative_path}")
+            continue
         included_paths.append(relative_path)
         chunks.append(f"\n<!-- {relative_path} -->\n{file_path.read_text(encoding='utf-8')}")
     return TemporalMemoryContext(

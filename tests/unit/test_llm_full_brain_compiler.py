@@ -831,6 +831,62 @@ def test_llm_full_publish_rolls_back_every_mutable_projection(
     assert _llm_full_mutable_state(tmp_path) == before
 
 
+def test_llm_full_retry_reuses_orphan_category_index_after_compile_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_openai_config(tmp_path)
+    monkeypatch.setenv("NSLAB_LLM_PROVIDER", "openai")
+    llm = RecordingBrainLLM()
+    monkeypatch.setattr(compiler_module, "create_llm_provider", lambda settings: llm)
+    _write_records(
+        tmp_path,
+        [
+            _record(
+                "BRAIN-CATEGORY-RETRY",
+                record_type="supervised_direct_event_case",
+                training_target="direct_event_response",
+                response_class="positive_high10",
+                payload_extra={
+                    "title": "issuer supply contract signed",
+                    "outcome_high_return_pct": 12.0,
+                },
+            )
+        ],
+    )
+    original_compile = compiler_module._compile_llm_category_outputs
+
+    async def fail_after_category_index(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("injected category compile failure")
+
+    monkeypatch.setattr(
+        compiler_module,
+        "_compile_llm_category_outputs",
+        fail_after_category_index,
+    )
+    with pytest.raises(RuntimeError, match="injected category compile failure"):
+        BrainCompiler(tmp_path).rebuild(mode="llm-full")
+    orphan_manifests = list(
+        (
+            tmp_path / "runs" / "checkpoints" / "category_brain_index"
+        ).glob("*/category_brain_index_manifest.json")
+    )
+    assert len(orphan_manifests) == 1
+    assert not (tmp_path / "brain" / "current" / "brain_manifest.json").exists()
+
+    monkeypatch.setattr(
+        compiler_module,
+        "_compile_llm_category_outputs",
+        original_compile,
+    )
+    manifest = BrainCompiler(tmp_path).rebuild(mode="llm-full")
+
+    assert manifest.category_brain_index_manifest_artifact == (
+        orphan_manifests[0].relative_to(tmp_path).as_posix()
+    )
+    assert (tmp_path / "brain" / "current" / "brain_manifest.json").exists()
+
+
 def _write_llm_config(
     root: Path,
     *,

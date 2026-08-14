@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -11,11 +12,13 @@ from news_scalping_lab.contracts.memory_context import (
     POPULATION_PURPOSE_LANES,
     AdaptiveRetrievalIteration,
     AdaptiveRetrievalTrace,
+    AdaptiveTriggerEvidence,
     ArtifactReference,
     PopulationManifest,
     RepresentativeSetManifest,
     RoutingDisposition,
 )
+from news_scalping_lab.memory.beneficiary import beneficiary_trigger_evidence
 from news_scalping_lab.memory.diversity import (
     RepresentativeSelector,
     _require_finite_vector,
@@ -23,6 +26,7 @@ from news_scalping_lab.memory.diversity import (
 from news_scalping_lab.memory.index import ProductionMemoryIndex
 from news_scalping_lab.memory.population import PopulationRetriever
 from news_scalping_lab.utils import (
+    as_kst,
     canonical_json,
     file_sha256,
     read_json,
@@ -31,7 +35,7 @@ from news_scalping_lab.utils import (
     write_json,
 )
 
-ADAPTIVE_RETRIEVAL_POLICY_VERSION = "adaptive_population_drilldown.v2"
+ADAPTIVE_RETRIEVAL_POLICY_VERSION = "adaptive_population_drilldown.v3"
 ADAPTIVE_ARTIFACT_ROOT = Path("runs/adaptive")
 ADAPTIVE_TRACE_FILE = "adaptive_retrieval_trace.json"
 ADAPTIVE_MAX_DEPTH = 2
@@ -74,6 +78,7 @@ class AdaptiveRetriever:
         max_record_count: int = ADAPTIVE_MAX_RECORD_COUNT,
         max_token_count: int = ADAPTIVE_MAX_TOKEN_COUNT,
         min_information_gain: float = ADAPTIVE_MIN_INFORMATION_GAIN,
+        trigger_evidence: list[AdaptiveTriggerEvidence] | None = None,
     ) -> tuple[AdaptiveRetrievalTrace, Path]:
         trace = self._execute(
             initial_population_manifest_path=initial_population_manifest_path,
@@ -86,6 +91,7 @@ class AdaptiveRetriever:
             max_record_count=max_record_count,
             max_token_count=max_token_count,
             min_information_gain=min_information_gain,
+            trigger_evidence=list(trigger_evidence or []),
             force_database_verification=False,
         )
         output_dir = (
@@ -128,6 +134,7 @@ class AdaptiveRetriever:
             in {
                 "nslab.adaptive_retrieval_trace.v1",
                 "nslab.adaptive_retrieval_trace.v2",
+                "nslab.adaptive_retrieval_trace.v3",
             }
         ):
             return {
@@ -194,6 +201,7 @@ class AdaptiveRetriever:
                     max_record_count=trace.max_record_count,
                     max_token_count=trace.max_token_count,
                     min_information_gain=trace.min_information_gain,
+                    trigger_evidence=trace.trigger_evidence,
                     force_database_verification=force_database_verification,
                 )
             except (OSError, RuntimeError, ValueError) as exc:
@@ -219,6 +227,7 @@ class AdaptiveRetriever:
         max_record_count: int,
         max_token_count: int,
         min_information_gain: float,
+        trigger_evidence: list[AdaptiveTriggerEvidence],
         force_database_verification: bool,
     ) -> AdaptiveRetrievalTrace:
         query_text = query.strip()
@@ -250,6 +259,12 @@ class AdaptiveRetriever:
             raise ValueError("adaptive initial representative population mismatch")
         if initial_representative.query_text != query_text:
             raise ValueError("adaptive query differs from representative query")
+        _validate_trigger_evidence(
+            self.root,
+            trigger_evidence,
+            cluster_id=initial_population.cluster_id,
+            cutoff_at=initial_population.cutoff_at,
+        )
         query_vectors = self.memory_index.embedding_provider.embed_texts([query_text])
         if len(query_vectors) != 1:
             raise ValueError("embedding provider returned the wrong query vector count")
@@ -279,6 +294,9 @@ class AdaptiveRetriever:
             "max_record_count": max_record_count,
             "max_token_count": max_token_count,
             "min_information_gain": min_information_gain,
+            "trigger_evidence": [
+                item.model_dump(mode="json") for item in trigger_evidence
+            ],
         }
         current_population = initial_population
         current_population_path = population_path
@@ -293,11 +311,16 @@ class AdaptiveRetriever:
             triggers = _trigger_reasons(
                 current_population,
                 current_representative,
+                trigger_evidence,
             )
             if not triggers:
                 stopped_reason = "NO_TRIGGER"
                 break
-            expansion_query = _expansion_query(query_text, triggers)
+            expansion_query = _expansion_query(
+                query_text,
+                triggers,
+                trigger_evidence=trigger_evidence,
+            )
             expansion_lanes, expansion_regimes = _expansion_plan(
                 current_population,
                 current_representative,
@@ -424,6 +447,7 @@ class AdaptiveRetriever:
             query_sha256=sha256_text(query_text),
             query_embedding_sha256=query_embedding_sha256,
             policy_version=ADAPTIVE_RETRIEVAL_POLICY_VERSION,
+            trigger_evidence=trigger_evidence,
             initial_population_manifest=_artifact_reference(
                 self.root,
                 population_path,
@@ -455,6 +479,7 @@ class AdaptiveRetriever:
 def _trigger_reasons(
     population: PopulationManifest,
     representative: RepresentativeSetManifest,
+    trigger_evidence: list[AdaptiveTriggerEvidence] | None = None,
 ) -> list[str]:
     reasons = []
     if population.effective_sample_size < ADAPTIVE_SMALL_EFFECTIVE_SAMPLE_SIZE:
@@ -478,6 +503,7 @@ def _trigger_reasons(
         > population.independent_unit_count // 2
     ):
         reasons.append("HIGH_UNEXPLAINED_SHARE")
+    reasons.extend(item.kind for item in trigger_evidence or [])
     return sorted(set(reasons))
 
 
@@ -487,12 +513,25 @@ _TRIGGER_QUERY_FOCUS = {
     "REGIME_DISAGREEMENT": "different market regime comparison evidence",
     "LOW_REPRESENTATIVE_COVERAGE": "minority path quality role evidence",
     "HIGH_UNEXPLAINED_SHARE": "newsless unexplained alternative catalyst evidence",
+    "MULTI_HOP_BENEFICIARY": "multi hop beneficiary mechanism business role evidence",
 }
 
 
-def _expansion_query(query: str, triggers: list[str]) -> str:
+def _expansion_query(
+    query: str,
+    triggers: list[str],
+    *,
+    trigger_evidence: list[AdaptiveTriggerEvidence] | None = None,
+) -> str:
     focus = " ".join(_TRIGGER_QUERY_FOCUS[trigger] for trigger in sorted(triggers))
-    return f"{query.strip()} | drill-down: {focus}"
+    evidence_terms = " ".join(
+        term
+        for evidence in trigger_evidence or []
+        if evidence.kind in triggers
+        for term in evidence.query_terms
+    )
+    suffix = f" {evidence_terms}" if evidence_terms else ""
+    return f"{query.strip()} | drill-down: {focus}{suffix}"
 
 
 def _expansion_plan(
@@ -512,6 +551,8 @@ def _expansion_plan(
         )
     if "HIGH_UNEXPLAINED_SHARE" in triggers:
         lanes.add("newsless_or_unexplained")
+    if "MULTI_HOP_BENEFICIARY" in triggers:
+        lanes.update(POPULATION_PURPOSE_LANES[population.population_purpose])
     if "LOW_REPRESENTATIVE_COVERAGE" in triggers:
         lanes.update(
             item.stratum.removeprefix("lane:")
@@ -599,6 +640,40 @@ def _artifact_reference(root: Path, path: Path) -> ArtifactReference:
         sha256=file_sha256(path),
         item_count=1,
     )
+
+
+def _validate_trigger_evidence(
+    root: Path,
+    evidence_rows: list[AdaptiveTriggerEvidence],
+    *,
+    cluster_id: str,
+    cutoff_at: datetime,
+) -> None:
+    seen: set[tuple[str, str]] = set()
+    for evidence in evidence_rows:
+        key = (evidence.kind, evidence.source_artifact.sha256)
+        if key in seen:
+            raise ValueError("adaptive trigger evidence is duplicated")
+        seen.add(key)
+        if (
+            as_kst(evidence.cutoff_at) != as_kst(cutoff_at)
+            or cluster_id not in evidence.event_cluster_ids
+        ):
+            raise ValueError("adaptive trigger evidence identity mismatch")
+        path = (root / evidence.source_artifact.artifact_path).resolve()
+        try:
+            path.relative_to(root.resolve())
+        except ValueError as exc:
+            raise ValueError("adaptive trigger evidence escapes the project root") from exc
+        if not path.exists() or file_sha256(path) != evidence.source_artifact.sha256:
+            raise ValueError("adaptive trigger evidence artifact mismatch")
+        expected = beneficiary_trigger_evidence(
+            root,
+            path,
+            cluster_id=cluster_id,
+        )
+        if expected != evidence:
+            raise ValueError("adaptive trigger evidence derivation mismatch")
 
 
 def _write_immutable_trace(path: Path, trace: AdaptiveRetrievalTrace) -> None:

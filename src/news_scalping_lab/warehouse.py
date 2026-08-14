@@ -393,6 +393,7 @@ class WarehouseStore:
                 {
                     "ticker": memory.ticker,
                     "company_name": memory.company_name,
+                    "available_from": memory.available_from.isoformat(),
                     "known_at": memory.known_at.isoformat(),
                     "aliases_json": _json(memory.aliases),
                     "business_descriptions_json": _json(memory.business_descriptions),

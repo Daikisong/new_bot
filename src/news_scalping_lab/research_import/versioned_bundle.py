@@ -49,6 +49,28 @@ FORBIDDEN_EVENT_TICKER_EDGE_ORIGINS = {
     "OUTCOME_ONLY_ASSOCIATION",
 }
 
+_PHASE7_BUNDLE_MANIFEST_FIELDS = frozenset(
+    {
+        "embedded_phase7_artifacts",
+        "phase7_transport_attestation",
+        "daily_memory_context_artifact",
+        "daily_memory_context_sha256",
+        "beneficiary_graph_artifact",
+        "beneficiary_graph_sha256",
+    }
+)
+_PHASE7_ARTIFACT_SCHEMA_VERSIONS = frozenset(
+    {
+        "nslab.adaptive_trigger_evidence.v1",
+        "nslab.beneficiary_graph.v2",
+        "nslab.category_brain_index_manifest.v1",
+        "nslab.category_brain_query_plan.v1",
+        "nslab.category_claim_inclusion_proof.v1",
+        "nslab.daily_memory_context.v2",
+        "nslab.final_synthesis_context.v3",
+    }
+)
+
 
 class VersionedBundleImportError(ValueError):
     """Raised when a versioned bundle cannot be normalized safely."""
@@ -744,6 +766,19 @@ def _load_external_quality_gate(
     }
 
 
+def _phase7_transport_required(parsed: GenericParsedBundle) -> bool:
+    manifest = _manifest(parsed)
+    if _PHASE7_BUNDLE_MANIFEST_FIELDS.intersection(manifest):
+        return True
+    for payload in parsed.json_blocks.values():
+        if (
+            isinstance(payload, dict)
+            and payload.get("schema_version") in _PHASE7_ARTIFACT_SCHEMA_VERSIONS
+        ):
+            return True
+    return False
+
+
 def import_versioned_bundle(
     path: Path,
     *,
@@ -752,8 +787,18 @@ def import_versioned_bundle(
     accepted: bool = True,
     external_quality_gate_path: Path | None = None,
     allow_external_quality_pending_for_isolated_validation: bool = False,
+    phase7_transport_key: str | None = None,
 ) -> BundleImportResult:
     parsed = parse_generic_bundle(path)
+    if _phase7_transport_required(parsed):
+        from news_scalping_lab.research_import.bundle import parse_bundle
+
+        try:
+            parse_bundle(path, phase7_transport_key=phase7_transport_key)
+        except (OSError, ValueError) as exc:
+            raise VersionedBundleImportError(
+                f"Phase 7 bundle transport verification failed: {exc}"
+            ) from exc
     adapter = select_adapter(parsed)
     source_hash = file_sha256(path)
     external_quality_gate_required = _optional_bool(_field(parsed, "external_quality_gate_required")) is True

@@ -111,6 +111,7 @@
       "type": "string"
     },
     "estimated_token_count": {
+      "maximum": 48000,
       "minimum": 0,
       "title": "Estimated Token Count",
       "type": "integer"

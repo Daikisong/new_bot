@@ -1334,6 +1334,94 @@ def test_legacy_v1_bundle_adapter_preserves_records_without_schema_loss(
     assert envelope["episode_schema_version"] == "nslab.research_episode.v1"
 
 
+def test_phase7_v1_versioned_import_requires_strict_transport_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle = tmp_path / "phase7_v1_bundle.md"
+    text = _synthetic_v11_bundle(
+        schema_version="nslab.research_bundle.v1",
+        manifest_schema_version="nslab.bundle_manifest.v1",
+        episode_schema_version="nslab.research_episode.v1",
+    )
+    marker = re.search(
+        r"(<!-- NSLAB:BEGIN bundle_manifest\.json -->\s*```json\s*)(.*?)(\s*```)",
+        text,
+        flags=re.DOTALL,
+    )
+    assert marker is not None
+    manifest = json.loads(marker.group(2))
+    manifest["daily_memory_context_artifact"] = (
+        "runs/memory_context/RUN-1/daily_memory_context.json"
+    )
+    text = (
+        text[: marker.start(2)]
+        + json.dumps(manifest, ensure_ascii=False, sort_keys=True)
+        + text[marker.end(2) :]
+    )
+    bundle.write_text(text, encoding="utf-8")
+    calls: list[tuple[Path, str | None]] = []
+
+    def strict_preflight(
+        path: Path,
+        *,
+        phase7_transport_key: str | None = None,
+    ) -> object:
+        calls.append((path, phase7_transport_key))
+        return object()
+
+    monkeypatch.setattr(
+        "news_scalping_lab.research_import.bundle.parse_bundle",
+        strict_preflight,
+    )
+
+    result = import_versioned_bundle(
+        bundle,
+        root=tmp_path,
+        phase7_transport_key="phase7-versioned-import-key-32-bytes-minimum",
+    )
+
+    assert result.adapter_name == "legacy-v1"
+    assert calls == [
+        (bundle, "phase7-versioned-import-key-32-bytes-minimum")
+    ]
+
+
+def test_phase7_v1_versioned_import_rejects_missing_transport_closure(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "phase7_v1_missing_transport.md"
+    text = _synthetic_v11_bundle(
+        schema_version="nslab.research_bundle.v1",
+        manifest_schema_version="nslab.bundle_manifest.v1",
+        episode_schema_version="nslab.research_episode.v1",
+    )
+    marker = re.search(
+        r"(<!-- NSLAB:BEGIN bundle_manifest\.json -->\s*```json\s*)(.*?)(\s*```)",
+        text,
+        flags=re.DOTALL,
+    )
+    assert marker is not None
+    manifest = json.loads(marker.group(2))
+    manifest["daily_memory_context_artifact"] = (
+        "runs/memory_context/RUN-1/daily_memory_context.json"
+    )
+    text = (
+        text[: marker.start(2)]
+        + json.dumps(manifest, ensure_ascii=False, sort_keys=True)
+        + text[marker.end(2) :]
+    )
+    bundle.write_text(text, encoding="utf-8")
+
+    with pytest.raises(
+        VersionedBundleImportError,
+        match="Phase 7 bundle transport verification failed",
+    ):
+        import_versioned_bundle(bundle, root=tmp_path)
+
+    assert not (tmp_path / "research" / "episodes").exists()
+
+
 def test_legacy_v1_episode_still_supported(tmp_path: Path) -> None:
     bundle = _write_synthetic_bundle_file(
         tmp_path,

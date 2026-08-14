@@ -31,6 +31,238 @@
       ],
       "title": "ArtifactReference",
       "type": "object"
+    },
+    "CategoryBrainGuidance": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "title": "Category",
+          "type": "string"
+        },
+        "claim_id": {
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "confidence_label": {
+          "title": "Confidence Label",
+          "type": "string"
+        },
+        "contradicting_record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Contradicting Record Ids",
+          "type": "array"
+        },
+        "mechanism": {
+          "title": "Mechanism",
+          "type": "string"
+        },
+        "source_artifact_path": {
+          "title": "Source Artifact Path",
+          "type": "string"
+        },
+        "source_artifact_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Artifact Sha256",
+          "type": "string"
+        },
+        "statement": {
+          "title": "Statement",
+          "type": "string"
+        },
+        "status": {
+          "title": "Status",
+          "type": "string"
+        },
+        "supporting_record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Supporting Record Ids",
+          "type": "array"
+        },
+        "usage": {
+          "const": "QUERY_GUIDANCE_NOT_EVIDENCE",
+          "default": "QUERY_GUIDANCE_NOT_EVIDENCE",
+          "title": "Usage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_id",
+        "category",
+        "statement",
+        "mechanism",
+        "status",
+        "confidence_label",
+        "source_artifact_path",
+        "source_artifact_sha256"
+      ],
+      "title": "CategoryBrainGuidance",
+      "type": "object"
+    },
+    "CategoryBrainQueryPlan": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_embedding_sha256s": {
+          "additionalProperties": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "title": "Claim Embedding Sha256S",
+          "type": "object"
+        },
+        "cluster_id": {
+          "title": "Cluster Id",
+          "type": "string"
+        },
+        "embedding_model": {
+          "title": "Embedding Model",
+          "type": "string"
+        },
+        "expanded_query": {
+          "title": "Expanded Query",
+          "type": "string"
+        },
+        "expanded_query_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Expanded Query Sha256",
+          "type": "string"
+        },
+        "original_query": {
+          "title": "Original Query",
+          "type": "string"
+        },
+        "original_query_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Original Query Sha256",
+          "type": "string"
+        },
+        "query_embedding_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Query Embedding Sha256",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "nslab.category_brain_query_plan.v1",
+          "default": "nslab.category_brain_query_plan.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "selected_claim_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 3,
+          "title": "Selected Claim Ids",
+          "type": "array"
+        },
+        "selection_scores": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Selection Scores",
+          "type": "object"
+        },
+        "source_artifact_path": {
+          "title": "Source Artifact Path",
+          "type": "string"
+        },
+        "source_artifact_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Artifact Sha256",
+          "type": "string"
+        },
+        "usage": {
+          "const": "QUERY_PLANNER_NOT_EVIDENCE",
+          "default": "QUERY_PLANNER_NOT_EVIDENCE",
+          "title": "Usage",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cluster_id",
+        "original_query",
+        "original_query_sha256",
+        "query_embedding_sha256",
+        "embedding_model",
+        "expanded_query",
+        "expanded_query_sha256",
+        "source_artifact_path",
+        "source_artifact_sha256"
+      ],
+      "title": "CategoryBrainQueryPlan",
+      "type": "object"
+    },
+    "CategoryClaimInclusionProof": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "claim_payload_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Claim Payload Sha256",
+          "type": "string"
+        },
+        "leaf_count": {
+          "exclusiveMinimum": 0,
+          "title": "Leaf Count",
+          "type": "integer"
+        },
+        "leaf_index": {
+          "minimum": 0,
+          "title": "Leaf Index",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.category_claim_inclusion_proof.v1",
+          "default": "nslab.category_claim_inclusion_proof.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "siblings": {
+          "items": {
+            "$ref": "#/$defs/CategoryClaimMerkleStep"
+          },
+          "title": "Siblings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "claim_id",
+        "claim_payload_sha256",
+        "leaf_index",
+        "leaf_count"
+      ],
+      "title": "CategoryClaimInclusionProof",
+      "type": "object"
+    },
+    "CategoryClaimMerkleStep": {
+      "additionalProperties": false,
+      "properties": {
+        "position": {
+          "enum": [
+            "LEFT",
+            "RIGHT"
+          ],
+          "title": "Position",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "position",
+        "sha256"
+      ],
+      "title": "CategoryClaimMerkleStep",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -42,18 +274,48 @@
       "title": "Adaptive Retrieval Traces",
       "type": "array"
     },
-    "category_brain_manifest_sha256": {
-      "anyOf": [
-        {
-          "pattern": "^[0-9a-f]{64}$",
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "title": "Category Brain Manifest Sha256"
+    "beneficiary_graph": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "built_population_keys": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Built Population Keys",
+      "type": "array"
+    },
+    "category_brain_index_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "category_brain_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "category_guidance": {
+      "items": {
+        "$ref": "#/$defs/CategoryBrainGuidance"
+      },
+      "title": "Category Guidance",
+      "type": "array"
+    },
+    "category_query_plans": {
+      "items": {
+        "$ref": "#/$defs/CategoryBrainQueryPlan"
+      },
+      "title": "Category Query Plans",
+      "type": "array"
+    },
+    "category_selected_claim_proofs": {
+      "additionalProperties": {
+        "$ref": "#/$defs/CategoryClaimInclusionProof"
+      },
+      "title": "Category Selected Claim Proofs",
+      "type": "object"
+    },
+    "category_selected_claims": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "compact_final_context": {
+      "$ref": "#/$defs/ArtifactReference"
     },
     "context_complete": {
       "title": "Context Complete",
@@ -76,6 +338,14 @@
       "title": "Cutoff At",
       "type": "string"
     },
+    "deferred_population_purposes": {
+      "items": {
+        "const": "leader_selection",
+        "type": "string"
+      },
+      "title": "Deferred Population Purposes",
+      "type": "array"
+    },
     "estimated_token_count": {
       "minimum": 0,
       "title": "Estimated Token Count",
@@ -84,8 +354,22 @@
     "event_cluster_manifest": {
       "$ref": "#/$defs/ArtifactReference"
     },
+    "event_clusters": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "material_event_cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Material Event Cluster Ids",
+      "type": "array"
+    },
     "memory_coverage_manifest": {
       "$ref": "#/$defs/ArtifactReference"
+    },
+    "memory_snapshot_id": {
+      "title": "Memory Snapshot Id",
+      "type": "string"
     },
     "news_coverage_manifest": {
       "$ref": "#/$defs/ArtifactReference"
@@ -109,9 +393,14 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "nslab.daily_memory_context.v1",
-      "default": "nslab.daily_memory_context.v1",
+      "const": "nslab.daily_memory_context.v2",
+      "default": "nslab.daily_memory_context.v2",
       "title": "Schema Version",
+      "type": "string"
+    },
+    "source_generation_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Generation Sha256",
       "type": "string"
     },
     "supporting_record_ids": {
@@ -125,6 +414,29 @@
       "format": "date",
       "title": "Trade Date",
       "type": "string"
+    },
+    "uncovered_material_event_cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Uncovered Material Event Cluster Ids",
+      "type": "array"
+    },
+    "uncovered_population_purposes": {
+      "additionalProperties": {
+        "items": {
+          "enum": [
+            "catalyst_response",
+            "candidate_error",
+            "newsless",
+            "leader_selection"
+          ],
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "title": "Uncovered Population Purposes",
+      "type": "object"
     },
     "unexplained_record_ids": {
       "items": {
@@ -148,7 +460,15 @@
     "corpus_manifest_sha256",
     "news_coverage_manifest",
     "event_cluster_manifest",
+    "event_clusters",
     "memory_coverage_manifest",
+    "memory_snapshot_id",
+    "source_generation_sha256",
+    "category_brain_manifest",
+    "category_brain_index_manifest",
+    "category_selected_claims",
+    "beneficiary_graph",
+    "compact_final_context",
     "estimated_token_count",
     "context_complete"
   ],

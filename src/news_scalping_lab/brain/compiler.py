@@ -12,6 +12,10 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from news_scalping_lab.brain.category_index import (
+    CATEGORY_BRAIN_INDEX_VERSION,
+    build_category_brain_index,
+)
 from news_scalping_lab.brain.diff import write_rebuild_diff
 from news_scalping_lab.config import Settings, load_settings
 from news_scalping_lab.contracts.memory_context import MemoryCellSnapshotManifest
@@ -56,6 +60,7 @@ from news_scalping_lab.utils import (
     is_available_as_of,
     now_kst,
     read_json,
+    relative_to_root,
     sha256_text,
     stable_id,
     write_json,
@@ -430,6 +435,8 @@ class BrainCompiler:
             cutoff_mode="live",
         )
         created_at = max(record.available_from for record in records)
+        claims = self._claims_from_records(records)
+        compiled_claims = _compiled_claims_from_records(records)
         version = expected_llm_full_brain_version(
             covered_episode_ids=covered_ids,
             source_hashes=source_hashes,
@@ -438,8 +445,16 @@ class BrainCompiler:
             routing_metadata_sha256=brain_record_routing_root_sha256(records),
             production_memory_snapshot_id=memory_snapshot.snapshot_id,
         )
-        claims = self._claims_from_records(records)
-        compiled_claims = _compiled_claims_from_records(records)
+        _category_index, category_index_path = build_category_brain_index(
+            self.root,
+            brain_version=version,
+            brain_record_cutoff_at=brain_record_cutoff_at,
+            claims=compiled_claims,
+            embedding_provider=production_index.embedding_provider,
+        )
+        compiled_claims_text = "".join(
+            claim.model_dump_json() + "\n" for claim in compiled_claims
+        )
         manifest = BrainManifest(
             brain_version=version,
             created_at=created_at,
@@ -454,6 +469,9 @@ class BrainCompiler:
             covered_episode_count=len(covered_ids),
             covered_episode_ids=covered_ids,
             claim_ids=[claim.claim_id for claim in claims],
+            compiled_claim_ids=[claim.claim_id for claim in compiled_claims],
+            compiled_claim_count=len(compiled_claims),
+            compiled_claims_sha256=sha256_text(compiled_claims_text),
             source_hashes=source_hashes,
             brain_record_cutoff_at=brain_record_cutoff_at,
             excluded_future_record_count=len(excluded_future_records),
@@ -481,6 +499,11 @@ class BrainCompiler:
                 )
             ),
             coverage_complete=True,
+            category_brain_index_manifest_artifact=relative_to_root(
+                category_index_path,
+                self.root,
+            ),
+            category_brain_index_manifest_sha256=file_sha256(category_index_path),
         )
         llm_compile = asyncio.run(
             _compile_llm_category_outputs(
@@ -875,9 +898,10 @@ class BrainCompiler:
         (self.claims_dir / "claims.jsonl").write_text(claims_path.read_text(encoding="utf-8"), encoding="utf-8")
         compiled_claims_path = self.current_dir / "compiled_claims.jsonl"
         if compiled_claims is not None:
-            compiled_claims_path.write_text(
-                "".join(claim.model_dump_json() + "\n" for claim in compiled_claims),
-                encoding="utf-8",
+            compiled_claims_path.write_bytes(
+                "".join(
+                    claim.model_dump_json() + "\n" for claim in compiled_claims
+                ).encode("utf-8")
             )
         elif compiled_claims_path.exists():
             compiled_claims_path.unlink()
@@ -1233,6 +1257,7 @@ def expected_llm_full_brain_version(
             {
                 "schema": "nslab.brain.llm_full.v2",
                 "compiler_version": LLM_FULL_COMPILER_VERSION,
+                "category_brain_index_version": CATEGORY_BRAIN_INDEX_VERSION,
                 "polarity_classifier_version": POLARITY_CLASSIFIER_VERSION,
                 "routing_metadata_sha256": routing_metadata_sha256,
                 "production_memory_snapshot_id": production_memory_snapshot_id,

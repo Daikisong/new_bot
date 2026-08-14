@@ -1,0 +1,71 @@
+{
+  "$defs": {
+    "CategoryClaimMerkleStep": {
+      "additionalProperties": false,
+      "properties": {
+        "position": {
+          "enum": [
+            "LEFT",
+            "RIGHT"
+          ],
+          "title": "Position",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "position",
+        "sha256"
+      ],
+      "title": "CategoryClaimMerkleStep",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "claim_id": {
+      "title": "Claim Id",
+      "type": "string"
+    },
+    "claim_payload_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Claim Payload Sha256",
+      "type": "string"
+    },
+    "leaf_count": {
+      "exclusiveMinimum": 0,
+      "title": "Leaf Count",
+      "type": "integer"
+    },
+    "leaf_index": {
+      "minimum": 0,
+      "title": "Leaf Index",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "nslab.category_claim_inclusion_proof.v1",
+      "default": "nslab.category_claim_inclusion_proof.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "siblings": {
+      "items": {
+        "$ref": "#/$defs/CategoryClaimMerkleStep"
+      },
+      "title": "Siblings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "claim_id",
+    "claim_payload_sha256",
+    "leaf_index",
+    "leaf_count"
+  ],
+  "title": "CategoryClaimInclusionProof",
+  "type": "object"
+}

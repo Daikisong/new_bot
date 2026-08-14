@@ -6,17 +6,57 @@ import json
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from pydantic import ValidationError
 
+from news_scalping_lab.brain.category_index import (
+    claim_payload_sha256,
+    expanded_category_query,
+    verify_category_claim_inclusion_proof,
+)
 from news_scalping_lab.context.final_synthesis import (
     final_synthesis_context_contract_verified,
     phase2_memory_coverage_required,
+    phase7_beneficiary_graph_prompt_projection,
+    phase7_daily_memory_required,
+    phase7_daily_prompt_projection,
 )
-from news_scalping_lab.contracts.memory_context import MemoryCoverageManifest
-from news_scalping_lab.contracts.models import Provenance, ResearchEpisode
+from news_scalping_lab.contracts.memory_context import (
+    AdaptiveRetrievalTrace,
+    BeneficiaryGraphArtifact,
+    CategoryBrainIndexManifest,
+    DailyMemoryContext,
+    EventClusterManifest,
+    MemoryCoverageManifest,
+    NewsCoverageManifest,
+    PopulationCubeRow,
+    PopulationManifest,
+    RepresentativeRecord,
+    RepresentativeSetManifest,
+)
+from news_scalping_lab.contracts.models import (
+    BrainManifest,
+    Candidate,
+    CompanyMemory,
+    Provenance,
+    ResearchEpisode,
+)
+from news_scalping_lab.memory.beneficiary import beneficiary_graph_projection_matches
+from news_scalping_lab.memory.daily_context import (
+    category_guidance_from_claims,
+    compact_daily_memory_payload,
+    daily_memory_artifact_chain_errors,
+    daily_memory_disagreements,
+    daily_memory_record_roles,
+    daily_memory_source_chain_errors,
+    material_cluster_queries_from_sources,
+    population_summary_rows,
+    representative_rows_from_sources,
+)
+from news_scalping_lab.phase7_transport import verify_phase7_transport_attestation
+from news_scalping_lab.records.models import CompiledBrainClaim
 from news_scalping_lab.utils import (
     canonical_json,
     file_sha256,
@@ -121,8 +161,12 @@ def looks_like_bundle(path: Path) -> bool:
     return "<!-- NSLAB:BEGIN " in text and "<!-- NSLAB:END " in text
 
 
-def import_bundle_episode(path: Path) -> ResearchEpisode:
-    parsed = parse_bundle(path)
+def import_bundle_episode(
+    path: Path,
+    *,
+    phase7_transport_key: str | None = None,
+) -> ResearchEpisode:
+    parsed = parse_bundle(path, phase7_transport_key=phase7_transport_key)
     if not parsed.validation["blind_hash_verified"]:
         raise BundleImportError(
             "blind_prediction.json hash does not match bundle_manifest.json"
@@ -250,7 +294,11 @@ def import_bundle_episode(path: Path) -> ResearchEpisode:
     return episode.model_copy(update={"provenance": [*episode.provenance, provenance]})
 
 
-def parse_bundle(path: Path) -> BundleParseResult:
+def parse_bundle(
+    path: Path,
+    *,
+    phase7_transport_key: str | None = None,
+) -> BundleParseResult:
     text = path.read_text(encoding="utf-8", errors="replace")
     _validate_required_marker_counts(text)
     front_matter = _extract_front_matter(text)
@@ -405,6 +453,13 @@ def parse_bundle(path: Path) -> BundleParseResult:
     if phase2_memory_coverage_required(_manifest_payload(json_blocks)):
         validation["memory_coverage_bundle_verified"] = (
             _verify_memory_coverage_bundle(json_blocks, jsonl_blocks, payload_blocks)
+        )
+    if phase7_daily_memory_required(_manifest_payload(json_blocks)):
+        validation["phase7_memory_bundle_verified"] = _verify_phase7_bundle(
+            json_blocks,
+            jsonl_blocks,
+            payload_blocks,
+            phase7_transport_key=phase7_transport_key,
         )
     _add_optional_jsonl_validation(
         validation,
@@ -812,6 +867,498 @@ def _verify_memory_coverage_bundle(
         and available_ids == [row.get("record_id") for row in available_rows]
         and all(value <= coverage.cutoff_at for value in available_available_from)
     )
+
+
+def _verify_phase7_bundle(
+    json_blocks: dict[str, Any],
+    jsonl_blocks: dict[str, list[dict[str, Any]]],
+    payload_blocks: dict[str, str],
+    *,
+    phase7_transport_key: str | None = None,
+) -> bool:
+    manifest = _manifest_payload(json_blocks)
+    embedded = manifest.get("embedded_phase7_artifacts")
+    if not isinstance(embedded, dict) or not embedded:
+        return False
+    if not verify_phase7_transport_attestation(
+        manifest.get("phase7_transport_attestation"),
+        run_id=str(manifest.get("run_id") or ""),
+        trade_date=str(manifest.get("trade_date") or ""),
+        cutoff_at=str(manifest.get("cutoff_at") or ""),
+        embedded_artifacts=embedded,
+        key_value=phase7_transport_key,
+    ):
+        return False
+    phase7_block_names = {
+        name for name in payload_blocks if name.startswith("phase7_")
+    }
+    if set(embedded) != phase7_block_names:
+        return False
+    source_metadata: dict[str, dict[str, Any]] = {}
+    source_payloads: dict[str, Any] = {}
+    source_rows: dict[str, list[dict[str, Any]]] = {}
+    for name, metadata in embedded.items():
+        payload = payload_blocks.get(name)
+        if not isinstance(metadata, dict) or not isinstance(payload, str):
+            return False
+        source_path = metadata.get("source_artifact_path")
+        if (
+            not isinstance(source_path, str)
+            or not _phase7_artifact_path_valid(source_path)
+            or source_path in source_metadata
+        ):
+            return False
+        if metadata.get("embedded_sha256") != sha256_text(payload):
+            return False
+        line_ending = metadata.get("line_ending")
+        if line_ending not in {"LF", "CRLF"}:
+            return False
+        newline = "\r\n" if line_ending == "CRLF" else "\n"
+        reconstructed = payload.replace("\n", newline)
+        if metadata.get("trailing_newline") is True:
+            reconstructed += newline
+        elif metadata.get("trailing_newline") is not False:
+            return False
+        if metadata.get("source_sha256") != sha256_text(reconstructed):
+            return False
+        expected_count = (
+            len(jsonl_blocks.get(name, [])) if name.endswith(".jsonl") else 1
+        )
+        if metadata.get("item_count") != expected_count:
+            return False
+        source_metadata[source_path] = metadata
+        if name.endswith(".json"):
+            source_payloads[source_path] = json_blocks.get(name)
+        elif name.endswith(".jsonl"):
+            source_rows[source_path] = jsonl_blocks.get(name, [])
+    daily_path = manifest.get("daily_memory_context_artifact")
+    graph_path = manifest.get("beneficiary_graph_artifact")
+    if not isinstance(daily_path, str) or not isinstance(graph_path, str):
+        return False
+    daily_payload = source_payloads.get(daily_path)
+    graph_payload = source_payloads.get(graph_path)
+    if not isinstance(daily_payload, dict) or not isinstance(graph_payload, dict):
+        return False
+    try:
+        daily = DailyMemoryContext.model_validate(daily_payload)
+        graph = BeneficiaryGraphArtifact.model_validate(graph_payload)
+    except ValidationError:
+        return False
+    if (
+        daily.run_id != manifest.get("run_id")
+        or daily.trade_date.isoformat() != manifest.get("trade_date")
+        or daily.cutoff_at.isoformat() != manifest.get("cutoff_at")
+        or daily.corpus_manifest_sha256
+        != manifest.get("memory_coverage_corpus_sha256")
+        or graph.run_id != daily.run_id
+        or graph.cutoff_at != daily.cutoff_at
+    ):
+        return False
+    if not _phase7_text_hash_matches(
+        payload_blocks,
+        embedded,
+        source_path=daily_path,
+        expected=manifest.get("daily_memory_context_sha256"),
+    ) or not _phase7_text_hash_matches(
+        payload_blocks,
+        embedded,
+        source_path=graph_path,
+        expected=manifest.get("beneficiary_graph_sha256"),
+    ):
+        return False
+    for source_path, payload in source_payloads.items():
+        if not _phase7_contract_payload_valid(source_path, payload):
+            return False
+    for source_path, rows in source_rows.items():
+        if not _phase7_jsonl_payload_valid(source_path, rows):
+            return False
+    reachable = {daily_path, graph_path}
+    pending: list[dict[str, Any]] = [daily_payload, graph_payload]
+    while pending:
+        traversal_payload = pending.pop()
+        if traversal_payload.get("schema_version") in {
+            "nslab.memory_coverage_manifest.v2",
+            "nslab.category_brain_index_manifest.v1",
+        }:
+            references: list[dict[str, Any]] = []
+        else:
+            references = _phase7_artifact_reference_payloads(traversal_payload)
+        company_artifacts = traversal_payload.get("company_memory_artifact_sha256s")
+        for reference in references:
+            source_path = reference["artifact_path"]
+            if not _phase7_artifact_path_valid(source_path):
+                return False
+            metadata = source_metadata.get(source_path)
+            if (
+                metadata is None
+                or metadata.get("source_sha256") != reference["sha256"]
+                or metadata.get("item_count") != reference["item_count"]
+            ):
+                return False
+            if source_path not in reachable:
+                reachable.add(source_path)
+                child = source_payloads.get(source_path)
+                if isinstance(child, dict):
+                    pending.append(child)
+        if isinstance(company_artifacts, dict):
+            for source_path, source_hash in company_artifacts.items():
+                metadata = source_metadata.get(source_path)
+                if (
+                    not isinstance(source_path, str)
+                    or not _phase7_artifact_path_valid(source_path)
+                    or not isinstance(source_hash, str)
+                    or metadata is None
+                    or metadata.get("source_sha256") != source_hash
+                ):
+                    return False
+                reachable.add(source_path)
+    if reachable != set(source_metadata):
+        return False
+    final_context = json_blocks.get("final_synthesis_context.json")
+    if not isinstance(final_context, dict):
+        return False
+    final_payload = final_context.get("payload")
+    compact_payload = source_payloads.get(daily.compact_final_context.artifact_path)
+    index_payload = source_payloads.get(
+        daily.category_brain_index_manifest.artifact_path
+    )
+    brain_payload = source_payloads.get(daily.category_brain_manifest.artifact_path)
+    claim_rows = source_rows.get(daily.category_selected_claims.artifact_path)
+    if not isinstance(final_payload, dict) or not isinstance(compact_payload, dict):
+        return False
+    try:
+        category_index = CategoryBrainIndexManifest.model_validate(index_payload)
+        brain = BrainManifest.model_validate(brain_payload)
+        selected_claims = [CompiledBrainClaim.model_validate(row) for row in claim_rows or []]
+        selected_claim_by_id = {claim.claim_id: claim for claim in selected_claims}
+        graph_cluster_manifest = EventClusterManifest.model_validate(
+            source_payloads.get(graph.event_cluster_manifest.artifact_path)
+        )
+        daily_event_manifest = EventClusterManifest.model_validate(
+            source_payloads.get(daily.event_cluster_manifest.artifact_path)
+        )
+        daily_news_manifest = NewsCoverageManifest.model_validate(
+            source_payloads.get(daily.news_coverage_manifest.artifact_path)
+        )
+        daily_memory_coverage = MemoryCoverageManifest.model_validate(
+            source_payloads.get(daily.memory_coverage_manifest.artifact_path)
+        )
+        daily_event_rows = source_rows.get(daily.event_clusters.artifact_path, [])
+        cluster_query_by_id = dict(
+            material_cluster_queries_from_sources(
+                daily_event_manifest,
+                daily_event_rows,
+            )
+        )
+        graph_candidates = [
+            Candidate.model_validate(row)
+            for row in source_rows.get(graph.candidate_input_artifact.artifact_path, [])
+        ]
+        graph_company_memories = [
+            (
+                source_path,
+                CompanyMemory.model_validate(source_payloads.get(source_path)),
+            )
+            for source_path in sorted(graph.company_memory_artifact_sha256s)
+        ]
+        population_manifests = [
+            PopulationManifest.model_validate(
+                source_payloads.get(population_reference.artifact_path)
+            )
+            for population_reference in daily.population_manifests
+        ]
+        representative_sources = []
+        for representative_reference in daily.representative_set_manifests:
+            representative_manifest = RepresentativeSetManifest.model_validate(
+                source_payloads.get(representative_reference.artifact_path)
+            )
+            representative_sources.append(
+                (
+                    representative_manifest,
+                    [
+                        RepresentativeRecord.model_validate(row)
+                        for row in source_rows.get(
+                            representative_manifest.representative_records.artifact_path,
+                            [],
+                        )
+                    ],
+                )
+            )
+        population_summaries = population_summary_rows(population_manifests)
+        representative_rows = representative_rows_from_sources(
+            representative_sources
+        )
+        supporting, contradicting, unexplained = daily_memory_record_roles(
+            representative_rows
+        )
+        guidance_source_claims = [
+            selected_claim_by_id[item.claim_id]
+            for item in daily.category_guidance
+            if item.claim_id in selected_claim_by_id
+        ]
+        expected_category_guidance = category_guidance_from_claims(
+            guidance_source_claims,
+            source_artifact=daily.category_selected_claims,
+            selected_record_ids={
+                str(row["record_id"])
+                for row in representative_rows
+                if isinstance(row.get("record_id"), str)
+            },
+            cutoff_at=daily.cutoff_at,
+        )
+        disagreements = daily_memory_disagreements(population_summaries)
+        expected_compact_payload = compact_daily_memory_payload(
+            run_id=daily.run_id,
+            trade_date=daily.trade_date,
+            cutoff_at=daily.cutoff_at,
+            memory_snapshot_id=daily.memory_snapshot_id,
+            material_event_cluster_ids=daily.material_event_cluster_ids,
+            uncovered_material_event_cluster_ids=(
+                daily.uncovered_material_event_cluster_ids
+            ),
+            built_population_keys=daily.built_population_keys,
+            uncovered_population_purposes=daily.uncovered_population_purposes,
+            population_summaries=population_summaries,
+            representative_records=representative_rows,
+            category_query_plans=daily.category_query_plans,
+            category_guidance=daily.category_guidance,
+            graph=graph,
+            disagreements=disagreements,
+            supporting_record_ids=supporting,
+            contradicting_record_ids=contradicting,
+            unexplained_record_ids=unexplained,
+        )
+        chain_traces = [
+            AdaptiveRetrievalTrace.model_validate(
+                source_payloads.get(reference.artifact_path)
+            )
+            for reference in daily.adaptive_retrieval_traces
+        ]
+        chain_errors = daily_memory_artifact_chain_errors(
+            daily,
+            populations=population_manifests,
+            representative_sources=representative_sources,
+            traces=chain_traces,
+            graph=graph,
+        )
+        source_chain_errors = daily_memory_source_chain_errors(
+            daily,
+            news=daily_news_manifest,
+            event=daily_event_manifest,
+            coverage=daily_memory_coverage,
+            brain=brain,
+            category_index=category_index,
+        )
+        query_plan_errors = []
+        for plan in daily.category_query_plans:
+            selected_plan_claims = [
+                selected_claim_by_id[claim_id]
+                for claim_id in plan.selected_claim_ids
+                if claim_id in selected_claim_by_id
+            ]
+            expected_original_query = cluster_query_by_id.get(plan.cluster_id)
+            if (
+                expected_original_query is None
+                or len(selected_plan_claims) != len(plan.selected_claim_ids)
+                or plan.original_query != expected_original_query
+                or plan.expanded_query
+                != expanded_category_query(
+                    expected_original_query,
+                    selected_plan_claims,
+                )
+                or plan.embedding_model != category_index.embedding_model
+                or plan.source_artifact_path
+                != daily.category_brain_index_manifest.artifact_path
+                or plan.source_artifact_sha256
+                != daily.category_brain_index_manifest.sha256
+            ):
+                query_plan_errors.append(plan.cluster_id)
+    except (ValidationError, ValueError):
+        return False
+    selected_claim_ids = {claim.claim_id for claim in selected_claims}
+    required_claim_ids = {
+        claim_id
+        for plan in daily.category_query_plans
+        for claim_id in plan.selected_claim_ids
+    } | {guidance.claim_id for guidance in daily.category_guidance}
+    if (
+        selected_claim_ids != required_claim_ids
+        or len(selected_claims) != daily.category_selected_claims.item_count
+        or any(claim.available_from > daily.cutoff_at for claim in selected_claims)
+        or category_index.brain_version != brain.brain_version
+        or category_index.brain_record_cutoff_at != brain.brain_record_cutoff_at
+        or category_index.brain_record_cutoff_at > daily.cutoff_at
+        or not selected_claim_ids.issubset(set(brain.compiled_claim_ids))
+        or brain.compiled_claim_count != category_index.claim_count
+        or brain.compiled_claims_sha256 != category_index.claims_artifact.sha256
+        or compact_payload != expected_compact_payload
+        or daily.supporting_record_ids != supporting
+        or daily.contradicting_record_ids != contradicting
+        or daily.unexplained_record_ids != unexplained
+        or daily.unresolved_disagreements != disagreements
+        or len(guidance_source_claims) != len(daily.category_guidance)
+        or daily.category_guidance != expected_category_guidance
+        or bool(chain_errors)
+        or bool(source_chain_errors)
+        or bool(query_plan_errors)
+        or not beneficiary_graph_projection_matches(
+            graph,
+            cluster_manifest=graph_cluster_manifest,
+            candidates=graph_candidates,
+            company_memories=graph_company_memories,
+        )
+        or set(daily.category_selected_claim_proofs) != selected_claim_ids
+        or any(
+            proof.claim_payload_sha256
+            != claim_payload_sha256(selected_claim_by_id[claim_id])
+            or not verify_category_claim_inclusion_proof(
+                proof,
+                category_index.claim_payload_merkle_root_sha256,
+            )
+            for claim_id, proof in daily.category_selected_claim_proofs.items()
+        )
+    ):
+        return False
+    daily_wrapper = final_payload.get("daily_memory_context")
+    graph_wrapper = final_payload.get("beneficiary_graph")
+    candidate_research = final_payload.get("candidate_research")
+    candidates = (
+        candidate_research.get("candidates")
+        if isinstance(candidate_research, dict)
+        else None
+    )
+    return (
+        isinstance(daily_wrapper, dict)
+        and daily_wrapper
+        == phase7_daily_prompt_projection(
+            daily=daily_payload,
+            compact=compact_payload,
+            artifact_path=daily_path,
+            sha256=str(manifest.get("daily_memory_context_sha256") or ""),
+        )
+        and isinstance(graph_wrapper, dict)
+        and graph_wrapper
+        == phase7_beneficiary_graph_prompt_projection(
+            graph=graph_payload,
+            artifact_path=graph_path,
+            sha256=str(manifest.get("beneficiary_graph_sha256") or ""),
+        )
+        and isinstance(candidates, list)
+        and graph.candidate_input_sha256 == sha256_text(canonical_json(candidates))
+    )
+
+
+def _phase7_text_hash_matches(
+    payload_blocks: dict[str, str],
+    embedded: dict[str, Any],
+    *,
+    source_path: str,
+    expected: Any,
+) -> bool:
+    if not isinstance(expected, str):
+        return False
+    for name, metadata in embedded.items():
+        if isinstance(metadata, dict) and metadata.get("source_artifact_path") == source_path:
+            payload = payload_blocks.get(name)
+            if not isinstance(payload, str):
+                return False
+            return expected in {
+                sha256_text(payload),
+                sha256_text(payload + "\n"),
+                sha256_text(payload.replace("\n", "\r\n")),
+                sha256_text(payload.replace("\n", "\r\n") + "\r\n"),
+            }
+    return False
+
+
+def _phase7_contract_payload_valid(source_path: str, payload: Any) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    model_by_schema: dict[str, Any] = {
+        "nslab.daily_memory_context.v2": DailyMemoryContext,
+        "nslab.beneficiary_graph.v2": BeneficiaryGraphArtifact,
+        "nslab.population_manifest.v2": PopulationManifest,
+        "nslab.representative_set_manifest.v3": RepresentativeSetManifest,
+        "nslab.adaptive_retrieval_trace.v4": AdaptiveRetrievalTrace,
+        "nslab.memory_coverage_manifest.v2": MemoryCoverageManifest,
+        "nslab.news_coverage_manifest.v1": NewsCoverageManifest,
+        "nslab.event_cluster_manifest.v2": EventClusterManifest,
+        "nslab.category_brain_index_manifest.v1": CategoryBrainIndexManifest,
+        "nslab.brain_manifest.v1": BrainManifest,
+    }
+    schema_version = payload.get("schema_version")
+    if not isinstance(schema_version, str):
+        if source_path.startswith("memory/company_memory/"):
+            model: Any = CompanyMemory
+        else:
+            return False
+    elif schema_version == "nslab.daily_memory_compact_context.v1":
+        return Path(source_path).name == "compact_final_context.json"
+    else:
+        model = model_by_schema.get(schema_version)
+        if model is None:
+            return False
+    try:
+        model.model_validate(payload)
+    except ValidationError:
+        return False
+    return True
+
+
+def _phase7_jsonl_payload_valid(
+    source_path: str,
+    rows: list[dict[str, Any]],
+) -> bool:
+    name = PurePosixPath(source_path).name
+    model_by_name: dict[str, Any] = {
+        "candidates.jsonl": Candidate,
+        "selected_category_claims.jsonl": CompiledBrainClaim,
+        "representative_records.jsonl": RepresentativeRecord,
+        "population_cube.jsonl": PopulationCubeRow,
+    }
+    model = model_by_name.get(name)
+    if model is not None:
+        try:
+            for row in rows:
+                model.model_validate(row)
+        except ValidationError:
+            return False
+        return True
+    if name not in {
+        "event_clusters.jsonl",
+        "member_records.jsonl",
+        "independent_units.jsonl",
+    }:
+        return False
+    return all(isinstance(row, dict) and bool(row) for row in rows)
+
+
+def _phase7_artifact_path_valid(value: str) -> bool:
+    if not value or value != value.strip() or "\\" in value or ":" in value:
+        return False
+    path = PurePosixPath(value)
+    return (
+        not path.is_absolute()
+        and path.as_posix() == value
+        and all(part not in {"", ".", ".."} for part in path.parts)
+    )
+
+
+def _phase7_artifact_reference_payloads(value: Any) -> list[dict[str, Any]]:
+    references: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        if (
+            isinstance(value.get("artifact_path"), str)
+            and isinstance(value.get("sha256"), str)
+            and isinstance(value.get("item_count"), int)
+        ):
+            references.append(value)
+        for child in value.values():
+            references.extend(_phase7_artifact_reference_payloads(child))
+    elif isinstance(value, list):
+        for child in value:
+            references.extend(_phase7_artifact_reference_payloads(child))
+    return references
 
 
 def _coverage_record_hash_rows_valid(rows: list[dict[str, Any]]) -> bool:

@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 from datetime import datetime, time
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from news_scalping_lab.config import Settings
 from news_scalping_lab.context.final_synthesis import (
     final_synthesis_context_contract_verified,
+    final_synthesis_phase7_artifacts_compatible,
     phase2_memory_coverage_required,
+    phase7_daily_memory_required,
 )
 from news_scalping_lab.context.memory_coverage import inspect_memory_coverage_manifest
 from news_scalping_lab.contracts.memory_context import MemoryCoverageManifest
@@ -20,18 +22,34 @@ from news_scalping_lab.contracts.models import (
     Provenance,
     ResearchEpisode,
 )
+from news_scalping_lab.memory.beneficiary import inspect_beneficiary_graph
+from news_scalping_lab.memory.daily_context import inspect_daily_memory_context
+from news_scalping_lab.memory.index import ProductionMemoryIndex
+from news_scalping_lab.memory.runtime import create_production_memory_index
+from news_scalping_lab.phase7_transport import build_phase7_transport_attestation
 from news_scalping_lab.utils import (
     KST,
     canonical_json,
     file_sha256,
     next_trading_day,
     read_json,
+    relative_to_root,
     sha256_text,
     stable_id,
 )
 
 BUNDLE_SCHEMA_VERSION = "nslab.research_bundle.v1"
 EXECUTION_PROTOCOL_VERSION = "nslab.research_prompt.v5"
+
+
+class _Phase7BundleBlock(TypedDict):
+    content: str
+    source_artifact_path: str
+    source_sha256: str
+    embedded_sha256: str
+    item_count: int
+    line_ending: str
+    trailing_newline: bool
 
 
 def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
@@ -55,6 +73,17 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
         settings,
         manifest,
         "final_synthesis_context_artifact",
+    )
+    phase7_memory_index = (
+        create_production_memory_index(settings, require_records=False)
+        if phase7_daily_memory_required(manifest)
+        else None
+    )
+    phase7_blocks = _read_phase7_blocks(
+        settings,
+        manifest,
+        final_synthesis_context=final_synthesis_context,
+        memory_index=phase7_memory_index,
     )
     memory_coverage_blocks = _read_memory_coverage_blocks(settings, manifest)
     excluded_candidate_web_checks = _read_optional_manifest_artifact(
@@ -128,6 +157,10 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
         brain_delta=brain_delta,
         research_episode=research_episode,
         memory_coverage_blocks=memory_coverage_blocks,
+        phase7_blocks=phase7_blocks,
+        phase7_transport_key=settings.env_value(
+            "NSLAB_PHASE7_TRANSPORT_HMAC_KEY"
+        ),
     )
     output_path = settings.path(settings.output_dirs.reports) / (
         f"{compact_trade_date}_nslab_episode_bundle.md"
@@ -150,6 +183,7 @@ def export_analysis_bundle(settings: Settings, *, run_id: str) -> Path:
             phase_state=phase_state,
             bundle_manifest=bundle_manifest,
             memory_coverage_blocks=memory_coverage_blocks,
+            phase7_blocks=phase7_blocks,
         ),
         encoding="utf-8",
     )
@@ -387,6 +421,8 @@ def _bundle_input_artifacts(manifest: dict[str, Any]) -> list[str]:
         "candidate_web_check_artifact",
         "candidate_verification_artifact",
         "final_synthesis_context_artifact",
+        "daily_memory_context_artifact",
+        "beneficiary_graph_artifact",
         "excluded_candidate_web_check_artifact",
     ):
         artifact = manifest.get(field_name)
@@ -413,6 +449,8 @@ def _build_bundle_manifest(
     brain_delta: str,
     research_episode: ResearchEpisode,
     memory_coverage_blocks: dict[str, str] | None,
+    phase7_blocks: dict[str, _Phase7BundleBlock] | None,
+    phase7_transport_key: str | None,
 ) -> dict[str, Any]:
     prediction_payload = prediction.model_dump(mode="json")
     observed_blind_hash = prediction.blind_artifact_sha256
@@ -512,6 +550,11 @@ def _build_bundle_manifest(
             "candidate_expansion_audit_only_cluster_ids",
             "candidate_expansion_uncovered_cluster_ids",
             "counterexample_record_ids",
+            "daily_memory_context_artifact",
+            "daily_memory_context_sha256",
+            "daily_memory_context_summary",
+            "beneficiary_graph_artifact",
+            "beneficiary_graph_sha256",
         ),
     )
     if candidate_web_checks is not None:
@@ -571,6 +614,22 @@ def _build_bundle_manifest(
             for name, content in sorted(memory_coverage_blocks.items())
         }
         validation["memory_coverage_bundle_verified"] = True
+    if phase7_blocks is not None:
+        embedded_phase7_artifacts = {
+            name: {key: value for key, value in block.items() if key != "content"}
+            for name, block in sorted(phase7_blocks.items())
+        }
+        payload["embedded_phase7_artifacts"] = embedded_phase7_artifacts
+        payload["phase7_transport_attestation"] = (
+            build_phase7_transport_attestation(
+                run_id=run_id,
+                trade_date=str(payload["trade_date"]),
+                cutoff_at=str(payload["cutoff_at"]),
+                embedded_artifacts=embedded_phase7_artifacts,
+                key_value=phase7_transport_key,
+            )
+        )
+        validation["phase7_memory_bundle_verified"] = True
     return payload
 
 
@@ -610,6 +669,171 @@ def _read_memory_coverage_blocks(
         path = settings.project_root / reference.artifact_path
         blocks[name] = path.read_text(encoding="utf-8")
     return blocks
+
+
+def _read_phase7_blocks(
+    settings: Settings,
+    manifest: dict[str, Any],
+    *,
+    final_synthesis_context: str | None,
+    memory_index: ProductionMemoryIndex | None = None,
+) -> dict[str, _Phase7BundleBlock] | None:
+    if not phase7_daily_memory_required(manifest):
+        return None
+    if final_synthesis_context is None:
+        raise ValueError("Phase 7 bundle requires the final synthesis context")
+    final_context = _json_object(final_synthesis_context)
+    if final_context is None or not final_synthesis_phase7_artifacts_compatible(
+        settings.project_root,
+        manifest,
+        final_context,
+    ):
+        raise ValueError("Phase 7 final synthesis artifact embedding is invalid")
+    root = settings.project_root.resolve()
+    daily_path = _required_project_artifact_path(
+        root,
+        manifest.get("daily_memory_context_artifact"),
+        label="daily_memory_context_artifact",
+    )
+    graph_path = _required_project_artifact_path(
+        root,
+        manifest.get("beneficiary_graph_artifact"),
+        label="beneficiary_graph_artifact",
+    )
+    for label, inspection in (
+        (
+            "daily memory context",
+            inspect_daily_memory_context(
+                root,
+                daily_path,
+                memory_index=memory_index,
+            ),
+        ),
+        ("beneficiary graph", inspect_beneficiary_graph(root, graph_path)),
+    ):
+        if inspection.get("passed") is not True:
+            raise ValueError(
+                f"{label} cannot be exported: "
+                + ", ".join(str(value) for value in inspection.get("errors", []))
+            )
+    pending: dict[Path, tuple[str | None, int | None]] = {
+        daily_path: (None, 1),
+        graph_path: (None, 1),
+    }
+    blocks: dict[str, _Phase7BundleBlock] = {}
+    visited: set[Path] = set()
+    while pending:
+        path, (expected_hash, expected_count) = pending.popitem()
+        path = path.resolve()
+        if path in visited:
+            continue
+        visited.add(path)
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("Phase 7 artifact escapes the project root") from exc
+        if not path.exists():
+            raise ValueError(f"Phase 7 artifact is missing: {path}")
+        if expected_hash is not None and file_sha256(path) != expected_hash:
+            raise ValueError(f"Phase 7 artifact hash mismatch: {path}")
+        raw = path.read_bytes()
+        try:
+            content = raw.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise ValueError(f"Phase 7 artifact is not UTF-8 text: {path}") from exc
+        relative = relative_to_root(path, root)
+        block_name = _phase7_block_name(relative)
+        item_count = _jsonl_item_count(content) if path.suffix == ".jsonl" else 1
+        embedded_content = "\n".join(content.splitlines())
+        if expected_count is not None and item_count != expected_count:
+            raise ValueError(f"Phase 7 artifact item count mismatch: {path}")
+        blocks[block_name] = {
+            "content": embedded_content,
+            "source_artifact_path": relative,
+            "source_sha256": file_sha256(path),
+            "embedded_sha256": sha256_text(embedded_content),
+            "item_count": item_count,
+            "line_ending": "CRLF" if b"\r\n" in raw else "LF",
+            "trailing_newline": raw.endswith((b"\n", b"\r")),
+        }
+        if path.suffix != ".json":
+            continue
+        payload = _json_object(content)
+        if payload is None:
+            raise ValueError(f"Phase 7 JSON artifact is invalid: {path}")
+        references = (
+            []
+            if payload.get("schema_version")
+            in {
+                "nslab.memory_coverage_manifest.v2",
+                "nslab.category_brain_index_manifest.v1",
+            }
+            else _artifact_reference_payloads(payload)
+        )
+        for reference in references:
+            child = _required_project_artifact_path(
+                root,
+                reference.get("artifact_path"),
+                label="Phase 7 nested artifact",
+            )
+            pending[child] = (
+                str(reference["sha256"]),
+                int(reference["item_count"]),
+            )
+        company_artifacts = payload.get("company_memory_artifact_sha256s")
+        if isinstance(company_artifacts, dict):
+            for child_ref, child_hash in company_artifacts.items():
+                if isinstance(child_ref, str) and isinstance(child_hash, str):
+                    child = _required_project_artifact_path(
+                        root,
+                        child_ref,
+                        label="Phase 7 company memory artifact",
+                    )
+                    pending[child] = (child_hash, 1)
+    return blocks
+
+
+def _artifact_reference_payloads(value: Any) -> list[dict[str, Any]]:
+    references: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        if (
+            isinstance(value.get("artifact_path"), str)
+            and isinstance(value.get("sha256"), str)
+            and isinstance(value.get("item_count"), int)
+        ):
+            references.append(value)
+        for child in value.values():
+            references.extend(_artifact_reference_payloads(child))
+    elif isinstance(value, list):
+        for child in value:
+            references.extend(_artifact_reference_payloads(child))
+    return references
+
+
+def _required_project_artifact_path(
+    root: Path,
+    value: Any,
+    *,
+    label: str,
+) -> Path:
+    if not isinstance(value, str) or not value or Path(value).is_absolute():
+        raise ValueError(f"{label} is invalid")
+    path = (root / value).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"{label} escapes the project root") from exc
+    return path
+
+
+def _phase7_block_name(relative_path: str) -> str:
+    path = Path(relative_path)
+    safe_name = "".join(
+        character
+        for character in path.name
+        if character.isalnum() or character in {"-", "_", "."}
+    )
+    return f"phase7_{sha256_text(relative_path)[:12]}_{safe_name}"
 
 
 def _jsonl_item_count(content: str) -> int:
@@ -796,6 +1020,7 @@ def _render_bundle(
     phase_state: str,
     bundle_manifest: dict[str, Any],
     memory_coverage_blocks: dict[str, str] | None,
+    phase7_blocks: dict[str, _Phase7BundleBlock] | None,
 ) -> str:
     blind_json = _prediction_json_text(prediction)
     episode_json = research_episode.model_dump_json(indent=2)
@@ -826,6 +1051,10 @@ def _render_bundle(
         for name, content in sorted(memory_coverage_blocks.items()):
             fence = "jsonl" if name.endswith(".jsonl") else "json"
             optional_blocks += f"{_block(name, content, fence=fence)}\n\n"
+    if phase7_blocks is not None:
+        for name, block in sorted(phase7_blocks.items()):
+            fence = "jsonl" if name.endswith(".jsonl") else "json"
+            optional_blocks += f"{_block(name, block['content'], fence=fence)}\n\n"
     return (
         "---\n"
         f"schema_version: {BUNDLE_SCHEMA_VERSION}\n"

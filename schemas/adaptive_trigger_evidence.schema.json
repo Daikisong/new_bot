@@ -1,0 +1,92 @@
+{
+  "$defs": {
+    "ArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "item_count": {
+          "minimum": 0,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.memory_artifact_reference.v1",
+          "default": "nslab.memory_artifact_reference.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_path",
+        "sha256",
+        "item_count"
+      ],
+      "title": "ArtifactReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "derivation_version": {
+      "const": "beneficiary_graph_trigger.v1",
+      "default": "beneficiary_graph_trigger.v1",
+      "title": "Derivation Version",
+      "type": "string"
+    },
+    "event_cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Event Cluster Ids",
+      "type": "array"
+    },
+    "kind": {
+      "const": "MULTI_HOP_BENEFICIARY",
+      "title": "Kind",
+      "type": "string"
+    },
+    "query_terms": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Query Terms",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "nslab.adaptive_trigger_evidence.v1",
+      "default": "nslab.adaptive_trigger_evidence.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_artifact": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "source_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "kind",
+    "source_artifact",
+    "cutoff_at"
+  ],
+  "title": "AdaptiveTriggerEvidence",
+  "type": "object"
+}

@@ -2,6 +2,12 @@
 
 from news_scalping_lab.contracts.memory_context import (
     AdaptiveRetrievalTrace,
+    AdaptiveTriggerEvidence,
+    BeneficiaryGraphArtifact,
+    BeneficiaryGraphPath,
+    CategoryBrainGuidance,
+    CategoryBrainQueryPlan,
+    CategoryClaimInclusionProof,
     DailyMemoryContext,
     EventClusterManifest,
     MemoryCellManifest,
@@ -40,9 +46,15 @@ from news_scalping_lab.contracts.models import (
 
 __all__ = [
     "AdaptiveRetrievalTrace",
+    "AdaptiveTriggerEvidence",
+    "BeneficiaryGraphArtifact",
+    "BeneficiaryGraphPath",
     "BlindAnalysis",
     "BlindPrediction",
     "Candidate",
+    "CategoryBrainGuidance",
+    "CategoryBrainQueryPlan",
+    "CategoryClaimInclusionProof",
     "CompanyMemory",
     "ConfidenceLabel",
     "ContextManifest",

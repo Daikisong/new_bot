@@ -654,10 +654,24 @@ schema parity PASS
 
 ## 10. Phase 7: category brain·beneficiary graph·final synthesis 통합
 
+상태: APPROVE (bounded Phase 7)
+
 ### 목적
 
-category brain을 query planner로 사용하고 population statistics와 raw evidence를 최종 판단에
-통합한다.
+category brain을 offline semantic query planner로 사용하고 purpose별 population statistics와
+selected representative evidence를 bounded final synthesis에 통합한다.
+
+구현 결과:
+
+```text
+immutable llm-full brain snapshot과 production memory snapshot exact 결속
+CompiledBrainClaim offline DuckDB HNSW + vector ledger
+material cluster별 query embedding 1회 + semantic category claim 최대 3개
+catalyst/candidate-error/newsless purpose별 population/representative/adaptive 실행
+candidate input과 company memory에서 exact 재생성되는 BeneficiaryGraph v2
+cluster round-robin compact allocator와 48,000 bytes hard cap
+FinalSynthesisContext v3 bounded projection과 selected-claim standalone proof
+```
 
 ### category brain 입력
 
@@ -668,28 +682,60 @@ representative successes/failures
 unresolved contradictions
 ```
 
+query plan은 original/expanded query, embedding model, query/claim vector hash, claim ID와 score를
+기록한다. category claim은 query planner일 뿐 evidence가 아니다. claim corpus는 llm-full build에서
+한 번 임베딩하고 daily online 경로는 query vector만 계산한다. final bundle은 전체 claim/vector
+artifact가 아니라 실제 선택 claim proof만 포함한다. proof payload hash는 immutable category index
+manifest의 Merkle root에 포함되며 local/standalone inspector가 inclusion proof를 독립 검증한다.
+standalone은 embedded event rows와 selected claims에서 original/expanded query 문자열을 exact 재생성하며,
+ANN score/top-K 재실행은 provider와 DB가 있는 local deep inspector가 담당한다.
+category guidance는 verified claims와 representative selected IDs에서 별도 pure projection으로 재생성한다.
+
 ### beneficiary graph
 
 ```text
 event → mechanism → benefit layer → business role → company
 ```
 
-edge provenance와 cutoff-safe 재검증을 강제한다. graph result는 후보 제안이지 whitelist가
-아니다.
+edge provenance와 cutoff-safe 재검증을 강제한다. candidate input artifact와 material event manifest,
+candidate-matched company memory files에서 path를 exact 재생성한다. company memory는 `available_from`과
+`known_at` 모두 cutoff 이하인 파일만 허용하고 aliases와 여러 delta의 business roles를 union한다.
+standalone importer도 embedded candidate/event/company 원료를 동일 pure projector로 재계산해 graph
+path, mechanism, role, source와 unresolved 후보의 exact parity를 검증한다.
 
-### final payload v2
+`THEME_BENEFICIARY` graph path가 material cluster, source IDs와 실제 causal mechanism step 2개 이상을
+가질 때만 typed adaptive trigger를 만든다. thesis/why-now와 synthetic prompt provenance는 causal
+evidence로 세지 않는다. leader pair disagreement는 current-event pair evidence 계약이 없어 Phase 8
+replay/eval 전까지 deferred로 둔다.
+
+### purpose별 population
 
 ```text
-current event clusters
-coverage manifest ref
-population manifests
-memory cells
-representative records
+catalyst_response -> event-issuer/issuer/theme/theme-ticker
+candidate_error -> event-issuer/issuer/theme-ticker
+newsless -> ticker-day
+leader_selection -> Phase 8까지 deferred
+```
+
+DailyMemoryContext는 모든 material cluster의 `(cluster, purpose, unit)` built key와 uncovered purpose를
+기록한다. inspector는 population/representative/adaptive Counter가 각 key별 정확히 1인지 재계산한다.
+candidate-error와 newsless는 catalyst response 분모에 섞이지 않는다.
+같은 pure chain validator를 standalone importer에도 적용해 artifact identity, selected record/unit IDs,
+final trace references, typed trigger evidence와 built/uncovered 선언을 embedded 원료와 대조한다.
+news/event/memory coverage와 llm-full brain의 run/cutoff/snapshot/corpus/source-generation/category-index도
+같은 source-chain validator에서 exact 대조한다.
+news covered=input/missing=0과 event input parity/unassigned=0/duplicate=0을 서명 전에 강제한다.
+
+### final payload v3
+
+```text
+current event/coverage context
+daily/graph immutable ref와 compact projection
+purpose별 population summaries와 representative records
 unresolved disagreements
-category brain guidance
+category brain query plans와 selected guidance
 current D-1/regime context
-candidate verification
-red team
+candidate verification와 red team
 ```
 
 제외:
@@ -697,18 +743,59 @@ red team
 ```text
 전수 raw record shards
 전수 contribution bodies
+semantic retrieval의 raw episode/record bodies
+semantic cluster의 promoted raw record bodies
 현재 D-day price/outcome
 ```
+
+`DailyMemoryContext v2`는 news/event/memory coverage, event cluster JSONL, purpose별 population,
+representative, adaptive v4, immutable category brain/index manifest, selected claim proof,
+beneficiary graph와 compact context의 path/hash/count를 결속한다. compact allocator는 모든 material
+cluster의 coverage를 먼저 넣고 representative/graph path를 round-robin으로 추가한다. 11 material
+cluster capacity 회귀에서 모든 cluster 대표를 유지한다.
+standalone importer는 embedded population/representative/query/graph 원료에 같은 pure compact
+projector를 적용해 compact counts, roles, disagreement와 excerpts의 exact parity를 검증한다.
+
+report exporter는 local deep inspection을 통과한 exact Phase 7 artifact closure를
+`NSLAB_PHASE7_TRANSPORT_HMAC_KEY`로 HMAC-SHA256 서명한다. standalone importer는 최소 32-byte 공유 운영
+key로 run/date/cutoff와 closure signature를 검증하며 key가 없거나 다르면 fail-closed한다.
+export/import/provenance는 process environment와 project `.env`를 동일 `Settings.env_value` 경로로 읽는다.
+`research import-bundle`과 version-aware importer도 Phase 7 표식 v1 bundle을 저장하기 전에 동일 strict
+parser/HMAC preflight를 수행한다.
+
+Final v3는 full daily manifest나 graph를 prompt에 복제하지 않는다. immutable ref, snapshot/purpose
+identity, 역할별 selected record IDs, compact context와 graph summary만 전달한다. legacy top-K는 기본
+provenance로 재주입하지 않으며 final 후보 identity는 pre-final/verification/graph의 exact 교집합이어야
+한다.
+
+reporting bundle은 bounded reference closure를 source path, raw/embedded SHA, item count, line ending과
+함께 운반한다. standalone importer는 역할별 exact schema allowlist와 canonical relative path를
+강제하고 unknown/downgrade/path traversal을 거부한다. lookahead/provenance/reporting은 Phase7일 때만
+real embedding index를 lazy 초기화하며 legacy audit은 provider 없이 동작한다.
 
 ### 종료 조건
 
 ```text
-모든 final claim이 population/cell/record까지 추적 가능
-newsless 원인 환각 test 통과
-beneficiary graph 신규 후보 open-world 검증 통과
-final prompt token hard gate
-lookahead/provenance/coverage audit 통과
+모든 final memory ID가 selected representative role set에 속함
+final candidate identity가 candidate verification과 graph에 닫힘
+newsless/candidate-error 전용 purpose coverage 또는 explicit uncovered ledger
+future category claim과 category index orphan retry 회귀 통과
+48 KB compact와 final prompt token hard gate
+lookahead/provenance/standalone deep audit 통과
 ```
+
+운영 제한:
+
+```text
+current corpus unsupported REASONING 64: production memory readiness 차단
+50k population E2E와 high-cardinality cube: Phase 5 blocker 유지
+real 1536D provider / 600k peak RSS·latency: Phase 8/9 미실측
+leader pair typed trigger: cutoff-safe current pair artifact가 생길 때까지 deferred
+```
+
+외부 독립감사는 `APPROVE`이며 P0/P1 잔여 finding은 없다. 공개 version-aware import의 Phase 7 HMAC
+preflight와 zero-write rejection까지 직접 재현했고, 독립 full pytest 1,431개 및 ruff/mypy/diff-check를
+통과했다.
 
 ## 11. Phase 8: shadow replay·부하·편향 평가
 

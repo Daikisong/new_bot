@@ -71,6 +71,11 @@
       "title": "Aliases",
       "type": "array"
     },
+    "available_from": {
+      "format": "date-time",
+      "title": "Available From",
+      "type": "string"
+    },
     "business_descriptions": {
       "items": {
         "type": "string"
@@ -144,6 +149,7 @@
   "required": [
     "ticker",
     "company_name",
+    "available_from",
     "known_at"
   ],
   "title": "CompanyMemory",

@@ -1,0 +1,83 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "business_roles": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Business Roles",
+      "type": "array"
+    },
+    "candidate_path_type": {
+      "title": "Candidate Path Type",
+      "type": "string"
+    },
+    "candidate_rank": {
+      "minimum": 1,
+      "title": "Candidate Rank",
+      "type": "integer"
+    },
+    "company_memory_artifact_paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Company Memory Artifact Paths",
+      "type": "array"
+    },
+    "company_name": {
+      "title": "Company Name",
+      "type": "string"
+    },
+    "event_cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Event Cluster Ids",
+      "type": "array"
+    },
+    "mechanism_steps": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Mechanism Steps",
+      "type": "array"
+    },
+    "narrative_context": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Narrative Context",
+      "type": "array"
+    },
+    "path_id": {
+      "title": "Path Id",
+      "type": "string"
+    },
+    "source_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Ids",
+      "type": "array"
+    },
+    "status": {
+      "const": "OPEN_WORLD_CANDIDATE_REQUIRES_VERIFICATION",
+      "default": "OPEN_WORLD_CANDIDATE_REQUIRES_VERIFICATION",
+      "title": "Status",
+      "type": "string"
+    },
+    "ticker": {
+      "title": "Ticker",
+      "type": "string"
+    }
+  },
+  "required": [
+    "path_id",
+    "ticker",
+    "company_name",
+    "candidate_rank",
+    "candidate_path_type"
+  ],
+  "title": "BeneficiaryGraphPath",
+  "type": "object"
+}

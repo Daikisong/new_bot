@@ -1,0 +1,93 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "claim_embedding_sha256s": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "Claim Embedding Sha256S",
+      "type": "object"
+    },
+    "cluster_id": {
+      "title": "Cluster Id",
+      "type": "string"
+    },
+    "embedding_model": {
+      "title": "Embedding Model",
+      "type": "string"
+    },
+    "expanded_query": {
+      "title": "Expanded Query",
+      "type": "string"
+    },
+    "expanded_query_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Expanded Query Sha256",
+      "type": "string"
+    },
+    "original_query": {
+      "title": "Original Query",
+      "type": "string"
+    },
+    "original_query_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Original Query Sha256",
+      "type": "string"
+    },
+    "query_embedding_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Query Embedding Sha256",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.category_brain_query_plan.v1",
+      "default": "nslab.category_brain_query_plan.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "selected_claim_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 3,
+      "title": "Selected Claim Ids",
+      "type": "array"
+    },
+    "selection_scores": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Selection Scores",
+      "type": "object"
+    },
+    "source_artifact_path": {
+      "title": "Source Artifact Path",
+      "type": "string"
+    },
+    "source_artifact_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Artifact Sha256",
+      "type": "string"
+    },
+    "usage": {
+      "const": "QUERY_PLANNER_NOT_EVIDENCE",
+      "default": "QUERY_PLANNER_NOT_EVIDENCE",
+      "title": "Usage",
+      "type": "string"
+    }
+  },
+  "required": [
+    "cluster_id",
+    "original_query",
+    "original_query_sha256",
+    "query_embedding_sha256",
+    "embedding_model",
+    "expanded_query",
+    "expanded_query_sha256",
+    "source_artifact_path",
+    "source_artifact_sha256"
+  ],
+  "title": "CategoryBrainQueryPlan",
+  "type": "object"
+}

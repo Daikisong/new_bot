@@ -11,13 +11,17 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from news_scalping_lab.config import load_settings
 from news_scalping_lab.context.episode_scope import inspect_manifest_episode_scope
 from news_scalping_lab.context.final_synthesis import (
     FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS,
+    FINAL_SYNTHESIS_V3_FORBIDDEN_PAYLOAD_KEYS,
     final_synthesis_context_contract_verified,
     final_synthesis_input_summary,
+    final_synthesis_phase7_artifacts_compatible,
     final_synthesis_required_inputs_compatible,
     phase2_memory_coverage_required,
+    phase7_daily_memory_required,
 )
 from news_scalping_lab.context.memory_coverage import inspect_memory_coverage_manifest
 from news_scalping_lab.context.sweep import (
@@ -42,6 +46,9 @@ from news_scalping_lab.inference.analyzer import (
 )
 from news_scalping_lab.inference.event_clustering import EVENT_CLUSTERING_VERSION
 from news_scalping_lab.ingest.news import load_news_csv
+from news_scalping_lab.memory.beneficiary import inspect_beneficiary_graph
+from news_scalping_lab.memory.daily_context import inspect_daily_memory_context
+from news_scalping_lab.memory.index import ProductionMemoryIndex
 from news_scalping_lab.records.hashing import (
     brain_record_envelope_hashes,
     brain_record_envelope_sha256,
@@ -165,7 +172,11 @@ BLIND_INTEGRITY_COUNT_FIELDS = (
 )
 
 
-def audit_provenance(root: Path) -> dict[str, object]:
+def audit_provenance(
+    root: Path,
+    *,
+    memory_index: ProductionMemoryIndex | None = None,
+) -> dict[str, object]:
     findings: list[str] = []
     checked_predictions = 0
     for path in sorted((root / "predictions").glob("*.json")):
@@ -206,7 +217,13 @@ def audit_provenance(root: Path) -> dict[str, object]:
                 _check_manifest_record_sweep_artifacts(root, path, manifest, findings)
             _check_manifest_record_count_contract(root, path, manifest, findings)
             _check_manifest_record_id_availability(root, path, manifest, findings)
-            _check_manifest_output_artifacts(root, path, manifest, findings)
+            _check_manifest_output_artifacts(
+                root,
+                path,
+                manifest,
+                findings,
+                memory_index=memory_index,
+            )
             _check_retrieval_miss_open_world_outputs(path, prediction, manifest, findings)
             _check_manifest_model_config(path, manifest, findings)
             _check_manifest_news_input(root, path, manifest, findings)
@@ -3094,6 +3111,8 @@ def _check_manifest_output_artifacts(
     prediction_path: Path,
     manifest: dict[str, Any],
     findings: list[str],
+    *,
+    memory_index: ProductionMemoryIndex | None,
 ) -> None:
     _check_manifest_prediction_artifact(root, prediction_path, manifest, findings)
     _check_manifest_report_artifact(root, prediction_path, manifest, findings)
@@ -3188,7 +3207,13 @@ def _check_manifest_output_artifacts(
     _check_candidate_expansion_artifact(root, prediction_path, manifest, findings)
     _check_candidate_web_check_artifacts(root, prediction_path, manifest, findings)
     _check_candidate_verification_artifact(root, prediction_path, manifest, findings)
-    _check_manifest_final_synthesis_context_artifact(root, prediction_path, manifest, findings)
+    _check_manifest_final_synthesis_context_artifact(
+        root,
+        prediction_path,
+        manifest,
+        findings,
+        memory_index=memory_index,
+    )
 
 
 def _check_retrieval_miss_open_world_outputs(
@@ -5061,6 +5086,8 @@ def _check_manifest_final_synthesis_context_artifact(
     prediction_path: Path,
     manifest: dict[str, Any],
     findings: list[str],
+    *,
+    memory_index: ProductionMemoryIndex | None,
 ) -> None:
     artifact_ref = manifest.get("final_synthesis_context_artifact")
     expected_hash = manifest.get("final_synthesis_context_sha256")
@@ -5086,10 +5113,16 @@ def _check_manifest_final_synthesis_context_artifact(
     if schema_version not in {
         "nslab.final_synthesis_context.v1",
         "nslab.final_synthesis_context.v2",
+        "nslab.final_synthesis_context.v3",
     }:
         findings.append(f"{prediction_path.name}: final_synthesis_context invalid schema_version")
-    if phase2_memory_coverage_required(manifest) and schema_version != "nslab.final_synthesis_context.v2":
+    if phase2_memory_coverage_required(manifest) and schema_version not in {
+        "nslab.final_synthesis_context.v2",
+        "nslab.final_synthesis_context.v3",
+    }:
         findings.append(f"{prediction_path.name}: final_synthesis_context Phase 2 downgrade")
+    if phase7_daily_memory_required(manifest) and schema_version != "nslab.final_synthesis_context.v3":
+        findings.append(f"{prediction_path.name}: final_synthesis_context Phase 7 downgrade")
     run_id = manifest.get("run_id")
     if isinstance(run_id, str) and payload.get("run_id") != run_id:
         findings.append(f"{prediction_path.name}: final_synthesis_context run_id mismatch")
@@ -5146,15 +5179,257 @@ def _check_manifest_final_synthesis_context_artifact(
         context_payload,
         findings,
     )
-    if schema_version == "nslab.final_synthesis_context.v2":
-        forbidden = sorted(FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS.intersection(context_payload))
+    if schema_version in {
+        "nslab.final_synthesis_context.v2",
+        "nslab.final_synthesis_context.v3",
+    }:
+        forbidden_keys = (
+            FINAL_SYNTHESIS_V3_FORBIDDEN_PAYLOAD_KEYS
+            if schema_version == "nslab.final_synthesis_context.v3"
+            else FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS
+        )
+        forbidden = sorted(forbidden_keys.intersection(context_payload))
         if forbidden:
             findings.append(
                 f"{prediction_path.name}: final_synthesis_context contains "
                 "exhaustive payload fields: " + ", ".join(forbidden)
             )
         if not final_synthesis_context_contract_verified(manifest, payload):
-            findings.append(f"{prediction_path.name}: final_synthesis_context v2 contract mismatch")
+            findings.append(
+                f"{prediction_path.name}: final_synthesis_context "
+                f"{schema_version.rsplit('.', maxsplit=1)[-1]} contract mismatch"
+            )
+    if schema_version == "nslab.final_synthesis_context.v3":
+        if not final_synthesis_phase7_artifacts_compatible(root, manifest, payload):
+            findings.append(
+                f"{prediction_path.name}: final_synthesis_context Phase 7 embedded artifact mismatch"
+            )
+        _check_phase7_memory_artifacts(
+            root,
+            prediction_path,
+            manifest,
+            context_payload,
+            findings,
+            memory_index=memory_index,
+        )
+
+
+def _check_phase7_memory_artifacts(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    findings: list[str],
+    *,
+    memory_index: ProductionMemoryIndex | None,
+) -> None:
+    daily_path = _resolve_required_manifest_artifact(
+        root,
+        prediction_path,
+        manifest.get("daily_memory_context_artifact"),
+        label="daily_memory_context_artifact",
+        findings=findings,
+    )
+    graph_path = _resolve_required_manifest_artifact(
+        root,
+        prediction_path,
+        manifest.get("beneficiary_graph_artifact"),
+        label="beneficiary_graph_artifact",
+        findings=findings,
+    )
+    for label, artifact_path, hash_field in (
+        ("daily_memory_context", daily_path, "daily_memory_context_sha256"),
+        ("beneficiary_graph", graph_path, "beneficiary_graph_sha256"),
+    ):
+        if artifact_path is None:
+            continue
+        expected_hash = manifest.get(hash_field)
+        if not isinstance(expected_hash, str) or not expected_hash:
+            findings.append(f"{prediction_path.name}: {label} manifest hash missing")
+        elif sha256_text(artifact_path.read_text(encoding="utf-8")) != expected_hash:
+            findings.append(f"{prediction_path.name}: {label} manifest hash mismatch")
+    if daily_path is not None:
+        inspection = inspect_daily_memory_context(
+            root,
+            daily_path,
+            memory_index=memory_index,
+        )
+        if inspection.get("passed") is not True:
+            findings.extend(
+                f"{prediction_path.name}: {error}"
+                for error in inspection.get("errors", [])
+                if isinstance(error, str)
+            )
+        daily = inspection.get("context")
+        if isinstance(daily, dict):
+            identity_pairs = (
+                ("run_id", daily.get("run_id"), manifest.get("run_id")),
+                ("trade_date", daily.get("trade_date"), str(manifest.get("trade_date"))),
+                ("cutoff_at", daily.get("cutoff_at"), str(manifest.get("cutoff_at"))),
+                (
+                    "corpus_manifest_sha256",
+                    daily.get("corpus_manifest_sha256"),
+                    manifest.get("memory_coverage_corpus_sha256"),
+                ),
+            )
+            for field, observed, expected in identity_pairs:
+                if observed != expected:
+                    findings.append(
+                        f"{prediction_path.name}: daily_memory_context {field} mismatch"
+                    )
+    if graph_path is not None:
+        inspection = inspect_beneficiary_graph(root, graph_path)
+        if inspection.get("passed") is not True:
+            findings.extend(
+                f"{prediction_path.name}: {error}"
+                for error in inspection.get("errors", [])
+                if isinstance(error, str)
+            )
+    _check_phase7_final_candidate_closure(
+        root,
+        prediction_path,
+        manifest,
+        context_payload,
+        findings,
+        daily_path=daily_path,
+        graph_path=graph_path,
+    )
+
+
+def _check_phase7_final_candidate_closure(
+    root: Path,
+    prediction_path: Path,
+    manifest: dict[str, Any],
+    context_payload: dict[str, Any],
+    findings: list[str],
+    *,
+    daily_path: Path | None,
+    graph_path: Path | None,
+) -> None:
+    verification_path = _resolve_manifest_path(
+        root,
+        str(manifest.get("candidate_verification_artifact") or ""),
+    )
+    final_prediction_path = _resolve_manifest_path(
+        root,
+        str(manifest.get("prediction_artifact") or ""),
+    )
+    if (
+        verification_path is None
+        or final_prediction_path is None
+        or daily_path is None
+        or graph_path is None
+    ):
+        findings.append(f"{prediction_path.name}: Phase 7 candidate closure artifact missing")
+        return
+    try:
+        verification = read_json(verification_path)
+        final_prediction = read_json(final_prediction_path)
+        daily = read_json(daily_path)
+        graph = read_json(graph_path)
+    except (OSError, ValueError):
+        findings.append(f"{prediction_path.name}: Phase 7 candidate closure artifact invalid")
+        return
+    candidate_research = context_payload.get("candidate_research")
+    source_candidates = (
+        candidate_research.get("candidates")
+        if isinstance(candidate_research, dict)
+        else None
+    )
+    final_candidates = (
+        final_prediction.get("candidates")
+        if isinstance(final_prediction, dict)
+        else None
+    )
+    verification_rows = (
+        verification.get("findings") if isinstance(verification, dict) else None
+    )
+    graph_rows = graph.get("paths") if isinstance(graph, dict) else None
+    if (
+        not isinstance(source_candidates, list)
+        or not isinstance(final_candidates, list)
+        or not isinstance(verification_rows, list)
+        or not isinstance(graph_rows, list)
+    ):
+        findings.append(f"{prediction_path.name}: Phase 7 candidate closure rows invalid")
+        return
+    source_keys = [_phase7_candidate_dict_identity(row) for row in source_candidates]
+    final_keys = [_phase7_candidate_dict_identity(row) for row in final_candidates]
+    verification_keys = {
+        (
+            row.get("candidate_rank"),
+            str(row.get("candidate_ticker") or "").strip().upper(),
+            str(row.get("candidate_company_name") or "").strip(),
+            str(row.get("candidate_path_type") or "").strip().upper(),
+        )
+        for row in verification_rows
+        if isinstance(row, dict) and row.get("subject_type") == "final_candidate"
+    }
+    graph_keys = {
+        (
+            row.get("candidate_rank"),
+            str(row.get("ticker") or "").strip().upper(),
+            str(row.get("company_name") or "").strip(),
+            str(row.get("candidate_path_type") or "").strip().upper(),
+        )
+        for row in graph_rows
+        if isinstance(row, dict)
+    }
+    if (
+        None in source_keys
+        or None in final_keys
+        or len(source_keys) != len(set(source_keys))
+        or final_keys != source_keys
+        or not set(source_keys).issubset(verification_keys & graph_keys)
+    ):
+        findings.append(f"{prediction_path.name}: Phase 7 final candidate closure mismatch")
+    if not isinstance(daily, dict):
+        findings.append(f"{prediction_path.name}: Phase 7 daily candidate memory invalid")
+        return
+    supporting = set(_string_list(daily.get("supporting_record_ids")))
+    contradicting = set(_string_list(daily.get("contradicting_record_ids")))
+    selected = supporting | contradicting | set(
+        _string_list(daily.get("unexplained_record_ids"))
+    )
+    for row in final_candidates:
+        if not isinstance(row, dict):
+            continue
+        if (
+            not set(_string_list(row.get("prior_positive_record_ids"))).issubset(
+                supporting
+            )
+            or not set(
+                _string_list(row.get("prior_negative_record_ids"))
+            ).issubset(contradicting)
+            or not set(_string_list(row.get("memory_record_ids"))).issubset(selected)
+            or _string_list(row.get("memory_episode_ids"))
+            or _string_list(row.get("prior_positive_cases"))
+            or _string_list(row.get("prior_negative_cases"))
+        ):
+            findings.append(
+                f"{prediction_path.name}: Phase 7 final candidate memory provenance mismatch"
+            )
+            break
+
+
+def _phase7_candidate_dict_identity(
+    value: Any,
+) -> tuple[Any, str, str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    rank = value.get("rank")
+    ticker = value.get("ticker")
+    company = value.get("company_name")
+    path_type = value.get("path_type")
+    if (
+        not isinstance(rank, int)
+        or isinstance(rank, bool)
+        or not isinstance(ticker, str)
+        or not isinstance(company, str)
+        or not isinstance(path_type, str)
+    ):
+        return None
+    return rank, ticker.strip().upper(), company.strip(), path_type.strip().upper()
 
 
 def _check_final_synthesis_required_input_fields(
@@ -5713,10 +5988,21 @@ def _check_final_synthesis_semantic_retrieval_context(
             {
                 "included_episode_ids": manifest.get("semantic_retrieval_episode_ids"),
                 "included_record_ids": manifest.get("semantic_retrieval_record_ids"),
-                "records": _semantic_retrieval_record_context(root, manifest),
                 "excluded_record_ids": manifest.get("excluded_semantic_retrieval_record_ids"),
             }
         )
+        if "daily_memory_context" not in context_payload:
+            expected_fields["records"] = _semantic_retrieval_record_context(
+                root,
+                manifest,
+            )
+    if "daily_memory_context" in context_payload and (
+        "records" in context or "episodes" in context
+    ):
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context additional_semantic_retrieval mismatch"
+        )
+        return
     if any(context.get(field) != expected for field, expected in expected_fields.items()):
         findings.append(f"{prediction_path.name}: final_synthesis_context additional_semantic_retrieval mismatch")
 
@@ -5740,11 +6026,17 @@ def _check_final_synthesis_semantic_cluster_coverage_context(
         "covered_cluster_ids": manifest.get("semantic_cluster_coverage_ids"),
         "missing_cluster_ids": manifest.get("semantic_cluster_coverage_missing_ids"),
         "promoted_record_ids": manifest.get("semantic_cluster_coverage_promoted_record_ids"),
-        "promoted_records": _record_context_for_ids(
+    }
+    if "daily_memory_context" not in context_payload:
+        expected["promoted_records"] = _record_context_for_ids(
             root,
             _string_list(manifest.get("semantic_cluster_coverage_promoted_record_ids")),
-        ),
-    }
+        )
+    elif "promoted_records" in context:
+        findings.append(
+            f"{prediction_path.name}: final_synthesis_context semantic_cluster_coverage mismatch"
+        )
+        return
     if any(context.get(field) != value for field, value in expected.items()):
         findings.append(f"{prediction_path.name}: final_synthesis_context semantic_cluster_coverage mismatch")
 
@@ -7269,11 +7561,17 @@ def _check_training_export_provenance(root: Path, findings: list[str]) -> int:
 
 def _check_analysis_bundle_provenance(root: Path, findings: list[str]) -> int:
     checked = 0
+    phase7_transport_key = load_settings(root).env_value(
+        "NSLAB_PHASE7_TRANSPORT_HMAC_KEY"
+    )
     for bundle_path in sorted((root / "reports").glob("*_nslab_episode_bundle.md")):
         checked += 1
         label = _display_path(root, bundle_path)
         try:
-            parsed = parse_bundle(bundle_path)
+            parsed = parse_bundle(
+                bundle_path,
+                phase7_transport_key=phase7_transport_key,
+            )
         except BundleImportError as exc:
             findings.append(f"{label}: analysis bundle invalid: {exc}")
             continue

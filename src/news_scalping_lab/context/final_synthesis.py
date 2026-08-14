@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any, cast
 
-from news_scalping_lab.utils import canonical_json, sha256_text
+from news_scalping_lab.utils import canonical_json, file_sha256, read_json, sha256_text
 
 FINAL_SYNTHESIS_V2_PROMPT_VERSION = "synthesis.final.v2"
+FINAL_SYNTHESIS_V3_PROMPT_VERSION = "synthesis.final.v3"
 
 FINAL_SYNTHESIS_REQUIRED_INPUTS: tuple[str, ...] = (
     "current_news",
@@ -57,6 +59,36 @@ FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS = frozenset(
         "swept_record_ids",
     }
 )
+FINAL_SYNTHESIS_V3_REMOVED_MEMORY_INPUTS = frozenset(
+    {
+        "global_brain",
+        "all_shard_brains",
+        "retrieved_raw_episodes",
+        "retrieved_records",
+        "positive_cases",
+        "negative_cases",
+        "positive_record_ids",
+        "negative_record_ids",
+        "counterexamples",
+        "counterexample_records",
+    }
+)
+FINAL_SYNTHESIS_REQUIRED_INPUTS_V3: tuple[str, ...] = (
+    *(
+        item
+        for item in FINAL_SYNTHESIS_REQUIRED_INPUTS_V2
+        if item not in FINAL_SYNTHESIS_V3_REMOVED_MEMORY_INPUTS
+    ),
+    "daily_memory_context",
+    "beneficiary_graph",
+)
+FINAL_SYNTHESIS_V3_FORBIDDEN_PAYLOAD_KEYS = (
+    FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS | FINAL_SYNTHESIS_V3_REMOVED_MEMORY_INPUTS
+)
+FINAL_SYNTHESIS_V3_FORBIDDEN_NESTED_MEMORY_KEYS: dict[str, frozenset[str]] = {
+    "additional_semantic_retrieval": frozenset({"episodes", "records"}),
+    "semantic_cluster_coverage": frozenset({"promoted_records"}),
+}
 
 
 def phase2_memory_coverage_required(manifest: Mapping[str, Any]) -> bool:
@@ -76,6 +108,24 @@ def phase2_memory_coverage_required(manifest: Mapping[str, Any]) -> bool:
             "memory_coverage_corpus_sha256",
         )
     )
+
+
+def phase7_daily_memory_required(manifest: Mapping[str, Any]) -> bool:
+    model_config = manifest.get("model_config")
+    configured_v3 = (
+        isinstance(model_config, Mapping)
+        and model_config.get("final_synthesis_prompt_version")
+        == FINAL_SYNTHESIS_V3_PROMPT_VERSION
+    )
+    return configured_v3 or any(
+        manifest.get(field) is not None
+        for field in (
+            "daily_memory_context_artifact",
+            "daily_memory_context_sha256",
+        )
+    )
+
+
 RECORD_LEVEL_FINAL_SYNTHESIS_INPUTS = {
     "record_level_shard_contributions",
     "retrieved_records",
@@ -134,6 +184,9 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
     red_team_output = _dict_value(payload.get("red_team_output"))
     d_minus_one = _dict_value(payload.get("d_minus_one_market_data"))
     memory_coverage = _dict_value(payload.get("memory_coverage_manifest"))
+    daily_memory = _dict_value(payload.get("daily_memory_context"))
+    daily_memory_compact = _dict_value(daily_memory.get("compact_context"))
+    beneficiary_graph = _dict_value(payload.get("beneficiary_graph"))
     summary: dict[str, Any] = {
         "required_input_count": _list_len(payload.get("required_inputs")),
         "current_news_count": _list_len(payload.get("current_news")),
@@ -164,6 +217,32 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "company_memory_count": _list_len(payload.get("company_memory")),
         "market_memory_count": _list_len(payload.get("market_memory")),
     }
+    if daily_memory:
+        summary.update(
+            {
+                "daily_memory_population_count": _list_len(
+                    daily_memory.get("built_population_keys")
+                ),
+                "daily_memory_representative_set_count": _int_value(
+                    daily_memory.get("representative_set_count")
+                ),
+                "daily_memory_representative_record_count": _list_len(
+                    daily_memory_compact.get("representative_records")
+                ),
+                "daily_memory_category_guidance_count": _list_len(
+                    daily_memory_compact.get("category_brain_guidance")
+                ),
+                "daily_memory_category_query_plan_count": _list_len(
+                    daily_memory_compact.get("category_brain_query_plans")
+                ),
+                "daily_memory_context_complete": (
+                    daily_memory.get("context_complete") is True
+                ),
+                "beneficiary_graph_path_count": _int_value(
+                    beneficiary_graph.get("path_count")
+                ),
+            }
+        )
     if "record_level_shard_contributions" in payload:
         summary["record_shard_contribution_count"] = _list_len(
             payload.get("record_level_shard_contributions")
@@ -297,6 +376,7 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
 
 def final_synthesis_required_inputs_compatible(required_inputs: list[str]) -> bool:
     return tuple(required_inputs) in {
+        FINAL_SYNTHESIS_REQUIRED_INPUTS_V3,
         FINAL_SYNTHESIS_REQUIRED_INPUTS_V2,
         FINAL_SYNTHESIS_REQUIRED_INPUTS,
         PRE_RECORD_ID_FINAL_SYNTHESIS_REQUIRED_INPUTS,
@@ -315,6 +395,7 @@ def final_synthesis_context_contract_verified(
     if schema_version not in {
         "nslab.final_synthesis_context.v1",
         "nslab.final_synthesis_context.v2",
+        "nslab.final_synthesis_context.v3",
     }:
         return False
     manifest_run_id = manifest.get("run_id")
@@ -335,12 +416,39 @@ def final_synthesis_context_contract_verified(
         return False
     if not final_synthesis_required_inputs_compatible(required_input_strings):
         return False
-    if schema_version == "nslab.final_synthesis_context.v2":
-        if tuple(required_input_strings) != FINAL_SYNTHESIS_REQUIRED_INPUTS_V2:
+    if schema_version in {
+        "nslab.final_synthesis_context.v2",
+        "nslab.final_synthesis_context.v3",
+    }:
+        expected_inputs = (
+            FINAL_SYNTHESIS_REQUIRED_INPUTS_V3
+            if schema_version == "nslab.final_synthesis_context.v3"
+            else FINAL_SYNTHESIS_REQUIRED_INPUTS_V2
+        )
+        if tuple(required_input_strings) != expected_inputs:
             return False
-        if FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS.intersection(payload):
+        forbidden = (
+            FINAL_SYNTHESIS_V3_FORBIDDEN_PAYLOAD_KEYS
+            if schema_version == "nslab.final_synthesis_context.v3"
+            else FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS
+        )
+        if forbidden.intersection(payload):
+            return False
+        if schema_version == "nslab.final_synthesis_context.v3" and any(
+            isinstance(payload.get(container), Mapping)
+            and forbidden_nested.intersection(
+                cast(Mapping[str, Any], payload[container])
+            )
+            for container, forbidden_nested in (
+                FINAL_SYNTHESIS_V3_FORBIDDEN_NESTED_MEMORY_KEYS.items()
+            )
+        ):
             return False
         if not _memory_coverage_context_compatible(manifest, payload):
+            return False
+        if schema_version == "nslab.final_synthesis_context.v3" and not (
+            _daily_memory_context_compatible(manifest, payload)
+        ):
             return False
     missing_required_inputs = [
         key
@@ -359,6 +467,138 @@ def final_synthesis_context_contract_verified(
     return final_synthesis_price_context_compatible(
         manifest, payload
     ) and final_synthesis_manifest_record_metadata_compatible(manifest, payload)
+
+
+def final_synthesis_phase7_artifacts_compatible(
+    root: Path,
+    manifest: Mapping[str, Any],
+    context: Mapping[str, Any],
+) -> bool:
+    """Verify that every embedded Phase 7 object equals its immutable artifact."""
+
+    if context.get("schema_version") != "nslab.final_synthesis_context.v3":
+        return not phase7_daily_memory_required(manifest)
+    payload = context.get("payload")
+    if not isinstance(payload, Mapping):
+        return False
+    daily_wrapper = payload.get("daily_memory_context")
+    graph_wrapper = payload.get("beneficiary_graph")
+    if not isinstance(daily_wrapper, Mapping) or not isinstance(graph_wrapper, Mapping):
+        return False
+    daily_path = _project_artifact_path(
+        root,
+        manifest.get("daily_memory_context_artifact"),
+    )
+    graph_path = _project_artifact_path(
+        root,
+        manifest.get("beneficiary_graph_artifact"),
+    )
+    if daily_path is None or graph_path is None:
+        return False
+    try:
+        daily = read_json(daily_path)
+        graph = read_json(graph_path)
+        daily_text = daily_path.read_text(encoding="utf-8")
+        graph_text = graph_path.read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return False
+    if not isinstance(daily, dict) or not isinstance(graph, dict):
+        return False
+    if sha256_text(daily_text) != manifest.get("daily_memory_context_sha256"):
+        return False
+    if sha256_text(graph_text) != manifest.get("beneficiary_graph_sha256"):
+        return False
+    compact_reference = daily.get("compact_final_context")
+    if not isinstance(compact_reference, Mapping):
+        return False
+    compact_path = _project_artifact_path(
+        root,
+        compact_reference.get("artifact_path"),
+    )
+    if compact_path is None:
+        return False
+    try:
+        compact = read_json(compact_path)
+    except (OSError, ValueError):
+        return False
+    daily_graph_reference = daily.get("beneficiary_graph")
+    expected_daily = phase7_daily_prompt_projection(
+        daily=daily,
+        compact=compact,
+        artifact_path=str(manifest.get("daily_memory_context_artifact") or ""),
+        sha256=str(manifest.get("daily_memory_context_sha256") or ""),
+    )
+    expected_graph = phase7_beneficiary_graph_prompt_projection(
+        graph=graph,
+        artifact_path=str(manifest.get("beneficiary_graph_artifact") or ""),
+        sha256=str(manifest.get("beneficiary_graph_sha256") or ""),
+    )
+    return (
+        file_sha256(compact_path) == compact_reference.get("sha256")
+        and dict(daily_wrapper) == expected_daily
+        and dict(graph_wrapper) == expected_graph
+        and isinstance(daily_graph_reference, Mapping)
+        and daily_graph_reference.get("artifact_path")
+        == manifest.get("beneficiary_graph_artifact")
+    )
+
+
+def phase7_daily_prompt_projection(
+    *,
+    daily: Mapping[str, Any],
+    compact: Mapping[str, Any],
+    artifact_path: str,
+    sha256: str,
+) -> dict[str, Any]:
+    compact_reference = _dict_value(daily.get("compact_final_context"))
+    return {
+        "artifact_path": artifact_path,
+        "sha256": sha256,
+        "compact_artifact_path": compact_reference.get("artifact_path"),
+        "compact_sha256": compact_reference.get("sha256"),
+        "run_id": daily.get("run_id"),
+        "cutoff_at": daily.get("cutoff_at"),
+        "memory_snapshot_id": daily.get("memory_snapshot_id"),
+        "context_complete": daily.get("context_complete") is True,
+        "built_population_keys": daily.get("built_population_keys"),
+        "uncovered_population_purposes": daily.get("uncovered_population_purposes"),
+        "representative_set_count": _list_len(
+            daily.get("representative_set_manifests")
+        ),
+        "supporting_record_ids": daily.get("supporting_record_ids"),
+        "contradicting_record_ids": daily.get("contradicting_record_ids"),
+        "unexplained_record_ids": daily.get("unexplained_record_ids"),
+        "compact_context": dict(compact),
+    }
+
+
+def phase7_beneficiary_graph_prompt_projection(
+    *,
+    graph: Mapping[str, Any],
+    artifact_path: str,
+    sha256: str,
+) -> dict[str, Any]:
+    return {
+        "artifact_path": artifact_path,
+        "sha256": sha256,
+        "run_id": graph.get("run_id"),
+        "cutoff_at": graph.get("cutoff_at"),
+        "path_count": graph.get("path_count"),
+        "candidate_input_sha256": graph.get("candidate_input_sha256"),
+        "unresolved_candidate_ids": graph.get("unresolved_candidate_ids"),
+    }
+
+
+def _project_artifact_path(root: Path, value: Any) -> Path | None:
+    if not isinstance(value, str) or not value or Path(value).is_absolute():
+        return None
+    resolved_root = root.resolve()
+    path = (resolved_root / value).resolve()
+    try:
+        path.relative_to(resolved_root)
+    except ValueError:
+        return None
+    return path if path.exists() else None
 
 
 def _memory_coverage_context_compatible(
@@ -387,6 +627,41 @@ def _memory_coverage_context_compatible(
     ):
         return False
     return coverage.get("coverage_complete") is True
+
+
+def _daily_memory_context_compatible(
+    manifest: Mapping[str, Any],
+    payload: Mapping[str, Any],
+) -> bool:
+    context = payload.get("daily_memory_context")
+    graph = payload.get("beneficiary_graph")
+    if not isinstance(context, Mapping) or not isinstance(graph, Mapping):
+        return False
+    if context.get("artifact_path") != manifest.get("daily_memory_context_artifact"):
+        return False
+    if context.get("sha256") != manifest.get("daily_memory_context_sha256"):
+        return False
+    if graph.get("artifact_path") != manifest.get("beneficiary_graph_artifact"):
+        return False
+    if graph.get("sha256") != manifest.get("beneficiary_graph_sha256"):
+        return False
+    compact = context.get("compact_context")
+    candidate_research = payload.get("candidate_research")
+    candidate_rows = (
+        candidate_research.get("candidates")
+        if isinstance(candidate_research, Mapping)
+        else None
+    )
+    return (
+        context.get("run_id") == manifest.get("run_id")
+        and context.get("context_complete") is True
+        and isinstance(compact, Mapping)
+        and compact.get("run_id") == manifest.get("run_id")
+        and graph.get("run_id") == manifest.get("run_id")
+        and isinstance(candidate_rows, list)
+        and graph.get("candidate_input_sha256")
+        == sha256_text(canonical_json(candidate_rows))
+    )
 
 
 def _optional_missing_required_input_allowed(

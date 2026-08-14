@@ -20,11 +20,18 @@ from news_scalping_lab.utils import read_json
 
 EXPECTED_SCHEMA_FILES = {
     "adaptive_retrieval_trace.schema.json",
+    "adaptive_trigger_evidence.schema.json",
     "blind_prediction.schema.json",
+    "beneficiary_graph.schema.json",
+    "beneficiary_graph_path.schema.json",
     "brain_manifest.schema.json",
     "candidate.schema.json",
     "candidate_expansion_review.schema.json",
     "candidate_verification_review.schema.json",
+    "category_brain_guidance.schema.json",
+    "category_brain_index_manifest.schema.json",
+    "category_brain_query_plan.schema.json",
+    "category_claim_inclusion_proof.schema.json",
     "company_memory.schema.json",
     "context_manifest.schema.json",
     "daily_memory_context.schema.json",
@@ -220,6 +227,7 @@ def test_env_example_keeps_mock_defaults_and_no_secret_values() -> None:
         "NSLAB_BRAVE_SEARCH_UI_LANG",
         "NSLAB_BRAVE_SEARCH_FRESHNESS_DAYS",
         "NSLAB_MAX_CONCURRENCY",
+        "NSLAB_PHASE7_TRANSPORT_HMAC_KEY",
     }
 
     assert set(env_values) == required_keys

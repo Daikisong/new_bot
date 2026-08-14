@@ -28,10 +28,13 @@ from news_scalping_lab.context.episode_scope import inspect_manifest_episode_sco
 from news_scalping_lab.context.final_synthesis import (
     FINAL_SYNTHESIS_REQUIRED_INPUTS,
     FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS,
+    FINAL_SYNTHESIS_V3_FORBIDDEN_PAYLOAD_KEYS,
     final_synthesis_context_contract_verified,
     final_synthesis_input_summary,
+    final_synthesis_phase7_artifacts_compatible,
     final_synthesis_required_inputs_compatible,
     phase2_memory_coverage_required,
+    phase7_daily_memory_required,
 )
 from news_scalping_lab.context.memory_coverage import inspect_memory_coverage_manifest
 from news_scalping_lab.context.session_pack import (
@@ -65,15 +68,19 @@ from news_scalping_lab.inference.analyzer import (
 from news_scalping_lab.inference.event_clustering import EVENT_CLUSTERING_VERSION
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
 from news_scalping_lab.llm.factory import create_llm_provider
-from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.memory.adaptive_retrieval import AdaptiveRetriever
+from news_scalping_lab.memory.beneficiary import inspect_beneficiary_graph
 from news_scalping_lab.memory.company import CompanyMemoryStore
+from news_scalping_lab.memory.daily_context import inspect_daily_memory_context
 from news_scalping_lab.memory.diversity import RepresentativeSelector
 from news_scalping_lab.memory.index import (
     ProductionMemoryIndex,
     inspect_current_memory_index,
 )
 from news_scalping_lab.memory.population import PopulationRetriever
+from news_scalping_lab.memory.runtime import (
+    create_production_embedding_provider as _create_production_embedding_provider,
+)
 from news_scalping_lab.records.hashing import (
     brain_record_envelope_sha256,
     brain_record_routing_root_sha256,
@@ -104,7 +111,6 @@ from news_scalping_lab.research_import.versioned_bundle import (
     import_versioned_bundle,
     inspect_versioned_bundle,
 )
-from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.training import audit_training_exports, export_training
@@ -135,6 +141,19 @@ training_app = typer.Typer(help="Training export commands")
 warehouse_app = typer.Typer(help="Warehouse projection commands")
 memory_app = typer.Typer(help="Brain record memory commands")
 
+
+def _production_embedding_provider(
+    settings: Any,
+    *,
+    require_records: bool,
+) -> Any:
+    return _create_production_embedding_provider(
+        settings,
+        require_records=require_records,
+        provider_factory=create_llm_provider,
+        module_loader=import_module,
+    )
+
 app.add_typer(news_app, name="news")
 app.add_typer(research_app, name="research")
 app.add_typer(brain_app, name="brain")
@@ -161,7 +180,6 @@ WEB_SOURCE_REQUIRED_FIELDS = {
     "opened_text_sha256",
     "opened_text_excerpt",
 }
-OPENAI_LLM_PROVIDER_ALIASES = {"openai", "responses", "openai-responses"}
 
 
 def _validated_brain_cli_mode(
@@ -512,6 +530,9 @@ def research_import(path: Path, mode: str = "auto") -> None:
             settings.project_root,
             llm=create_llm_provider(settings),
             llm_max_retries=settings.llm.max_retries,
+            phase7_transport_key=settings.env_value(
+                "NSLAB_PHASE7_TRANSPORT_HMAC_KEY"
+            ),
         ).import_path(path, mode=mode)
     except (OSError, RuntimeError, ValueError) as exc:
         _exit_with_error(exc)
@@ -665,6 +686,9 @@ def research_import_bundle(
             validate=validate,
             accepted=accept,
             external_quality_gate_path=quality_gate,
+            phase7_transport_key=settings.env_value(
+                "NSLAB_PHASE7_TRANSPORT_HMAC_KEY"
+            ),
         )
     except (OSError, ValueError) as exc:
         _exit_with_error(exc)
@@ -851,6 +875,9 @@ def research_import_batch(
             settings.project_root,
             llm=create_llm_provider(settings),
             llm_max_retries=settings.llm.max_retries,
+            phase7_transport_key=settings.env_value(
+                "NSLAB_PHASE7_TRANSPORT_HMAC_KEY"
+            ),
         )
     except (RuntimeError, ValueError) as exc:
         _exit_with_error(exc)
@@ -1518,6 +1545,7 @@ def _is_mock_or_placeholder_ref(value: str) -> bool:
 
 def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     phase1_required = _phase1_coverage_artifacts_required(manifest)
+    phase7_required = phase7_daily_memory_required(manifest)
     specs = (
         ("row_disposition", "row_disposition_artifact", "row_disposition_sha256", True),
         ("event_cluster", "event_cluster_artifact", "event_cluster_sha256", True),
@@ -1603,6 +1631,18 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
             True,
         ),
         (
+            "daily_memory_context",
+            "daily_memory_context_artifact",
+            "daily_memory_context_sha256",
+            phase7_required,
+        ),
+        (
+            "beneficiary_graph",
+            "beneficiary_graph_artifact",
+            "beneficiary_graph_sha256",
+            phase7_required,
+        ),
+        (
             "excluded_candidate_web_check",
             "excluded_candidate_web_check_artifact",
             "excluded_candidate_web_check_sha256",
@@ -1636,10 +1676,75 @@ def _inspect_supporting_artifacts(root: Path, manifest: dict[str, Any]) -> dict[
     statuses["excluded_candidate_web_check"] = _inspect_excluded_candidate_web_check_artifact(root, manifest)
     statuses["candidate_verification"] = _inspect_candidate_verification_artifact(root, manifest)
     statuses["final_synthesis_context"] = _inspect_final_synthesis_context_artifact(root, manifest)
+    statuses["daily_memory_context"] = _inspect_phase7_artifact(
+        root,
+        manifest,
+        label="daily_memory_context",
+        artifact_field="daily_memory_context_artifact",
+        hash_field="daily_memory_context_sha256",
+        required=phase7_required,
+        inspector=inspect_daily_memory_context,
+    )
+    statuses["beneficiary_graph"] = _inspect_phase7_artifact(
+        root,
+        manifest,
+        label="beneficiary_graph",
+        artifact_field="beneficiary_graph_artifact",
+        hash_field="beneficiary_graph_sha256",
+        required=phase7_required,
+        inspector=inspect_beneficiary_graph,
+    )
     statuses["blind_seal_receipt"] = _inspect_blind_seal_receipt_artifact(root, manifest)
     statuses["phase_state"] = _inspect_phase_state_artifact(root, manifest)
     statuses["red_team"] = _inspect_red_team_artifacts(root, manifest)
     return statuses
+
+
+def _inspect_phase7_artifact(
+    root: Path,
+    manifest: dict[str, Any],
+    *,
+    label: str,
+    artifact_field: str,
+    hash_field: str,
+    required: bool,
+    inspector: Any,
+) -> dict[str, Any]:
+    status = _inspect_text_hashed_artifact(
+        root,
+        manifest,
+        artifact_field=artifact_field,
+        hash_field=hash_field,
+        required=required,
+    )
+    status["contract_verified"] = None
+    if not status.get("configured"):
+        status["contract_verified"] = not required
+        return status
+    artifact_ref = manifest.get(artifact_field)
+    path = (
+        _resolve_project_artifact(root, artifact_ref)
+        if isinstance(artifact_ref, str)
+        else None
+    )
+    if path is None or not path.exists():
+        status["contract_verified"] = False
+        status["passed"] = False
+        return status
+    inspection = inspector(root, path)
+    status["inspection"] = inspection
+    status["contract_verified"] = inspection.get("passed") is True
+    if not status["contract_verified"]:
+        status["errors"].extend(
+            f"{label}_{error}"
+            for error in inspection.get("errors", [])
+            if isinstance(error, str)
+        )
+    status["passed"] = bool(
+        _text_hashed_artifact_status_passed(status)
+        and status["contract_verified"]
+    )
+    return status
 
 
 def _inspect_text_hashed_artifact(
@@ -3646,6 +3751,8 @@ def _inspect_final_synthesis_context_artifact(
             "manifest_counts_verified": None,
             "manifest_record_ids_verified": None,
             "memory_coverage_context_verified": None,
+            "daily_memory_context_verified": None,
+            "beneficiary_graph_verified": None,
             "event_clusters_verified": None,
             "semantic_retrieval_plan_artifact_verified": None,
             "semantic_retrieval_artifact_verified": None,
@@ -3696,12 +3803,21 @@ def _inspect_final_synthesis_context_artifact(
     status["schema_version_verified"] = schema_version in {
         "nslab.final_synthesis_context.v1",
         "nslab.final_synthesis_context.v2",
+        "nslab.final_synthesis_context.v3",
     }
     if not status["schema_version_verified"]:
         status["errors"].append("final_synthesis_context_schema_version_mismatch")
-    if phase2_memory_coverage_required(manifest) and schema_version != "nslab.final_synthesis_context.v2":
+    if phase2_memory_coverage_required(manifest) and schema_version not in {
+        "nslab.final_synthesis_context.v2",
+        "nslab.final_synthesis_context.v3",
+    }:
         status["schema_version_verified"] = False
         status["errors"].append("final_synthesis_context_phase2_downgrade")
+    if phase7_daily_memory_required(manifest) and schema_version != (
+        "nslab.final_synthesis_context.v3"
+    ):
+        status["schema_version_verified"] = False
+        status["errors"].append("final_synthesis_context_phase7_downgrade")
 
     run_id = manifest.get("run_id")
     status["run_id_verified"] = not isinstance(run_id, str) or payload.get("run_id") == run_id
@@ -3804,8 +3920,16 @@ def _inspect_final_synthesis_context_artifact(
         status,
     )
 
-    if schema_version == "nslab.final_synthesis_context.v2":
-        forbidden = sorted(FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS.intersection(context_payload))
+    if schema_version in {
+        "nslab.final_synthesis_context.v2",
+        "nslab.final_synthesis_context.v3",
+    }:
+        forbidden_keys = (
+            FINAL_SYNTHESIS_V3_FORBIDDEN_PAYLOAD_KEYS
+            if schema_version == "nslab.final_synthesis_context.v3"
+            else FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS
+        )
+        forbidden = sorted(forbidden_keys.intersection(context_payload))
         status["forbidden_exhaustive_payload_keys"] = forbidden
         status["memory_coverage_context_verified"] = not forbidden and final_synthesis_context_contract_verified(
             manifest,
@@ -3817,6 +3941,45 @@ def _inspect_final_synthesis_context_artifact(
             status["errors"].append("final_synthesis_context_memory_coverage_mismatch")
     else:
         status["memory_coverage_context_verified"] = True
+    if schema_version == "nslab.final_synthesis_context.v3":
+        daily_status = _inspect_phase7_artifact(
+            root,
+            manifest,
+            label="daily_memory_context",
+            artifact_field="daily_memory_context_artifact",
+            hash_field="daily_memory_context_sha256",
+            required=True,
+            inspector=inspect_daily_memory_context,
+        )
+        graph_status = _inspect_phase7_artifact(
+            root,
+            manifest,
+            label="beneficiary_graph",
+            artifact_field="beneficiary_graph_artifact",
+            hash_field="beneficiary_graph_sha256",
+            required=True,
+            inspector=inspect_beneficiary_graph,
+        )
+        status["daily_memory_context_verified"] = daily_status.get("passed") is True
+        status["beneficiary_graph_verified"] = graph_status.get("passed") is True
+        embedded_verified = final_synthesis_phase7_artifacts_compatible(
+            root,
+            manifest,
+            payload,
+        )
+        status["daily_memory_context_verified"] = bool(
+            status["daily_memory_context_verified"] and embedded_verified
+        )
+        status["beneficiary_graph_verified"] = bool(
+            status["beneficiary_graph_verified"] and embedded_verified
+        )
+        if not status["daily_memory_context_verified"]:
+            status["errors"].append("final_synthesis_context_daily_memory_invalid")
+        if not status["beneficiary_graph_verified"]:
+            status["errors"].append("final_synthesis_context_beneficiary_graph_invalid")
+    else:
+        status["daily_memory_context_verified"] = True
+        status["beneficiary_graph_verified"] = True
 
     status["passed"] = _final_synthesis_context_status_passed(status)
     return status
@@ -3976,6 +4139,7 @@ def _inspect_final_synthesis_semantic_retrieval_context(
         manifest.get("semantic_retrieval_summary"),
         semantic_rows,
     )
+    phase7_compact = "daily_memory_context" in context_payload
     checks = {
         "semantic_retrieval_plan_artifact_verified": (
             context.get("plan_artifact") == manifest.get("semantic_retrieval_plan_artifact")
@@ -4001,7 +4165,11 @@ def _inspect_final_synthesis_semantic_retrieval_context(
             or context.get("excluded_record_ids") == manifest.get("excluded_semantic_retrieval_record_ids")
         ),
         "semantic_retrieval_records_verified": (
-            not record_contract_required or context.get("records") == _semantic_retrieval_record_context(root, manifest)
+            "records" not in context and "episodes" not in context
+            if phase7_compact
+            else not record_contract_required
+            or context.get("records")
+            == _semantic_retrieval_record_context(root, manifest)
         ),
     }
     status.update(checks)
@@ -4064,6 +4232,7 @@ def _inspect_final_synthesis_semantic_cluster_coverage_context(
         root,
         _string_list(manifest.get("semantic_cluster_coverage_promoted_record_ids")),
     )
+    phase7_compact = "daily_memory_context" in context_payload
     checks = {
         "semantic_cluster_coverage_artifact_verified": (
             context.get("artifact") == manifest.get("semantic_cluster_coverage_artifact")
@@ -4081,7 +4250,11 @@ def _inspect_final_synthesis_semantic_cluster_coverage_context(
         "semantic_cluster_coverage_promoted_record_ids_verified": (
             context.get("promoted_record_ids") == manifest.get("semantic_cluster_coverage_promoted_record_ids")
         ),
-        "semantic_cluster_coverage_promoted_records_verified": (context.get("promoted_records") == promoted_records),
+        "semantic_cluster_coverage_promoted_records_verified": (
+            "promoted_records" not in context
+            if phase7_compact
+            else context.get("promoted_records") == promoted_records
+        ),
     }
     status.update(checks)
     error_by_field = {
@@ -5134,9 +5307,14 @@ def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
     status["shard_count_verified"] = expected_shard_count == status["artifact_count"]
     status["cache_hits_verified"] = expected_cache_hits == status["observed_cache_hits"]
     if isinstance(expected_swept_ids, list) and all(isinstance(record_id, str) for record_id in expected_swept_ids):
-        status["swept_record_ids_verified"] = Counter(observed_record_ids) == Counter(
-            expected_swept_ids
-        ) and expected_swept_count == len(expected_swept_ids)
+        zero_shard_manifest_only = expected_shard_count == 0 and not artifact_refs
+        status["swept_record_ids_verified"] = (
+            expected_swept_count == len(expected_swept_ids)
+            and (
+                zero_shard_manifest_only
+                or Counter(observed_record_ids) == Counter(expected_swept_ids)
+            )
+        )
     else:
         status["errors"].append("swept_record_ids_invalid")
         status["swept_record_ids_verified"] = False
@@ -6496,6 +6674,8 @@ def _final_synthesis_context_status_passed(status: dict[str, Any]) -> bool:
         and status.get("manifest_counts_verified")
         and status.get("manifest_record_ids_verified")
         and status.get("memory_coverage_context_verified")
+        and status.get("daily_memory_context_verified")
+        and status.get("beneficiary_graph_verified")
         and status.get("event_clusters_verified")
         and status.get("semantic_retrieval_context_verified")
         and status.get("semantic_cluster_coverage_context_verified")
@@ -7439,7 +7619,26 @@ def audit_lookahead_cmd(
     trade_date: Annotated[str | None, typer.Option("--trade-date")] = None,
 ) -> None:
     settings = load_settings()
-    result = audit_lookahead(settings.project_root, trade_date=_parse_date(trade_date) if trade_date else None)
+    try:
+        memory_index = (
+            ProductionMemoryIndex(
+                settings.project_root,
+                embedding_provider=_production_embedding_provider(
+                    settings,
+                    require_records=False,
+                ),
+                production=True,
+            )
+            if _phase7_audit_required(settings.project_root)
+            else None
+        )
+        result = audit_lookahead(
+            settings.project_root,
+            trade_date=_parse_date(trade_date) if trade_date else None,
+            memory_index=memory_index,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
     _echo(result)
     if not result.get("passed", False):
         raise typer.Exit(code=1)
@@ -7448,10 +7647,39 @@ def audit_lookahead_cmd(
 @audit_app.command("provenance")
 def audit_provenance_cmd() -> None:
     settings = load_settings()
-    result = audit_provenance(settings.project_root)
+    try:
+        memory_index = (
+            ProductionMemoryIndex(
+                settings.project_root,
+                embedding_provider=_production_embedding_provider(
+                    settings,
+                    require_records=False,
+                ),
+                production=True,
+            )
+            if _phase7_audit_required(settings.project_root)
+            else None
+        )
+        result = audit_provenance(
+            settings.project_root,
+            memory_index=memory_index,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
     _echo(result)
     if not result.get("passed", False):
         raise typer.Exit(code=1)
+
+
+def _phase7_audit_required(root: Path) -> bool:
+    for path in sorted((root / "runs" / "manifests").glob("*.json")):
+        try:
+            payload = read_json(path)
+        except (OSError, ValueError):
+            continue
+        if isinstance(payload, dict) and phase7_daily_memory_required(payload):
+            return True
+    return False
 
 
 @audit_app.command("coverage")
@@ -7975,48 +8203,6 @@ def memory_stats() -> None:
     )
 
 
-def _require_openai_embedding_runtime() -> None:
-    try:
-        module = import_module("openai")
-    except ImportError as exc:
-        raise ValueError("production vector index rebuild requires the openai SDK; install the openai extra") from exc
-    if not hasattr(module, "AsyncOpenAI"):
-        raise ValueError("production vector index rebuild requires an openai SDK exposing AsyncOpenAI")
-
-
-def _production_embedding_provider(
-    settings: Any,
-    *,
-    require_records: bool,
-) -> AsyncEmbeddingProviderAdapter:
-    if settings.llm_provider.strip().lower() == "mock":
-        raise ValueError("production memory index requires a real LLM provider")
-    if settings.llm.provider.strip().lower() == "mock":
-        raise ValueError("production memory index requires a non-mock model profile")
-    if (
-        require_records
-        and next(BrainRecordStore(settings.project_root).iter_records(), None) is None
-    ):
-        raise ValueError("production memory index requires normalized brain records")
-    if settings.llm_provider.strip().lower() in OPENAI_LLM_PROVIDER_ALIASES and not settings.env_value(
-        "OPENAI_API_KEY"
-    ):
-        raise ValueError("production memory index requires OPENAI_API_KEY")
-    if settings.llm_provider.strip().lower() in OPENAI_LLM_PROVIDER_ALIASES:
-        _require_openai_embedding_runtime()
-    provider = create_llm_provider(settings)
-    if isinstance(provider, DeterministicMockLLMProvider):
-        raise ValueError("production memory index cannot use the mock LLM provider")
-    embedding_model = getattr(provider, "embedding_model", None) or settings.llm.embedding_model or "configured"
-    return AsyncEmbeddingProviderAdapter(
-        provider,
-        embedding_method=(
-            f"llm_embedding:{settings.llm_provider.strip().lower()}:{embedding_model}"
-        ),
-        production_capability_attested=True,
-    )
-
-
 @memory_app.command("rebuild-index")
 def memory_rebuild_index(
     production: Annotated[
@@ -8396,6 +8582,55 @@ def memory_inspect_adaptive(
         ).inspect(resolved)
     except (OSError, RuntimeError, ValueError) as exc:
         _exit_with_error(exc)
+    _echo(result)
+    if not result.get("passed", False):
+        raise typer.Exit(code=1)
+
+
+@memory_app.command("inspect-daily-context")
+def memory_inspect_daily_context(
+    context_path: Annotated[Path, typer.Argument()],
+) -> None:
+    settings = load_settings()
+    resolved = _resolve_project_artifact(
+        settings.project_root,
+        context_path.as_posix(),
+    )
+    if resolved is None:
+        _exit_with_error(ValueError("daily memory context escapes the project root"))
+    try:
+        index = ProductionMemoryIndex(
+            settings.project_root,
+            embedding_provider=_production_embedding_provider(
+                settings,
+                require_records=False,
+            ),
+            production=True,
+        )
+        result = inspect_daily_memory_context(
+            settings.project_root,
+            resolved,
+            memory_index=index,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(result)
+    if not result.get("passed", False):
+        raise typer.Exit(code=1)
+
+
+@memory_app.command("inspect-beneficiary-graph")
+def memory_inspect_beneficiary_graph(
+    graph_path: Annotated[Path, typer.Argument()],
+) -> None:
+    settings = load_settings()
+    resolved = _resolve_project_artifact(
+        settings.project_root,
+        graph_path.as_posix(),
+    )
+    if resolved is None:
+        _exit_with_error(ValueError("beneficiary graph escapes the project root"))
+    result = inspect_beneficiary_graph(settings.project_root, resolved)
     _echo(result)
     if not result.get("passed", False):
         raise typer.Exit(code=1)

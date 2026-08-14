@@ -8,6 +8,13 @@ from pydantic import BaseModel
 
 from news_scalping_lab.contracts.memory_context import (
     AdaptiveRetrievalTrace,
+    AdaptiveTriggerEvidence,
+    BeneficiaryGraphArtifact,
+    BeneficiaryGraphPath,
+    CategoryBrainGuidance,
+    CategoryBrainIndexManifest,
+    CategoryBrainQueryPlan,
+    CategoryClaimInclusionProof,
     DailyMemoryContext,
     EventClusterManifest,
     MemoryCellManifest,
@@ -76,6 +83,13 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "representative_record.schema.json": RepresentativeRecord,
     "representative_set_manifest.schema.json": RepresentativeSetManifest,
     "adaptive_retrieval_trace.schema.json": AdaptiveRetrievalTrace,
+    "adaptive_trigger_evidence.schema.json": AdaptiveTriggerEvidence,
+    "beneficiary_graph.schema.json": BeneficiaryGraphArtifact,
+    "beneficiary_graph_path.schema.json": BeneficiaryGraphPath,
+    "category_brain_guidance.schema.json": CategoryBrainGuidance,
+    "category_brain_query_plan.schema.json": CategoryBrainQueryPlan,
+    "category_claim_inclusion_proof.schema.json": CategoryClaimInclusionProof,
+    "category_brain_index_manifest.schema.json": CategoryBrainIndexManifest,
     "daily_memory_context.schema.json": DailyMemoryContext,
 }
 

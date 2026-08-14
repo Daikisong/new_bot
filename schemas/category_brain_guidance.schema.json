@@ -1,0 +1,70 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "title": "Category",
+      "type": "string"
+    },
+    "claim_id": {
+      "title": "Claim Id",
+      "type": "string"
+    },
+    "confidence_label": {
+      "title": "Confidence Label",
+      "type": "string"
+    },
+    "contradicting_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Contradicting Record Ids",
+      "type": "array"
+    },
+    "mechanism": {
+      "title": "Mechanism",
+      "type": "string"
+    },
+    "source_artifact_path": {
+      "title": "Source Artifact Path",
+      "type": "string"
+    },
+    "source_artifact_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Artifact Sha256",
+      "type": "string"
+    },
+    "statement": {
+      "title": "Statement",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "supporting_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Supporting Record Ids",
+      "type": "array"
+    },
+    "usage": {
+      "const": "QUERY_GUIDANCE_NOT_EVIDENCE",
+      "default": "QUERY_GUIDANCE_NOT_EVIDENCE",
+      "title": "Usage",
+      "type": "string"
+    }
+  },
+  "required": [
+    "claim_id",
+    "category",
+    "statement",
+    "mechanism",
+    "status",
+    "confidence_label",
+    "source_artifact_path",
+    "source_artifact_sha256"
+  ],
+  "title": "CategoryBrainGuidance",
+  "type": "object"
+}

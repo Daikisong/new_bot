@@ -64,6 +64,7 @@ class ResearchImporter:
         store: ResearchStore | None = None,
         llm: LLMProvider | None = None,
         llm_max_retries: int = 0,
+        phase7_transport_key: str | None = None,
     ) -> None:
         self.root = root
         self.store = store or ResearchStore(root)
@@ -77,6 +78,7 @@ class ResearchImporter:
             default_metadata={"prompt_version": SEMANTIC_IMPORT_PROMPT_VERSION},
             max_retries=llm_max_retries,
         )
+        self.phase7_transport_key = phase7_transport_key
 
     def import_path(
         self,
@@ -106,9 +108,13 @@ class ResearchImporter:
                 root=self.root,
                 validate=True,
                 accepted=False,
+                phase7_transport_key=self.phase7_transport_key,
             )
         if mode == "bundle" or (mode == "auto" and looks_like_bundle(preserved)):
-            episode = import_bundle_episode(preserved)
+            episode = import_bundle_episode(
+                preserved,
+                phase7_transport_key=self.phase7_transport_key,
+            )
         elif mode == "strict" or (mode == "auto" and resolved.suffix.lower() == ".json"):
             episode = self._strict_import(preserved)
         else:

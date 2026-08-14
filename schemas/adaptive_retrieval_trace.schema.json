@@ -95,6 +95,64 @@
       "title": "AdaptiveRetrievalIteration",
       "type": "object"
     },
+    "AdaptiveTriggerEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "cutoff_at": {
+          "format": "date-time",
+          "title": "Cutoff At",
+          "type": "string"
+        },
+        "derivation_version": {
+          "const": "beneficiary_graph_trigger.v1",
+          "default": "beneficiary_graph_trigger.v1",
+          "title": "Derivation Version",
+          "type": "string"
+        },
+        "event_cluster_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Event Cluster Ids",
+          "type": "array"
+        },
+        "kind": {
+          "const": "MULTI_HOP_BENEFICIARY",
+          "title": "Kind",
+          "type": "string"
+        },
+        "query_terms": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Query Terms",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "nslab.adaptive_trigger_evidence.v1",
+          "default": "nslab.adaptive_trigger_evidence.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_artifact": {
+          "$ref": "#/$defs/ArtifactReference"
+        },
+        "source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "source_artifact",
+        "cutoff_at"
+      ],
+      "title": "AdaptiveTriggerEvidence",
+      "type": "object"
+    },
     "ArtifactReference": {
       "additionalProperties": false,
       "properties": {
@@ -221,8 +279,8 @@
       "type": "string"
     },
     "schema_version": {
-      "const": "nslab.adaptive_retrieval_trace.v3",
-      "default": "nslab.adaptive_retrieval_trace.v3",
+      "const": "nslab.adaptive_retrieval_trace.v4",
+      "default": "nslab.adaptive_retrieval_trace.v4",
       "title": "Schema Version",
       "type": "string"
     },
@@ -233,6 +291,13 @@
     "trace_id": {
       "title": "Trace Id",
       "type": "string"
+    },
+    "trigger_evidence": {
+      "items": {
+        "$ref": "#/$defs/AdaptiveTriggerEvidence"
+      },
+      "title": "Trigger Evidence",
+      "type": "array"
     }
   },
   "required": [

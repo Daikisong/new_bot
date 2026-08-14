@@ -59,8 +59,9 @@ def test_daily_memory_context_contains_hash_references_not_raw_corpus() -> None:
     reference = ArtifactReference(
         artifact_path="runs/context/coverage.json",
         sha256="a" * 64,
-        item_count=10,
+        item_count=1,
     )
+    claims_reference = reference.model_copy(update={"item_count": 0})
 
     context = DailyMemoryContext(
         run_id="RUN-1",
@@ -69,13 +70,21 @@ def test_daily_memory_context_contains_hash_references_not_raw_corpus() -> None:
         corpus_manifest_sha256="b" * 64,
         news_coverage_manifest=reference,
         event_cluster_manifest=reference,
+        event_clusters=claims_reference,
         memory_coverage_manifest=reference,
+        memory_snapshot_id="MEMIDX-1",
+        source_generation_sha256="c" * 64,
+        category_brain_manifest=reference,
+        category_brain_index_manifest=reference,
+        category_selected_claims=claims_reference,
+        beneficiary_graph=reference,
+        compact_final_context=reference,
         estimated_token_count=0,
         context_complete=False,
     )
 
     dumped = context.model_dump(mode="json")
-    assert dumped["schema_version"] == "nslab.daily_memory_context.v1"
+    assert dumped["schema_version"] == "nslab.daily_memory_context.v2"
     assert "records" not in dumped
     assert dumped["memory_coverage_manifest"]["sha256"] == "a" * 64
 

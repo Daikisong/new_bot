@@ -144,6 +144,7 @@ class CompanyMemoryStore:
             supply_chain_roles=candidate.causal_chain,
             prior_market_narratives=[candidate.thesis, candidate.why_now],
             contradictory_relations=candidate.counterarguments,
+            available_from=known_at,
             known_at=known_at,
             provenance=[provenance],
         )
@@ -202,6 +203,7 @@ class CompanyMemoryStore:
                 or payload.get("conflicting_relations")
                 or payload.get("contradictions")
             ),
+            available_from=record.available_from,
             known_at=known_at,
             provenance=[provenance],
         )
@@ -267,6 +269,7 @@ def _merge_company_memory(existing: CompanyMemory, incoming: CompanyMemory) -> C
             "contradictory_relations": _merged(
                 existing.contradictory_relations, incoming.contradictory_relations
             ),
+            "available_from": min(existing.available_from, incoming.available_from),
             "known_at": min(existing.known_at, incoming.known_at),
             "provenance": _merged_provenance(existing.provenance, incoming.provenance),
         }

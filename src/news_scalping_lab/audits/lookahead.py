@@ -10,11 +10,17 @@ from typing import cast
 
 from news_scalping_lab.context.final_synthesis import (
     FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS,
+    FINAL_SYNTHESIS_V3_FORBIDDEN_PAYLOAD_KEYS,
     final_synthesis_context_contract_verified,
+    final_synthesis_phase7_artifacts_compatible,
     phase2_memory_coverage_required,
+    phase7_daily_memory_required,
 )
 from news_scalping_lab.context.memory_coverage import inspect_memory_coverage_manifest
 from news_scalping_lab.ingest.news import NewsBatch, load_news_csv
+from news_scalping_lab.memory.beneficiary import inspect_beneficiary_graph
+from news_scalping_lab.memory.daily_context import inspect_daily_memory_context
+from news_scalping_lab.memory.index import ProductionMemoryIndex
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.research_import.bundle import (
     CANDIDATE_WEB_CHECK_REQUIRED_FIELDS,
@@ -41,7 +47,12 @@ SESSION_PACK_FILES = (
 WEB_TIMESTAMP_PRECISIONS = frozenset({"datetime", "date_only_end_of_day"})
 
 
-def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, object]:
+def audit_lookahead(
+    root: Path,
+    *,
+    trade_date: date | None = None,
+    memory_index: ProductionMemoryIndex | None = None,
+) -> dict[str, object]:
     findings: list[str] = []
     manifest_paths = [
         *sorted((root / "runs" / "manifests").glob("*.json")),
@@ -166,7 +177,13 @@ def audit_lookahead(root: Path, *, trade_date: date | None = None) -> dict[str, 
         _check_web_source_artifact(root, manifest_name, manifest, findings)
         _check_candidate_web_check_artifact(root, manifest_name, manifest, findings)
         _check_candidate_verification_artifact(root, manifest_name, manifest, findings)
-        _check_final_synthesis_context_artifact(root, manifest_name, manifest, findings)
+        _check_final_synthesis_context_artifact(
+            root,
+            manifest_name,
+            manifest,
+            findings,
+            memory_index=memory_index,
+        )
         if phase2_memory_coverage_required(manifest):
             coverage = inspect_memory_coverage_manifest(
                 root,
@@ -2340,6 +2357,8 @@ def _check_final_synthesis_context_artifact(
     manifest_name: str,
     manifest: dict[object, object],
     findings: list[str],
+    *,
+    memory_index: ProductionMemoryIndex | None,
 ) -> None:
     artifact = _read_manifest_json_artifact(
         root,
@@ -2355,21 +2374,38 @@ def _check_final_synthesis_context_artifact(
     if artifact.get("schema_version") not in {
         "nslab.final_synthesis_context.v1",
         "nslab.final_synthesis_context.v2",
+        "nslab.final_synthesis_context.v3",
     }:
         findings.append(f"{manifest_name}: final_synthesis_context schema_version invalid")
     if (
         phase2_memory_coverage_required(cast(dict[str, object], manifest))
-        and artifact.get("schema_version") != "nslab.final_synthesis_context.v2"
+        and artifact.get("schema_version")
+        not in {
+            "nslab.final_synthesis_context.v2",
+            "nslab.final_synthesis_context.v3",
+        }
     ):
         findings.append(f"{manifest_name}: final_synthesis_context Phase 2 downgrade")
+    if (
+        phase7_daily_memory_required(cast(dict[str, object], manifest))
+        and artifact.get("schema_version") != "nslab.final_synthesis_context.v3"
+    ):
+        findings.append(f"{manifest_name}: final_synthesis_context Phase 7 downgrade")
     payload = artifact.get("payload")
     if not isinstance(payload, dict):
         findings.append(f"{manifest_name}: final_synthesis_context payload must be object")
         return
-    if artifact.get("schema_version") == "nslab.final_synthesis_context.v2":
-        forbidden = sorted(
-            FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS.intersection(payload)
+    schema_version = artifact.get("schema_version")
+    if schema_version in {
+        "nslab.final_synthesis_context.v2",
+        "nslab.final_synthesis_context.v3",
+    }:
+        forbidden_keys = (
+            FINAL_SYNTHESIS_V3_FORBIDDEN_PAYLOAD_KEYS
+            if schema_version == "nslab.final_synthesis_context.v3"
+            else FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS
         )
+        forbidden = sorted(forbidden_keys.intersection(payload))
         if forbidden:
             findings.append(
                 f"{manifest_name}: final_synthesis_context contains exhaustive payload"
@@ -2379,8 +2415,25 @@ def _check_final_synthesis_context_artifact(
             artifact,
         ):
             findings.append(
-                f"{manifest_name}: final_synthesis_context v2 contract mismatch"
+                f"{manifest_name}: final_synthesis_context "
+                f"{str(schema_version).rsplit('.', maxsplit=1)[-1]} contract mismatch"
             )
+    if schema_version == "nslab.final_synthesis_context.v3":
+        if not final_synthesis_phase7_artifacts_compatible(
+            root,
+            cast(dict[str, object], manifest),
+            artifact,
+        ):
+            findings.append(
+                f"{manifest_name}: final_synthesis_context Phase 7 embedded artifact mismatch"
+            )
+        _check_phase7_memory_artifacts(
+            root,
+            manifest_name,
+            manifest,
+            findings,
+            memory_index=memory_index,
+        )
     manifest_cutoff_at = _manifest_cutoff_at(manifest)
     if manifest_cutoff_at is None:
         return
@@ -2415,6 +2468,44 @@ def _check_final_synthesis_context_artifact(
             findings.append(
                 f"{manifest_name}: final_synthesis_context source {source_label} "
                 "is not cutoff verified"
+            )
+
+
+def _check_phase7_memory_artifacts(
+    root: Path,
+    manifest_name: str,
+    manifest: dict[object, object],
+    findings: list[str],
+    *,
+    memory_index: ProductionMemoryIndex | None,
+) -> None:
+    for field in (
+        "daily_memory_context_artifact",
+        "beneficiary_graph_artifact",
+    ):
+        relative_path = manifest.get(field)
+        if not isinstance(relative_path, str):
+            findings.append(f"{manifest_name}: {field} missing")
+            continue
+        path = _resolve_manifest_artifact_path(
+            root,
+            manifest_name,
+            field,
+            relative_path,
+            findings,
+        )
+        if path is None:
+            continue
+        result = (
+            inspect_daily_memory_context(root, path, memory_index=memory_index)
+            if field == "daily_memory_context_artifact"
+            else inspect_beneficiary_graph(root, path)
+        )
+        if result.get("passed") is not True:
+            findings.extend(
+                f"{manifest_name}: {error}"
+                for error in result.get("errors", [])
+                if isinstance(error, str)
             )
 
 

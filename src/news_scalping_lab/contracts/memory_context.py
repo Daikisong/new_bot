@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 from datetime import date
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Self, cast
 
 from pydantic import (
     AwareDatetime,
@@ -883,7 +883,7 @@ class RepresentativeSetManifest(StrictMemoryContextModel):
     max_token_count: int = Field(ge=1)
     max_trade_date_concentration: int = Field(ge=1)
     max_unit_key_concentration: int = Field(ge=1)
-    estimated_token_count: int = Field(ge=0)
+    estimated_token_count: int = Field(ge=0, le=48_000)
     diversity_coverage_ratio: float = Field(ge=0.0, le=1.0)
     max_distribution_share_error: float = Field(ge=0.0, le=1.0)
     distribution_share_error_tolerance: float = Field(ge=0.0, le=1.0)
@@ -942,6 +942,38 @@ class RepresentativeSetManifest(StrictMemoryContextModel):
         return self
 
 
+class AdaptiveTriggerEvidence(StrictMemoryContextModel):
+    schema_version: Literal["nslab.adaptive_trigger_evidence.v1"] = (
+        "nslab.adaptive_trigger_evidence.v1"
+    )
+    kind: Literal["MULTI_HOP_BENEFICIARY"]
+    source_artifact: ArtifactReference
+    cutoff_at: AwareDatetime
+    event_cluster_ids: list[str] = Field(default_factory=list)
+    source_ids: list[str] = Field(default_factory=list)
+    query_terms: list[str] = Field(default_factory=list)
+    derivation_version: Literal["beneficiary_graph_trigger.v1"] = (
+        "beneficiary_graph_trigger.v1"
+    )
+
+    @model_validator(mode="after")
+    def validate_trigger_evidence(self) -> Self:
+        if self.source_artifact.item_count != 1:
+            raise ValueError("adaptive trigger evidence requires one source artifact")
+        for values in (
+            self.event_cluster_ids,
+            self.source_ids,
+            self.query_terms,
+        ):
+            if not values or len(values) != len(set(values)):
+                raise ValueError(
+                    "adaptive trigger evidence lists must be non-empty and unique"
+                )
+            if any(not value.strip() for value in values):
+                raise ValueError("adaptive trigger evidence values must be non-empty")
+        return self
+
+
 class AdaptiveRetrievalIteration(StrictMemoryContextModel):
     iteration: int = Field(ge=1)
     trigger_reasons: list[str] = Field(default_factory=list)
@@ -960,8 +992,8 @@ class AdaptiveRetrievalIteration(StrictMemoryContextModel):
 
 
 class AdaptiveRetrievalTrace(StrictMemoryContextModel):
-    schema_version: Literal["nslab.adaptive_retrieval_trace.v3"] = (
-        "nslab.adaptive_retrieval_trace.v3"
+    schema_version: Literal["nslab.adaptive_retrieval_trace.v4"] = (
+        "nslab.adaptive_retrieval_trace.v4"
     )
     trace_id: str
     run_id: str
@@ -971,6 +1003,7 @@ class AdaptiveRetrievalTrace(StrictMemoryContextModel):
     query_sha256: Sha256
     query_embedding_sha256: Sha256
     policy_version: str
+    trigger_evidence: list[AdaptiveTriggerEvidence] = Field(default_factory=list)
     initial_population_manifest: ArtifactReference
     initial_representative_set_manifest: ArtifactReference
     initial_cell_ids: list[str] = Field(default_factory=list)
@@ -1032,12 +1065,268 @@ class AdaptiveRetrievalTrace(StrictMemoryContextModel):
                 raise ValueError("adaptive trace exceeds token budget")
         if not self.stopped_reason.strip():
             raise ValueError("adaptive trace requires a stopped reason")
+        evidence_keys = [
+            (item.kind, item.source_artifact.sha256)
+            for item in self.trigger_evidence
+        ]
+        if len(evidence_keys) != len(set(evidence_keys)):
+            raise ValueError("adaptive trigger evidence must be unique")
+        if any(
+            as_kst(item.cutoff_at) != as_kst(self.cutoff_at)
+            or self.cluster_id not in item.event_cluster_ids
+            for item in self.trigger_evidence
+        ):
+            raise ValueError("adaptive trigger evidence identity mismatch")
+        return self
+
+
+class CategoryBrainGuidance(StrictMemoryContextModel):
+    claim_id: str
+    category: str
+    statement: str
+    mechanism: str
+    status: str
+    confidence_label: str
+    supporting_record_ids: list[str] = Field(default_factory=list)
+    contradicting_record_ids: list[str] = Field(default_factory=list)
+    source_artifact_path: str
+    source_artifact_sha256: Sha256
+    usage: Literal["QUERY_GUIDANCE_NOT_EVIDENCE"] = "QUERY_GUIDANCE_NOT_EVIDENCE"
+
+    @model_validator(mode="after")
+    def validate_guidance(self) -> Self:
+        required = (
+            self.claim_id,
+            self.category,
+            self.statement,
+            self.mechanism,
+            self.status,
+            self.confidence_label,
+            self.source_artifact_path,
+        )
+        if any(not value.strip() for value in required):
+            raise ValueError("category brain guidance fields must be non-empty")
+        if not self.supporting_record_ids and not self.contradicting_record_ids:
+            raise ValueError("category guidance requires record provenance")
+        if (
+            len(self.supporting_record_ids) != len(set(self.supporting_record_ids))
+            or len(self.contradicting_record_ids)
+            != len(set(self.contradicting_record_ids))
+            or set(self.supporting_record_ids).intersection(
+                self.contradicting_record_ids
+            )
+        ):
+            raise ValueError("category guidance record provenance must be disjoint")
+        return self
+
+
+class CategoryBrainQueryPlan(StrictMemoryContextModel):
+    schema_version: Literal["nslab.category_brain_query_plan.v1"] = (
+        "nslab.category_brain_query_plan.v1"
+    )
+    cluster_id: str
+    original_query: str
+    original_query_sha256: Sha256
+    query_embedding_sha256: Sha256
+    embedding_model: str
+    selected_claim_ids: list[str] = Field(default_factory=list, max_length=3)
+    claim_embedding_sha256s: dict[str, Sha256] = Field(default_factory=dict)
+    selection_scores: dict[str, float] = Field(default_factory=dict)
+    expanded_query: str
+    expanded_query_sha256: Sha256
+    source_artifact_path: str
+    source_artifact_sha256: Sha256
+    usage: Literal["QUERY_PLANNER_NOT_EVIDENCE"] = "QUERY_PLANNER_NOT_EVIDENCE"
+
+    @model_validator(mode="after")
+    def validate_query_plan(self) -> Self:
+        required = (
+            self.cluster_id,
+            self.original_query,
+            self.embedding_model,
+            self.expanded_query,
+            self.source_artifact_path,
+        )
+        if any(not value.strip() for value in required):
+            raise ValueError("category brain query plan fields must be non-empty")
+        if self.original_query_sha256 != sha256_text(self.original_query):
+            raise ValueError("category brain original query hash mismatch")
+        if self.expanded_query_sha256 != sha256_text(self.expanded_query):
+            raise ValueError("category brain expanded query hash mismatch")
+        if len(self.selected_claim_ids) != len(set(self.selected_claim_ids)):
+            raise ValueError("category brain selected claims must be unique")
+        expected = set(self.selected_claim_ids)
+        if (
+            set(self.claim_embedding_sha256s) != expected
+            or set(self.selection_scores) != expected
+            or any(not math.isfinite(value) for value in self.selection_scores.values())
+        ):
+            raise ValueError("category brain query plan claim metadata mismatch")
+        return self
+
+
+class CategoryClaimMerkleStep(StrictMemoryContextModel):
+    position: Literal["LEFT", "RIGHT"]
+    sha256: Sha256
+
+
+class CategoryClaimInclusionProof(StrictMemoryContextModel):
+    schema_version: Literal["nslab.category_claim_inclusion_proof.v1"] = (
+        "nslab.category_claim_inclusion_proof.v1"
+    )
+    claim_id: str
+    claim_payload_sha256: Sha256
+    leaf_index: int = Field(ge=0)
+    leaf_count: int = Field(gt=0)
+    siblings: list[CategoryClaimMerkleStep] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_inclusion_proof(self) -> Self:
+        if not self.claim_id.strip() or self.leaf_index >= self.leaf_count:
+            raise ValueError("category claim inclusion proof identity is invalid")
+        return self
+
+
+class CategoryBrainIndexManifest(StrictMemoryContextModel):
+    schema_version: Literal["nslab.category_brain_index_manifest.v1"] = (
+        "nslab.category_brain_index_manifest.v1"
+    )
+    brain_version: str
+    brain_record_cutoff_at: AwareDatetime
+    index_version: str
+    embedding_model: str
+    embedding_dimensions: int = Field(gt=0)
+    claim_count: int = Field(ge=0)
+    claim_payload_merkle_root_sha256: Sha256
+    claims_artifact: ArtifactReference
+    vector_ledger: ArtifactReference
+    database_artifact_path: str
+    database_sha256: Sha256
+    hnsw_index_ready: bool
+
+    @model_validator(mode="after")
+    def validate_category_index(self) -> Self:
+        if any(
+            not value.strip()
+            for value in (
+                self.brain_version,
+                self.index_version,
+                self.embedding_model,
+                self.database_artifact_path,
+            )
+        ):
+            raise ValueError("category brain index identity fields must be non-empty")
+        if (
+            self.claims_artifact.item_count != self.claim_count
+            or self.vector_ledger.item_count != self.claim_count
+            or not self.hnsw_index_ready
+        ):
+            raise ValueError("category brain index readiness is incomplete")
+        return self
+
+
+class BeneficiaryGraphPath(StrictMemoryContextModel):
+    path_id: str
+    event_cluster_ids: list[str] = Field(default_factory=list)
+    mechanism_steps: list[str] = Field(default_factory=list)
+    narrative_context: list[str] = Field(default_factory=list)
+    business_roles: list[str] = Field(default_factory=list)
+    company_memory_artifact_paths: list[str] = Field(default_factory=list)
+    ticker: str
+    company_name: str
+    source_ids: list[str] = Field(default_factory=list)
+    candidate_rank: int = Field(ge=1)
+    candidate_path_type: str
+    status: Literal["OPEN_WORLD_CANDIDATE_REQUIRES_VERIFICATION"] = (
+        "OPEN_WORLD_CANDIDATE_REQUIRES_VERIFICATION"
+    )
+
+    @model_validator(mode="after")
+    def validate_path(self) -> Self:
+        required = (
+            self.path_id,
+            self.ticker,
+            self.company_name,
+            self.candidate_path_type,
+        )
+        if any(not value.strip() for value in required):
+            raise ValueError("beneficiary graph path identifiers must be non-empty")
+        if not self.event_cluster_ids or not self.mechanism_steps:
+            raise ValueError("beneficiary graph paths require event and mechanism steps")
+        if not self.source_ids or any(not value.strip() for value in self.source_ids):
+            raise ValueError("beneficiary graph paths require non-empty provenance")
+        for values in (
+            self.event_cluster_ids,
+            self.mechanism_steps,
+            self.narrative_context,
+            self.business_roles,
+            self.company_memory_artifact_paths,
+            self.source_ids,
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError("beneficiary graph path lists must be unique")
+        return self
+
+
+class BeneficiaryGraphArtifact(StrictMemoryContextModel):
+    schema_version: Literal["nslab.beneficiary_graph.v2"] = (
+        "nslab.beneficiary_graph.v2"
+    )
+    run_id: str
+    cutoff_at: AwareDatetime
+    event_cluster_manifest: ArtifactReference
+    company_memory_artifact_sha256s: dict[str, Sha256] = Field(default_factory=dict)
+    excluded_company_memory_artifact_paths: list[str] = Field(default_factory=list)
+    reviewed_company_memory_count: int = Field(ge=0)
+    reviewed_company_memory_root_sha256: Sha256
+    unmatched_company_memory_count: int = Field(ge=0)
+    candidate_input_artifact: ArtifactReference
+    candidate_input_sha256: Sha256
+    candidate_count: int = Field(ge=0)
+    path_count: int = Field(ge=0)
+    paths: list[BeneficiaryGraphPath] = Field(default_factory=list)
+    unresolved_candidate_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_graph(self) -> Self:
+        if (
+            not self.run_id.strip()
+            or self.event_cluster_manifest.item_count != 1
+            or self.candidate_input_artifact.item_count != self.candidate_count
+        ):
+            raise ValueError("beneficiary graph identity is invalid")
+        if self.path_count != len(self.paths):
+            raise ValueError("beneficiary graph path count mismatch")
+        path_ids = [item.path_id for item in self.paths]
+        if len(path_ids) != len(set(path_ids)):
+            raise ValueError("beneficiary graph path identifiers must be unique")
+        if len(self.unresolved_candidate_ids) != len(
+            set(self.unresolved_candidate_ids)
+        ):
+            raise ValueError("beneficiary graph unresolved candidates must be unique")
+        if any(
+            not path.strip()
+            for path in self.company_memory_artifact_sha256s
+        ):
+            raise ValueError("beneficiary graph company memory paths must be non-empty")
+        if self.unmatched_company_memory_count + len(
+            self.company_memory_artifact_sha256s
+        ) > self.reviewed_company_memory_count:
+            raise ValueError("beneficiary graph company memory review counts are invalid")
+        if (
+            len(self.excluded_company_memory_artifact_paths)
+            != len(set(self.excluded_company_memory_artifact_paths))
+            or set(self.excluded_company_memory_artifact_paths).intersection(
+                self.company_memory_artifact_sha256s
+            )
+        ):
+            raise ValueError("beneficiary graph excluded company memory paths are invalid")
         return self
 
 
 class DailyMemoryContext(StrictMemoryContextModel):
-    schema_version: Literal["nslab.daily_memory_context.v1"] = (
-        "nslab.daily_memory_context.v1"
+    schema_version: Literal["nslab.daily_memory_context.v2"] = (
+        "nslab.daily_memory_context.v2"
     )
     run_id: str
     trade_date: date
@@ -1045,17 +1334,132 @@ class DailyMemoryContext(StrictMemoryContextModel):
     corpus_manifest_sha256: Sha256
     news_coverage_manifest: ArtifactReference
     event_cluster_manifest: ArtifactReference
+    event_clusters: ArtifactReference
     memory_coverage_manifest: ArtifactReference
+    memory_snapshot_id: str
+    source_generation_sha256: Sha256
+    material_event_cluster_ids: list[str] = Field(default_factory=list)
+    uncovered_material_event_cluster_ids: list[str] = Field(default_factory=list)
+    built_population_keys: list[str] = Field(default_factory=list)
+    uncovered_population_purposes: dict[str, list[PopulationPurpose]] = Field(
+        default_factory=dict
+    )
+    deferred_population_purposes: list[Literal["leader_selection"]] = Field(
+        default_factory=lambda: cast(
+            list[Literal["leader_selection"]], ["leader_selection"]
+        )
+    )
     population_manifests: list[ArtifactReference] = Field(default_factory=list)
     representative_set_manifests: list[ArtifactReference] = Field(default_factory=list)
     adaptive_retrieval_traces: list[ArtifactReference] = Field(default_factory=list)
-    category_brain_manifest_sha256: Sha256 | None = None
+    category_brain_manifest: ArtifactReference
+    category_brain_index_manifest: ArtifactReference
+    category_selected_claims: ArtifactReference
+    category_selected_claim_proofs: dict[str, CategoryClaimInclusionProof] = Field(
+        default_factory=dict
+    )
+    category_query_plans: list[CategoryBrainQueryPlan] = Field(default_factory=list)
+    category_guidance: list[CategoryBrainGuidance] = Field(default_factory=list)
+    beneficiary_graph: ArtifactReference
+    compact_final_context: ArtifactReference
     supporting_record_ids: list[str] = Field(default_factory=list)
     contradicting_record_ids: list[str] = Field(default_factory=list)
     unexplained_record_ids: list[str] = Field(default_factory=list)
     unresolved_disagreements: list[str] = Field(default_factory=list)
     estimated_token_count: int = Field(ge=0)
     context_complete: bool
+
+    @model_validator(mode="after")
+    def validate_daily_memory_context(self) -> Self:
+        if not self.run_id.strip() or not self.memory_snapshot_id.strip():
+            raise ValueError("daily memory context identity must be non-empty")
+        if len(self.material_event_cluster_ids) != len(
+            set(self.material_event_cluster_ids)
+        ):
+            raise ValueError("daily memory event cluster IDs must be unique")
+        if (
+            len(self.uncovered_material_event_cluster_ids)
+            != len(set(self.uncovered_material_event_cluster_ids))
+            or not set(self.uncovered_material_event_cluster_ids).issubset(
+                self.material_event_cluster_ids
+            )
+        ):
+            raise ValueError("daily memory uncovered event clusters are invalid")
+        if len(self.built_population_keys) != len(set(self.built_population_keys)):
+            raise ValueError("daily memory population keys must be unique")
+        if set(self.uncovered_population_purposes) != set(
+            self.material_event_cluster_ids
+        ):
+            raise ValueError("daily memory purpose coverage must include every material cluster")
+        attempted_purposes = {"catalyst_response", "candidate_error", "newsless"}
+        if any(
+            len(purposes) != len(set(purposes))
+            or not set(purposes).issubset(attempted_purposes)
+            for purposes in self.uncovered_population_purposes.values()
+        ):
+            raise ValueError("daily memory uncovered population purposes are invalid")
+        if self.deferred_population_purposes != ["leader_selection"]:
+            raise ValueError("daily memory deferred purpose contract mismatch")
+        for references in (
+            self.population_manifests,
+            self.representative_set_manifests,
+            self.adaptive_retrieval_traces,
+        ):
+            if any(item.item_count != 1 for item in references):
+                raise ValueError("daily memory manifest references must contain one item")
+            paths = [item.artifact_path for item in references]
+            if len(paths) != len(set(paths)):
+                raise ValueError("daily memory manifest references must be unique")
+        if self.beneficiary_graph.item_count != 1:
+            raise ValueError("daily memory beneficiary graph must contain one artifact")
+        if self.compact_final_context.item_count != 1:
+            raise ValueError("daily compact context must contain one artifact")
+        if self.category_brain_manifest.item_count != 1:
+            raise ValueError("daily category brain manifest must contain one artifact")
+        claim_ids = [item.claim_id for item in self.category_guidance]
+        if len(claim_ids) != len(set(claim_ids)):
+            raise ValueError("daily category guidance claims must be unique")
+        plan_clusters = [item.cluster_id for item in self.category_query_plans]
+        if len(plan_clusters) != len(set(plan_clusters)):
+            raise ValueError("daily category query plans must be unique by cluster")
+        if self.context_complete and set(plan_clusters) != set(
+            self.material_event_cluster_ids
+        ):
+            raise ValueError("daily category query plans must cover material clusters")
+        selected_claim_ids = {
+            claim_id
+            for plan in self.category_query_plans
+            for claim_id in plan.selected_claim_ids
+        } | set(claim_ids)
+        if (
+            set(self.category_selected_claim_proofs) != selected_claim_ids
+            or self.category_selected_claims.item_count != len(selected_claim_ids)
+            or any(
+                claim_id != proof.claim_id
+                for claim_id, proof in self.category_selected_claim_proofs.items()
+            )
+        ):
+            raise ValueError("daily category selected claim proofs are incomplete")
+        record_roles = (
+            self.supporting_record_ids,
+            self.contradicting_record_ids,
+            self.unexplained_record_ids,
+        )
+        if any(len(values) != len(set(values)) for values in record_roles):
+            raise ValueError("daily memory record roles must be unique")
+        if sum(len(set(values)) for values in record_roles) != len(
+            set().union(*(set(values) for values in record_roles))
+        ):
+            raise ValueError("daily memory record roles must be disjoint")
+        if self.context_complete and (
+            len(self.population_manifests)
+            != len(self.representative_set_manifests)
+            or len(self.population_manifests) != len(self.adaptive_retrieval_traces)
+        ):
+            raise ValueError(
+                "complete daily memory requires aligned population, representative, and adaptive artifacts"
+            )
+        return self
 
 
 class NumericDistribution(StrictMemoryContextModel):

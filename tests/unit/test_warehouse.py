@@ -494,6 +494,7 @@ def test_warehouse_projects_mechanism_and_company_memory(tmp_path) -> None:
         prior_market_narratives=["benefits from component shortage"],
         prior_leader_occurrences=["EP-memory"],
         contradictory_relations=["customer concentration risk"],
+        available_from=known_at,
         known_at=known_at,
         provenance=[provenance],
     )

@@ -63,6 +63,10 @@ def test_company_memory_persists_new_candidates_from_every_path_type(tmp_path) -
     }
     assert all(memory["known_at"] == "2030-01-10T08:59:59+09:00" for memory in memories)
     assert all(
+        memory["available_from"] == "2030-01-10T08:59:59+09:00"
+        for memory in memories
+    )
+    assert all(
         memory["provenance"][0]["source_type"] == "blind_analysis_company_memory_candidate"
         for memory in memories
     )
@@ -143,6 +147,7 @@ def test_company_memory_delta_records_apply_as_temporal_memory(tmp_path) -> None
     assert memory["ticker"] == "DELTA"
     assert memory["company_name"] == "Delta Memory Co"
     assert memory["known_at"] == "2030-01-10T08:30:00+09:00"
+    assert memory["available_from"] == "2030-01-10T08:00:00+09:00"
     assert memory["business_descriptions"] == ["Verified pre-cutoff business line"]
     assert memory["supply_chain_roles"] == ["direct event supplier"]
     assert memory["contradictory_relations"] == ["customer relation was disputed"]

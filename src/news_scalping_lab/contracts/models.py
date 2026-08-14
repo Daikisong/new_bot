@@ -8,7 +8,7 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from news_scalping_lab.utils import canonical_json, now_kst, sha256_text
+from news_scalping_lab.utils import as_kst, canonical_json, now_kst, sha256_text
 
 
 class StrictModel(BaseModel):
@@ -363,8 +363,11 @@ class CandidateVerificationReview(StrictModel):
 
 
 class FinalSynthesisContextArtifact(StrictModel):
-    schema_version: Literal["nslab.final_synthesis_context.v2"] = (
-        "nslab.final_synthesis_context.v2"
+    schema_version: Literal[
+        "nslab.final_synthesis_context.v2",
+        "nslab.final_synthesis_context.v3",
+    ] = (
+        "nslab.final_synthesis_context.v3"
     )
     run_id: str
     prompt_version: str
@@ -542,8 +545,22 @@ class CompanyMemory(StrictModel):
     prior_market_narratives: list[str] = Field(default_factory=list)
     prior_leader_occurrences: list[str] = Field(default_factory=list)
     contradictory_relations: list[str] = Field(default_factory=list)
+    available_from: datetime
     known_at: datetime
     provenance: list[Provenance] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_available_from(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "available_from" not in value and "known_at" in value:
+            return {**value, "available_from": value["known_at"]}
+        return value
+
+    @model_validator(mode="after")
+    def validate_temporal_availability(self) -> Self:
+        if as_kst(self.known_at) < as_kst(self.available_from):
+            raise ValueError("company memory known_at must not precede available_from")
+        return self
 
 
 class ResearchEpisode(StrictModel):
@@ -592,6 +609,9 @@ class BrainManifest(StrictModel):
     covered_episode_count: int
     covered_episode_ids: list[str] = Field(default_factory=list)
     claim_ids: list[str] = Field(default_factory=list)
+    compiled_claim_ids: list[str] = Field(default_factory=list)
+    compiled_claim_count: int = 0
+    compiled_claims_sha256: str | None = None
     source_hashes: dict[str, str] = Field(default_factory=dict)
     brain_record_cutoff_at: datetime | None = None
     excluded_future_record_count: int = 0
@@ -602,6 +622,8 @@ class BrainManifest(StrictModel):
     production_memory_corpus_sha256: str | None = None
     production_memory_source_generation_sha256: str | None = None
     production_memory_as_of_cutoff: datetime | None = None
+    category_brain_index_manifest_artifact: str | None = None
+    category_brain_index_manifest_sha256: str | None = None
     coverage_complete: bool
 
 
@@ -760,6 +782,11 @@ class ContextManifest(StrictModel):
     final_synthesis_context_artifact: str | None = None
     final_synthesis_context_sha256: str | None = None
     final_synthesis_context_summary: dict[str, Any] = Field(default_factory=dict)
+    daily_memory_context_artifact: str | None = None
+    daily_memory_context_sha256: str | None = None
+    daily_memory_context_summary: dict[str, Any] = Field(default_factory=dict)
+    beneficiary_graph_artifact: str | None = None
+    beneficiary_graph_sha256: str | None = None
     excluded_candidate_web_check_artifact: str | None = None
     excluded_candidate_web_check_sha256: str | None = None
     excluded_candidate_web_source_ids: list[str] = Field(default_factory=list)
@@ -773,6 +800,20 @@ class ContextManifest(StrictModel):
     prompt_hashes: dict[str, str] = Field(default_factory=dict)
     prompt_batch_hashes: dict[str, list[str]] = Field(default_factory=dict)
     errors: list[str] = Field(default_factory=list)
+
+    def bind_beneficiary_graph(self, *, artifact_path: str, sha256: str) -> None:
+        if not artifact_path.strip() or not _looks_like_sha256(sha256):
+            raise ValueError("beneficiary graph artifact binding is invalid")
+        object.__setattr__(self, "beneficiary_graph_artifact", artifact_path)
+        object.__setattr__(self, "beneficiary_graph_sha256", sha256)
+
+    def bind_daily_memory_context(self, *, artifact_path: str, sha256: str) -> None:
+        if not artifact_path.strip() or not _looks_like_sha256(sha256):
+            raise ValueError("daily memory context artifact binding is invalid")
+        if not self.beneficiary_graph_artifact or not self.beneficiary_graph_sha256:
+            raise ValueError("daily memory context requires a beneficiary graph")
+        object.__setattr__(self, "daily_memory_context_artifact", artifact_path)
+        object.__setattr__(self, "daily_memory_context_sha256", sha256)
 
     @model_validator(mode="after")
     def validate_prompt_batches(self) -> Self:
@@ -790,6 +831,30 @@ class ContextManifest(StrictModel):
             )
             if self.prompt_hashes[purpose] != aggregate:
                 raise ValueError("prompt batch aggregate hash mismatch")
+        daily_configured = self.daily_memory_context_artifact is not None
+        daily_hash_configured = self.daily_memory_context_sha256 is not None
+        graph_configured = self.beneficiary_graph_artifact is not None
+        graph_hash_configured = self.beneficiary_graph_sha256 is not None
+        if daily_configured != daily_hash_configured:
+            raise ValueError("daily memory artifact and hash must be configured together")
+        if graph_configured != graph_hash_configured:
+            raise ValueError("beneficiary graph artifact and hash must be configured together")
+        if daily_configured and not graph_configured:
+            raise ValueError("daily memory context requires a beneficiary graph")
+        phase7_prompt = (
+            self.llm_model_config.get("final_synthesis_prompt_version")
+            == "synthesis.final.v3"
+        )
+        if phase7_prompt and not (daily_configured and graph_configured):
+            raise ValueError("final synthesis v3 requires daily memory and graph artifacts")
+        if daily_hash_configured and not _looks_like_sha256(
+            str(self.daily_memory_context_sha256)
+        ):
+            raise ValueError("daily memory context hash must be SHA-256")
+        if graph_hash_configured and not _looks_like_sha256(
+            str(self.beneficiary_graph_sha256)
+        ):
+            raise ValueError("beneficiary graph hash must be SHA-256")
         return self
 
 

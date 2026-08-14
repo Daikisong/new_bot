@@ -1,0 +1,112 @@
+{
+  "$defs": {
+    "ArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "item_count": {
+          "minimum": 0,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.memory_artifact_reference.v1",
+          "default": "nslab.memory_artifact_reference.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_path",
+        "sha256",
+        "item_count"
+      ],
+      "title": "ArtifactReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "brain_record_cutoff_at": {
+      "format": "date-time",
+      "title": "Brain Record Cutoff At",
+      "type": "string"
+    },
+    "brain_version": {
+      "title": "Brain Version",
+      "type": "string"
+    },
+    "claim_count": {
+      "minimum": 0,
+      "title": "Claim Count",
+      "type": "integer"
+    },
+    "claim_payload_merkle_root_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Claim Payload Merkle Root Sha256",
+      "type": "string"
+    },
+    "claims_artifact": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "database_artifact_path": {
+      "title": "Database Artifact Path",
+      "type": "string"
+    },
+    "database_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Database Sha256",
+      "type": "string"
+    },
+    "embedding_dimensions": {
+      "exclusiveMinimum": 0,
+      "title": "Embedding Dimensions",
+      "type": "integer"
+    },
+    "embedding_model": {
+      "title": "Embedding Model",
+      "type": "string"
+    },
+    "hnsw_index_ready": {
+      "title": "Hnsw Index Ready",
+      "type": "boolean"
+    },
+    "index_version": {
+      "title": "Index Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.category_brain_index_manifest.v1",
+      "default": "nslab.category_brain_index_manifest.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "vector_ledger": {
+      "$ref": "#/$defs/ArtifactReference"
+    }
+  },
+  "required": [
+    "brain_version",
+    "brain_record_cutoff_at",
+    "index_version",
+    "embedding_model",
+    "embedding_dimensions",
+    "claim_count",
+    "claim_payload_merkle_root_sha256",
+    "claims_artifact",
+    "vector_ledger",
+    "database_artifact_path",
+    "database_sha256",
+    "hnsw_index_ready"
+  ],
+  "title": "CategoryBrainIndexManifest",
+  "type": "object"
+}

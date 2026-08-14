@@ -2225,6 +2225,7 @@ def test_coverage_audit_requires_current_vector_index_and_synced_warehouse(
         CompanyMemory(
             ticker="999998",
             company_name="Unsynced Memory Co",
+            available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
             known_at=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
         ).model_dump(mode="json"),
     )
@@ -2459,11 +2460,13 @@ def test_coverage_audit_requires_file_backed_warehouse_identity_sets(tmp_path) -
     stale_company = CompanyMemory(
         ticker="999990",
         company_name="Stale Identity Co",
+        available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
         known_at=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
     )
     source_company = CompanyMemory(
         ticker="999991",
         company_name="Source Identity Co",
+        available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
         known_at=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
     )
     stale_mechanism = MechanismMemory(

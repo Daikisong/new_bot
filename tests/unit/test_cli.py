@@ -454,7 +454,14 @@ def test_research_import_bundle_cli_surfaces_record_loss_diagnostics(
 ) -> None:
     bundle = tmp_path / "bundle.md"
     bundle.write_text("bundle", encoding="utf-8")
-    settings = Settings(project_root=tmp_path)
+    settings = Settings(
+        project_root=tmp_path,
+        dotenv_values={
+            "NSLAB_PHASE7_TRANSPORT_HMAC_KEY": (
+                "phase7-cli-transport-key-32-bytes-minimum"
+            )
+        },
+    )
     report_path = tmp_path / "diagnostics" / "bundle_import_report.json"
 
     def fake_import_bundle(
@@ -464,12 +471,14 @@ def test_research_import_bundle_cli_surfaces_record_loss_diagnostics(
         validate: bool,
         accepted: bool,
         external_quality_gate_path: Path | None,
+        phase7_transport_key: str | None,
     ) -> BundleImportResult:
         assert path == bundle
         assert root == tmp_path
         assert validate is True
         assert accepted is False
         assert external_quality_gate_path is None
+        assert phase7_transport_key == "phase7-cli-transport-key-32-bytes-minimum"
         report_path.parent.mkdir(parents=True)
         write_json(
             report_path,
@@ -2223,3 +2232,44 @@ def test_warehouse_query_records_cli_rejects_conflicting_eligibility_flags() -> 
 
     assert result.exit_code == 1
     assert "cannot be combined" in result.output
+
+
+def test_legacy_provenance_cli_does_not_require_production_embedding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+    monkeypatch.setattr(
+        cli_module,
+        "_production_embedding_provider",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("legacy provenance must not initialize embeddings")
+        ),
+    )
+    seen: list[object] = []
+
+    def audit(root: Path, *, memory_index: object | None = None) -> dict[str, object]:
+        seen.append(memory_index)
+        return {"passed": True}
+
+    monkeypatch.setattr(cli_module, "audit_provenance", audit)
+
+    result = CliRunner().invoke(app, ["audit", "provenance"])
+
+    assert result.exit_code == 0, result.output
+    assert seen == [None]
+
+
+def test_phase7_audit_detection_is_manifest_bound(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "runs" / "manifests" / "RUN-PHASE7.json"
+    write_json(
+        manifest_path,
+        {
+            "model_config": {
+                "final_synthesis_prompt_version": "synthesis.final.v3"
+            }
+        },
+    )
+
+    assert cli_module._phase7_audit_required(tmp_path) is True

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections import Counter
 from collections.abc import Sequence
@@ -16,8 +17,12 @@ from news_scalping_lab.config import Settings
 from news_scalping_lab.context.assembler import ContextAssembler
 from news_scalping_lab.context.final_synthesis import (
     FINAL_SYNTHESIS_REQUIRED_INPUTS_V2,
+    FINAL_SYNTHESIS_REQUIRED_INPUTS_V3,
     FINAL_SYNTHESIS_V2_PROMPT_VERSION,
+    FINAL_SYNTHESIS_V3_PROMPT_VERSION,
     final_synthesis_input_summary,
+    phase7_beneficiary_graph_prompt_projection,
+    phase7_daily_prompt_projection,
     string_list,
 )
 from news_scalping_lab.context.memory_coverage import (
@@ -26,6 +31,9 @@ from news_scalping_lab.context.memory_coverage import (
 from news_scalping_lab.context.modes import normalize_analysis_mode
 from news_scalping_lab.context.sweep import MemorySweeper
 from news_scalping_lab.contracts.memory_context import (
+    AdaptiveRetrievalTrace,
+    BeneficiaryGraphArtifact,
+    DailyMemoryContext,
     EventClusterEntry,
     EventClusterManifest,
     NewsCoverageManifest,
@@ -84,7 +92,14 @@ from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.memory import MemoryStore
+from news_scalping_lab.memory.beneficiary import build_beneficiary_graph
 from news_scalping_lab.memory.company import CompanyMemoryStore
+from news_scalping_lab.memory.daily_context import build_daily_memory_context
+from news_scalping_lab.memory.index import (
+    ProductionMemoryIndex,
+    inspect_current_memory_index,
+)
+from news_scalping_lab.memory.runtime import production_embedding_method
 from news_scalping_lab.prices.base import (
     BlindPriceAccessError,
     BlindPriceGuard,
@@ -104,6 +119,7 @@ from news_scalping_lab.records.routing import (
 )
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.reporting.render import render_preopen_report
+from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
 from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
@@ -591,6 +607,12 @@ class DailyAnalyzer:
             cutoff_at=cutoff_at,
             manifest=manifest,
         )
+        self._build_beneficiary_graph_context(
+            prediction=prediction,
+            manifest=manifest,
+            company_memory_context=company_memory_context,
+        )
+        await self._maybe_build_daily_memory_context(manifest=manifest)
         prediction, final_synthesis_prompt_hash, final_synthesis_prompt_tokens = await self._run_final_synthesis(
             prediction=prediction,
             manifest=manifest,
@@ -3302,8 +3324,26 @@ class DailyAnalyzer:
             synthesized = prediction
         if not synthesized.candidates:
             synthesized = prediction
-        prediction_retrieved_record_ids = self._prediction_retrieved_record_ids(manifest)
-        positive_record_ids, negative_record_ids = self._prediction_record_polarities(prediction_retrieved_record_ids)
+        phase7_memory = self._phase7_final_memory_context(manifest)
+        if phase7_memory is not None:
+            self._require_phase7_final_candidate_identity(
+                source_prediction=prediction,
+                synthesized_prediction=synthesized,
+                manifest=manifest,
+            )
+            positive_record_ids = phase7_memory.supporting_record_ids
+            negative_record_ids = phase7_memory.contradicting_record_ids
+            positive_episode_ids: list[str] = []
+            negative_episode_ids: list[str] = []
+        else:
+            prediction_retrieved_record_ids = self._prediction_retrieved_record_ids(
+                manifest
+            )
+            positive_record_ids, negative_record_ids = (
+                self._prediction_record_polarities(prediction_retrieved_record_ids)
+            )
+            positive_episode_ids = manifest.retrieved_episode_ids[:3]
+            negative_episode_ids = manifest.counterexample_episode_ids[:3]
         normalized = self._normalize_prediction(
             synthesized,
             trade_date=prediction.trade_date,
@@ -3312,11 +3352,13 @@ class DailyAnalyzer:
             excluded_source_ids=excluded_source_ids,
             prompt=prompt,
             purpose="final_synthesis",
-            default_positive_case_ids=manifest.retrieved_episode_ids[:3],
-            default_negative_case_ids=manifest.counterexample_episode_ids[:3],
+            default_positive_case_ids=positive_episode_ids,
+            default_negative_case_ids=negative_episode_ids,
             default_positive_record_ids=positive_record_ids[:5],
             default_negative_record_ids=negative_record_ids[:5],
         )
+        if phase7_memory is not None:
+            self._require_phase7_final_memory_ids(normalized, phase7_memory)
         normalized = normalized.model_copy(update={"context_manifest_id": manifest.run_id})
         if not normalized.blind_analysis.open_world_mechanisms:
             normalized = normalized.model_copy(
@@ -3327,6 +3369,128 @@ class DailyAnalyzer:
                 }
             )
         return normalized, prompt_sha256, prompt_tokens
+
+    def _phase7_final_memory_context(
+        self,
+        manifest: ContextManifest,
+    ) -> DailyMemoryContext | None:
+        artifact = manifest.daily_memory_context_artifact
+        if not artifact:
+            return None
+        path = (self.root / artifact).resolve()
+        try:
+            path.relative_to(self.root.resolve())
+        except ValueError as exc:
+            raise ValueError("Phase 7 daily memory path escapes the project root") from exc
+        if (
+            not path.is_file()
+            or not manifest.daily_memory_context_sha256
+            or file_sha256(path) != manifest.daily_memory_context_sha256
+        ):
+            raise ValueError("Phase 7 daily memory artifact is missing or stale")
+        context = DailyMemoryContext.model_validate(read_json(path))
+        if context.run_id != manifest.run_id or context.cutoff_at != manifest.cutoff_at:
+            raise ValueError("Phase 7 daily memory identity mismatch")
+        return context
+
+    def _require_phase7_final_candidate_identity(
+        self,
+        *,
+        source_prediction: BlindPrediction,
+        synthesized_prediction: BlindPrediction,
+        manifest: ContextManifest,
+    ) -> None:
+        source_keys = [_final_candidate_identity(item) for item in source_prediction.candidates]
+        synthesized_keys = [
+            _final_candidate_identity(item) for item in synthesized_prediction.candidates
+        ]
+        if (
+            len(source_keys) != len(set(source_keys))
+            or synthesized_keys != source_keys
+        ):
+            raise ValueError(
+                "Phase 7 final synthesis changed the verified candidate identity set"
+            )
+        verification_path = manifest.candidate_verification_artifact
+        graph_path = manifest.beneficiary_graph_artifact
+        if not verification_path or not graph_path:
+            raise ValueError("Phase 7 final candidates require verification and graph artifacts")
+        verification_resolved = (self.root / verification_path).resolve()
+        graph_resolved = (self.root / graph_path).resolve()
+        try:
+            verification_resolved.relative_to(self.root.resolve())
+            graph_resolved.relative_to(self.root.resolve())
+        except ValueError as exc:
+            raise ValueError("Phase 7 final candidate artifact escapes the project root") from exc
+        if (
+            not manifest.candidate_verification_sha256
+            or file_sha256(verification_resolved)
+            != manifest.candidate_verification_sha256
+            or not manifest.beneficiary_graph_sha256
+            or file_sha256(graph_resolved) != manifest.beneficiary_graph_sha256
+        ):
+            raise ValueError("Phase 7 final candidate artifact is missing or stale")
+        verification = CandidateVerificationReview.model_validate(
+            read_json(verification_resolved)
+        )
+        graph = BeneficiaryGraphArtifact.model_validate(read_json(graph_resolved))
+        if (
+            verification.run_id != manifest.run_id
+            or verification.cutoff_at != manifest.cutoff_at
+            or graph.run_id != manifest.run_id
+            or graph.cutoff_at != manifest.cutoff_at
+        ):
+            raise ValueError("Phase 7 final candidate artifact identity mismatch")
+        verification_keys = {
+            (
+                item.candidate_rank,
+                item.candidate_ticker.strip().upper(),
+                item.candidate_company_name.strip(),
+                item.candidate_path_type.strip().upper(),
+            )
+            for item in verification.findings
+            if item.subject_type == "final_candidate"
+        }
+        graph_keys = {
+            (
+                item.candidate_rank,
+                item.ticker.strip().upper(),
+                item.company_name.strip(),
+                item.candidate_path_type.strip().upper(),
+            )
+            for item in graph.paths
+        }
+        if not set(source_keys).issubset(verification_keys & graph_keys):
+            raise ValueError(
+                "Phase 7 final candidate is not closed by verification and graph evidence"
+            )
+
+    @staticmethod
+    def _require_phase7_final_memory_ids(
+        prediction: BlindPrediction,
+        context: DailyMemoryContext,
+    ) -> None:
+        supporting = set(context.supporting_record_ids)
+        contradicting = set(context.contradicting_record_ids)
+        selected = supporting | contradicting | set(context.unexplained_record_ids)
+        for candidate in prediction.candidates:
+            if (
+                not set(candidate.prior_positive_record_ids).issubset(supporting)
+                or not set(candidate.prior_negative_record_ids).issubset(contradicting)
+                or not set(candidate.memory_record_ids).issubset(selected)
+                or candidate.memory_episode_ids
+                or candidate.prior_positive_cases
+                or candidate.prior_negative_cases
+            ):
+                raise ValueError("Phase 7 final candidate memory provenance is not selected")
+        for sector in prediction.dominant_sectors:
+            if (
+                not set(sector.supporting_record_ids).issubset(supporting)
+                or not set(sector.contradicting_record_ids).issubset(contradicting)
+                or sector.supporting_cases
+                or sector.contradicting_cases
+            ):
+                raise ValueError("Phase 7 final sector memory provenance is not selected")
 
     def _build_final_synthesis_payload(
         self,
@@ -3400,6 +3564,33 @@ class DailyAnalyzer:
             "company_memory": company_memory_context,
             "market_memory": market_memory_context,
         }
+        if manifest.daily_memory_context_artifact:
+            payload["prompt_version"] = FINAL_SYNTHESIS_V3_PROMPT_VERSION
+            payload["required_inputs"] = list(FINAL_SYNTHESIS_REQUIRED_INPUTS_V3)
+            for key in (
+                "global_brain",
+                "all_shard_brains",
+                "retrieved_raw_episodes",
+                "retrieved_records",
+                "positive_cases",
+                "negative_cases",
+                "positive_record_ids",
+                "negative_record_ids",
+                "counterexamples",
+                "counterexample_records",
+            ):
+                payload.pop(key, None)
+            semantic_context = payload.get("additional_semantic_retrieval")
+            if isinstance(semantic_context, dict):
+                semantic_context.pop("episodes", None)
+                semantic_context.pop("records", None)
+            cluster_coverage = payload.get("semantic_cluster_coverage")
+            if isinstance(cluster_coverage, dict):
+                cluster_coverage.pop("promoted_records", None)
+            payload["daily_memory_context"] = self._daily_memory_context_payload(
+                manifest
+            )
+            payload["beneficiary_graph"] = self._beneficiary_graph_payload(manifest)
         return payload
 
     def _memory_coverage_context(
@@ -3427,6 +3618,202 @@ class DailyAnalyzer:
             context["coverage_complete"] = payload.get("coverage_complete") is True
         return context
 
+    def _build_beneficiary_graph_context(
+        self,
+        *,
+        prediction: BlindPrediction,
+        manifest: ContextManifest,
+        company_memory_context: list[dict[str, Any]],
+    ) -> None:
+        if not manifest.event_cluster_manifest_artifact:
+            raise ValueError("beneficiary graph requires the event cluster manifest")
+        artifact, path = build_beneficiary_graph(
+            self.root,
+            run_id=manifest.run_id,
+            cutoff_at=manifest.cutoff_at,
+            event_cluster_manifest_path=(
+                self.root / manifest.event_cluster_manifest_artifact
+            ),
+            candidates=prediction.candidates,
+            company_memory_context=company_memory_context,
+        )
+        manifest.bind_beneficiary_graph(
+            artifact_path=relative_to_root(path, self.root),
+            sha256=sha256_text(path.read_text(encoding="utf-8")),
+        )
+        manifest.daily_memory_context_summary["beneficiary_graph_path_count"] = (
+            artifact.path_count
+        )
+        manifest.daily_memory_context_summary[
+            "beneficiary_graph_unresolved_candidate_count"
+        ] = len(artifact.unresolved_candidate_ids)
+
+    async def _maybe_build_daily_memory_context(
+        self,
+        *,
+        manifest: ContextManifest,
+    ) -> None:
+        readiness = inspect_current_memory_index(self.root)
+        if readiness.get("production_ready") is not True:
+            manifest.daily_memory_context_summary.update(
+                {
+                    "status": "SKIPPED_PRODUCTION_MEMORY_NOT_READY",
+                    "production_ready": False,
+                }
+            )
+            return
+        required_paths = {
+            "news_coverage_manifest": manifest.news_coverage_manifest_artifact,
+            "event_cluster_manifest": manifest.event_cluster_manifest_artifact,
+            "event_clusters": manifest.event_cluster_artifact,
+            "memory_coverage_manifest": manifest.memory_coverage_manifest_artifact,
+            "beneficiary_graph": manifest.beneficiary_graph_artifact,
+        }
+        missing = sorted(key for key, value in required_paths.items() if not value)
+        if missing:
+            raise ValueError(
+                "daily memory context is missing required artifacts: "
+                + ", ".join(missing)
+            )
+        snapshot_payload = readiness.get("manifest")
+        if not isinstance(snapshot_payload, dict):
+            raise ValueError("production memory readiness omitted its manifest")
+        embedding_method = snapshot_payload.get("embedding_model")
+        if not isinstance(embedding_method, str) or not embedding_method.strip():
+            raise ValueError("production memory snapshot embedding model is missing")
+        active_embedding_method = production_embedding_method(self.settings, self.llm)
+        if embedding_method != active_embedding_method:
+            raise ValueError(
+                "active embedding provider differs from the production memory snapshot"
+            )
+        provider = AsyncEmbeddingProviderAdapter(
+            self.llm,
+            embedding_method=active_embedding_method,
+            production_capability_attested=True,
+        )
+        memory_index = ProductionMemoryIndex(
+            self.root,
+            embedding_provider=provider,
+            production=True,
+        )
+        context, path = await asyncio.to_thread(
+            build_daily_memory_context,
+            self.root,
+            memory_index=memory_index,
+            run_id=manifest.run_id,
+            trade_date=manifest.trade_date,
+            cutoff_at=manifest.cutoff_at,
+            corpus_manifest_sha256=str(manifest.memory_coverage_corpus_sha256),
+            news_coverage_manifest_path=(
+                self.root / str(required_paths["news_coverage_manifest"])
+            ),
+            event_cluster_manifest_path=(
+                self.root / str(required_paths["event_cluster_manifest"])
+            ),
+            event_cluster_artifact_path=(
+                self.root / str(required_paths["event_clusters"])
+            ),
+            memory_coverage_manifest_path=(
+                self.root / str(required_paths["memory_coverage_manifest"])
+            ),
+            beneficiary_graph_path=(
+                self.root / str(required_paths["beneficiary_graph"])
+            ),
+        )
+        manifest.bind_daily_memory_context(
+            artifact_path=relative_to_root(path, self.root),
+            sha256=sha256_text(path.read_text(encoding="utf-8")),
+        )
+        manifest.daily_memory_context_summary.update(
+            {
+                "status": "COMPLETE",
+                "production_ready": True,
+                "memory_snapshot_id": context.memory_snapshot_id,
+                "material_event_cluster_count": len(
+                    context.material_event_cluster_ids
+                ),
+                "uncovered_material_event_cluster_count": len(
+                    context.uncovered_material_event_cluster_ids
+                ),
+                "population_count": len(context.population_manifests),
+                "representative_set_count": len(
+                    context.representative_set_manifests
+                ),
+                "category_guidance_count": len(context.category_guidance),
+                "category_query_plan_count": len(context.category_query_plans),
+                "typed_trigger_evidence_count": sum(
+                    len(
+                        AdaptiveRetrievalTrace.model_validate(
+                            read_json(self.root / reference.artifact_path)
+                        ).trigger_evidence
+                    )
+                    for reference in context.adaptive_retrieval_traces
+                ),
+                "estimated_token_count": context.estimated_token_count,
+                "context_complete": context.context_complete,
+            }
+        )
+        manifest.llm_model_config["final_synthesis_prompt_version"] = (
+            FINAL_SYNTHESIS_V3_PROMPT_VERSION
+        )
+        if isinstance(self.llm, TracingLLMProvider):
+            self.llm.model_config["final_synthesis_prompt_version"] = (
+                FINAL_SYNTHESIS_V3_PROMPT_VERSION
+            )
+            self.llm.purpose_metadata["final_synthesis"] = {
+                "prompt_version": FINAL_SYNTHESIS_V3_PROMPT_VERSION
+            }
+
+    def _daily_memory_context_payload(
+        self,
+        manifest: ContextManifest,
+    ) -> dict[str, Any]:
+        artifact_ref = manifest.daily_memory_context_artifact
+        if not artifact_ref or not manifest.daily_memory_context_sha256:
+            raise ValueError("final synthesis v3 requires daily memory context")
+        path = self.root / artifact_ref
+        payload = read_json(path)
+        if not isinstance(payload, dict):
+            raise ValueError("daily memory context artifact is invalid")
+        compact_ref = payload.get("compact_final_context")
+        if not isinstance(compact_ref, dict):
+            raise ValueError("daily memory compact context reference is missing")
+        compact_path_value = compact_ref.get("artifact_path")
+        compact_hash = compact_ref.get("sha256")
+        if not isinstance(compact_path_value, str) or not isinstance(compact_hash, str):
+            raise ValueError("daily memory compact context reference is invalid")
+        compact_path = self.root / compact_path_value
+        if file_sha256(compact_path) != compact_hash:
+            raise ValueError("daily memory compact context hash mismatch")
+        compact = read_json(compact_path)
+        if not isinstance(compact, dict):
+            raise ValueError("daily memory compact context is invalid")
+        return {
+            **phase7_daily_prompt_projection(
+                daily=payload,
+                compact=compact,
+                artifact_path=artifact_ref,
+                sha256=manifest.daily_memory_context_sha256,
+            )
+        }
+
+    def _beneficiary_graph_payload(
+        self,
+        manifest: ContextManifest,
+    ) -> dict[str, Any]:
+        artifact_ref = manifest.beneficiary_graph_artifact
+        if not artifact_ref or not manifest.beneficiary_graph_sha256:
+            raise ValueError("final synthesis v3 requires beneficiary graph")
+        path = self.root / artifact_ref
+        payload = read_json(path)
+        if not isinstance(payload, dict):
+            raise ValueError("beneficiary graph artifact is invalid")
+        return phase7_beneficiary_graph_prompt_projection(
+            graph=payload,
+            artifact_path=artifact_ref,
+            sha256=manifest.beneficiary_graph_sha256,
+        )
+
     def _build_final_synthesis_prompt(self, payload: dict[str, Any]) -> str:
         return (
             f"{self._load_synthesis_prompt().strip()}\n"
@@ -3435,6 +3822,9 @@ class DailyAnalyzer:
             "timestamp-verified web_research.sources, candidate_web_checks, "
             "candidate_verification, cutoff-safe company_memory, and "
             "cutoff-safe market_memory. Do not use "
+            "category_brain_guidance as evidence; it is query guidance only. "
+            "Every memory-dependent claim must cite the compact population or "
+            "representative record provenance. Do not use "
             "D-day prices, outcomes, unverified web results, or cutoff-after "
             "sources during BLIND.\n"
             "---FINAL_SYNTHESIS_PAYLOAD---\n"
@@ -3449,8 +3839,13 @@ class DailyAnalyzer:
     ) -> None:
         summary = final_synthesis_input_summary(payload)
         artifact = FinalSynthesisContextArtifact(
+            schema_version=(
+                "nslab.final_synthesis_context.v3"
+                if payload.get("prompt_version") == FINAL_SYNTHESIS_V3_PROMPT_VERSION
+                else "nslab.final_synthesis_context.v2"
+            ),
             run_id=manifest.run_id,
-            prompt_version=FINAL_SYNTHESIS_PROMPT_VERSION,
+            prompt_version=str(payload.get("prompt_version")),
             required_inputs=string_list(payload.get("required_inputs")),
             payload_sha256=sha256_text(canonical_json(payload)),
             input_summary=summary,
@@ -3603,11 +3998,20 @@ class DailyAnalyzer:
                     }
                 )
                 continue
+            if not is_available_as_of(memory.available_from, cutoff_at):
+                omitted.append(
+                    {
+                        "path": relative_path,
+                        "reason": "company_memory_available_after_cutoff",
+                        "available_from": memory.available_from.isoformat(),
+                    }
+                )
+                continue
             included.append(relative_path)
             contexts.append(
                 {
                     "path": relative_path,
-                    "sha256": sha256_text(canonical_json(memory.model_dump(mode="json"))),
+                    "sha256": file_sha256(path),
                     "memory": memory.model_dump(mode="json"),
                 }
             )
@@ -4900,6 +5304,15 @@ def _candidate_web_check_subject_key(
         subject.company_name,
         subject.path_type,
         subject.expansion_path,
+    )
+
+
+def _final_candidate_identity(candidate: Candidate) -> tuple[int, str, str, str]:
+    return (
+        candidate.rank,
+        candidate.ticker.strip().upper(),
+        candidate.company_name.strip(),
+        str(candidate.path_type).strip().upper(),
     )
 
 

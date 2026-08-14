@@ -335,6 +335,30 @@
           "title": "Available Record Ids",
           "type": "array"
         },
+        "beneficiary_graph_artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Beneficiary Graph Artifact"
+        },
+        "beneficiary_graph_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Beneficiary Graph Sha256"
+        },
         "blind_artifact_sha256": {
           "anyOf": [
             {
@@ -623,6 +647,35 @@
           "format": "date-time",
           "title": "Cutoff At",
           "type": "string"
+        },
+        "daily_memory_context_artifact": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Daily Memory Context Artifact"
+        },
+        "daily_memory_context_sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Daily Memory Context Sha256"
+        },
+        "daily_memory_context_summary": {
+          "additionalProperties": true,
+          "title": "Daily Memory Context Summary",
+          "type": "object"
         },
         "duplicate_swept_record_ids": {
           "items": {
