@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import shutil
+import sqlite3
+import tempfile
 from collections import Counter
 from collections.abc import Iterator
 from contextlib import suppress
@@ -104,6 +108,8 @@ class BrainRecordStore:
         raw_blocks: dict[str, str],
         validation_report: dict[str, Any],
         accepted: bool = True,
+        existing_record_index: dict[str, dict[str, str]] | None = None,
+        rebuild_indexes: bool = True,
     ) -> StoredBundleResult:
         source_hash = file_sha256(source_path)
         episode_dir = self.research_episodes_dir / envelope.episode_id
@@ -137,7 +143,11 @@ class BrainRecordStore:
                 ),
             )
 
-        existing_ids = _record_id_index(self.list_records(accepted_only=False))
+        existing_ids = (
+            existing_record_index
+            if existing_record_index is not None
+            else _record_id_index(self.list_records(accepted_only=False))
+        )
         for record in records:
             existing = existing_ids.get(record.record_id)
             if existing is None:
@@ -233,7 +243,10 @@ class BrainRecordStore:
         envelope_path = episode_dir / "bundle_envelope.json"
         write_json(envelope_path, envelope.model_dump(mode="json"))
         write_json(episode_dir / "validation_report.json", validation_report)
-        self.rebuild_indexes()
+        if existing_record_index is not None:
+            existing_record_index.update(_record_id_index(records))
+        if rebuild_indexes:
+            self.rebuild_indexes()
         return StoredBundleResult(
             envelope_path=envelope_path,
             index_path=index_path,
@@ -242,6 +255,11 @@ class BrainRecordStore:
             record_count=len(records),
             training_eligible_record_count=eligible_count,
         )
+
+    def record_identity_index(self) -> dict[str, dict[str, str]]:
+        """Return the record identity projection used by conflict detection."""
+
+        return _record_id_index(self.list_records(accepted_only=False))
 
     def quarantine_conflict(
         self,
@@ -413,6 +431,41 @@ class BrainRecordStore:
         write_json(self.record_index_dir / "by_record_id.json", by_record_id)
         write_json(self.record_index_dir / "manifest.json", manifest)
         return manifest
+
+    def rebuild_indexes_streaming_fresh(self) -> dict[str, Any]:
+        """Build the initial record index with bounded memory.
+
+        Production batch import writes into a fresh release root. Its first index
+        must not materialize hundreds of thousands of record envelopes at once.
+        """
+
+        manifest_path = self.record_index_dir / "manifest.json"
+        by_record_path = self.record_index_dir / "by_record_id.json"
+        if manifest_path.exists() or by_record_path.exists():
+            raise ValueError("streaming fresh index requires an unindexed record store")
+        manifest = _streaming_record_index_projection(self, write_index=True)
+        write_json(manifest_path, manifest)
+        return manifest
+
+    def inspect_streaming_index_projection(self) -> dict[str, Any]:
+        """Recompute the accepted record index projection without writing files."""
+
+        return _streaming_record_index_projection(self, write_index=False)
+
+    def inspect_streaming_index_artifacts(
+        self,
+    ) -> tuple[dict[str, Any], str]:
+        """Recompute the manifest and exact identity-index artifact hash."""
+
+        identity_hashes: list[str] = []
+        manifest = _streaming_record_index_projection(
+            self,
+            write_index=False,
+            identity_hashes=identity_hashes,
+        )
+        if len(identity_hashes) != 1:
+            raise ValueError("streaming identity-index projection is incomplete")
+        return manifest, identity_hashes[0]
 
     def stats(self, *, as_of: datetime | None = None) -> dict[str, Any]:
         records = self.list_records()
@@ -1722,6 +1775,245 @@ def _record_id_index(records: list[BrainRecordEnvelope]) -> dict[str, dict[str, 
         }
         for record in records
     }
+
+
+def _streaming_record_index_projection(
+    store: BrainRecordStore,
+    *,
+    write_index: bool,
+    identity_hashes: list[str] | None = None,
+) -> dict[str, Any]:
+    store.record_index_dir.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".record-index-",
+        suffix=".sqlite3",
+        dir=store.record_index_dir,
+    )
+    # Close the descriptor before SQLite opens the file on Windows.
+    os.close(descriptor)
+    database_path = Path(temporary_name)
+    connection = sqlite3.connect(database_path)
+    counts_by_type: Counter[str] = Counter()
+    counts_by_phase: Counter[str] = Counter()
+    counts_by_target: Counter[str] = Counter()
+    episode_ids: set[str] = set()
+    record_count = 0
+    eligible_count = 0
+    max_available_from: datetime | None = None
+    try:
+        connection.execute(
+            """
+            CREATE TABLE record_projection (
+                record_id TEXT PRIMARY KEY,
+                episode_id TEXT NOT NULL,
+                record_type TEXT NOT NULL,
+                trade_date TEXT NOT NULL,
+                available_from TEXT NOT NULL,
+                training_eligible TEXT NOT NULL,
+                normalized_payload_sha256 TEXT NOT NULL,
+                canonical_full_envelope_sha256 TEXT NOT NULL
+            )
+            """
+        )
+        pending: list[tuple[str, ...]] = []
+        for path in sorted(store.records_dir.glob("*.jsonl")):
+            if not store.episode_records_accepted(path.stem):
+                continue
+            with path.open("r", encoding="utf-8") as handle:
+                for line_number, line in enumerate(handle, start=1):
+                    if not line.strip():
+                        continue
+                    try:
+                        record = BrainRecordEnvelope.model_validate_json(line)
+                    except ValueError as exc:
+                        raise ValueError(
+                            f"invalid record envelope: {path}:{line_number}"
+                        ) from exc
+                    full_hash = brain_record_envelope_sha256(record)
+                    pending.append(
+                        (
+                            record.record_id,
+                            record.episode_id,
+                            record.record_type,
+                            record.trade_date.isoformat(),
+                            record.available_from.isoformat(),
+                            str(record.training_eligible).lower(),
+                            record.normalized_payload_sha256,
+                            full_hash,
+                        )
+                    )
+                    if len(pending) >= 2_000:
+                        _insert_streaming_record_rows(connection, pending)
+                        pending.clear()
+                    counts_by_type[record.record_type] += 1
+                    counts_by_phase[record.evidence_phase] += 1
+                    counts_by_target[record.training_target or "UNKNOWN"] += 1
+                    episode_ids.add(record.episode_id)
+                    record_count += 1
+                    eligible_count += int(record.training_eligible)
+                    if (
+                        max_available_from is None
+                        or record.available_from > max_available_from
+                    ):
+                        max_available_from = record.available_from
+        if pending:
+            _insert_streaming_record_rows(connection, pending)
+        connection.commit()
+        full_envelope_root, identity_index_sha256 = _stream_record_projection_outputs(
+            connection,
+            destination=(
+                store.record_index_dir / "by_record_id.json"
+                if write_index
+                else None
+            ),
+        )
+        if identity_hashes is not None:
+            identity_hashes.append(identity_index_sha256)
+        normalized_payload_root = _stream_normalized_payload_root(connection)
+        structural_evidence_root = _structural_evidence_root_sha256(
+            store.research_episodes_dir
+        )
+        generation_root = sha256_text(
+            canonical_json(
+                {
+                    "full_envelope_root_sha256": full_envelope_root,
+                    "structural_evidence_root_sha256": structural_evidence_root,
+                }
+            )
+        )
+        return {
+            "schema_version": "nslab.record_index_manifest.v2",
+            "record_count": record_count,
+            "episode_count": len(episode_ids),
+            "training_eligible_record_count": eligible_count,
+            "record_counts_by_type": dict(sorted(counts_by_type.items())),
+            "record_counts_by_evidence_phase": dict(sorted(counts_by_phase.items())),
+            "record_counts_by_training_target": dict(
+                sorted(counts_by_target.items())
+            ),
+            "records_sha256": normalized_payload_root,
+            "record_hash_kind": "canonical_full_envelope_sha256",
+            "full_envelope_root_sha256": full_envelope_root,
+            "structural_evidence_root_sha256": structural_evidence_root,
+            "generation_root_sha256": generation_root,
+            "generation_history": {},
+            "max_available_from": (
+                max_available_from.isoformat()
+                if max_available_from is not None
+                else None
+            ),
+        }
+    finally:
+        connection.close()
+        database_path.unlink(missing_ok=True)
+
+
+def _insert_streaming_record_rows(
+    connection: sqlite3.Connection,
+    rows: list[tuple[str, ...]],
+) -> None:
+    try:
+        connection.executemany(
+            """
+            INSERT INTO record_projection VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+    except sqlite3.IntegrityError as exc:
+        raise ValueError("duplicate record ID in streaming record index") from exc
+
+
+def _stream_record_projection_outputs(
+    connection: sqlite3.Connection,
+    *,
+    destination: Path | None,
+) -> tuple[str, str]:
+    cursor = connection.execute(
+        """
+        SELECT
+            record_id,
+            episode_id,
+            record_type,
+            trade_date,
+            available_from,
+            training_eligible,
+            normalized_payload_sha256,
+            canonical_full_envelope_sha256
+        FROM record_projection
+        ORDER BY record_id COLLATE BINARY
+        """
+    )
+    full_hash = hashlib.sha256()
+    full_hash.update(b"{")
+    identity_hash = hashlib.sha256()
+    identity_hash.update(b"{")
+    output = None
+    temporary_path: Path | None = None
+    if destination is not None:
+        temporary_path = destination.with_name(destination.name + ".tmp")
+        output = temporary_path.open("w", encoding="utf-8", newline="\n")
+        output.write("{")
+    first = True
+    try:
+        while rows := cursor.fetchmany(2_000):
+            for row in rows:
+                record_id = str(row[0])
+                envelope_hash = str(row[7])
+                separator = b"" if first else b","
+                full_hash.update(separator)
+                full_hash.update(canonical_json(record_id).encode("utf-8"))
+                full_hash.update(b":")
+                full_hash.update(canonical_json(envelope_hash).encode("ascii"))
+                identity_payload = canonical_json(
+                    {
+                        "available_from": str(row[4]),
+                        "canonical_full_envelope_sha256": envelope_hash,
+                        "episode_id": str(row[1]),
+                        "normalized_payload_sha256": str(row[6]),
+                        "record_type": str(row[2]),
+                        "trade_date": str(row[3]),
+                        "training_eligible": str(row[5]),
+                    }
+                )
+                identity_hash.update(separator)
+                identity_hash.update(canonical_json(record_id).encode("utf-8"))
+                identity_hash.update(b":")
+                identity_hash.update(identity_payload.encode("utf-8"))
+                if output is not None:
+                    output.write("" if first else ",")
+                    output.write(canonical_json(record_id))
+                    output.write(":")
+                    output.write(identity_payload)
+                first = False
+        full_hash.update(b"}")
+        identity_hash.update(b"}\n")
+        if output is not None:
+            output.write("}\n")
+    finally:
+        if output is not None:
+            output.close()
+    if destination is not None and temporary_path is not None:
+        temporary_path.replace(destination)
+    return full_hash.hexdigest(), identity_hash.hexdigest()
+
+
+def _stream_normalized_payload_root(connection: sqlite3.Connection) -> str:
+    cursor = connection.execute(
+        """
+        SELECT normalized_payload_sha256
+        FROM record_projection
+        ORDER BY trade_date COLLATE BINARY, record_id COLLATE BINARY
+        """
+    )
+    digest = hashlib.sha256()
+    first = True
+    while rows := cursor.fetchmany(2_000):
+        for row in rows:
+            if not first:
+                digest.update(b"\n")
+            digest.update(str(row[0]).encode("ascii"))
+            first = False
+    return digest.hexdigest()
 
 
 def _record_generation_history(

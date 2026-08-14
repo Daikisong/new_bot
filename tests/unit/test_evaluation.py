@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from pathlib import Path
 
 import pytest
 
@@ -144,6 +145,29 @@ class RecordingPostmortemLLM:
 
     async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
         return [[0.0] for _ in texts]
+
+
+def test_evaluator_uses_supplied_settings_without_reloading(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+
+    def unexpected_reload(*args: object, **kwargs: object) -> Settings:
+        raise AssertionError("supplied runtime settings must not be reloaded")
+
+    monkeypatch.setattr(
+        "news_scalping_lab.evaluation.evaluator.load_settings",
+        unexpected_reload,
+    )
+    evaluator = Evaluator(
+        tmp_path,
+        price_source=MockPriceSource(),
+        settings=settings,
+    )
+
+    assert evaluator.settings is settings
+    assert evaluator.root == tmp_path.resolve()
 
 
 def test_evaluate_writes_postmortem_research_episode_available_next_day(tmp_path) -> None:

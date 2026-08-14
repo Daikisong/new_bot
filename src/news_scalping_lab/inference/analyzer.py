@@ -93,7 +93,10 @@ from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.memory import MemoryStore
 from news_scalping_lab.memory.beneficiary import build_beneficiary_graph
-from news_scalping_lab.memory.company import CompanyMemoryStore
+from news_scalping_lab.memory.company import (
+    CompanyMemoryStore,
+    production_company_memory_attestation_required,
+)
 from news_scalping_lab.memory.daily_context import build_daily_memory_context
 from news_scalping_lab.memory.index import (
     ProductionMemoryIndex,
@@ -669,10 +672,16 @@ class DailyAnalyzer:
             manifest=manifest,
         )
         write_json(prediction_path, prediction.model_dump(mode="json"))
+        company_memory_attestation_key = (
+            self.settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
+            if production_company_memory_attestation_required(self.root)
+            else None
+        )
         CompanyMemoryStore(self.root).upsert_from_candidates(
             prediction.candidates,
-            prediction_path=prediction_path,
+            prediction_path=run_prediction_path,
             known_at=prediction.cutoff_at,
+            attestation_key=company_memory_attestation_key,
         )
         write_json(manifest_path, manifest.model_dump(mode="json"))
         warehouse = WarehouseStore(self.root)
@@ -3981,6 +3990,15 @@ class DailyAnalyzer:
         contexts: list[dict[str, Any]] = []
         included: list[str] = []
         omitted: list[dict[str, str]] = []
+        company_store = CompanyMemoryStore(self.root, create=False)
+        attestation_required = production_company_memory_attestation_required(
+            self.root
+        )
+        attestation_key = (
+            self.settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
+            if attestation_required and hasattr(self, "settings")
+            else None
+        )
         for path in sorted(directory.glob("*.json")):
             relative_path = relative_to_root(path, self.root)
             try:
@@ -3989,6 +4007,32 @@ class DailyAnalyzer:
                 omitted.append({"path": relative_path, "reason": "invalid_company_memory_schema"})
                 manifest.errors.append(f"company memory omitted due to invalid schema: {relative_path}")
                 continue
+            source_types = {
+                provenance.source_type for provenance in memory.provenance
+            }
+            if attestation_required and source_types != {
+                "company_memory_delta_record"
+            }:
+                attestation_error: str | None
+                if attestation_key is None:
+                    attestation_error = (
+                        "production_company_memory_attestation_key_missing"
+                    )
+                else:
+                    attestation_error = company_store.candidate_attestation_error(
+                        path,
+                        memory=memory,
+                        key_value=attestation_key,
+                    )
+                if attestation_error is not None:
+                    omitted.append(
+                        {
+                            "path": relative_path,
+                            "reason": "untrusted_company_memory_attestation",
+                        }
+                    )
+                    manifest.errors.append(attestation_error)
+                    continue
             if not is_available_as_of(memory.known_at, cutoff_at):
                 omitted.append(
                     {
@@ -4012,7 +4056,10 @@ class DailyAnalyzer:
                 {
                     "path": relative_path,
                     "sha256": file_sha256(path),
-                    "memory": memory.model_dump(mode="json"),
+                    "memory": memory.model_dump(
+                        mode="json",
+                        exclude={"production_attestation"},
+                    ),
                 }
             )
         manifest.included_company_memory_files = included

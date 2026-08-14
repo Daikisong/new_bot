@@ -557,6 +557,7 @@ class CompanyMemory(StrictModel):
     available_from: datetime
     known_at: datetime
     provenance: list[Provenance] = Field(default_factory=list)
+    production_attestation: dict[str, Any] | None = None
 
     @model_validator(mode="before")
     @classmethod

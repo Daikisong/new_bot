@@ -1,0 +1,56 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "import_id": {
+      "pattern": "^P9IMPORT-[0-9A-F]{20}$",
+      "title": "Import Id",
+      "type": "string"
+    },
+    "inventory_id": {
+      "pattern": "^P9INV-[0-9A-F]{20}$",
+      "title": "Inventory Id",
+      "type": "string"
+    },
+    "release_id": {
+      "pattern": "^P9REL-[0-9A-F]{20}$",
+      "title": "Release Id",
+      "type": "string"
+    },
+    "release_identity_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Release Identity Sha256",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.production_release_transaction.v1",
+      "default": "nslab.production_release_transaction.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shadow_evaluation_relative_path": {
+      "title": "Shadow Evaluation Relative Path",
+      "type": "string"
+    },
+    "source_import_receipt_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Import Receipt Sha256",
+      "type": "string"
+    }
+  },
+  "required": [
+    "release_id",
+    "import_id",
+    "inventory_id",
+    "created_at",
+    "shadow_evaluation_relative_path",
+    "source_import_receipt_sha256",
+    "release_identity_sha256"
+  ],
+  "title": "ProductionReleaseTransaction",
+  "type": "object"
+}

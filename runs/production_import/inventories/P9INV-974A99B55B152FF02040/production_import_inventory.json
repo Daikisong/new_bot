@@ -1,0 +1,39 @@
+{
+  "attestation": null,
+  "created_at": "2026-08-14T18:56:36.416872+09:00",
+  "declared_ready_bundle_count": 1127,
+  "deep_hash_verified": true,
+  "finding_count": 0,
+  "findings": [],
+  "inventory_id": "P9INV-974A99B55B152FF02040",
+  "manifest_entry_count": 1397,
+  "quality_gate_root_sha256": "7ae298ccf621d180f4073ec18f0e873616d3c7916c0d91f907e03de129fe11e2",
+  "ready_bundle_count": 1127,
+  "ready_entries": {
+    "artifact_path": "runs/production_import/inventories/P9INV-974A99B55B152FF02040/ready_entries.jsonl",
+    "item_count": 1127,
+    "schema_version": "nslab.memory_artifact_reference.v1",
+    "sha256": "95aee84402dbc3ff5c06161043d388b42b46ae796b595702a420dcdd9dbac139"
+  },
+  "ready_for_import": true,
+  "ready_record_count": 606737,
+  "ready_semantic_excluded_record_count": 11486,
+  "ready_training_eligible_record_count": 384846,
+  "repaired_root_sha256": "760cf649b91316ea6e8068652c6d14c63f200a64faae86e6ab6d0c8eed8aa78f",
+  "schema_version": "nslab.production_import_inventory_manifest.v1",
+  "source_manifest": {
+    "artifact_path": "research/inbox/bundles/repaired/sequential_repair_manifest.v2.jsonl",
+    "item_count": 1397,
+    "schema_version": "nslab.memory_artifact_reference.v1",
+    "sha256": "3ee9ec0f393fe5f76864142b1e25bfcf320be0564d07f66eb036b39798e34f42"
+  },
+  "source_root_sha256": "21f15f7fe573ba89ae7cd3b9a35fd3997ecf6b75df32ea605cae8f7b7246d185",
+  "status_counts": {
+    "DEFERRED_NON_TRADING": 96,
+    "PARTIAL_PRICE_SOURCE_MISSING": 1,
+    "PRESERVED_PARTIAL_NOT_CURRENT_GOLD": 165,
+    "PRESERVED_SOURCE_PAYLOAD_ABSENT": 8,
+    "REPAIRED_PASS": 1127
+  },
+  "verifier_version": "production_import_inventory.v1"
+}

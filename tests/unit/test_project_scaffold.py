@@ -51,6 +51,15 @@ EXPECTED_SCHEMA_FILES = {
     "postmortem.schema.json",
     "population_cube_row.schema.json",
     "population_manifest.schema.json",
+    "production_batch_import_receipt.schema.json",
+    "production_company_memory_attestation.schema.json",
+    "production_record_artifact_manifest.schema.json",
+    "production_release_artifact_manifest.schema.json",
+    "production_current_pointer.schema.json",
+    "production_import_inventory_manifest.schema.json",
+    "production_release_manifest.schema.json",
+    "production_release_configuration.schema.json",
+    "production_release_transaction.schema.json",
     "red_team_artifact.schema.json",
     "record_routing_metadata.schema.json",
     "representative_record.schema.json",
@@ -233,6 +242,7 @@ def test_env_example_keeps_mock_defaults_and_no_secret_values() -> None:
         "NSLAB_SHADOW_EVALUATION_HMAC_KEY",
         "NSLAB_SHADOW_RUNNER_HMAC_KEY",
         "NSLAB_SHADOW_TRUTH_HMAC_KEY",
+        "NSLAB_PRODUCTION_PROMOTION_HMAC_KEY",
     }
 
     assert set(env_values) == required_keys

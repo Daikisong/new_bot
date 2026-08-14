@@ -1,0 +1,36 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "file_count": {
+      "exclusiveMinimum": 0,
+      "title": "File Count",
+      "type": "integer"
+    },
+    "file_hashes": {
+      "additionalProperties": {
+        "pattern": "^[0-9a-f]{64}$",
+        "type": "string"
+      },
+      "title": "File Hashes",
+      "type": "object"
+    },
+    "root_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Root Sha256",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.production_release_configuration.v1",
+      "default": "nslab.production_release_configuration.v1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "file_count",
+    "file_hashes",
+    "root_sha256"
+  ],
+  "title": "ProductionReleaseConfigurationManifest",
+  "type": "object"
+}

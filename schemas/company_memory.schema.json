@@ -127,6 +127,19 @@
       "title": "Prior Market Narratives",
       "type": "array"
     },
+    "production_attestation": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Production Attestation"
+    },
     "provenance": {
       "items": {
         "$ref": "#/$defs/Provenance"

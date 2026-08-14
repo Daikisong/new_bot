@@ -1,0 +1,132 @@
+{
+  "$defs": {
+    "ArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "item_count": {
+          "minimum": 0,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.memory_artifact_reference.v1",
+          "default": "nslab.memory_artifact_reference.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_path",
+        "sha256",
+        "item_count"
+      ],
+      "title": "ArtifactReference",
+      "type": "object"
+    },
+    "ProductionActivationAttestation": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "HMAC-SHA256",
+          "default": "HMAC-SHA256",
+          "title": "Algorithm",
+          "type": "string"
+        },
+        "commitment_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Commitment Sha256",
+          "type": "string"
+        },
+        "issued_at": {
+          "format": "date-time",
+          "title": "Issued At",
+          "type": "string"
+        },
+        "key_id": {
+          "pattern": "^[0-9a-f]{16}$",
+          "title": "Key Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "nslab.production_activation_attestation.v1",
+          "default": "nslab.production_activation_attestation.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "signature": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Signature",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issued_at",
+        "key_id",
+        "commitment_sha256",
+        "signature"
+      ],
+      "title": "ProductionActivationAttestation",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "activated_at": {
+      "format": "date-time",
+      "title": "Activated At",
+      "type": "string"
+    },
+    "attestation": {
+      "$ref": "#/$defs/ProductionActivationAttestation"
+    },
+    "previous_release_id": {
+      "anyOf": [
+        {
+          "pattern": "^P9REL-[0-9A-F]{20}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Release Id"
+    },
+    "release_id": {
+      "pattern": "^P9REL-[0-9A-F]{20}$",
+      "title": "Release Id",
+      "type": "string"
+    },
+    "release_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "release_project_path": {
+      "title": "Release Project Path",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.production_current_pointer.v1",
+      "default": "nslab.production_current_pointer.v1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "release_id",
+    "activated_at",
+    "release_project_path",
+    "release_manifest",
+    "attestation"
+  ],
+  "title": "ProductionCurrentPointer",
+  "type": "object"
+}

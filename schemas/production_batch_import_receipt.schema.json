@@ -1,0 +1,170 @@
+{
+  "$defs": {
+    "ArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "item_count": {
+          "minimum": 0,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.memory_artifact_reference.v1",
+          "default": "nslab.memory_artifact_reference.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_path",
+        "sha256",
+        "item_count"
+      ],
+      "title": "ArtifactReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "bundle_results": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "completed_at": {
+      "format": "date-time",
+      "title": "Completed At",
+      "type": "string"
+    },
+    "finding_count": {
+      "minimum": 0,
+      "title": "Finding Count",
+      "type": "integer"
+    },
+    "findings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "import_id": {
+      "pattern": "^P9IMPORT-[0-9A-F]{20}$",
+      "title": "Import Id",
+      "type": "string"
+    },
+    "import_loss_count": {
+      "minimum": 0,
+      "title": "Import Loss Count",
+      "type": "integer"
+    },
+    "imported_bundle_count": {
+      "minimum": 0,
+      "title": "Imported Bundle Count",
+      "type": "integer"
+    },
+    "imported_record_count": {
+      "minimum": 0,
+      "title": "Imported Record Count",
+      "type": "integer"
+    },
+    "imported_training_eligible_record_count": {
+      "minimum": 0,
+      "title": "Imported Training Eligible Record Count",
+      "type": "integer"
+    },
+    "importer_version": {
+      "const": "production_batch_import.v1",
+      "default": "production_batch_import.v1",
+      "title": "Importer Version",
+      "type": "string"
+    },
+    "inventory_id": {
+      "pattern": "^P9INV-[0-9A-F]{20}$",
+      "title": "Inventory Id",
+      "type": "string"
+    },
+    "inventory_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "passed": {
+      "title": "Passed",
+      "type": "boolean"
+    },
+    "quarantined_bundle_count": {
+      "minimum": 0,
+      "title": "Quarantined Bundle Count",
+      "type": "integer"
+    },
+    "record_artifact_root_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Record Artifact Root Sha256",
+      "type": "string"
+    },
+    "record_artifacts": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "record_corpus_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Record Corpus Sha256",
+      "type": "string"
+    },
+    "record_identity_index": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "record_index_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "record_store_generation_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Record Store Generation Sha256",
+      "type": "string"
+    },
+    "release_project_path": {
+      "title": "Release Project Path",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.production_batch_import_receipt.v1",
+      "default": "nslab.production_batch_import_receipt.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "import_id",
+    "started_at",
+    "completed_at",
+    "inventory_id",
+    "inventory_manifest",
+    "release_project_path",
+    "bundle_results",
+    "record_index_manifest",
+    "record_identity_index",
+    "record_artifacts",
+    "record_artifact_root_sha256",
+    "imported_bundle_count",
+    "imported_record_count",
+    "imported_training_eligible_record_count",
+    "quarantined_bundle_count",
+    "import_loss_count",
+    "record_store_generation_sha256",
+    "record_corpus_sha256",
+    "passed",
+    "finding_count"
+  ],
+  "title": "ProductionBatchImportReceipt",
+  "type": "object"
+}

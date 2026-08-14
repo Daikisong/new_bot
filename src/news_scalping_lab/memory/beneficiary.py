@@ -368,7 +368,11 @@ def _company_memory_context_projection(
         if (
             not memory_path.is_file()
             or file_sha256(memory_path) != digest
-            or parsed_memory.model_dump(mode="json") != supplied_memory
+            or parsed_memory.model_dump(
+                mode="json",
+                exclude={"production_attestation"},
+            )
+            != supplied_memory
             or as_kst(parsed_memory.known_at) > as_kst(cutoff_at)
             or as_kst(parsed_memory.available_from) > as_kst(cutoff_at)
         ):

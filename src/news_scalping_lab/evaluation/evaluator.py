@@ -68,12 +68,15 @@ class Evaluator:
         root: Path,
         price_source: PriceSource | None = None,
         llm: LLMProvider | None = None,
+        *,
+        settings: Settings | None = None,
     ) -> None:
-        self.root = root
-        settings = load_settings(root)
-        self.settings = (
-            settings if settings.project_root == root.resolve() else Settings(project_root=root)
-        )
+        requested_root = root.resolve()
+        resolved_settings = settings or load_settings(requested_root)
+        if settings is not None and resolved_settings.project_root != requested_root:
+            raise ValueError("evaluator settings project root does not match root")
+        self.settings = resolved_settings
+        self.root = resolved_settings.project_root
         self.price_source = price_source or create_price_source(
             self.settings
         )

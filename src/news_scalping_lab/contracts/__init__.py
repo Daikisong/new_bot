@@ -43,6 +43,17 @@ from news_scalping_lab.contracts.models import (
     RedTeamFinding,
     ResearchEpisode,
 )
+from news_scalping_lab.contracts.production import (
+    ProductionBatchImportReceipt,
+    ProductionCompanyMemoryAttestation,
+    ProductionCurrentPointer,
+    ProductionImportInventoryManifest,
+    ProductionRecordArtifactManifest,
+    ProductionReleaseArtifactManifest,
+    ProductionReleaseConfigurationManifest,
+    ProductionReleaseManifest,
+    ProductionReleaseTransaction,
+)
 from news_scalping_lab.contracts.shadow_evaluation import (
     ShadowArmAttestation,
     ShadowEvaluationManifest,
@@ -86,6 +97,15 @@ __all__ = [
     "PopulationObservedRate",
     "PopulationPurpose",
     "Provenance",
+    "ProductionBatchImportReceipt",
+    "ProductionCompanyMemoryAttestation",
+    "ProductionCurrentPointer",
+    "ProductionImportInventoryManifest",
+    "ProductionReleaseManifest",
+    "ProductionReleaseConfigurationManifest",
+    "ProductionReleaseTransaction",
+    "ProductionRecordArtifactManifest",
+    "ProductionReleaseArtifactManifest",
     "RedTeamArtifact",
     "RedTeamFinding",
     "RecordRoutingMetadata",

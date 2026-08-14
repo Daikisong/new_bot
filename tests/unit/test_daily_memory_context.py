@@ -831,7 +831,10 @@ def test_analyzer_company_memory_context_binds_file_and_temporal_fields(
         {
             "path": memory_path.relative_to(tmp_path).as_posix(),
             "sha256": file_sha256(memory_path),
-            "memory": memory.model_dump(mode="json"),
+            "memory": memory.model_dump(
+                mode="json",
+                exclude={"production_attestation"},
+            ),
         }
     ]
     assert context[0]["memory"]["available_from"] == "2030-01-10T07:30:00+09:00"

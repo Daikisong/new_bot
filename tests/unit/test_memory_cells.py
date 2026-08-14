@@ -19,6 +19,7 @@ from news_scalping_lab.memory.cells import (
 )
 from news_scalping_lab.memory.index import (
     ProductionMemoryIndex,
+    inspect_current_memory_index,
     inspect_memory_snapshot,
 )
 from news_scalping_lab.records.models import BrainRecordEnvelope
@@ -174,6 +175,52 @@ def test_unsupported_reasoning_record_blocks_production_readiness(
     assert manifest.production_ready is False
     inspection = inspect_memory_snapshot(tmp_path, manifest.snapshot_id)
     assert inspection["passed"] is True, inspection["errors"]
+
+
+def test_current_memory_pointer_rejects_relocated_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cutoff = datetime(2030, 1, 10, tzinfo=KST)
+    record = _record(
+        "REC-CANONICAL-POINTER",
+        available_from=cutoff,
+        ticker="000001",
+        response_class="POSITIVE",
+        high_return_pct=12.0,
+    )
+    monkeypatch.setattr(BrainRecordStore, "list_records", lambda self: [record])
+    BrainRecordStore(tmp_path).rebuild_indexes()
+    index = ProductionMemoryIndex(
+        tmp_path,
+        embedding_provider=_RealLikeEmbeddingProvider(),
+        production=True,
+    )
+    manifest = index.build(as_of=cutoff)
+    canonical_manifest = (
+        tmp_path
+        / "memory"
+        / "retrieval_index"
+        / "snapshots"
+        / manifest.snapshot_id
+        / "manifest.json"
+    )
+    relocated_manifest = (
+        tmp_path / "memory" / "retrieval_index" / "relocated" / "manifest.json"
+    )
+    relocated_manifest.parent.mkdir(parents=True)
+    relocated_manifest.write_bytes(canonical_manifest.read_bytes())
+    pointer_path = tmp_path / "memory" / "retrieval_index" / "current.json"
+    pointer = read_json(pointer_path)
+    pointer["manifest_path"] = relocated_manifest.relative_to(tmp_path).as_posix()
+    pointer["manifest_sha256"] = file_sha256(relocated_manifest)
+    write_json(pointer_path, pointer)
+
+    inspection = inspect_current_memory_index(tmp_path)
+
+    assert inspection["passed"] is False
+    assert inspection["status"] == "invalid"
+    assert inspection["pointer_path_verified"] is False
 
 
 def test_fact_id_is_not_promoted_to_an_independent_event_unit() -> None:

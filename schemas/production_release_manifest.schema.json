@@ -1,0 +1,198 @@
+{
+  "$defs": {
+    "ArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "item_count": {
+          "minimum": 0,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.memory_artifact_reference.v1",
+          "default": "nslab.memory_artifact_reference.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_path",
+        "sha256",
+        "item_count"
+      ],
+      "title": "ArtifactReference",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "audit_results": {
+      "additionalProperties": {
+        "type": "boolean"
+      },
+      "title": "Audit Results",
+      "type": "object"
+    },
+    "brain_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "brain_version": {
+      "title": "Brain Version",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "doctor_report": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "embedding_model": {
+      "title": "Embedding Model",
+      "type": "string"
+    },
+    "finding_count": {
+      "minimum": 0,
+      "title": "Finding Count",
+      "type": "integer"
+    },
+    "findings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "import_receipt": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "inventory_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "llm_model": {
+      "title": "Llm Model",
+      "type": "string"
+    },
+    "llm_provider": {
+      "title": "Llm Provider",
+      "type": "string"
+    },
+    "memory_snapshot_id": {
+      "title": "Memory Snapshot Id",
+      "type": "string"
+    },
+    "memory_snapshot_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "policy_version": {
+      "const": "production_release_policy.v1",
+      "default": "production_release_policy.v1",
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "price_provider": {
+      "title": "Price Provider",
+      "type": "string"
+    },
+    "production_ready": {
+      "title": "Production Ready",
+      "type": "boolean"
+    },
+    "record_artifact_root_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Record Artifact Root Sha256",
+      "type": "string"
+    },
+    "release_artifact_projection_version": {
+      "const": "production_release_artifacts.v1",
+      "default": "production_release_artifacts.v1",
+      "title": "Release Artifact Projection Version",
+      "type": "string"
+    },
+    "release_artifact_root_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Release Artifact Root Sha256",
+      "type": "string"
+    },
+    "release_artifacts": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "release_configuration": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "release_configuration_root_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Release Configuration Root Sha256",
+      "type": "string"
+    },
+    "release_id": {
+      "pattern": "^P9REL-[0-9A-F]{20}$",
+      "title": "Release Id",
+      "type": "string"
+    },
+    "release_project_path": {
+      "title": "Release Project Path",
+      "type": "string"
+    },
+    "release_transaction": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "schema_version": {
+      "const": "nslab.production_release_manifest.v1",
+      "default": "nslab.production_release_manifest.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "shadow_evaluation_id": {
+      "title": "Shadow Evaluation Id",
+      "type": "string"
+    },
+    "shadow_evaluation_manifest": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "web_provider": {
+      "title": "Web Provider",
+      "type": "string"
+    }
+  },
+  "required": [
+    "release_id",
+    "created_at",
+    "release_project_path",
+    "release_transaction",
+    "release_configuration",
+    "release_configuration_root_sha256",
+    "release_artifacts",
+    "release_artifact_root_sha256",
+    "record_artifact_root_sha256",
+    "inventory_manifest",
+    "import_receipt",
+    "brain_manifest",
+    "memory_snapshot_manifest",
+    "shadow_evaluation_manifest",
+    "doctor_report",
+    "brain_version",
+    "memory_snapshot_id",
+    "shadow_evaluation_id",
+    "llm_provider",
+    "llm_model",
+    "embedding_model",
+    "web_provider",
+    "price_provider",
+    "audit_results",
+    "finding_count",
+    "production_ready"
+  ],
+  "title": "ProductionReleaseManifest",
+  "type": "object"
+}

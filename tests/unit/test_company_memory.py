@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from pathlib import Path
 
+import pytest
+
 from news_scalping_lab.contracts.models import Candidate, PathType
 from news_scalping_lab.memory.company import CompanyMemoryStore
 from news_scalping_lab.records.models import (
@@ -19,6 +21,8 @@ from news_scalping_lab.utils import (
     sha256_text,
     write_json,
 )
+
+_PRODUCTION_KEY = "production-company-memory-attestation-key-32-bytes"
 
 
 def _candidate(rank: int, company_name: str, path_type: PathType) -> Candidate:
@@ -117,6 +121,92 @@ def test_company_memory_candidate_updates_do_not_backfill_future_relations(tmp_p
     ]
 
 
+def test_production_company_memory_requires_valid_candidate_attestation(
+    tmp_path: Path,
+) -> None:
+    release_root = (
+        tmp_path
+        / "production"
+        / "releases"
+        / ("P9REL-" + "A" * 20)
+    )
+    project_root = release_root / "project"
+    write_json(release_root / "production_release_manifest.json", {"release": True})
+    prediction_path = (
+        project_root
+        / "runs"
+        / "checkpoints"
+        / "output_artifacts"
+        / "RUN-attested-memory"
+        / "blind_prediction.json"
+    )
+    write_json(prediction_path, {"prediction_id": "PRED-attested-memory"})
+    store = CompanyMemoryStore(project_root)
+    written = store.upsert_from_candidates(
+        [_candidate(1, "AttestedCo", PathType.SINGLE_EVENT)],
+        prediction_path=prediction_path,
+        known_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        attestation_key=_PRODUCTION_KEY,
+    )
+
+    assert store.production_integrity_errors(
+        attestation_key=_PRODUCTION_KEY
+    ) == []
+    daily_alias_path = project_root / "predictions" / "2030-01-10.json"
+    write_json(daily_alias_path, {"prediction_id": "PRED-first-attempt"})
+    write_json(daily_alias_path, {"prediction_id": "PRED-retry"})
+    assert store.production_integrity_errors(
+        attestation_key=_PRODUCTION_KEY
+    ) == []
+
+    memory_path = written[0]
+    second_release_root = (
+        tmp_path
+        / "production"
+        / "releases"
+        / ("P9REL-" + "B" * 20)
+    )
+    second_project_root = second_release_root / "project"
+    write_json(
+        second_release_root / "production_release_manifest.json",
+        {"release": True},
+    )
+    replayed_prediction_path = (
+        second_project_root / prediction_path.relative_to(project_root)
+    )
+    replayed_prediction_path.parent.mkdir(parents=True)
+    replayed_prediction_path.write_bytes(prediction_path.read_bytes())
+    replayed_memory_path = second_project_root / memory_path.relative_to(project_root)
+    replayed_memory_path.parent.mkdir(parents=True)
+    replayed_memory_path.write_bytes(memory_path.read_bytes())
+    replay_errors = CompanyMemoryStore(
+        second_project_root,
+        create=False,
+    ).production_integrity_errors(attestation_key=_PRODUCTION_KEY)
+    assert any("release_mismatch" in error for error in replay_errors)
+
+    original_memory = memory_path.read_bytes()
+    memory_path.write_bytes(original_memory + b"tampered")
+    assert any(
+        "production_company_memory_invalid" in error
+        or "memory_hash_mismatch" in error
+        for error in store.production_integrity_errors(
+            attestation_key=_PRODUCTION_KEY
+        )
+    )
+    memory_path.write_bytes(original_memory)
+
+    memory_payload = read_json(memory_path)
+    memory_payload["production_attestation"]["signature"] = "f" * 64
+    write_json(memory_path, memory_payload)
+    assert any(
+        "signature_invalid" in error
+        for error in store.production_integrity_errors(
+            attestation_key=_PRODUCTION_KEY
+        )
+    )
+
+
 def test_company_memory_delta_records_apply_as_temporal_memory(tmp_path) -> None:
     cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
     available = _company_delta_record(
@@ -156,6 +246,45 @@ def test_company_memory_delta_records_apply_as_temporal_memory(tmp_path) -> None
     assert memory["provenance"][0]["content_sha256"] == file_sha256(
         tmp_path / "memory" / "records" / "EP-company-deltas.jsonl"
     )
+
+
+def test_active_release_record_delta_application_is_exact_noop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release_root = (
+        tmp_path
+        / "production"
+        / "releases"
+        / "P9REL-0123456789ABCDEF0123"
+    )
+    project_root = release_root / "project"
+    cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    record = _company_delta_record(
+        "BRAIN-COMPANY-SEALED",
+        available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+        known_at="2030-01-10T08:30:00+09:00",
+        ticker="SEALED",
+        company_name="Sealed Memory Co",
+    )
+    project_root.mkdir(parents=True)
+    _store_company_delta_records(project_root, [record])
+    store = CompanyMemoryStore(project_root)
+    first = store.apply_record_deltas(as_of=cutoff)
+    original_bytes = first.written_paths[0].read_bytes()
+    write_json(release_root / "production_release_manifest.json", {})
+
+    def unexpected_write(*args: object, **kwargs: object) -> None:
+        raise AssertionError("sealed record-derived memory must not be rewritten")
+
+    monkeypatch.setattr(
+        "news_scalping_lab.memory.company._write_json_atomic",
+        unexpected_write,
+    )
+    repeated = store.apply_record_deltas(as_of=cutoff)
+
+    assert repeated.written_count == 1
+    assert repeated.written_paths[0].read_bytes() == original_bytes
 
 
 def test_company_memory_respects_known_at(tmp_path) -> None:

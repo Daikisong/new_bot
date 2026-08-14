@@ -103,6 +103,16 @@ class BundleImportResult:
 
 
 @dataclass(frozen=True)
+class VersionedBundleProjection:
+    adapter_name: str
+    envelope: ResearchBundleEnvelope
+    index: NormalizedEpisodeIndex
+    records: tuple[BrainRecordEnvelope, ...]
+    raw_blocks: dict[str, str]
+    validation: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class BlockHashValidation:
     mismatches: dict[str, dict[str, Any]]
     self_referential: dict[str, dict[str, str]]
@@ -718,6 +728,31 @@ def inspect_versioned_bundle(path: Path) -> dict[str, Any]:
     }
 
 
+def project_versioned_bundle(path: Path) -> VersionedBundleProjection:
+    """Recompute the accepted bundle projection without writing artifacts."""
+
+    parsed = parse_generic_bundle(path)
+    adapter = select_adapter(parsed)
+    if adapter is None:
+        raise VersionedBundleImportError(
+            "production projection requires a supported bundle version"
+        )
+    validation = adapter.validate(parsed)
+    if validation.get("passed") is not True:
+        raise VersionedBundleImportError(
+            "production projection requires a valid accepted bundle"
+        )
+    records = tuple(adapter.normalize_brain_records(parsed))
+    return VersionedBundleProjection(
+        adapter_name=adapter.name,
+        envelope=adapter.envelope(parsed),
+        index=adapter.normalize_episode_index(parsed),
+        records=records,
+        raw_blocks=dict(parsed.payload_blocks),
+        validation=validation,
+    )
+
+
 def _load_external_quality_gate(
     path: Path | None,
     *,
@@ -788,7 +823,11 @@ def import_versioned_bundle(
     external_quality_gate_path: Path | None = None,
     allow_external_quality_pending_for_isolated_validation: bool = False,
     phase7_transport_key: str | None = None,
+    record_store: BrainRecordStore | None = None,
+    existing_record_index: dict[str, dict[str, str]] | None = None,
+    rebuild_record_indexes: bool = True,
 ) -> BundleImportResult:
+    resolved_root = root.resolve()
     parsed = parse_generic_bundle(path)
     if _phase7_transport_required(parsed):
         from news_scalping_lab.research_import.bundle import parse_bundle
@@ -799,6 +838,9 @@ def import_versioned_bundle(
             raise VersionedBundleImportError(
                 f"Phase 7 bundle transport verification failed: {exc}"
             ) from exc
+    target_store = record_store or BrainRecordStore(resolved_root)
+    if target_store.root.resolve() != resolved_root:
+        raise ValueError("record store root does not match bundle import root")
     adapter = select_adapter(parsed)
     source_hash = file_sha256(path)
     external_quality_gate_required = _optional_bool(_field(parsed, "external_quality_gate_required")) is True
@@ -823,7 +865,7 @@ def import_versioned_bundle(
             records = raw_only_adapter.normalize_brain_records(parsed)
             import_loss_summary = _import_loss_summary(parsed, records)
             try:
-                raw_only_stored = BrainRecordStore(root).store_bundle(
+                raw_only_stored = target_store.store_bundle(
                     source_path=path,
                     envelope=raw_only_adapter.envelope(parsed),
                     index=raw_only_adapter.normalize_episode_index(parsed),
@@ -831,6 +873,8 @@ def import_versioned_bundle(
                     raw_blocks=parsed.payload_blocks,
                     validation_report=validation,
                     accepted=False,
+                    existing_record_index=existing_record_index,
+                    rebuild_indexes=rebuild_record_indexes,
                 )
             except BrainRecordStoreConflictError as exc:
                 _write_store_conflict_report(
@@ -945,7 +989,7 @@ def import_versioned_bundle(
         )
     import_loss_summary = _import_loss_summary(parsed, records)
     try:
-        stored: StoredBundleResult = BrainRecordStore(root).store_bundle(
+        stored: StoredBundleResult = target_store.store_bundle(
             source_path=path,
             envelope=adapter.envelope(parsed),
             index=adapter.normalize_episode_index(parsed),
@@ -953,6 +997,8 @@ def import_versioned_bundle(
             raw_blocks=parsed.payload_blocks,
             validation_report=validation,
             accepted=accepted,
+            existing_record_index=existing_record_index,
+            rebuild_indexes=rebuild_record_indexes,
         )
     except BrainRecordStoreConflictError as exc:
         _write_store_conflict_report(

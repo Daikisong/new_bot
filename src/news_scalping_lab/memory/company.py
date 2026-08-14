@@ -2,20 +2,28 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import os
+import tempfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from news_scalping_lab.contracts.models import Candidate, CompanyMemory, Provenance
+from news_scalping_lab.contracts.production import ProductionCompanyMemoryAttestation
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.records.store import BrainRecordStore
 from news_scalping_lab.utils import (
     as_kst,
+    canonical_json,
     file_sha256,
     is_available_as_of,
+    now_kst,
     parse_datetime,
     read_json,
+    sha256_text,
     stable_id,
     write_json,
 )
@@ -25,6 +33,30 @@ GENERIC_COMPANY_NAMES = {
     "D_MINUS_ONE_LEADER_REVIEW",
     "UNVERIFIED_ENTITY",
 }
+
+
+def production_company_memory_attestation_required(root: Path) -> bool:
+    return _production_release_id(root) is not None
+
+
+def _production_release_id(root: Path) -> str | None:
+    project_root = root.resolve()
+    release_dir = project_root.parent
+    if not (
+        project_root.name == "project"
+        and release_dir.name.startswith("P9REL-")
+        and release_dir.parent.name == "releases"
+        and (release_dir / "production_release_manifest.json").is_file()
+    ):
+        return None
+    return release_dir.name
+
+
+def _validate_attestation_key(key_value: str | None) -> None:
+    if key_value is None or len(key_value.encode("utf-8")) < 32:
+        raise ValueError(
+            "production company memory attestation key must be at least 32 bytes"
+        )
 
 
 @dataclass(frozen=True)
@@ -37,10 +69,11 @@ class CompanyMemoryDeltaApplyResult:
 
 
 class CompanyMemoryStore:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, create: bool = True) -> None:
         self.root = root
         self.dir = root / "memory" / "company_memory"
-        self.dir.mkdir(parents=True, exist_ok=True)
+        if create:
+            self.dir.mkdir(parents=True, exist_ok=True)
 
     def upsert_from_candidates(
         self,
@@ -48,7 +81,10 @@ class CompanyMemoryStore:
         *,
         prediction_path: Path,
         known_at: datetime,
+        attestation_key: str | None = None,
     ) -> list[Path]:
+        if production_company_memory_attestation_required(self.root):
+            _validate_attestation_key(attestation_key)
         written: list[Path] = []
         prediction_uri = _relative_uri(prediction_path, self.root)
         prediction_hash = file_sha256(prediction_path)
@@ -68,9 +104,200 @@ class CompanyMemoryStore:
             )
             existing = self._read_existing(path)
             merged = _merge_company_memory(existing, memory) if existing else memory
-            write_json(path, merged.model_dump(mode="json"))
+            merged = merged.model_copy(update={"production_attestation": None})
+            if attestation_key is None:
+                write_json(path, merged.model_dump(mode="json"))
+            else:
+                attested = self._attested_candidate_memory(
+                    merged,
+                    path=path,
+                    prediction_path=prediction_path,
+                    prediction_hash=prediction_hash,
+                    known_at=known_at,
+                    key_value=attestation_key,
+                )
+                _write_json_atomic(path, attested.model_dump(mode="json"))
             written.append(path)
         return written
+
+    def production_integrity_errors(
+        self,
+        *,
+        attestation_key: str | None,
+    ) -> list[str]:
+        try:
+            _validate_attestation_key(attestation_key)
+        except ValueError as exc:
+            return [f"production_company_memory_attestation_key_invalid:{exc}"]
+        assert attestation_key is not None
+        errors: list[str] = []
+        for path in sorted(self.dir.glob("*.json")):
+            try:
+                memory = CompanyMemory.model_validate(read_json(path))
+            except (OSError, ValueError):
+                errors.append(
+                    f"production_company_memory_invalid:{path.name}"
+                )
+                continue
+            source_types = {
+                provenance.source_type for provenance in memory.provenance
+            }
+            if source_types == {"company_memory_delta_record"}:
+                if memory.production_attestation is not None:
+                    errors.append(
+                        "production_company_memory_record_attestation_unexpected:"
+                        f"{path.name}"
+                    )
+                continue
+            error = self.candidate_attestation_error(
+                path,
+                memory=memory,
+                key_value=attestation_key,
+            )
+            if error is not None:
+                errors.append(error)
+        return sorted(set(errors))
+
+    def candidate_attestation_error(
+        self,
+        path: Path,
+        *,
+        memory: CompanyMemory,
+        key_value: str,
+    ) -> str | None:
+        try:
+            attestation = ProductionCompanyMemoryAttestation.model_validate(
+                memory.production_attestation
+            )
+        except ValueError:
+            return f"production_company_memory_attestation_invalid:{path.name}"
+        try:
+            memory_relative = path.resolve().relative_to(
+                self.root.resolve()
+            ).as_posix()
+            prediction_path = (
+                self.root.resolve() / attestation.prediction_artifact_path
+            ).resolve()
+        except ValueError:
+            return f"production_company_memory_attestation_path_invalid:{path.name}"
+        if not _canonical_production_prediction_path(
+            self.root,
+            prediction_path,
+        ):
+            return f"production_company_memory_attestation_path_invalid:{path.name}"
+        if attestation.memory_artifact_path != memory_relative:
+            return f"production_company_memory_attestation_memory_path_mismatch:{path.name}"
+        if attestation.release_id != _production_release_id(self.root):
+            return f"production_company_memory_attestation_release_mismatch:{path.name}"
+        if not prediction_path.is_file():
+            return f"production_company_memory_prediction_missing:{path.name}"
+        memory_payload_sha256 = sha256_text(
+            canonical_json(
+                memory.model_dump(
+                    mode="json",
+                    exclude={"production_attestation"},
+                )
+            )
+        )
+        if attestation.memory_payload_sha256 != memory_payload_sha256:
+            return f"production_company_memory_attestation_memory_hash_mismatch:{path.name}"
+        if attestation.prediction_sha256 != file_sha256(prediction_path):
+            return f"production_company_memory_attestation_prediction_hash_mismatch:{path.name}"
+        if as_kst(attestation.known_at) != as_kst(memory.known_at):
+            return f"production_company_memory_attestation_known_at_mismatch:{path.name}"
+        if as_kst(attestation.issued_at) > now_kst() + timedelta(minutes=5):
+            return f"production_company_memory_attestation_issued_in_future:{path.name}"
+        if attestation.key_id != sha256_text(key_value)[:16]:
+            return f"production_company_memory_attestation_key_mismatch:{path.name}"
+        commitment = sha256_text(
+            canonical_json(
+                attestation.model_dump(
+                    mode="json",
+                    exclude={"commitment_sha256", "signature"},
+                )
+            )
+        )
+        signature = hmac.new(
+            key_value.encode("utf-8"),
+            commitment.encode("ascii"),
+            hashlib.sha256,
+        ).hexdigest()
+        if (
+            attestation.commitment_sha256 != commitment
+            or not hmac.compare_digest(attestation.signature, signature)
+        ):
+            return f"production_company_memory_attestation_signature_invalid:{path.name}"
+        return None
+
+    def _attested_candidate_memory(
+        self,
+        memory: CompanyMemory,
+        *,
+        path: Path,
+        prediction_path: Path,
+        prediction_hash: str,
+        known_at: datetime,
+        key_value: str,
+    ) -> CompanyMemory:
+        _validate_attestation_key(key_value)
+        try:
+            memory_relative = path.resolve().relative_to(
+                self.root.resolve()
+            ).as_posix()
+            prediction_relative = prediction_path.resolve().relative_to(
+                self.root.resolve()
+            ).as_posix()
+        except ValueError as exc:
+            raise ValueError(
+                "production company memory source escapes project root"
+            ) from exc
+        issued_at = now_kst()
+        release_id = _production_release_id(self.root)
+        if release_id is None:
+            raise ValueError(
+                "production company memory attestation requires a release project"
+            )
+        if not _canonical_production_prediction_path(
+            self.root,
+            prediction_path,
+        ):
+            raise ValueError(
+                "production company memory requires an immutable run prediction"
+            )
+        unsigned = {
+            "schema_version": "nslab.production_company_memory_attestation.v1",
+            "algorithm": "HMAC-SHA256",
+            "issued_at": issued_at.isoformat(),
+            "key_id": sha256_text(key_value)[:16],
+            "release_id": release_id,
+            "memory_artifact_path": memory_relative,
+            "memory_payload_sha256": sha256_text(
+                canonical_json(
+                    memory.model_dump(
+                        mode="json",
+                        exclude={"production_attestation"},
+                    )
+                )
+            ),
+            "prediction_artifact_path": prediction_relative,
+            "prediction_sha256": prediction_hash,
+            "known_at": as_kst(known_at).isoformat(),
+        }
+        commitment = sha256_text(canonical_json(unsigned))
+        attestation = ProductionCompanyMemoryAttestation(
+            **unsigned,
+            commitment_sha256=commitment,
+            signature=hmac.new(
+                key_value.encode("utf-8"),
+                commitment.encode("ascii"),
+                hashlib.sha256,
+            ).hexdigest(),
+        )
+        return memory.model_copy(
+            update={
+                "production_attestation": attestation.model_dump(mode="json")
+            }
+        )
 
     def apply_record_deltas(
         self,
@@ -108,7 +335,18 @@ class CompanyMemoryStore:
                 skipped_future.append(record.record_id)
                 continue
             path = self._path_for_delta_record(record)
-            write_json(path, memory.model_dump(mode="json"))
+            payload = memory.model_dump(mode="json")
+            try:
+                observed_payload = read_json(path) if path.is_file() else None
+            except (OSError, ValueError):
+                observed_payload = None
+            if observed_payload != payload:
+                if production_company_memory_attestation_required(self.root):
+                    raise ValueError(
+                        "active production record-derived company memory "
+                        f"is missing or differs from its sealed projection: {path.name}"
+                    )
+                _write_json_atomic(path, payload)
             written.append(path)
         return CompanyMemoryDeltaApplyResult(
             processed_record_count=len(records),
@@ -328,3 +566,33 @@ def _relative_uri(path: Path, root: Path) -> str:
         return path.relative_to(root).as_posix()
     except ValueError:
         return path.as_posix()
+
+
+def _canonical_production_prediction_path(root: Path, path: Path) -> bool:
+    try:
+        relative = path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return False
+    parts = relative.parts
+    return (
+        len(parts) == 5
+        and parts[:3] == ("runs", "checkpoints", "output_artifacts")
+        and bool(parts[3])
+        and parts[4] == "blind_prediction.json"
+    )
+
+
+def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=path.parent,
+    )
+    os.close(descriptor)
+    temporary_path = Path(temporary_name)
+    try:
+        write_json(temporary_path, payload)
+        os.replace(temporary_path, path)
+    finally:
+        temporary_path.unlink(missing_ok=True)

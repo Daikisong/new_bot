@@ -1,0 +1,79 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "algorithm": {
+      "const": "HMAC-SHA256",
+      "default": "HMAC-SHA256",
+      "title": "Algorithm",
+      "type": "string"
+    },
+    "commitment_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Commitment Sha256",
+      "type": "string"
+    },
+    "issued_at": {
+      "format": "date-time",
+      "title": "Issued At",
+      "type": "string"
+    },
+    "key_id": {
+      "pattern": "^[0-9a-f]{16}$",
+      "title": "Key Id",
+      "type": "string"
+    },
+    "known_at": {
+      "format": "date-time",
+      "title": "Known At",
+      "type": "string"
+    },
+    "memory_artifact_path": {
+      "title": "Memory Artifact Path",
+      "type": "string"
+    },
+    "memory_payload_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Memory Payload Sha256",
+      "type": "string"
+    },
+    "prediction_artifact_path": {
+      "title": "Prediction Artifact Path",
+      "type": "string"
+    },
+    "prediction_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Prediction Sha256",
+      "type": "string"
+    },
+    "release_id": {
+      "pattern": "^P9REL-[0-9A-F]{20}$",
+      "title": "Release Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.production_company_memory_attestation.v1",
+      "default": "nslab.production_company_memory_attestation.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "signature": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Signature",
+      "type": "string"
+    }
+  },
+  "required": [
+    "issued_at",
+    "key_id",
+    "release_id",
+    "memory_artifact_path",
+    "memory_payload_sha256",
+    "prediction_artifact_path",
+    "prediction_sha256",
+    "known_at",
+    "commitment_sha256",
+    "signature"
+  ],
+  "title": "ProductionCompanyMemoryAttestation",
+  "type": "object"
+}

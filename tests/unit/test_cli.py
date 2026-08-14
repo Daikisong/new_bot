@@ -782,8 +782,14 @@ def test_evaluate_cli_reports_missing_prediction(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FailingEvaluator:
-        def __init__(self, root: Path) -> None:
+        def __init__(
+            self,
+            root: Path,
+            *,
+            settings: Settings | None = None,
+        ) -> None:
             self.root = root
+            self.settings = settings
 
         def evaluate(self, *, trade_date: object) -> _EvaluationResult:
             raise FileNotFoundError("blind prediction not found: predictions/2030-01-10.json")
@@ -806,8 +812,14 @@ def test_evaluate_cli_reports_invalid_postmortem(
     report_path.write_text("[]\n", encoding="utf-8")
 
     class InvalidPostmortemEvaluator:
-        def __init__(self, root: Path) -> None:
+        def __init__(
+            self,
+            root: Path,
+            *,
+            settings: Settings | None = None,
+        ) -> None:
             self.root = root
+            self.settings = settings
 
         def evaluate(self, *, trade_date: object) -> _EvaluationResult:
             return _EvaluationResult(report_path=report_path)

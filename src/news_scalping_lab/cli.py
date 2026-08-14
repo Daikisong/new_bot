@@ -88,6 +88,23 @@ from news_scalping_lab.memory.runtime import (
     create_production_embedding_provider as _create_production_embedding_provider,
 )
 from news_scalping_lab.prices.factory import create_price_source
+from news_scalping_lab.production.importer import (
+    inspect_production_batch_import,
+    stage_production_batch_import,
+)
+from news_scalping_lab.production.inventory import (
+    build_production_import_inventory,
+    inspect_production_import_inventory,
+    seal_production_import_inventory,
+)
+from news_scalping_lab.production.readiness import phase9_production_readiness
+from news_scalping_lab.production.release import (
+    activate_production_release,
+    finalize_production_release,
+    inspect_current_production_release,
+    inspect_production_release,
+    rollback_production_release,
+)
 from news_scalping_lab.records.hashing import (
     brain_record_envelope_sha256,
     brain_record_routing_root_sha256,
@@ -147,6 +164,7 @@ audit_app = typer.Typer(help="Audit commands")
 training_app = typer.Typer(help="Training export commands")
 warehouse_app = typer.Typer(help="Warehouse projection commands")
 memory_app = typer.Typer(help="Brain record memory commands")
+production_app = typer.Typer(help="Production import and release commands")
 
 
 def _production_embedding_provider(
@@ -169,6 +187,7 @@ app.add_typer(audit_app, name="audit")
 app.add_typer(training_app, name="training")
 app.add_typer(warehouse_app, name="warehouse")
 app.add_typer(memory_app, name="memory")
+app.add_typer(production_app, name="production")
 
 WEB_SOURCE_REQUIRED_FIELDS = {
     "schema_version",
@@ -381,7 +400,7 @@ def _run_demo_step(command: list[str]) -> int:
 
 @app.command()
 def init() -> None:
-    settings = load_settings()
+    settings = load_settings(resolve_production=False)
     ensure_project_dirs(settings)
     config_files = write_default_config_files(settings)
     written = export_json_schemas(settings.path("schemas"))
@@ -1052,7 +1071,10 @@ def evaluate(trade_date: Annotated[str, typer.Option("--trade-date")]) -> None:
     settings = load_settings()
     parsed_trade_date = _parse_date(trade_date)
     try:
-        result = Evaluator(settings.project_root).evaluate(trade_date=parsed_trade_date)
+        result = Evaluator(
+            settings.project_root,
+            settings=settings,
+        ).evaluate(trade_date=parsed_trade_date)
         postmortem = read_json(result.report_path)
         if not isinstance(postmortem, dict):
             raise ValueError("postmortem report must be a JSON object")
@@ -8917,6 +8939,308 @@ def memory_audit(
     _echo(result)
     if not result.get("passed", False):
         raise typer.Exit(code=1)
+
+
+@production_app.command("readiness")
+def production_readiness() -> None:
+    settings = load_settings(resolve_production=False)
+    result = phase9_production_readiness(settings.project_root)
+    result["diagnostic_artifacts"] = write_diagnostic_report(
+        settings.project_root,
+        "phase9_production_readiness_report",
+        result,
+    )
+    _echo(result)
+    if result.get("ready") is not True:
+        raise typer.Exit(code=1)
+
+
+@production_app.command("build-inventory")
+def production_build_inventory(
+    source_manifest: Annotated[
+        Path | None,
+        typer.Option(
+            "--source-manifest",
+            help="Sequential repair manifest; defaults to the canonical Phase 9 source.",
+        ),
+    ] = None,
+    deep_hash: Annotated[
+        bool,
+        typer.Option("--deep-hash/--no-deep-hash"),
+    ] = True,
+) -> None:
+    settings = load_settings(resolve_production=False)
+    try:
+        manifest, path = build_production_import_inventory(
+            settings.project_root,
+            source_manifest_path=source_manifest,
+            deep_hash=deep_hash,
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "inventory_id": manifest.inventory_id,
+            "manifest_path": relative_to_root(path, settings.project_root),
+            "ready_for_import": manifest.ready_for_import,
+            "ready_bundle_count": manifest.ready_bundle_count,
+            "ready_record_count": manifest.ready_record_count,
+            "ready_training_eligible_record_count": (
+                manifest.ready_training_eligible_record_count
+            ),
+            "finding_count": manifest.finding_count,
+            "findings": manifest.findings,
+        }
+    )
+
+
+@production_app.command("seal-inventory")
+def production_seal_inventory(
+    inventory: Annotated[Path, typer.Option("--inventory")],
+) -> None:
+    settings = load_settings(resolve_production=False)
+    key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
+    if key_value is None:
+        _exit_with_error(
+            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
+        )
+    try:
+        manifest = seal_production_import_inventory(
+            settings.project_root,
+            inventory,
+            key_value=key_value,
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "inventory_id": manifest.inventory_id,
+            "sealed": manifest.attestation is not None,
+            "key_id": (
+                manifest.attestation.key_id
+                if manifest.attestation is not None
+                else None
+            ),
+            "manifest_path": relative_to_root(inventory, settings.project_root),
+        }
+    )
+
+
+@production_app.command("inspect-inventory")
+def production_inspect_inventory(
+    inventory: Annotated[Path, typer.Option("--inventory")],
+) -> None:
+    settings = load_settings(resolve_production=False)
+    result = inspect_production_import_inventory(
+        settings.project_root,
+        inventory,
+        attestation_key=settings.env_value(
+            "NSLAB_PRODUCTION_PROMOTION_HMAC_KEY"
+        ),
+    )
+    _echo(result)
+    if result.get("passed") is not True:
+        raise typer.Exit(code=1)
+
+
+@production_app.command("stage-import")
+def production_stage_import(
+    inventory: Annotated[Path, typer.Option("--inventory")],
+    execute: Annotated[
+        bool,
+        typer.Option(
+            "--execute",
+            help="Perform the large isolated import; omitted means zero writes.",
+        ),
+    ] = False,
+) -> None:
+    if not execute:
+        _exit_with_error(
+            ValueError("production stage-import requires explicit --execute")
+        )
+    settings = load_settings(resolve_production=False)
+    key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
+    if key_value is None:
+        _exit_with_error(
+            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
+        )
+    try:
+        receipt, path = stage_production_batch_import(
+            settings.project_root,
+            inventory,
+            inventory_attestation_key=key_value,
+            phase7_transport_key=settings.env_value(
+                "NSLAB_PHASE7_TRANSPORT_HMAC_KEY"
+            ),
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "import_id": receipt.import_id,
+            "passed": receipt.passed,
+            "receipt_path": relative_to_root(path, settings.project_root),
+            "release_project_path": receipt.release_project_path,
+            "imported_bundle_count": receipt.imported_bundle_count,
+            "imported_record_count": receipt.imported_record_count,
+            "imported_training_eligible_record_count": (
+                receipt.imported_training_eligible_record_count
+            ),
+        }
+    )
+
+
+@production_app.command("inspect-import")
+def production_inspect_import(
+    receipt: Annotated[Path, typer.Option("--receipt")],
+) -> None:
+    settings = load_settings(resolve_production=False)
+    key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
+    if key_value is None:
+        _exit_with_error(
+            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
+        )
+    result = inspect_production_batch_import(
+        settings.project_root,
+        receipt,
+        inventory_attestation_key=key_value,
+    )
+    _echo(result)
+    if result.get("passed") is not True:
+        raise typer.Exit(code=1)
+
+
+@production_app.command("finalize-release")
+def production_finalize_release(
+    receipt: Annotated[Path, typer.Option("--receipt")],
+    shadow_evaluation: Annotated[
+        Path,
+        typer.Option("--shadow-evaluation"),
+    ],
+) -> None:
+    settings = load_settings(resolve_production=False)
+    key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
+    if key_value is None:
+        _exit_with_error(
+            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
+        )
+    try:
+        manifest, path = finalize_production_release(
+            settings.project_root,
+            receipt,
+            shadow_evaluation,
+            promotion_key=key_value,
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "release_id": manifest.release_id,
+            "production_ready": manifest.production_ready,
+            "manifest_path": relative_to_root(path, settings.project_root),
+            "release_project_path": manifest.release_project_path,
+            "brain_version": manifest.brain_version,
+            "memory_snapshot_id": manifest.memory_snapshot_id,
+            "shadow_evaluation_id": manifest.shadow_evaluation_id,
+        }
+    )
+
+
+@production_app.command("inspect-release")
+def production_inspect_release(
+    manifest: Annotated[Path, typer.Option("--manifest")],
+) -> None:
+    settings = load_settings(resolve_production=False)
+    key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
+    if key_value is None:
+        _exit_with_error(
+            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
+        )
+    result = inspect_production_release(
+        settings.project_root,
+        manifest,
+        promotion_key=key_value,
+    )
+    _echo(result)
+    if result.get("passed") is not True:
+        raise typer.Exit(code=1)
+
+
+@production_app.command("activate")
+def production_activate(
+    manifest: Annotated[Path, typer.Option("--manifest")],
+) -> None:
+    settings = load_settings(resolve_production=False)
+    key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
+    if key_value is None:
+        _exit_with_error(
+            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
+        )
+    try:
+        pointer, path = activate_production_release(
+            settings.project_root,
+            manifest,
+            promotion_key=key_value,
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "activated": True,
+            "release_id": pointer.release_id,
+            "previous_release_id": pointer.previous_release_id,
+            "release_project_path": pointer.release_project_path,
+            "pointer_path": relative_to_root(path, settings.project_root),
+        }
+    )
+
+
+@production_app.command("inspect-current")
+def production_inspect_current(
+    deep: Annotated[bool, typer.Option("--deep/--no-deep")] = True,
+) -> None:
+    settings = load_settings(resolve_production=False)
+    key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
+    if key_value is None:
+        _exit_with_error(
+            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
+        )
+    result = inspect_current_production_release(
+        settings.project_root,
+        promotion_key=key_value,
+        deep=deep,
+    )
+    _echo(result)
+    if result.get("passed") is not True:
+        raise typer.Exit(code=1)
+
+
+@production_app.command("rollback")
+def production_rollback(
+    release_id: Annotated[str, typer.Option("--release-id")],
+) -> None:
+    settings = load_settings(resolve_production=False)
+    key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
+    if key_value is None:
+        _exit_with_error(
+            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
+        )
+    try:
+        pointer, path = rollback_production_release(
+            settings.project_root,
+            release_id,
+            promotion_key=key_value,
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "rolled_back": True,
+            "release_id": pointer.release_id,
+            "previous_release_id": pointer.previous_release_id,
+            "pointer_path": relative_to_root(path, settings.project_root),
+        }
+    )
 
 
 def _legacy_episode_record(episode: Any) -> BrainRecordEnvelope:

@@ -2136,7 +2136,10 @@ async def test_new_company_candidate_creates_company_memory_candidate(tmp_path) 
     assert memory["ticker"] == "UNKNOWN"
     assert memory["known_at"] == "2030-01-10T08:59:59+09:00"
     assert memory["provenance"][0]["source_type"] == "blind_analysis_company_memory_candidate"
-    assert memory["provenance"][0]["uri"] == analysis.prediction_path
+    assert (
+        memory["provenance"][0]["uri"]
+        == analysis.context_manifest.prediction_artifact
+    )
     await DailyAnalyzer(settings).analyze(
         news_csv=csv_path,
         trade_date=date(2030, 1, 10),

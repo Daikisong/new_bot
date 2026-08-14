@@ -48,6 +48,17 @@ from news_scalping_lab.contracts.models import (
     ResearchEpisode,
     SemanticRetrievalPlan,
 )
+from news_scalping_lab.contracts.production import (
+    ProductionBatchImportReceipt,
+    ProductionCompanyMemoryAttestation,
+    ProductionCurrentPointer,
+    ProductionImportInventoryManifest,
+    ProductionRecordArtifactManifest,
+    ProductionReleaseArtifactManifest,
+    ProductionReleaseConfigurationManifest,
+    ProductionReleaseManifest,
+    ProductionReleaseTransaction,
+)
 from news_scalping_lab.contracts.shadow_evaluation import (
     ShadowEvaluationManifest,
     ShadowReplayDataset,
@@ -97,6 +108,25 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "daily_memory_context.schema.json": DailyMemoryContext,
     "shadow_replay_dataset.schema.json": ShadowReplayDataset,
     "shadow_evaluation_manifest.schema.json": ShadowEvaluationManifest,
+    "production_import_inventory_manifest.schema.json": (
+        ProductionImportInventoryManifest
+    ),
+    "production_batch_import_receipt.schema.json": ProductionBatchImportReceipt,
+    "production_company_memory_attestation.schema.json": (
+        ProductionCompanyMemoryAttestation
+    ),
+    "production_record_artifact_manifest.schema.json": (
+        ProductionRecordArtifactManifest
+    ),
+    "production_release_artifact_manifest.schema.json": (
+        ProductionReleaseArtifactManifest
+    ),
+    "production_release_transaction.schema.json": ProductionReleaseTransaction,
+    "production_release_configuration.schema.json": (
+        ProductionReleaseConfigurationManifest
+    ),
+    "production_release_manifest.schema.json": ProductionReleaseManifest,
+    "production_current_pointer.schema.json": ProductionCurrentPointer,
 }
 
 

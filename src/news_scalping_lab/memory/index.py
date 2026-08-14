@@ -1947,11 +1947,30 @@ def inspect_current_memory_index(root: Path) -> dict[str, object]:
     try:
         pointer = read_json(pointer_path)
         snapshot_id = str(pointer["snapshot_id"])
-        manifest_path = root.resolve() / str(pointer["manifest_path"])
+        manifest_relative_path = str(pointer["manifest_path"])
+        manifest_path = root.resolve() / manifest_relative_path
         manifest_sha256 = str(pointer["manifest_sha256"])
         registry_sha256 = str(pointer["as_of_registry_sha256"])
     except (OSError, KeyError, TypeError, ValueError):
         return {"status": "invalid", "passed": False, "pointer_exists": True}
+    expected_manifest_path = (
+        root.resolve()
+        / MEMORY_INDEX_ROOT
+        / MEMORY_SNAPSHOT_DIR
+        / snapshot_id
+        / MEMORY_MANIFEST_FILE
+    ).resolve()
+    expected_relative_path = relative_to_root(expected_manifest_path, root.resolve())
+    if (
+        manifest_relative_path != expected_relative_path
+        or manifest_path.resolve() != expected_manifest_path
+    ):
+        return {
+            "status": "invalid",
+            "passed": False,
+            "pointer_exists": True,
+            "pointer_path_verified": False,
+        }
     inspection = inspect_memory_snapshot(root, snapshot_id)
     if not manifest_path.exists() or sha256_text(manifest_path.read_text(encoding="utf-8")) != manifest_sha256:
         return {**inspection, "status": "invalid", "passed": False, "pointer_hash_verified": False}
@@ -1991,6 +2010,7 @@ def inspect_current_memory_index(root: Path) -> dict[str, object]:
     return {
         **inspection,
         "pointer_exists": True,
+        "pointer_path_verified": True,
         "pointer_hash_verified": True,
         "registry_hash_verified": True,
         "source_partition_verified": True,

@@ -285,10 +285,33 @@ def _read_yaml(path: Path) -> dict[str, Any]:
     return content
 
 
-def load_settings(project_root: Path | None = None) -> Settings:
-    root = (project_root or Path.cwd()).resolve()
-    dotenv_values = _load_dotenv(root / ".env")
+def load_settings(
+    project_root: Path | None = None,
+    *,
+    resolve_production: bool = True,
+    dotenv_root: Path | None = None,
+) -> Settings:
+    base_root = (project_root or Path.cwd()).resolve()
+    resolved_dotenv_root = (dotenv_root or base_root).resolve()
+    dotenv_values = _load_dotenv(resolved_dotenv_root / ".env")
     effective_env = {**dotenv_values, **os.environ}
+    root = base_root
+    current_pointer = base_root / "production" / "current.json"
+    if resolve_production and current_pointer.is_file():
+        promotion_key = effective_env.get("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
+        if promotion_key is None:
+            raise ValueError(
+                "NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required to resolve "
+                "the active production release"
+            )
+        from news_scalping_lab.production.release import (
+            resolve_active_production_root,
+        )
+
+        root = resolve_active_production_root(
+            base_root,
+            promotion_key=promotion_key,
+        )
     data = _read_yaml(root / "configs" / "default.yaml")
     if "stock_web_path" in data and data["stock_web_path"] is not None:
         data["stock_web_path"] = Path(str(data["stock_web_path"]))

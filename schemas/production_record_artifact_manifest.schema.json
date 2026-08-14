@@ -1,0 +1,70 @@
+{
+  "$defs": {
+    "ProductionRecordArtifact": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_size": {
+          "minimum": 0,
+          "title": "Byte Size",
+          "type": "integer"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sha256",
+        "byte_size"
+      ],
+      "title": "ProductionRecordArtifact",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "artifact_count": {
+      "exclusiveMinimum": 0,
+      "title": "Artifact Count",
+      "type": "integer"
+    },
+    "artifacts": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ProductionRecordArtifact"
+      },
+      "title": "Artifacts",
+      "type": "object"
+    },
+    "record_count": {
+      "minimum": 0,
+      "title": "Record Count",
+      "type": "integer"
+    },
+    "root_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Root Sha256",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.production_record_artifact_manifest.v1",
+      "default": "nslab.production_record_artifact_manifest.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "total_byte_size": {
+      "minimum": 0,
+      "title": "Total Byte Size",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "record_count",
+    "artifact_count",
+    "total_byte_size",
+    "artifacts",
+    "root_sha256"
+  ],
+  "title": "ProductionRecordArtifactManifest",
+  "type": "object"
+}

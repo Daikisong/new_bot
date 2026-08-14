@@ -906,6 +906,8 @@ pre-registration/runner/truth key missing으로 `ready=false`다. 32D reduced-sc
 
 ## 12. Phase 9: 실제 import와 production 승격
 
+상태: bounded implementation 완료, 외부 독립감사 APPROVE, 실제 provider/shadow gate 미충족으로 activation 차단
+
 ### 전제
 
 ```text
@@ -948,6 +950,38 @@ production index real embedding
 lookahead/provenance/coverage/brain audit 0 findings
 doctor --production 통과
 ```
+
+### 구현 결과
+
+실제 sequential repair manifest 1,397행과 source/repaired 약 32GB를 read-only deep hash로 다시 검증했다.
+READY_FOR_IMPORT는 1,127 bundles, 606,737 records, eligible 384,846이며 finding은 0이다. inventory ID는
+`P9INV-974A99B55B152FF02040`이고 source/repaired/quality-gate/entries root를 별도 artifact로 결속했다.
+
+단건 importer의 bundle별 전수 record scan/index rebuild는 production batch 경로에서 제거했다. 격리 project
+root에서 shared identity index를 유지하고 마지막에 SQLite-backed streaming index를 한 번만 만든다. 실패
+workdir은 canonical stage에 publish되지 않으며 live store와 pointer는 변하지 않는다.
+
+Release finalize는 batch import, llm-full brain, production memory, historical A~F shadow, doctor, provenance와
+real provider를 모두 재검증한다. 성공 release만 content-addressed directory에 고정하고,
+record artifact ledger, `configs/`·`prompts/`·`schemas/` file-hash ledger와 중단 복구 transaction을 함께
+결속한다. episode 검증 metadata·brain·production memory/vector index·warehouse·선택 shadow evidence는
+별도 release artifact ledger로 exact path/size/SHA를 봉인하고, record/release artifact root를 모두 release
+ID에 포함한다. memory pointer는 canonical snapshot manifest 경로만 허용한다. 운영 `.env` secret은
+release에 복사하지 않고 outer operator root에서 주입한다.
+`production/current.json` 한 파일을 HMAC과 함께 원자 교체하고 activation history와 exact parity를 검사한다.
+rollback도 이전 immutable release를 가리키는 동일 pointer 교체다.
+
+정상 일일 lifecycle은 immutable release와 분리했다. record-derived company memory는 runtime exact no-op으로
+검증하고, candidate company memory는 불변 run prediction·release ID·payload hash를 embedded HMAC
+attestation으로 결속해 원자 기록한다. warehouse daily projection과 post-close evaluation episode는 명시적
+가변 산출물이며, 봉인 doctor snapshot과 현재 readiness는 deep inspection에서 각각 검증한다. analyze/evaluate는
+outer operator root에서 해석한 Settings를 active release까지 그대로 전달한다.
+
+현재는 promotion key, real provider, production memory/llm-full brain, 40일 A~F shadow가 없으므로 실제
+import/activation을 실행하지 않았다. live store는 968 records이고 Phase 9 readiness는 10 blockers로
+`ready=false`다. 상세 근거는 `phase9_production_import_and_promotion_report.md`에 기록했다.
+최신 고정 tree의 외부 독립감사는 `APPROVE`이며 잔여 P0/P1 finding은 없다.
+최종 gate는 `ruff check .`, `mypy` 114 modules, schema parity, 전체 pytest 1,483개 통과다.
 
 ## 13. phase별 작업 원칙
 
