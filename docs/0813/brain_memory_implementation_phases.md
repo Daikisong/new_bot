@@ -1,6 +1,6 @@
 # NSLAB 장기기억 두뇌 구현 단계
 
-상태: Phase 0~4 구현·검증·독립감사 승인 완료, Phase 5 bounded 구현·내부 검증 완료 및 독립감사 중
+상태: Phase 0~9 bounded 구현·검증·외부 독립감사 APPROVE, 실제 production activation은 readiness 10개 blocker로 차단
 
 기준 문서:
 
