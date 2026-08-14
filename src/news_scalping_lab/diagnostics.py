@@ -4370,8 +4370,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     missing_available_manifest_kinds = sorted(required_manifest_kinds - available_manifest_kind_set)
     unexpected_available_manifest_kinds = sorted(available_manifest_kind_set - required_manifest_kinds)
     unexpected_missing_manifest_kinds = sorted(missing_manifest_kind_set - required_manifest_kinds)
-    for field in invalid_manifest_kind_fields:
-        findings.append(f"training export diagnostics {field} is invalid")
+    for manifest_kind_field in invalid_manifest_kind_fields:
+        findings.append(
+            f"training export diagnostics {manifest_kind_field} is invalid"
+        )
     if missing_export_kinds:
         findings.append("training export export_kinds are missing required kinds: " + ", ".join(missing_export_kinds))
     if unexpected_export_kinds:
@@ -4432,10 +4434,14 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         for field in aggregate_count_fields
         if field in diagnostics and not _non_negative_int_field_valid(diagnostics.get(field))
     ]
-    for field in missing_aggregate_count_fields:
-        findings.append(f"training export diagnostics {field} is missing")
-    for field in invalid_aggregate_count_fields:
-        findings.append(f"training export diagnostics {field} is invalid")
+    for missing_aggregate_field in missing_aggregate_count_fields:
+        findings.append(
+            f"training export diagnostics {missing_aggregate_field} is missing"
+        )
+    for invalid_aggregate_field in invalid_aggregate_count_fields:
+        findings.append(
+            f"training export diagnostics {invalid_aggregate_field} is invalid"
+        )
     expected_aggregate_counts = _expected_training_export_aggregate_counts_from_manifests(
         audit.get("manifests"),
     )
@@ -4468,10 +4474,14 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         for field in per_export_count_fields
         if field in diagnostics and not _non_negative_int_field_valid(diagnostics.get(field))
     ]
-    for field in missing_per_export_count_fields:
-        findings.append(f"training export diagnostics {field} is missing")
-    for field in invalid_per_export_count_fields:
-        findings.append(f"training export diagnostics {field} is invalid")
+    for missing_per_export_field in missing_per_export_count_fields:
+        findings.append(
+            f"training export diagnostics {missing_per_export_field} is missing"
+        )
+    for invalid_per_export_field in invalid_per_export_count_fields:
+        findings.append(
+            f"training export diagnostics {invalid_per_export_field} is invalid"
+        )
     expected_per_export_counts = _expected_training_export_counts_from_manifests(
         audit.get("manifests"),
     )
@@ -4486,10 +4496,14 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         for field in ("source_record_hashes",)
         if field in diagnostics and not _sha256_string_map_field_valid(diagnostics.get(field))
     ]
-    for field in missing_hash_fields:
-        findings.append(f"training export diagnostics {field} is missing")
-    for field in invalid_hash_fields:
-        findings.append(f"training export diagnostics {field} is invalid")
+    for missing_hash_field in missing_hash_fields:
+        findings.append(
+            f"training export diagnostics {missing_hash_field} is missing"
+        )
+    for invalid_hash_field in invalid_hash_fields:
+        findings.append(
+            f"training export diagnostics {invalid_hash_field} is invalid"
+        )
     expected_source_record_hashes = _expected_training_export_source_record_hashes_from_manifests(
         audit.get("manifests")
     )
@@ -4538,8 +4552,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         for field in (*unique_record_id_values,)
         if field in diagnostics and not _string_list_field_valid(diagnostics.get(field))
     ]
-    for field in invalid_record_id_fields:
-        findings.append(f"training export diagnostics {field} is invalid")
+    for invalid_record_id_field in invalid_record_id_fields:
+        findings.append(
+            f"training export diagnostics {invalid_record_id_field} is invalid"
+        )
     invalid_unsealed_preference_record_id_fields = []
     if diagnostics and unsealed_field not in diagnostics:
         findings.append(f"training export diagnostics {unsealed_field} is missing")
@@ -4558,14 +4574,17 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             and sorted(unique_record_id_values[field]) != expected_ids
         )
     ]
-    for field in unique_record_id_mismatches:
-        findings.append(f"training export diagnostics {field} does not match manifests")
+    for record_id_mismatch_field in unique_record_id_mismatches:
+        findings.append(
+            "training export diagnostics "
+            f"{record_id_mismatch_field} does not match manifests"
+        )
     skipped_record_reasons_by_record_id = _string_list_dict(diagnostics.get("skipped_record_reasons_by_record_id"))
     unique_skipped_record_reasons_by_record_id = _string_list_dict(
         diagnostics.get("unique_skipped_record_reasons_by_record_id")
     )
     skipped_record_reason_counts = _int_dict(diagnostics.get("skipped_record_reason_counts"))
-    invalid_reason_fields = [
+    invalid_reason_fields: list[str] = [
         field
         for field in (
             "skipped_record_reasons_by_record_id",
@@ -4577,8 +4596,10 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         diagnostics.get("skipped_record_reason_counts")
     ):
         invalid_reason_fields.append("skipped_record_reason_counts")
-    for field in invalid_reason_fields:
-        findings.append(f"training export diagnostics {field} is invalid")
+    for invalid_reason_field in invalid_reason_fields:
+        findings.append(
+            f"training export diagnostics {invalid_reason_field} is invalid"
+        )
     expected_skipped_reason_fields = _expected_training_export_skipped_reason_fields_from_manifests(
         audit.get("manifests")
     )
@@ -4592,8 +4613,11 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         for field, expected_value in expected_skipped_reason_fields.items()
         if (diagnostics and field not in invalid_reason_fields and skipped_reason_values[field] != expected_value)
     ]
-    for field in skipped_record_reason_mismatches:
-        findings.append(f"training export diagnostics {field} does not match manifests")
+    for skipped_reason_mismatch_field in skipped_record_reason_mismatches:
+        findings.append(
+            "training export diagnostics "
+            f"{skipped_reason_mismatch_field} does not match manifests"
+        )
     blind_safe_row_count = _int_from_mapping(diagnostics, "blind_safe_row_count")
     hindsight_row_count = _int_from_mapping(diagnostics, "hindsight_row_count")
     phase_row_count_fields = ("blind_safe_row_count", "hindsight_row_count")
@@ -4605,10 +4629,14 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         for field in phase_row_count_fields
         if field in diagnostics and not _non_negative_int_field_valid(diagnostics.get(field))
     ]
-    for field in missing_phase_row_count_fields:
-        findings.append(f"training export diagnostics {field} is missing")
-    for field in invalid_phase_row_count_fields:
-        findings.append(f"training export diagnostics {field} is invalid")
+    for missing_phase_count_field in missing_phase_row_count_fields:
+        findings.append(
+            f"training export diagnostics {missing_phase_count_field} is missing"
+        )
+    for invalid_phase_count_field in invalid_phase_row_count_fields:
+        findings.append(
+            f"training export diagnostics {invalid_phase_count_field} is invalid"
+        )
     source_phase_counts = _int_dict(diagnostics.get("source_phase_counts"))
     source_phase_row_count = sum(source_phase_counts.values())
     counts_by_record_type = _int_dict(diagnostics.get("counts_by_record_type"))
@@ -4624,10 +4652,14 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         for field in count_map_fields
         if field in diagnostics and not _int_dict_field_valid(diagnostics.get(field))
     ]
-    for field in missing_count_fields:
-        findings.append(f"training export diagnostics {field} is missing")
-    for field in invalid_count_fields:
-        findings.append(f"training export diagnostics {field} is invalid")
+    for missing_count_field in missing_count_fields:
+        findings.append(
+            f"training export diagnostics {missing_count_field} is missing"
+        )
+    for invalid_count_field in invalid_count_fields:
+        findings.append(
+            f"training export diagnostics {invalid_count_field} is invalid"
+        )
     count_map_values = {
         "source_phase_counts": source_phase_counts,
         "counts_by_record_type": counts_by_record_type,
@@ -4644,8 +4676,11 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             and count_map_values[field] != expected_value
         )
     ]
-    for field in count_map_mismatches:
-        findings.append(f"training export diagnostics {field} does not match manifests")
+    for count_map_mismatch_field in count_map_mismatches:
+        findings.append(
+            "training export diagnostics "
+            f"{count_map_mismatch_field} does not match manifests"
+        )
     invalid_source_phase_labels = (
         sorted(set(source_phase_counts) - {"BLIND", "POSTMORTEM"})
         if "source_phase_counts" not in invalid_count_fields
@@ -4749,29 +4784,35 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         "row_count": diagnostic_row_count,
         "skipped_record_count": diagnostic_skipped_record_count,
     }
-    for field, observed_count in aggregate_count_values.items():
+    for aggregate_field, observed_count in aggregate_count_values.items():
         if (
             diagnostics
-            and field not in missing_aggregate_count_fields
-            and field not in invalid_aggregate_count_fields
-            and field in expected_aggregate_counts
-            and observed_count != expected_aggregate_counts[field]
+            and aggregate_field not in missing_aggregate_count_fields
+            and aggregate_field not in invalid_aggregate_count_fields
+            and aggregate_field in expected_aggregate_counts
+            and observed_count != expected_aggregate_counts[aggregate_field]
         ):
-            findings.append(f"training export diagnostics {field} does not match manifests")
+            findings.append(
+                "training export diagnostics "
+                f"{aggregate_field} does not match manifests"
+            )
     per_export_count_values = {
         "per_export_eligible_record_count": per_export_eligible_count,
         "per_export_exported_record_count": per_export_exported_count,
         "per_export_skipped_record_count": per_export_skipped_count,
     }
-    for field, observed_count in per_export_count_values.items():
+    for per_export_field, observed_count in per_export_count_values.items():
         if (
             diagnostics
-            and field not in missing_per_export_count_fields
-            and field not in invalid_per_export_count_fields
-            and field in expected_per_export_counts
-            and observed_count != expected_per_export_counts[field]
+            and per_export_field not in missing_per_export_count_fields
+            and per_export_field not in invalid_per_export_count_fields
+            and per_export_field in expected_per_export_counts
+            and observed_count != expected_per_export_counts[per_export_field]
         ):
-            findings.append(f"training export diagnostics {field} does not match manifests")
+            findings.append(
+                "training export diagnostics "
+                f"{per_export_field} does not match manifests"
+            )
     if (
         diagnostics
         and "counts_by_record_type" not in missing_count_fields
@@ -4887,10 +4928,14 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         for field in weight_diagnostic_map_fields
         if field in diagnostics and not _numeric_map_field_valid(diagnostics.get(field))
     )
-    for field in missing_weight_diagnostic_fields:
-        findings.append(f"training export diagnostics {field} is missing")
-    for field in invalid_weight_diagnostic_fields:
-        findings.append(f"training export diagnostics {field} is invalid")
+    for missing_weight_field in missing_weight_diagnostic_fields:
+        findings.append(
+            f"training export diagnostics {missing_weight_field} is missing"
+        )
+    for invalid_weight_field in invalid_weight_diagnostic_fields:
+        findings.append(
+            f"training export diagnostics {invalid_weight_field} is invalid"
+        )
     weight_diagnostic_count_mismatches: list[str] = []
     if (
         duplicate_issuer_day_count is not None
