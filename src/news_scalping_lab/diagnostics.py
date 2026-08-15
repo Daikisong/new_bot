@@ -58,6 +58,9 @@ from news_scalping_lab.records.store import (
 )
 from news_scalping_lab.research_import.versioned_bundle import inspect_versioned_bundle
 from news_scalping_lab.retrieval.embedding import VECTOR_EMBEDDING_METHOD
+from news_scalping_lab.retrieval.production_embedding import (
+    local_embedding_verification_status,
+)
 from news_scalping_lab.retrieval.store import (
     VECTOR_INDEX_SCHEMA_VERSION,
     inspect_vector_index,
@@ -266,6 +269,18 @@ def production_readiness_report(
         "deterministic-hash",
     }:
         findings.append("embedding: production semantic provider is not configured")
+    if settings.embedding_provider.strip().lower() in {
+        "auto",
+        "local-production",
+        "local_production",
+    }:
+        local_embedding = report.get("local_embedding_snapshot")
+        if not isinstance(local_embedding, dict) or local_embedding.get(
+            "passed"
+        ) is not True:
+            findings.append(
+                "embedding: local production snapshot deep verification failed"
+            )
     evidence_policy = EvidencePolicy.parse(settings.evidence_policy)
     web_required = web_required_for_policy(evidence_policy)
     web_provider = settings.web_provider.strip().lower()
@@ -1125,12 +1140,19 @@ def build_doctor_report(
         accepted_episode_count=accepted_episode_count,
     )
     database_status = _database_status(settings, coverage_audit)
+    selected_embedding = settings.embedding_provider.strip().lower()
+    local_embedding_status = (
+        local_embedding_verification_status(settings, deep=production)
+        if selected_embedding in {"auto", "local-production", "local_production"}
+        else None
+    )
     report = {
         "project_root": settings.project_root.as_posix(),
         "evidence_policy": settings.evidence_policy.value,
         "web_required": web_required_for_policy(settings.evidence_policy),
         "embedding_provider": settings.embedding_provider,
         "embedding_fallback_policy": settings.event_cluster_fallback_policy.value,
+        "local_embedding_snapshot": local_embedding_status,
         "providers": {
             "llm": settings.llm_provider,
             "web": settings.web_provider,

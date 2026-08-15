@@ -41,6 +41,38 @@ The bootstrap preserves existing non-empty HMAC keys unless
 task cannot persist the deployment checkout, rerun the command on the actual
 deployment PC and do not claim the local `.env` is prepared.
 
+### Local embedding snapshot verification
+
+The pinned SentenceTransformer download is selective. It includes the native
+`model.safetensors`, tokenizer/configuration, `1_Pooling/config.json`, modules,
+and model metadata required by the loader. It excludes `pytorch_model.bin` when
+the safetensors weight is present, plus `tf_model.h5`, `onnx/**`, and
+`openvino/**`. The exact selected set is content-addressed in
+`memory/embedding_model_manifest.json` as sorted `(relative_path, size_bytes,
+sha256)` entries.
+
+`production prepare-local`, release finalization, deep doctor, and explicit
+embedding audits perform deep verification by hashing every selected file. Daily
+runtime performs fast verification: manifest and identity checks, existence and
+size checks for every selected file, and SHA-256 checks for the critical weight,
+config, modules, and tokenizer files. A process-local bounded cache reuses the
+verified loaded model only while its model/revision/device/manifest/stat identity
+is unchanged. Missing or changed files, non-finite smoke vectors, or a dimension
+mismatch raise a production embedding failure; there is no deterministic or
+BM25-only fallback.
+
+To repeat the real download/load check in a newly created cache that is removed
+after the run:
+
+```powershell
+$env:HF_HUB_DISABLE_PROGRESS_BARS = "1"
+python tools/smoke_local_embedding.py
+```
+
+The latest measured result is recorded in
+`diagnostics/local_embedding_clean_cache_smoke.json`; a fixture-only test is not
+reported as a real model smoke.
+
 ## 2. Inventory and isolated import
 
 Use the canonical repaired-corpus source or pass its exact manifest. First build

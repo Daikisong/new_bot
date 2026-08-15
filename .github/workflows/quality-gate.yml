@@ -47,6 +47,8 @@ jobs:
           tests/unit/test_versioned_bundle_records.py
           tests/unit/test_evidence_policy.py
           tests/unit/test_codex_oauth_provider.py
+          tests/unit/test_github_ruleset_policy.py
+          tests/unit/test_local_embedding_snapshot.py
           tests/unit/test_production_embedding_policy.py
           tests/unit/test_production_bootstrap_local.py
       - name: Full pytest

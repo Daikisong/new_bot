@@ -1,0 +1,33 @@
+{
+  "bypass_actor_count": 0,
+  "checked_at": "2026-08-15T16:57:00+09:00",
+  "conditions": {
+    "target": "default_branch"
+  },
+  "enforcement": "active",
+  "passed": true,
+  "repository": "Daikisong/new_bot",
+  "rules": {
+    "deletion_protection": true,
+    "non_fast_forward_protection": true,
+    "pull_request": {
+      "dismiss_stale_reviews_on_push": true,
+      "require_code_owner_review": false,
+      "require_last_push_approval": false,
+      "required_approving_review_count": 0,
+      "required_review_thread_resolution": true
+    },
+    "required_status_checks": {
+      "do_not_enforce_on_create": false,
+      "required_contexts": [
+        "quality-gate"
+      ],
+      "strict_required_status_checks_policy": true
+    }
+  },
+  "ruleset_id": 20882921,
+  "ruleset_name": "main-quality-gate",
+  "schema_version": "nslab.github_ruleset_status.v1",
+  "server_side_applied": true,
+  "source": "authenticated_github_settings_ui"
+}
