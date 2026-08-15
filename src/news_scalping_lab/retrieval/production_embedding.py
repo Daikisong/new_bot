@@ -40,9 +40,11 @@ LOCAL_EMBEDDING_MODEL_MANIFEST_FILE = Path(
 LOCAL_EMBEDDING_PROVIDER = "local-production"
 LOCAL_EMBEDDING_NORMALIZATION = "l2"
 
-# Pinned to the repository layout at LOCAL_EMBEDDING_REVISION. Native
-# safetensors weights and tokenizer fallbacks are retained; converted runtime
-# distributions are intentionally excluded from the production download.
+# Pinned to the repository layout at LOCAL_EMBEDDING_REVISION. model.safetensors
+# is the complete PyTorch weight payload loaded by SentenceTransformer here.
+# The ignored PyTorch .bin is a duplicate serialization; TF, ONNX, and OpenVINO
+# files target other runtimes. Excluding them reduces delivery size, not model
+# weights, tokenizer behavior, dimensions, or embedding quality.
 LOCAL_EMBEDDING_ALLOW_PATTERNS = (
     "1_Pooling/config.json",
     "README.md",
@@ -349,6 +351,9 @@ def load_local_production_embedding(
             ) from exc
         model_loader = sentence_transformers.SentenceTransformer
     device = _preferred_device()
+    # Content identity plus every selected file's size/mtime binds cache reuse.
+    # A replaced model, manifest, loader, device, or touched selected file gets
+    # a new key instead of silently reusing an already loaded provider.
     cache_key = (
         settings.local_embedding_model,
         settings.local_embedding_revision,
@@ -453,6 +458,9 @@ def verify_local_production_embedding(
             "local embedding model directory is missing"
         )
     started = perf_counter()
+    # The cheap path always stats every selected file. This proves existence and
+    # size and also creates the cache-invalidating signature without reading the
+    # roughly 500 MB model payload on every CLI process start.
     stat_signature = tuple(
         _verify_selected_file(
             model_path,
@@ -468,6 +476,9 @@ def verify_local_production_embedding(
     )
     hashed_file_count = 0
     if deep:
+        # Bootstrap, release finalization, and deep doctor hash the full selected
+        # snapshot. Runtime fast checks hash only the weight/config/tokenizer
+        # trust anchors below; alternate distribution files were never selected.
         for entry in manifest.selected_files:
             _verify_selected_file(model_path, entry, hash_content=True)
         hashed_file_count = manifest.selected_file_count
@@ -661,6 +672,8 @@ def selected_model_files(root: Path) -> list[LocalEmbeddingSelectedFile]:
 def selected_artifact_root_sha256(
     selected_files: list[LocalEmbeddingSelectedFile],
 ) -> str:
+    # Root the logical file projection, not absolute cache paths, directory
+    # metadata, or download timestamps, so clean installs share one identity.
     projection = [
         entry.model_dump(mode="json")
         for entry in sorted(selected_files, key=lambda item: item.relative_path)
@@ -725,6 +738,8 @@ def _repository_file_projection(
     model: str,
     revision: str,
 ) -> dict[str, int | None]:
+    # Hub inventory is diagnostics only. Missing network metadata becomes null;
+    # runtime safety continues to depend on the local sealed manifest and hashes.
     try:
         info = hub.HfApi().model_info(
             model,
