@@ -1,6 +1,7 @@
 .env
 .env.backup.*
 diagnostics/local_embedding_identity.json
+memory/embedding_model_manifest.json
 diagnostics/local_production_bootstrap_report.json
 diagnostics/local_production_bootstrap_report.md
 diagnostics/provider_identity_receipt.json

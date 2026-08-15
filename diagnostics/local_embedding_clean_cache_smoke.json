@@ -1,0 +1,32 @@
+{
+  "artifact_root_sha256": "e0da458bb4f008d3c9fbf6dbff0fe0a482c025dfd7b759ef0294fb978d9eeca0",
+  "deep_hashed_file_count": 12,
+  "deep_verification_seconds": 0.34406619996298105,
+  "dimension": 384,
+  "excluded_file_count": 16,
+  "excluded_patterns": [
+    "onnx/**",
+    "openvino/**",
+    "*.onnx",
+    "pytorch_model.bin",
+    "tf_model.h5"
+  ],
+  "fast_hashed_file_count_after_process_cache": 0,
+  "fast_verification_seconds": 0.00031020003370940685,
+  "finite": true,
+  "first_fast_verification_seconds": 0.33519280003383756,
+  "full_repository_size_if_known": 4620943233,
+  "manifest_relative_path": "memory/embedding_model_manifest.json",
+  "manifest_sha256": "c1d45e654c24c2c2e78ee716d192df92d906da40824d9689eded2868d644dce5",
+  "measured_at": "2026-08-15T16:54:00+09:00",
+  "model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "model_load_seconds": 2.025814900000114,
+  "passed": true,
+  "peak_memory_if_measured": null,
+  "prepare_download_and_load_seconds": 38.93804690003162,
+  "revision": "e8f8c211226b894fcb81acc59f3b34ba3efd5f42",
+  "schema_version": "nslab.local_embedding_clean_cache_smoke.v1",
+  "selected_file_count": 12,
+  "selected_total_bytes": 499561295,
+  "vector_count": 2
+}

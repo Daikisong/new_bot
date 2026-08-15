@@ -53,7 +53,11 @@ from news_scalping_lab.production.importer import (
     inspect_production_batch_import,
     verify_production_record_artifacts,
 )
-from news_scalping_lab.retrieval.production_embedding import embedding_identity
+from news_scalping_lab.retrieval.production_embedding import (
+    ProductionEmbeddingUnavailableError,
+    embedding_identity,
+    verify_local_production_embedding,
+)
 from news_scalping_lab.utils import (
     as_kst,
     canonical_json,
@@ -1065,6 +1069,14 @@ def _release_projection(
         findings.append("strict_evidence_web_provider_not_disabled")
     if settings.event_cluster_fallback_policy.value != "fail-closed":
         findings.append("production_embedding_not_fail_closed")
+    selected_embedding = settings.embedding_provider.strip().lower()
+    if selected_embedding in {"auto", "local-production", "local_production"}:
+        try:
+            verify_local_production_embedding(settings, deep=True)
+        except (OSError, ValueError, ProductionEmbeddingUnavailableError) as exc:
+            findings.append(
+                f"local_embedding_deep_verification_failed:{type(exc).__name__}:{exc}"
+            )
     company_memory_errors = CompanyMemoryStore(
         project_root,
         create=False,

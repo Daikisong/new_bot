@@ -19,13 +19,17 @@ from news_scalping_lab.inference.analyzer import DailyAnalyzer
 from news_scalping_lab.inference.event_clustering import cluster_news_events
 from news_scalping_lab.policies import EmbeddingFallbackPolicy
 from news_scalping_lab.retrieval.production_embedding import (
+    LOCAL_EMBEDDING_ALLOW_PATTERNS,
     LOCAL_EMBEDDING_IDENTITY_FILE,
+    LOCAL_EMBEDDING_MODEL_MANIFEST_FILE,
+    LocalEmbeddingModelManifest,
     LocalProductionEmbeddingProvider,
     ProductionEmbeddingUnavailableError,
-    directory_artifact_sha256,
     load_local_production_embedding,
+    selected_artifact_root_sha256,
+    selected_model_files,
 )
-from news_scalping_lab.utils import KST, write_json
+from news_scalping_lab.utils import KST, file_sha256, now_kst, write_json
 
 
 class _SentenceModel:
@@ -201,17 +205,40 @@ def test_doctor_rejects_production_deterministic_fallback(tmp_path: Path) -> Non
 
 def test_release_finalize_rejects_embedding_identity_drift(tmp_path: Path) -> None:
     model_dir = tmp_path / "model"
-    model_dir.mkdir()
-    (model_dir / "weights.bin").write_bytes(b"original")
-    artifact_hash = directory_artifact_sha256(model_dir)
+    for relative_path in LOCAL_EMBEDDING_ALLOW_PATTERNS:
+        path = model_dir / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(
+            b'{"hidden_size":4}'
+            if relative_path == "config.json"
+            else f"payload:{relative_path}".encode()
+        )
+    selected_files = selected_model_files(model_dir)
+    artifact_hash = selected_artifact_root_sha256(selected_files)
     settings = Settings(
         project_root=tmp_path,
         local_embedding_model="multilingual-model",
         local_embedding_revision="revision",
     )
+    manifest = LocalEmbeddingModelManifest(
+        model="multilingual-model",
+        revision="revision",
+        dimension=4,
+        model_path=model_dir.as_posix(),
+        allow_patterns=list(LOCAL_EMBEDDING_ALLOW_PATTERNS),
+        ignore_patterns=[],
+        selected_files=selected_files,
+        selected_file_count=len(selected_files),
+        selected_total_bytes=sum(item.size_bytes for item in selected_files),
+        artifact_root_sha256=artifact_hash,
+        created_at=now_kst(),
+    )
+    manifest_path = tmp_path / LOCAL_EMBEDDING_MODEL_MANIFEST_FILE
+    write_json(manifest_path, manifest.model_dump(mode="json"))
     write_json(
         tmp_path / LOCAL_EMBEDDING_IDENTITY_FILE,
         {
+            "schema_version": "nslab.local_embedding_identity.v2",
             "embedding_provider": "local-production",
             "embedding_model": "multilingual-model",
             "embedding_revision": "revision",
@@ -219,9 +246,14 @@ def test_release_finalize_rejects_embedding_identity_drift(tmp_path: Path) -> No
             "embedding_dimensions": 4,
             "normalization": "l2",
             "model_path": model_dir.as_posix(),
+            "embedding_model_manifest_path": (
+                LOCAL_EMBEDDING_MODEL_MANIFEST_FILE.as_posix()
+            ),
+            "embedding_model_manifest_sha256": file_sha256(manifest_path),
         },
     )
-    (model_dir / "weights.bin").write_bytes(b"changed")
+    weight_path = model_dir / "model.safetensors"
+    weight_path.write_bytes(b"x" * weight_path.stat().st_size)
     with pytest.raises(
         ProductionEmbeddingUnavailableError,
         match="artifact hash drift",
