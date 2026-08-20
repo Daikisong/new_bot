@@ -49,8 +49,20 @@ python -m news_scalping_lab.cli doctor --production-preflight
 `bootstrap-local` creates five distinct HMAC keys in the ignored local `.env`.
 It never reads or copies Codex OAuth credentials. `prepare-local` uses the official
 Codex CLI login, probes embedding capability, and prepares the pinned local
-sentence-transformer when Codex exposes no embedding command. These commands do
-not import 606,737 records, run the 40-day shadow gate, or activate a release.
+sentence-transformer when Codex exposes no embedding command. The local model
+download is restricted to the native `model.safetensors`, tokenizer/configuration,
+pooling, and metadata files required by SentenceTransformer; ONNX, OpenVINO,
+TensorFlow, and duplicate PyTorch weights are excluded. Preparation records every
+selected file's path, size, and SHA-256 in
+`memory/embedding_model_manifest.json`. These commands do not import 606,737
+records, run the 40-day shadow gate, or activate a release.
+
+Preparation, release finalization, and deep production doctor runs hash every
+selected model file. Normal runtime startup checks the manifest, all selected file
+sizes, and hashes only the critical weight/config/tokenizer files, then reuses the
+loaded model within the process. It does not rehash the full repository on every
+daily run. Any identity, dimension, finite-vector, or required-file failure remains
+fail-closed; deterministic embeddings are never a production fallback.
 
 See [production_activation_runbook.md](docs/0813/production_activation_runbook.md)
 for the attested import, shadow evaluation, finalize, activate, and rollback flow.
