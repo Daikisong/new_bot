@@ -1,5 +1,10 @@
 # Codex Goal: 순차 연구 번들 repair-only
 
+후속 연구자료를 이어서 처리할 때는 먼저
+[`docs/operations/research_repair_continuation.md`](operations/research_repair_continuation.md)의
+운영 체크리스트를 따른다. 이 문서는 설계 계약이고, 운영 문서는 실제 재개 순서와
+판정 방법을 짧게 정리한다.
+
 ## 목표
 
 `docs/설명서.md`의 Phase A대로 `research/inbox/bundles/raw/`의 연구 MD를 날짜순으로

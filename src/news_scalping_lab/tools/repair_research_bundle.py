@@ -233,6 +233,10 @@ def repair_bundle(
     *,
     news_csv_root: Path | None = None,
 ) -> dict[str, Any]:
+    # Keep this pipeline ordered. It first normalizes only source-present
+    # evidence and identifiers, then repairs record references/eligibility, and
+    # only after that regenerates manifests and hashes. Moving manifest repair
+    # earlier can make stale counts or hashes appear authoritative.
     if input_path.resolve() == output_path.resolve():
         raise ValueError("repair output must not overwrite the source bundle")
     parsed = parse_generic_bundle(input_path)
@@ -269,6 +273,9 @@ def repair_bundle(
         episode_id = _derive_episode_id(input_path, trade_date)
         episode_id_derived = True
 
+    # CSV timestamp rehydration is SHA/source-row bound and cutoff checked. It
+    # must never become a route for adding news or post-cutoff evidence that was
+    # absent from the original bundle.
     source_ledger_rows = _repair_source_ledger_rows(
         jsonl_blocks.get("source_ledger.jsonl", []),
     )
@@ -341,6 +348,9 @@ def repair_bundle(
         jsonl_blocks=jsonl_blocks,
     )
     _materialize_case_population_ids(old_records, jsonl_blocks)
+    # Preserve every source brain_delta record. Unresolved provenance or an
+    # outcome-only row is retained for audit/context but downgraded from
+    # training instead of being dropped or supplied with invented evidence.
     repaired_records = _repair_brain_delta(
         old_records,
         episode_id=episode_id,
@@ -491,6 +501,8 @@ def repair_bundle(
         quarantine_status=quarantine_status,
     )
 
+    # Recompute contracts and hashes from the final repaired payload, never
+    # from source-declared counts that may describe a different wrapper shape.
     block_payloads = _block_payloads(parsed.blocks, json_blocks, jsonl_blocks)
     json_blocks["bundle_manifest.json"] = _bundle_manifest(
         old_manifest,

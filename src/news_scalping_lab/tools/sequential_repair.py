@@ -2,6 +2,12 @@
 
 This command intentionally performs isolated imports only. It never writes the
 production research, memory, warehouse, or brain stores.
+
+Future operators should start with
+``docs/operations/research_repair_continuation.md``. Normal continuation uses
+``--max-files 1`` with resume enabled. Do not retry a completed source merely
+because the engine digest changed; use ``--retry-existing`` only for an
+explicitly identified source after a generic repair-rule fix.
 """
 
 from __future__ import annotations
@@ -272,6 +278,9 @@ def _isolated_validation(
 
 
 def process_source(source: Path, engine: dict[str, Any]) -> dict[str, Any]:
+    # The source hash, not its mutable path or filename, is the repair identity.
+    # Every diagnostic for this source stays under .work/<source_sha256>/ so a
+    # later operator can reproduce why it passed, stopped, or was preserved.
     source = source.resolve()
     payload = source.read_bytes()
     source_sha256 = sha256_bytes(payload)
@@ -320,6 +329,8 @@ def process_source(source: Path, engine: dict[str, Any]) -> dict[str, Any]:
         write_json(work / "sequential_result.json", base_result)
         return base_result
 
+    # Run the same transformation twice. Byte equality is the guard against
+    # timestamps, unordered collections, or ambient state entering a repair.
     repaired_a = work / "candidate-a.repaired.md"
     repaired_b = work / "candidate-b.repaired.md"
     try:
@@ -354,6 +365,8 @@ def process_source(source: Path, engine: dict[str, Any]) -> dict[str, Any]:
     write_json(work / "engine_manifest.json", engine)
     write_json(work / "repair_summary_a.json", summary_a)
     write_json(work / "repair_summary_b.json", summary_b)
+    # Validation imports into an ephemeral store. The production tree snapshot
+    # must remain byte-identical before any repaired artifact may be published.
     production_before = tree_snapshot()
     isolated, ephemeral = _isolated_validation(
         repaired_a,
@@ -379,6 +392,9 @@ def process_source(source: Path, engine: dict[str, Any]) -> dict[str, Any]:
     write_json(work / "mechanical_auxiliary.json", auxiliary)
     final_path: Path | None = None
     if gate.ready_for_import_pass:
+        # This is the only publication boundary. A candidate that is not
+        # deterministic, lossless, provenance-closed, and isolated-audit clean
+        # remains in .work and is never copied into repaired/<year>/.
         final_path = _final_path(
             source,
             source_sha256,
@@ -514,6 +530,9 @@ def run(
     source_path: str | None = None,
     retry_existing: bool = False,
 ) -> int:
+    # The engine digest records which generic parser/repair implementation made
+    # a result. It is audit metadata, not an instruction to rerun every prior
+    # source whenever code changes.
     engine = build_engine_manifest()
     previous = _compact_manifest(_read_manifest())
     if MANIFEST_PATH.exists():
