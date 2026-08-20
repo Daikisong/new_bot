@@ -16,6 +16,29 @@
 - repair는 production store에 import하지 않는다. 모든 import와 deep audit는 임시 store에서 수행한다.
 - 기존 결과는 engine digest 변경만으로 자동 재실행하지 않는다.
 
+## 남은 자료 전체 입고
+
+남은 연구자료가 여러 번 나뉘어 도착하더라도 최종 일괄 repair를 시작하기 전에는
+입고가 끝났다는 운영 확인을 먼저 받는다. 그 시점에 원본 전체를
+`research/inbox/bundles/raw/`에 복사하고 다음 값을 고정한다.
+
+```text
+상대경로
+source SHA-256
+byte size
+거래일
+총 원본 파일 수
+```
+
+원본과 기존 `sequential_repair_manifest.v2.jsonl`은 별도 저장소에도 백업한다.
+동일 source SHA는 중복 실행하지 않고, 경로만 같고 SHA가 달라진 파일은 덮어쓰지
+않는다. 어느 원본이 추가·교체됐는지 먼저 확인한 뒤 별도 source로 보존한다.
+
+자료는 한 번에 모두 입고할 수 있지만 repair 실행 단위는 계속 **원본 한 파일**이다.
+전체 자료에 대해 한 명령으로 병렬 repair하거나 blocker를 건너뛰지 않는다. 중간에
+작업이 중단되면 기본 resume 동작으로 다음 미처리 파일부터 이어가며, 이미
+`REPAIRED_PASS`로 닫힌 source는 다시 실행하지 않는다.
+
 ## 새 자료 처리
 
 1. 새 원본을 `research/inbox/bundles/raw/` 아래 적절한 연도 위치에 둔다.
@@ -35,6 +58,11 @@ python -m news_scalping_lab.tools.sequential_repair `
 ```
 
 정상 작업에서는 `--continue-after-blocker`, `--no-resume`, 다중 파일 실행을 사용하지 않는다.
+
+한 달의 마지막 거래일 파일까지 닫히면 다음 달로 넘어가기 전에 별도 읽기 전용
+월간 감사를 수행한다. 감사자는 해당 월의 manifest, repaired 산출물, lineage,
+격리 import/deep-audit 보고서만 검토하며 repair나 production import를 실행하지 않는다.
+범용 repair 결함이 확인된 경우에만 영향받은 source SHA/date를 명시해 재처리한다.
 
 ## 결과 판정
 
@@ -87,3 +115,25 @@ python -m pytest
 
 새 repair 묶음의 source/repaired/quality-gate SHA와 상태 집계를 확인한 뒤에만 production
 inventory를 다시 만든다. repair 완료와 production import/activation은 서로 다른 작업이다.
+
+## 전체 repair 이후 production 전환
+
+모든 입고 원본이 최종 상태를 갖고 월간 감사까지 닫힌 뒤 다음 순서로 전환한다.
+
+```text
+전체 source/repaired/quality-gate root 재계산
+→ READY_FOR_IMPORT 및 보존·격리 상태 집계
+→ production inventory 생성·검사·봉인
+→ stage-import zero-write preflight
+→ 격리된 production batch import 실행 및 receipt 검사
+→ llm-full brain 재구축·deep audit
+→ production memory index와 warehouse 재구축·검사
+→ strict production doctor/readiness
+→ release finalize·inspect·activate
+```
+
+구체적인 import와 활성화 명령은
+[`docs/0813/production_activation_runbook.md`](../0813/production_activation_runbook.md)를
+따른다. repair 단계에서는 위 production 명령을 미리 실행하지 않는다. 새 자료가
+나중에 추가되면 변경된 원본만 같은 절차로 repair하고 새 inventory/release를 만들며,
+기존 정상 원본을 매번 다시 import하거나 repair하지 않는다.
