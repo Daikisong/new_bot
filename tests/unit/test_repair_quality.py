@@ -6654,7 +6654,7 @@ def test_final_relations_resolve_unique_rank_ticker_fact_legacy_join(
 def test_final_relations_honor_exact_outcome_independent_removal_receipt(
     tmp_path: Path,
 ) -> None:
-    bundle = _write_bundle(
+    source = _write_bundle(
         tmp_path / "postseal-validated-final-relations.md",
         {
             "blind_prediction.json": [
@@ -6705,6 +6705,7 @@ def test_final_relations_honor_exact_outcome_independent_removal_receipt(
                     "sealed_final_watchlist_count": 2,
                     "validated_final_watchlist_count": 1,
                     "removed_count": 1,
+                    "final_rank_recontinuous_1_to_n": True,
                     "removed_candidates": [
                         {
                             "candidate_id": "CAND-2",
@@ -6717,10 +6718,50 @@ def test_final_relations_honor_exact_outcome_independent_removal_receipt(
         },
     )
 
-    population = _population_audit(artifact_rows(bundle))
+    source_population = _population_audit(artifact_rows(source))
+    assert source_population["rules"]["final_to_evidence_witness"][
+        "missing_keys"
+    ] == ["CAND-2"]
+    assert source_population["rules"]["final_to_semantic_audit"][
+        "missing_keys"
+    ] == ["CAND-2"]
+
+    parsed = repair_bundle_module.parse_generic_bundle(source)
+    json_blocks = dict(parsed.json_blocks)
+    jsonl_blocks = dict(parsed.jsonl_blocks)
+    repair_bundle_module._materialize_postseal_validated_final_watchlist(
+        json_blocks,
+        jsonl_blocks,
+    )
+    repaired_blocks = {
+        **{name: [value] for name, value in json_blocks.items()},
+        **jsonl_blocks,
+    }
+    repaired = _write_bundle(
+        tmp_path / "postseal-published-final-relations.md",
+        repaired_blocks,
+    )
+    population = _population_audit(artifact_rows(repaired))
 
     assert population["rules"]["final_to_evidence_witness"]["missing_keys"] == []
     assert population["rules"]["final_to_semantic_audit"]["missing_keys"] == []
+    occurrence = _artifact_occurrence_lineage_audit(
+        census_source(source),
+        census_source(repaired),
+    )
+    assert occurrence["artifact_occurrence_changed_count"] == 0
+
+    repaired_blocks["postseal_semantic_repair_receipt.json"][0][
+        "validated_final_watchlist"
+    ][0]["rank"] = 99
+    forged = _write_bundle(
+        tmp_path / "postseal-forged-final-relations.md",
+        repaired_blocks,
+    )
+    forged_population = _population_audit(artifact_rows(forged))
+    assert forged_population["rules"]["final_to_evidence_witness"][
+        "missing_keys"
+    ] == ["CAND-2"]
 
 
 def test_final_semantic_audit_accepts_final_rank_alias(tmp_path: Path) -> None:

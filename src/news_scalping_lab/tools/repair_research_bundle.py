@@ -452,6 +452,7 @@ def repair_bundle(
         jsonl_blocks["final_semantic_audit.jsonl"] = [
             _repair_semantic_audit_row(row) for row in jsonl_blocks["final_semantic_audit.jsonl"]
         ]
+    _materialize_postseal_validated_final_watchlist(json_blocks, jsonl_blocks)
 
     semantic_relation_ids = semantic_exclusion_relation_ids(jsonl_blocks)
     semantic_excluded_record_count = _exclude_semantically_invalid_training_records(
@@ -3411,6 +3412,134 @@ def _repair_semantic_audit_row(row: dict[str, Any]) -> dict[str, Any]:
     repaired.setdefault("ticker", _first_string(row.get("ticker"), row.get("code")))
     repaired.setdefault("company_name", _first_string(row.get("company_name"), row.get("name")))
     return _compact(repaired)
+
+
+def _materialize_postseal_validated_final_watchlist(
+    json_blocks: dict[str, Any],
+    jsonl_blocks: dict[str, list[dict[str, Any]]],
+) -> None:
+    """Publish a receipt-bound final list instead of hiding sealed candidates.
+
+    The sealed BLIND prediction remains immutable. A removal-only post-seal
+    receipt may define a second validated output only when every removal is an
+    outcome-independent semantic failure and the repaired ranking is exact.
+    """
+
+    receipt = _as_dict(json_blocks.get("postseal_semantic_repair_receipt.json"))
+    prediction = _as_dict(json_blocks.get("blind_prediction.json"))
+    sealed_rows = prediction.get("final_watchlist")
+    removed_rows = receipt.get("removed_candidates")
+    if (
+        not receipt
+        or "validated_final_watchlist" in receipt
+        or not isinstance(sealed_rows, list)
+        or not sealed_rows
+        or not all(isinstance(row, dict) for row in sealed_rows)
+        or not isinstance(removed_rows, list)
+        or not removed_rows
+        or not all(isinstance(row, dict) for row in removed_rows)
+        or receipt.get("outcome_independent") is not True
+        or receipt.get("outcome_metrics_used_to_remove_or_rank") is not False
+        or _string_list(receipt.get("outcome_snapshot_fields_read_by_repair"))
+        or _int_or_none(receipt.get("replacement_candidate_count")) != 0
+        or _int_or_none(receipt.get("sealed_final_watchlist_count")) != len(sealed_rows)
+        or _int_or_none(receipt.get("removed_count")) != len(removed_rows)
+    ):
+        return
+
+    sealed_by_id: dict[str, dict[str, Any]] = {}
+    for row in sealed_rows:
+        candidate_id = _first_string(row.get("candidate_id"))
+        if candidate_id is None or candidate_id in sealed_by_id:
+            return
+        sealed_by_id[candidate_id] = row
+    removed_by_id: dict[str, dict[str, Any]] = {}
+    for row in removed_rows:
+        candidate_id = _first_string(row.get("candidate_id"))
+        if (
+            candidate_id is None
+            or candidate_id not in sealed_by_id
+            or candidate_id in removed_by_id
+            or _string_list(row.get("outcome_fields_used"))
+        ):
+            return
+        removed_by_id[candidate_id] = row
+
+    semantic_by_id: dict[str, list[dict[str, Any]]] = {}
+    for row in jsonl_blocks.get("candidate_semantic_witness.jsonl", []):
+        candidate_id = _first_string(row.get("candidate_id"))
+        if candidate_id is not None:
+            semantic_by_id.setdefault(candidate_id, []).append(row)
+    ranking_by_id: dict[str, list[dict[str, Any]]] = {}
+    for row in jsonl_blocks.get("candidate_ranking_audit.jsonl", []):
+        candidate_id = _first_string(row.get("candidate_id"))
+        if candidate_id is not None:
+            ranking_by_id.setdefault(candidate_id, []).append(row)
+
+    for candidate_id, removed in removed_by_id.items():
+        semantic_matches = semantic_by_id.get(candidate_id, [])
+        ranking_matches = ranking_by_id.get(candidate_id, [])
+        if len(semantic_matches) != 1 or len(ranking_matches) != 1:
+            return
+        semantic = semantic_matches[0]
+        ranking = ranking_matches[0]
+        reason = _first_string(removed.get("repair_reason"))
+        if (
+            semantic.get("final_eligible") is not False
+            or semantic.get("pass") is not False
+            or str(semantic.get("semantic_verdict") or "").upper() != "FAIL"
+            or reason is None
+            or reason not in _string_list(semantic.get("fail_reasons"))
+            or ranking.get("included_in_final") is not False
+            or ranking.get("postseal_semantic_repair_outcome_independent") is not True
+            or _first_string(ranking.get("why_not_final_if_excluded")) is None
+        ):
+            return
+
+    included_ids = set(sealed_by_id) - set(removed_by_id)
+    included_rankings: list[tuple[int, str, dict[str, Any]]] = []
+    for candidate_id in included_ids:
+        matches = ranking_by_id.get(candidate_id, [])
+        if len(matches) != 1 or matches[0].get("included_in_final") is not True:
+            return
+        rank = _int_or_none(matches[0].get("rank_if_final_or_null"))
+        if rank is None:
+            return
+        included_rankings.append((rank, candidate_id, matches[0]))
+    included_rankings.sort()
+    if [rank for rank, _, _ in included_rankings] != list(
+        range(1, len(included_ids) + 1)
+    ):
+        return
+    if _int_or_none(receipt.get("validated_final_watchlist_count")) != len(
+        included_ids
+    ):
+        return
+
+    validated_rows: list[dict[str, Any]] = []
+    for rank, candidate_id, _ in included_rankings:
+        validated = deepcopy(sealed_by_id[candidate_id])
+        validated["sealed_rank"] = validated.get("rank")
+        validated["rank"] = rank
+        validated_rows.append(validated)
+    relevant_rankings = [
+        ranking_by_id[candidate_id][0]
+        for candidate_id in sorted(sealed_by_id)
+    ]
+    relevant_semantics = [
+        semantic_by_id[candidate_id][0]
+        for candidate_id in sorted(removed_by_id)
+    ]
+    receipt["validated_final_watchlist"] = validated_rows
+    receipt["validated_final_watchlist_derivation"] = {
+        "rule_id": "validated_final_watchlist_from_outcome_independent_removal.v1",
+        "sealed_final_watchlist_sha256": sha256_text(canonical_json(sealed_rows)),
+        "removed_candidates_sha256": sha256_text(canonical_json(removed_rows)),
+        "candidate_ranking_rows_sha256": sha256_text(canonical_json(relevant_rankings)),
+        "removed_semantic_rows_sha256": sha256_text(canonical_json(relevant_semantics)),
+        "validated_final_watchlist_sha256": sha256_text(canonical_json(validated_rows)),
+    }
+    json_blocks["postseal_semantic_repair_receipt.json"] = receipt
 
 
 def _repair_candidate_semantic_alias_rows(

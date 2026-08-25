@@ -3046,6 +3046,41 @@ def _artifact_occurrence_change_is_explained(
     source_artifact_rows: list[ArtifactRow] | None = None,
     repaired_artifact_rows: list[ArtifactRow] | None = None,
 ) -> bool:
+    if name == "postseal_semantic_repair_receipt.json":
+        source_rows = [
+            row.row
+            for row in (source_artifact_rows or artifact_rows(source_path))
+            if row.canonical_name == name
+        ]
+        repaired_rows = [
+            row.row
+            for row in (repaired_artifact_rows or artifact_rows(repaired_path))
+            if row.canonical_name == name
+        ]
+        if len(source_rows) != 1 or len(repaired_rows) != 1:
+            return False
+        stripped = {
+            key: value
+            for key, value in repaired_rows[0].items()
+            if key
+            not in {
+                "validated_final_watchlist",
+                "validated_final_watchlist_derivation",
+            }
+        }
+        repaired_all_rows = repaired_artifact_rows or artifact_rows(repaired_path)
+        repaired_by_name = _rows_by_name(repaired_all_rows)
+        sealed_ids = _final_candidate_ids(
+            repaired_by_name.get("blind_prediction.json", [])
+        )
+        return (
+            stripped == source_rows[0]
+            and _postseal_validated_final_ids(
+                repaired_by_name,
+                sealed_final_ids=sealed_ids,
+            )
+            is not None
+        )
     if _artifact_occurrence_record_id_namespacing_only(
         name,
         source_artifact_rows=source_artifact_rows,
@@ -7018,6 +7053,63 @@ def _postseal_validated_final_ids(
         if candidate_id in included_ids
     )
     if included_ranks != list(range(1, len(included_ids) + 1)):
+        return None
+    if receipt.get("final_rank_recontinuous_1_to_n") is not True:
+        return None
+
+    # A reduced relation surface must be an explicit, receipt-bound output.
+    # An internal set calculation is not enough because the immutable sealed
+    # prediction still contains the removed candidates.
+    sealed_candidates = _final_candidates(by_name.get("blind_prediction.json", []))
+    sealed_by_id = {
+        candidate_id: candidate
+        for candidate in sealed_candidates
+        for candidate_id in [_first(candidate, "candidate_id")]
+        if candidate_id is not None
+    }
+    validated_rows = receipt.get("validated_final_watchlist")
+    if (
+        len(sealed_by_id) != len(sealed_candidates)
+        or not isinstance(validated_rows, list)
+        or not all(isinstance(row, dict) for row in validated_rows)
+        or len(validated_rows) != len(included_ids)
+    ):
+        return None
+    validated_by_id = {
+        candidate_id: row
+        for row in validated_rows
+        if isinstance(row, dict)
+        for candidate_id in [_first(row, "candidate_id")]
+        if candidate_id is not None
+    }
+    if len(validated_by_id) != len(validated_rows) or set(validated_by_id) != included_ids:
+        return None
+    for candidate_id in included_ids:
+        ranking = ranking_rows_by_candidate[candidate_id][0]
+        expected = dict(sealed_by_id[candidate_id])
+        expected["sealed_rank"] = expected.get("rank")
+        expected["rank"] = _int(ranking.get("rank_if_final_or_null"), default=-1)
+        if validated_by_id[candidate_id] != expected:
+            return None
+
+    relevant_rankings = [
+        ranking_rows_by_candidate[candidate_id][0]
+        for candidate_id in sorted(sealed_by_id)
+    ]
+    relevant_semantics = [
+        semantic_rows_by_candidate[candidate_id][0]
+        for candidate_id in sorted(removed_ids)
+    ]
+    derivation = receipt.get("validated_final_watchlist_derivation")
+    expected_derivation = {
+        "rule_id": "validated_final_watchlist_from_outcome_independent_removal.v1",
+        "sealed_final_watchlist_sha256": sha256_text(canonical_json(sealed_candidates)),
+        "removed_candidates_sha256": sha256_text(canonical_json(removed_rows)),
+        "candidate_ranking_rows_sha256": sha256_text(canonical_json(relevant_rankings)),
+        "removed_semantic_rows_sha256": sha256_text(canonical_json(relevant_semantics)),
+        "validated_final_watchlist_sha256": sha256_text(canonical_json(validated_rows)),
+    }
+    if derivation != expected_derivation:
         return None
     return included_ids
 

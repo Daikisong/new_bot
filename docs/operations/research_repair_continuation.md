@@ -124,7 +124,8 @@ python -m news_scalping_lab.tools.sequential_repair `
 - 누락 semantic witness는 기존 witness 직렬화 관례와 screening/ranking/fact/inference/review/source
   chain이 모두 유일하고 hash로 재검증될 때만 materialize한다.
 - outcome을 보지 않는 post-seal 제거 receipt는 제거 대상의 semantic FAIL, 최종 제외, 순위와
-  개수 불변을 모두 증명한 validated final subset에서만 인정한다.
+  개수 불변을 모두 증명하고 receipt 안에 SHA-bound `validated_final_watchlist`를 실제 게시한
+  경우에만 final relation surface로 인정한다. 내부 계산으로만 sealed 후보를 숨기지 않는다.
 - legacy population 증가는 source와 repaired의 exact closure가 각각 닫히고, 추가 record가
   source case payload SHA와 derivation inputs로 전부 설명될 때만 허용한다.
 
