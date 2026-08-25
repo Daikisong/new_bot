@@ -1,0 +1,46 @@
+{
+  "attestation": {
+    "algorithm": "HMAC-SHA256",
+    "commitment_sha256": "fa564abd07979a6db646f2364c50a8911a4509702e7921ce848db6bdfed15b57",
+    "issued_at": "2026-08-25T10:47:31.600233+09:00",
+    "key_id": "56c0a29db37d1758",
+    "schema_version": "nslab.production_inventory_attestation.v1",
+    "signature": "641c7bbe88903f6c8e1051be6f31101824956728d0b0c1257060437a2b18b180"
+  },
+  "created_at": "2026-08-25T10:45:49.094091+09:00",
+  "declared_ready_bundle_count": 1543,
+  "deep_hash_verified": true,
+  "finding_count": 0,
+  "findings": [],
+  "inventory_id": "P9INV-072AEAB1E82DB5A09E2D",
+  "manifest_entry_count": 1937,
+  "quality_gate_root_sha256": "985042a97dc3b6c672d15ec230d57751fd4053b0dd69597b525f8206afa5ac0a",
+  "ready_bundle_count": 1543,
+  "ready_entries": {
+    "artifact_path": "runs/production_import/inventories/P9INV-072AEAB1E82DB5A09E2D/ready_entries.jsonl",
+    "item_count": 1543,
+    "schema_version": "nslab.memory_artifact_reference.v1",
+    "sha256": "248cbd7c4a646c8d5e85578d9ac3bbb3a727ec5a8eee8f6074e524c7bbb8b968"
+  },
+  "ready_for_import": true,
+  "ready_record_count": 823279,
+  "ready_semantic_excluded_record_count": 15214,
+  "ready_training_eligible_record_count": 524948,
+  "repaired_root_sha256": "1407162dc5771d65d3cafb768d4dddd2fbd0e68cfc8fac669cdf93bdadf23cb2",
+  "schema_version": "nslab.production_import_inventory_manifest.v1",
+  "source_manifest": {
+    "artifact_path": "research/inbox/bundles/repaired/sequential_repair_manifest.v2.jsonl",
+    "item_count": 1937,
+    "schema_version": "nslab.memory_artifact_reference.v1",
+    "sha256": "4a335066feb0f9c900f500215236bcf0d9b22ec3d3f7d103269faf1cba8b9e94"
+  },
+  "source_root_sha256": "01534babc0736ce7526549319a4775949ba4689d494bc25ef0121022137bc0b6",
+  "status_counts": {
+    "DEFERRED_NON_TRADING": 127,
+    "PARTIAL_PRICE_SOURCE_MISSING": 2,
+    "PRESERVED_PARTIAL_NOT_CURRENT_GOLD": 251,
+    "PRESERVED_SOURCE_PAYLOAD_ABSENT": 14,
+    "REPAIRED_PASS": 1543
+  },
+  "verifier_version": "production_import_inventory.v1"
+}
