@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from news_scalping_lab.records.store import audit_record_store
-from news_scalping_lab.research_import.repair_census import census_source
+from news_scalping_lab.research_import.repair_census import artifact_rows, census_source
 from news_scalping_lab.research_import.repair_models import RepairTaskState
 from news_scalping_lab.research_import.repair_quality import evaluate_bundle_quality
 from news_scalping_lab.research_import.repair_routing import classify_repair_source
@@ -194,6 +194,141 @@ def _quarantine_existing_repaired_artifacts(
         os.replace(candidate, destination)
         moved.append(str(destination))
     return moved
+
+
+def _brain_records_by_id(path: Path) -> tuple[set[str], dict[str, str]]:
+    episode_ids: set[str] = set()
+    records: dict[str, str] = {}
+    for artifact_row in artifact_rows(path):
+        if artifact_row.canonical_name != "brain_delta.jsonl":
+            continue
+        row = artifact_row.row
+        record_id = row.get("record_id") or row.get("brain_delta_id")
+        if not isinstance(record_id, str) or not record_id:
+            raise RuntimeError(f"brain record without stable id: {path}")
+        row_digest = sha256_text(canonical_json(row))
+        if record_id in records and records[record_id] != row_digest:
+            raise RuntimeError(f"conflicting duplicate record id in bundle: {record_id}")
+        records[record_id] = row_digest
+        episode_id = row.get("episode_id")
+        if isinstance(episode_id, str) and episode_id:
+            episode_ids.add(episode_id)
+    if not records or not episode_ids:
+        raise RuntimeError(f"bundle lacks conflict-verifiable brain identity: {path}")
+    return episode_ids, records
+
+
+def quarantine_conflicting_sources(source_sha256s: list[str]) -> dict[str, Any]:
+    """Fail closed when distinct sources define conflicting rows for one episode."""
+
+    requested = sorted(set(source_sha256s))
+    if len(requested) < 2:
+        raise ValueError("at least two distinct source SHA-256 values are required")
+    if any(len(value) != 64 or any(char not in "0123456789abcdefABCDEF" for char in value) for value in requested):
+        raise ValueError("every source identity must be a full SHA-256 value")
+
+    manifest_rows = _compact_manifest(_read_manifest())
+    selected = {
+        str(row.get("source_sha256")): row
+        for row in manifest_rows
+        if row.get("source_sha256") in requested
+    }
+    missing = sorted(set(requested) - set(selected))
+    if missing:
+        raise RuntimeError(f"source SHA absent from repair manifest: {', '.join(missing)}")
+
+    identities: dict[str, tuple[set[str], dict[str, str]]] = {}
+    for source_sha256 in requested:
+        row = selected[source_sha256]
+        repaired_path = row.get("repaired_path")
+        if row.get("ready_for_import") is not True or not isinstance(repaired_path, str):
+            raise RuntimeError(f"source is not a published repair candidate: {source_sha256}")
+        path = Path(repaired_path)
+        if not path.is_file():
+            raise RuntimeError(f"published repair candidate is missing: {path}")
+        identities[source_sha256] = _brain_records_by_id(path)
+
+    shared_episode_ids = set.intersection(
+        *(episode_ids for episode_ids, _ in identities.values())
+    )
+    shared_record_ids = set.intersection(
+        *(set(records) for _, records in identities.values())
+    )
+    conflicting_record_ids = sorted(
+        record_id
+        for record_id in shared_record_ids
+        if len(
+            {
+                records[record_id]
+                for _, records in identities.values()
+            }
+        )
+        > 1
+    )
+    if not shared_episode_ids or not conflicting_record_ids:
+        raise RuntimeError(
+            "sources do not prove a shared-episode conflicting-record condition"
+        )
+
+    receipt_core = {
+        "schema_version": "nslab.cross_source_conflict.v1",
+        "source_sha256s": requested,
+        "shared_episode_ids": sorted(shared_episode_ids),
+        "shared_record_id_count": len(shared_record_ids),
+        "conflicting_record_id_count": len(conflicting_record_ids),
+        "conflicting_record_ids_sha256": sha256_text(canonical_json(conflicting_record_ids)),
+        "resolution": "QUARANTINE_ALL_PENDING_AUTHORITATIVE_SOURCE_RECEIPT",
+        "production_import_performed": False,
+    }
+    conflict_id = sha256_text(canonical_json(receipt_core))
+    receipt = {**receipt_core, "conflict_id": conflict_id}
+    receipt_path = WORK_ROOT / "cross_source_conflicts" / conflict_id / "receipt.json"
+
+    updated_by_sha: dict[str, dict[str, Any]] = {}
+    for source_sha256 in requested:
+        row = dict(selected[source_sha256])
+        repaired_path = Path(str(row["repaired_path"]))
+        date_token = str(row.get("filename_date") or "unknown")
+        year = date_token[:4] if date_token[:4].isdigit() else "unknown"
+        destination = REPAIRED_ROOT / "quarantined" / year / repaired_path.name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(repaired_path, destination)
+        warnings = sorted(
+            {
+                *[str(value) for value in row.get("warnings", []) if isinstance(value, str)],
+                "CROSS_SOURCE_EPISODE_CONFLICT_QUARANTINED",
+            }
+        )
+        row.update(
+            {
+                "classification_reason": "conflicting_same_episode_sources_without_authority",
+                "final_status": RepairTaskState.PRESERVED_PARTIAL_NOT_CURRENT_GOLD.value,
+                "ready_for_import": False,
+                "brain_ingest_blocked": True,
+                "repaired_path": None,
+                "quarantined_repaired_paths": [str(destination)],
+                "cross_source_conflict_receipt_path": str(receipt_path),
+                "warnings": warnings,
+                "production_import_performed": False,
+            }
+        )
+        updated_by_sha[source_sha256] = row
+
+    write_json(receipt_path, receipt)
+    for source_sha256, row in updated_by_sha.items():
+        write_json(WORK_ROOT / source_sha256 / "cross_source_conflict.json", receipt)
+        write_json(WORK_ROOT / source_sha256 / "sequential_result.json", row)
+    _write_manifest(
+        [
+            updated_by_sha.get(str(row.get("source_sha256")), row)
+            for row in manifest_rows
+        ]
+    )
+    return {
+        **receipt,
+        "receipt_path": str(receipt_path),
+        "updated_sources": [updated_by_sha[value] for value in requested],
+    }
 
 
 def _isolated_validation(
@@ -611,7 +746,26 @@ def main() -> None:
         action="store_true",
         help="Re-run an existing source instead of stopping at its prior result",
     )
+    parser.add_argument(
+        "--quarantine-conflicting-source-sha",
+        action="append",
+        default=[],
+        help=(
+            "Quarantine every listed full source SHA only after proving they "
+            "define conflicting records for a shared episode"
+        ),
+    )
     args = parser.parse_args()
+    if args.quarantine_conflicting_source_sha:
+        if args.source_date or args.source_path or args.retry_existing or args.no_resume:
+            parser.error(
+                "cross-source quarantine cannot be combined with repair selection options"
+            )
+        result = quarantine_conflicting_sources(
+            args.quarantine_conflicting_source_sha
+        )
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True), flush=True)
+        raise SystemExit(0)
     if args.max_files != 1:
         parser.error(
             "sequential repair accepts exactly one source per invocation; "

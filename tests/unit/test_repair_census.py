@@ -119,6 +119,45 @@ def test_census_accepts_scalar_json_metadata_array(tmp_path: Path) -> None:
     assert artifact_rows(bundle) == []
 
 
+def test_census_accepts_scalar_jsonl_metadata_stream(tmp_path: Path) -> None:
+    bundle = tmp_path / "scalar-jsonl-metadata.md"
+    bundle.write_text(
+        "<!-- NSLAB:BEGIN acquisition_warnings.jsonl -->\n"
+        '"STOCK_WEB_JSON_WEB_VIEW_ONLY_UNHASHED"\n'
+        '"JSON_DOWNLOAD_TOOL_CONTENT_TYPE_BLOCK"\n'
+        "<!-- NSLAB:END acquisition_warnings.jsonl -->\n",
+        encoding="utf-8",
+    )
+
+    census = census_source(bundle)
+
+    occurrence = census.artifact_occurrences[0]
+    assert occurrence.parse_status == "PARSED_METADATA"
+    assert occurrence.top_level_shape == "JSONL_SCALARS"
+    assert occurrence.row_count == 2
+    assert occurrence.error is None
+    assert census.unclaimed_machine_payloads == []
+    assert artifact_rows(bundle) == []
+
+
+def test_census_rejects_mixed_object_and_scalar_jsonl(tmp_path: Path) -> None:
+    bundle = tmp_path / "mixed-jsonl.md"
+    bundle.write_text(
+        "<!-- NSLAB:BEGIN acquisition_warnings.jsonl -->\n"
+        '{"warning":"OBJECT_ROW"}\n'
+        '"SCALAR_ROW"\n'
+        "<!-- NSLAB:END acquisition_warnings.jsonl -->\n",
+        encoding="utf-8",
+    )
+
+    census = census_source(bundle)
+
+    occurrence = census.artifact_occurrences[0]
+    assert occurrence.parse_status == "PARSE_ERROR"
+    assert "JSONL lines must contain objects" in str(occurrence.error)
+    assert artifact_rows(bundle) == []
+
+
 def test_census_infers_json_for_extensionless_machine_marker(tmp_path: Path) -> None:
     bundle = tmp_path / "extensionless-json.md"
     bundle.write_text(
@@ -368,6 +407,24 @@ def test_census_rejects_duplicate_json_object_keys(tmp_path: Path) -> None:
     assert "duplicate JSON object key" in str(census.artifact_occurrences[0].error)
 
 
+def test_census_records_duplicate_keys_in_json_metadata_without_crashing(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "bundle.md"
+    bundle.write_text(
+        "<!-- NSLAB:BEGIN routing_receipt.json -->\n"
+        '{"schema_version":"receipt.v1","schema_version":"snapshot.v1"}\n'
+        "<!-- NSLAB:END routing_receipt.json -->\n",
+        encoding="utf-8",
+    )
+
+    census = census_source(bundle)
+
+    occurrence = census.artifact_occurrences[0]
+    assert occurrence.parse_status == "PARSE_ERROR"
+    assert "duplicate JSON object key: schema_version" in str(occurrence.error)
+
+
 def test_artifact_rows_bind_canonical_and_exact_row_hashes(tmp_path: Path) -> None:
     first = tmp_path / "first.md"
     second = tmp_path / "second.md"
@@ -496,6 +553,50 @@ The literal `"record_type":` is documentation, not a machine payload.
     assert len(machine_census.unclaimed_machine_payloads) == 1
     assert machine_census.unclaimed_machine_payloads[0].detected_shape == "ARRAY"
     assert prose_census.unclaimed_machine_payloads == []
+
+
+def test_census_ignores_exact_machine_duplicate_preserved_in_report_artifact(
+    tmp_path: Path,
+) -> None:
+    payload = '[{"record_id":"BD-1","record_type":"memory_claim"}]'
+    bundle = tmp_path / "duplicated-report-payload.md"
+    bundle.write_text(
+        "# Postmortem\n\n"
+        "## Scorecard\n\n"
+        f"{payload}\n\n"
+        "<!-- NSLAB:BEGIN postmortem_report.md -->\n"
+        "# Postmortem\n\n"
+        "## Scorecard\n\n"
+        f"{payload}\n"
+        "<!-- NSLAB:END postmortem_report.md -->\n",
+        encoding="utf-8",
+    )
+
+    census = census_source(bundle)
+
+    assert census.unclaimed_machine_payloads == []
+    assert census.artifact_counts == {"postmortem_report.md": 1}
+
+
+def test_census_keeps_different_machine_payload_outside_report_artifact(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "different-report-payload.md"
+    bundle.write_text(
+        "# Postmortem\n\n"
+        "## Scorecard\n\n"
+        '[{"record_id":"BD-OUTSIDE","record_type":"memory_claim"}]\n\n'
+        "<!-- NSLAB:BEGIN postmortem_report.md -->\n"
+        "# Postmortem\n\n"
+        "## Scorecard\n\n"
+        '[{"record_id":"BD-INSIDE","record_type":"memory_claim"}]\n'
+        "<!-- NSLAB:END postmortem_report.md -->\n",
+        encoding="utf-8",
+    )
+
+    census = census_source(bundle)
+
+    assert len(census.unclaimed_machine_payloads) == 1
 
 
 def test_artifact_rows_skip_claimed_parse_error_for_quality_reporting(

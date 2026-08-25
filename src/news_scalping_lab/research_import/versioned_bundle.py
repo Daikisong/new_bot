@@ -85,6 +85,10 @@ class GenericParsedBundle:
     payload_blocks: dict[str, str]
     json_blocks: dict[str, Any]
     jsonl_blocks: dict[str, list[dict[str, Any]]]
+    # JSONL is also used for auxiliary scalar streams such as warning codes.
+    # Keep those values hash/count-visible without exposing them as records or
+    # reference ledgers, whose rows must remain JSON objects.
+    jsonl_value_blocks: dict[str, list[Any]]
 
 
 @dataclass(frozen=True)
@@ -551,6 +555,7 @@ def parse_generic_bundle(path: Path) -> GenericParsedBundle:
     payload_blocks: dict[str, str] = {}
     json_blocks: dict[str, Any] = {}
     jsonl_blocks: dict[str, list[dict[str, Any]]] = {}
+    jsonl_value_blocks: dict[str, list[Any]] = {}
     for name, block in blocks.items():
         payload = _strip_optional_fence(block)
         payload_blocks[name] = payload
@@ -567,7 +572,16 @@ def parse_generic_bundle(path: Path) -> GenericParsedBundle:
                 except VersionedBundleImportError:
                     raise json_error from None
         elif name.endswith(".jsonl"):
-            jsonl_blocks[name] = _parse_jsonl(name, payload)
+            values = _parse_jsonl_values(name, payload)
+            object_rows = [value for value in values if isinstance(value, dict)]
+            if object_rows and len(object_rows) != len(values):
+                raise VersionedBundleImportError(
+                    f"{name} JSONL payload must not mix object and non-object values"
+                )
+            if object_rows or not values:
+                jsonl_blocks[name] = object_rows
+            else:
+                jsonl_value_blocks[name] = values
     return GenericParsedBundle(
         path=path,
         text=text,
@@ -576,6 +590,7 @@ def parse_generic_bundle(path: Path) -> GenericParsedBundle:
         payload_blocks=payload_blocks,
         json_blocks=json_blocks,
         jsonl_blocks=jsonl_blocks,
+        jsonl_value_blocks=jsonl_value_blocks,
     )
 
 
@@ -2070,22 +2085,8 @@ def _artifact_payloads_equivalent(name: str, left: str, right: str) -> bool:
     return left.strip().replace("\r\n", "\n") == right.strip().replace("\r\n", "\n")
 
 
-def _parse_jsonl_payload(payload: str) -> list[dict[str, Any]]:
-    stripped = payload.strip()
-    if stripped.startswith("["):
-        parsed = json.loads(stripped)
-        if not isinstance(parsed, list) or not all(isinstance(item, dict) for item in parsed):
-            raise VersionedBundleImportError("JSONL array payload must contain objects")
-        return parsed
-    rows: list[dict[str, Any]] = []
-    for line in payload.splitlines():
-        if not line.strip():
-            continue
-        parsed_line = json.loads(line)
-        if not isinstance(parsed_line, dict):
-            raise VersionedBundleImportError("JSONL payload lines must contain objects")
-        rows.append(parsed_line)
-    return rows
+def _parse_jsonl_payload(payload: str) -> list[Any]:
+    return _parse_jsonl_values("JSONL payload", payload)
 
 
 def _is_artifact_block_name(name: str) -> bool:
@@ -2101,19 +2102,12 @@ def _alternate_block_payload_is_parseable(name: str, payload: str) -> bool:
         return True
     if name.endswith(".jsonl"):
         try:
-            stripped = payload.strip()
-            if stripped.startswith("["):
-                parsed_payload = json.loads(stripped)
-                return isinstance(parsed_payload, list) and all(isinstance(item, dict) for item in parsed_payload)
-            for line in payload.splitlines():
-                if not line.strip():
-                    continue
-                parsed = json.loads(line)
-                if not isinstance(parsed, dict):
-                    return False
-        except json.JSONDecodeError:
+            values = _parse_jsonl_values(name, payload)
+            has_objects = any(isinstance(value, dict) for value in values)
+            has_non_objects = any(not isinstance(value, dict) for value in values)
+            return not (has_objects and has_non_objects)
+        except VersionedBundleImportError:
             return False
-        return True
     return True
 
 
@@ -2189,7 +2183,7 @@ def _parse_json(name: str, payload: str) -> Any:
         raise VersionedBundleImportError(f"{name} is not valid JSON: {exc}") from exc
 
 
-def _parse_jsonl(name: str, payload: str) -> list[dict[str, Any]]:
+def _parse_jsonl_values(name: str, payload: str) -> list[Any]:
     stripped = payload.strip()
     if stripped.startswith("["):
         try:
@@ -2198,13 +2192,8 @@ def _parse_jsonl(name: str, payload: str) -> list[dict[str, Any]]:
             raise VersionedBundleImportError(f"{name} is not valid JSONL array: {exc}") from exc
         if not isinstance(parsed_payload, list):
             raise VersionedBundleImportError(f"{name} JSONL array payload must be a list")
-        rows_from_array: list[dict[str, Any]] = []
-        for index, item in enumerate(parsed_payload, start=1):
-            if not isinstance(item, dict):
-                raise VersionedBundleImportError(f"{name}:{index} JSONL array item must be a JSON object")
-            rows_from_array.append(item)
-        return rows_from_array
-    rows: list[dict[str, Any]] = []
+        return parsed_payload
+    rows: list[Any] = []
     pending_lines: list[str] = []
     pending_start_line: int | None = None
     for line_number, line in enumerate(payload.splitlines(), start=1):
@@ -2225,10 +2214,6 @@ def _parse_jsonl(name: str, payload: str) -> list[dict[str, Any]]:
             break
         if not parsed_ok:
             continue
-        if not isinstance(parsed, dict):
-            raise VersionedBundleImportError(
-                f"{name}:{pending_start_line} must be a JSON object"
-            )
         rows.append(parsed)
         pending_lines = []
         pending_start_line = None
@@ -2236,6 +2221,18 @@ def _parse_jsonl(name: str, payload: str) -> list[dict[str, Any]]:
         raise VersionedBundleImportError(
             f"{name}:{pending_start_line} is not valid JSONL: incomplete object"
         )
+    return rows
+
+
+def _parse_jsonl(name: str, payload: str) -> list[dict[str, Any]]:
+    values = _parse_jsonl_values(name, payload)
+    rows: list[dict[str, Any]] = []
+    for index, value in enumerate(values, start=1):
+        if not isinstance(value, dict):
+            raise VersionedBundleImportError(
+                f"{name}:{index} must be a JSON object"
+            )
+        rows.append(value)
     return rows
 
 
@@ -2715,6 +2712,8 @@ def _block_counts(parsed: GenericParsedBundle) -> dict[str, int]:
     counts: dict[str, int] = {}
     for name, rows in parsed.jsonl_blocks.items():
         counts[name] = len(rows)
+    for name, values in parsed.jsonl_value_blocks.items():
+        counts[name] = len(values)
     for name, payload in parsed.json_blocks.items():
         counts[name] = len(payload) if isinstance(payload, list | dict) else 1
     return counts

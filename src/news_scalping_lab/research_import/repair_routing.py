@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from news_scalping_lab.research_import.repair_census import census_source
+from news_scalping_lab.research_import.repair_census import artifact_rows, census_source
 from news_scalping_lab.research_import.repair_models import (
     RepairTaskState,
     SourceCensus,
@@ -39,6 +39,21 @@ def classify_repair_source(
         return (
             RepairTaskState.PARTIAL_PRICE_SOURCE_MISSING,
             "blind_research_preserved_pending_outcome_source",
+        )
+
+    artifact_pending = _artifact_declared_pending_price_source(
+        path,
+        observed_census,
+    )
+    if artifact_pending is not None:
+        if artifact_pending:
+            return (
+                RepairTaskState.PARTIAL_PRICE_SOURCE_MISSING,
+                "blind_research_preserved_pending_outcome_source",
+            )
+        return (
+            RepairTaskState.ADAPTER_REQUIRED,
+            "inconsistent_artifact_declared_pending_outcome_source",
         )
 
     # A discovered-looking markdown wrapper can still be a deliberately
@@ -148,6 +163,108 @@ def _is_pending_price_source(front: dict[str, Any]) -> bool:
             isinstance(front.get("trade_date"), (str, date)),
         )
     )
+
+
+def _artifact_declared_pending_price_source(
+    path: Path,
+    census: SourceCensus,
+) -> bool | None:
+    """Recognize a front-matterless price-missing bundle fail-closed.
+
+    Legacy bundles may carry routing state only in their final manifest,
+    direct-ingest contract, and validation report. Require one unambiguous
+    copy of all three plus zero explicit brain records; report prose or nested
+    JSON fences alone can never trigger this terminal classification.
+    """
+
+    required_names = {
+        "bundle_manifest.json",
+        "direct_ingest_contract.json",
+        "validation_report.json",
+    }
+    grouped: dict[str, list[dict[str, Any]]] = {
+        name: [] for name in required_names
+    }
+    for row in artifact_rows(path):
+        if row.canonical_name in grouped:
+            grouped[row.canonical_name].append(row.row)
+    status_values = {
+        str(row.get(key, "")).upper()
+        for name, rows in grouped.items()
+        for row in rows
+        for key in (
+            ("validation_status",)
+            if name == "validation_report.json"
+            else ("status", "bundle_status")
+        )
+    }
+    if "PRICE_SOURCE_MISSING" not in status_values:
+        return None
+    if census.explicit_record_count != 0 or any(
+        name in required_names for name in census.conflicting_duplicate_names
+    ):
+        return False
+    if any(len(rows) != 1 for rows in grouped.values()):
+        return False
+
+    manifest = grouped["bundle_manifest.json"][0]
+    contract = grouped["direct_ingest_contract.json"][0]
+    validation = grouped["validation_report.json"][0]
+    dates = {
+        value
+        for value in (
+            manifest.get("calendar_date"),
+            contract.get("calendar_date"),
+        )
+        if isinstance(value, str) and value
+    }
+    manifest_files = manifest.get("files")
+    brain_delta_file = (
+        manifest_files.get("brain_delta.jsonl")
+        if isinstance(manifest_files, dict)
+        else None
+    )
+    brain_delta_file_row_count = (
+        brain_delta_file.get("row_count")
+        if isinstance(brain_delta_file, dict)
+        else None
+    )
+    zero_fields = (
+        manifest.get("brain_delta_count"),
+        manifest.get("brain_delta_record_count"),
+        contract.get("brain_delta_count"),
+        contract.get("brain_delta_record_count"),
+        contract.get("parsed_brain_delta_jsonl_row_count"),
+        validation.get("brain_delta_count"),
+        validation.get("brain_delta_record_count"),
+        validation.get("parsed_brain_delta_jsonl_row_count"),
+    )
+    return all(
+        (
+            str(manifest.get("status", "")).upper() == "PRICE_SOURCE_MISSING",
+            str(contract.get("status", "")).upper() == "PRICE_SOURCE_MISSING",
+            str(validation.get("validation_status", "")).upper()
+            == "PRICE_SOURCE_MISSING",
+            len(dates) == 1,
+            contract.get("blind_valid") is True,
+            contract.get("brain_eligible") is False,
+            contract.get("direct_brain_ingest_ready") is False,
+            all(_is_zero(value) for value in zero_fields),
+            isinstance(brain_delta_file, dict),
+            _is_zero(brain_delta_file_row_count),
+            validation.get("final_markdown_parsed") is True,
+            _is_zero(validation.get("jsonl_parse_error_count")),
+            validation.get("brain_delta_requirements_pass") is True,
+        )
+    )
+
+
+def _is_zero(value: Any) -> bool:
+    return (
+        isinstance(value, int)
+        and not isinstance(value, bool)
+        and value == 0
+    ) or (isinstance(value, str) and value == "0")
 
 
 def _declares_no_brain_payload(front: dict[str, Any]) -> bool:

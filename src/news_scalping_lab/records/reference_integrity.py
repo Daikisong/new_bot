@@ -45,9 +45,19 @@ def known_reference_ids_from_blocks(
             if "fact_ledger" in lower_name:
                 _add_string(known["fact"], row.get("fact_id"))
                 _add_strings(known["fact"], row.get("fact_ids"))
+                _add_string(known["fact"], row.get("postmortem_fact_id"))
+                _add_strings(known["fact"], row.get("postmortem_fact_ids"))
             if "inference_ledger" in lower_name:
                 _add_string(known["inference"], row.get("inference_id"))
                 _add_strings(known["inference"], row.get("inference_ids"))
+                _add_string(
+                    known["inference"],
+                    row.get("postmortem_inference_id"),
+                )
+                _add_strings(
+                    known["inference"],
+                    row.get("postmortem_inference_ids"),
+                )
     for block_name, payload in json_blocks.items():
         lower_name = block_name.lower()
         if "event_ledger" in lower_name or "row_disposition" in lower_name:
@@ -101,6 +111,8 @@ def _collect_definition_ids(value: Any, reference_type: str, target: set[str]) -
     if isinstance(value, dict):
         _add_string(target, value.get(f"{reference_type}_id"))
         _add_strings(target, value.get(f"{reference_type}_ids"))
+        _add_string(target, value.get(f"postmortem_{reference_type}_id"))
+        _add_strings(target, value.get(f"postmortem_{reference_type}_ids"))
         for item in value.values():
             _collect_definition_ids(item, reference_type, target)
     elif isinstance(value, list):

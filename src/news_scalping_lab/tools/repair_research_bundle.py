@@ -124,14 +124,20 @@ EVENT_TICKER_EDGE_ALLOWED_PATH_TYPES = {
     "MARKET_MEMORY",
 }
 
+_RANKABLE_SCREENING_DECISIONS = frozenset(
+    {"INCLUDE", "WATCH", "WATCH_SECONDARY"}
+)
+
 _KNOWN_LEGACY_RECORD_TYPES = frozenset(
     {
         "blind_leader_pair_case",
         "blind_false_positive",
         "candidate_generation_error",
         "candidate_ranking_audit_sample",
+        "counterfactual_pair",
         "cutline_exclusion_outcome",
         "direct_event",
+        "direct_event_case",
         "direct_event_fact_outcome",
         "direct_event_final_case",
         "direct_event_hit_pattern",
@@ -173,6 +179,7 @@ _KNOWN_LEGACY_RECORD_TYPES = frozenset(
         "newsless_outcome_case",
         "newsless_outcome_leader_case",
         "nonfinal_rankable_pairwise_case",
+        "outcome_leader_case",
         "outcome_leader_census_supervised",
         "outcome_leader_day",
         "outcome_leader_news_match",
@@ -279,10 +286,19 @@ def repair_bundle(
     source_ledger_rows = _repair_source_ledger_rows(
         jsonl_blocks.get("source_ledger.jsonl", []),
     )
+    input_audit = _as_dict(json_blocks.get("input_audit.json"))
     source_ledger_rows, timestamp_repair_summary = rehydrate_news_source_timestamps(
         source_ledger_rows,
         news_csv_root=news_csv_root,
         cutoff_at=_bundle_cutoff(front, json_blocks),
+        declared_input_file=_first_string(
+            front.get("input_file"),
+            input_audit.get("input_file"),
+        ),
+        declared_input_sha256=_first_string(
+            front.get("input_sha256"),
+            input_audit.get("input_sha256"),
+        ),
     )
     if source_ledger_rows:
         jsonl_blocks["source_ledger.jsonl"] = source_ledger_rows
@@ -342,6 +358,7 @@ def repair_bundle(
     # Repair therefore starts from each record's own explicit fields/payload and
     # downgrades unresolved training rows instead of guessing provenance.
     old_records = deepcopy(jsonl_blocks.get("brain_delta.jsonl", []))
+    _normalize_null_event_references(old_records)
     _normalize_mistyped_related_event_references(
         old_records,
         json_blocks=json_blocks,
@@ -369,18 +386,14 @@ def repair_bundle(
         source_rows_by_id=source_rows_by_id,
     )
     repaired_original_records = list(repaired_records)
-    _materialize_missing_retrospective_theme_records(
+    _materialize_missing_explicit_case_records(
         repaired_records,
-        theme_cases=jsonl_blocks.get("theme_formation_cases.jsonl", []),
+        jsonl_blocks=jsonl_blocks,
         episode_id=episode_id,
         trade_date=trade_date,
         available_from=available_from,
-        known_source_ids=source_ids,
-        source_rows_by_id=source_rows_by_id,
         known_fact_ids=fact_ids,
         known_inference_ids=inference_ids,
-        fact_source_ids_by_id=fact_source_ids_by_id,
-        inference_fact_ids_by_id=inference_fact_ids_by_id,
     )
     record_id_map = _record_id_map(old_records, repaired_original_records)
     _rewrite_cross_record_references(json_blocks, record_id_map)
@@ -408,8 +421,17 @@ def repair_bundle(
     if event_ledger_rows:
         jsonl_blocks["event_ledger.jsonl"] = event_ledger_rows
 
-    candidate_semantic_rows, final_witness_rows = _repair_semantic_primary_fact_references(
+    candidate_semantic_rows = _materialize_missing_candidate_semantic_witness_rows(
         jsonl_blocks.get("candidate_semantic_witness.jsonl", []),
+        screening_rows=jsonl_blocks.get("candidate_screening.jsonl", []),
+        ranking_rows=jsonl_blocks.get("candidate_ranking_audit.jsonl", []),
+        fact_rows=jsonl_blocks.get("fact_ledger_blind.jsonl", []),
+        inference_rows=jsonl_blocks.get("inference_ledger_blind.jsonl", []),
+        material_review_rows=jsonl_blocks.get("material_review.jsonl", []),
+        source_rows=source_ledger_rows,
+    )
+    candidate_semantic_rows, final_witness_rows = _repair_semantic_primary_fact_references(
+        candidate_semantic_rows,
         jsonl_blocks.get("final_evidence_witness.jsonl", []),
         screening_rows=jsonl_blocks.get("candidate_screening.jsonl", []),
         fact_rows=fact_rows,
@@ -430,6 +452,7 @@ def repair_bundle(
         jsonl_blocks["final_semantic_audit.jsonl"] = [
             _repair_semantic_audit_row(row) for row in jsonl_blocks["final_semantic_audit.jsonl"]
         ]
+    _materialize_postseal_validated_final_watchlist(json_blocks, jsonl_blocks)
 
     semantic_relation_ids = semantic_exclusion_relation_ids(jsonl_blocks)
     semantic_excluded_record_count = _exclude_semantically_invalid_training_records(
@@ -603,7 +626,27 @@ _CASE_POPULATION_REPAIR_SPECS: tuple[tuple[str, str, tuple[str, ...], str], ...]
         ("theme_case_id", "theme_formation_case_id", "case_id"),
         "theme_case_id",
     ),
+    (
+        "context_market_state_or_fact_cases.jsonl",
+        "context_market_state_or_fact_case",
+        ("context_case_id", "context_market_state_or_fact_case_id", "case_id"),
+        "context_case_id",
+    ),
 )
+
+# These artifacts can be complete first-class records even when a legacy
+# writer omitted their brain_delta mirrors. Other case lanes already have
+# aggregate/split representations whose coverage is proven by relation joins;
+# duplicating those rows would change their training population.
+_EXPLICIT_CASE_RECORD_MATERIALIZATION_BLOCKS = {
+    "beneficiary_discovery_cases.jsonl",
+    "blind_leader_preference_pairs.jsonl",
+    "candidate_generation_error_cases.jsonl",
+    "newsless_or_unexplained_cases.jsonl",
+    "ranking_error_cases.jsonl",
+    "theme_formation_cases.jsonl",
+    "context_market_state_or_fact_cases.jsonl",
+}
 
 
 def _materialize_case_population_ids(
@@ -674,6 +717,10 @@ def _materialize_case_population_ids(
                 score += int("fact_id" in evidence["join_values"]) * 5
                 score += int(evidence["fact_ids_match"]) * 5
                 score += int(evidence["fact_ids_exact"]) * 20
+                # Set equality cannot distinguish a directed pair from its
+                # reverse. Preserve the source ordering when both sides expose
+                # it so only the exact pair orientation receives this boost.
+                score += int(evidence["ordered_fact_ids_exact"]) * 40
                 score += int(evidence["ticker_matches"]) * 2
                 matches.append((score, record, evidence))
             if not matches:
@@ -920,6 +967,7 @@ def _case_population_record_types(
         case.get("classification")
         or case.get("discovery_type")
         or case.get("discovery_classification")
+        or case.get("screening_or_generation_failure")
         or ""
     ).upper()
     aliases = {
@@ -1004,6 +1052,26 @@ def _case_population_join_evidence(
         "selected_fact_ids",
     )
     record_fact_ids = _population_relation_values(
+        record,
+        "source_fact_ids",
+        "fact_ids",
+        "blind_fact_ids",
+        "sealed_fact_ids",
+        "blind_selected_fact_ids",
+        "selected_fact_ids",
+    )
+    case_fact_sequence = _population_relation_sequence(
+        case,
+        "matched_fact_ids",
+        "sealed_fact_ids",
+        "sealed_source_fact_ids",
+        "source_fact_ids",
+        "combined_fact_ids",
+        "fact_ids",
+        "blind_selected_fact_ids",
+        "selected_fact_ids",
+    )
+    record_fact_sequence = _population_relation_sequence(
         record,
         "source_fact_ids",
         "fact_ids",
@@ -1126,6 +1194,11 @@ def _case_population_join_evidence(
         "fact_ids_exact": bool(
             case_fact_ids and record_fact_ids and case_fact_ids == record_fact_ids
         ),
+        "ordered_fact_ids_exact": bool(
+            case_fact_sequence
+            and record_fact_sequence
+            and case_fact_sequence == record_fact_sequence
+        ),
         "ticker_matches": bool(case_ticker and record_ticker),
         "join_values": join_values,
         "primary_join_field": primary_join_field,
@@ -1168,6 +1241,26 @@ def _population_relation_values(
             elif isinstance(value, list):
                 values.update(item for item in value if isinstance(item, str) and item)
     return values
+
+
+def _population_relation_sequence(
+    row: dict[str, Any],
+    *fields: str,
+) -> list[str]:
+    """Return the first declared relation sequence without losing direction."""
+
+    payload = row.get("payload")
+    containers = [row, payload] if isinstance(payload, dict) else [row]
+    for container in containers:
+        for field in fields:
+            value = container.get(field)
+            if isinstance(value, str) and value:
+                return [value]
+            if isinstance(value, list):
+                items = [item for item in value if isinstance(item, str) and item]
+                if items:
+                    return items
+    return []
 
 
 def _repair_brain_delta(
@@ -1262,147 +1355,153 @@ def _repair_brain_delta(
     return repaired
 
 
-def _materialize_missing_retrospective_theme_records(
+def _materialize_missing_explicit_case_records(
     repaired_records: list[dict[str, Any]],
     *,
-    theme_cases: list[dict[str, Any]],
+    jsonl_blocks: dict[str, list[dict[str, Any]]],
     episode_id: str,
     trade_date: str,
     available_from: str | None,
-    known_source_ids: set[str],
-    source_rows_by_id: dict[str, dict[str, Any]],
     known_fact_ids: set[str],
     known_inference_ids: set[str],
-    fact_source_ids_by_id: dict[str, list[str]],
-    inference_fact_ids_by_id: dict[str, list[str]],
 ) -> None:
-    """Preserve explicit retrospective theme cases absent from ``brain_delta``.
+    """Materialize explicit case artifacts omitted from ``brain_delta``.
 
-    Some legacy bundles record a large audit-only theme population in
-    ``theme_formation_cases.jsonl`` while promoting only the small subset with
-    a cutoff-safe bridge into ``brain_delta``.  The missing rows are not
-    positive training examples.  When the case explicitly declares
-    ``retrospective_only`` + ``blind_candidate_generated=false`` +
-    ``training_eligible=false`` and gives a no-bridge reason, we materialize a
-    deterministic, zero-weight context record that copies only the existing
-    case IDs/facts/sources.  No ticker, company, outcome, or semantic claim is
-    inferred.
+    A case artifact is a first-class source record. This adapter copies every
+    source field and adds only a deterministic envelope, canonical identity,
+    weight, and lineage receipt. Undefined typed references are retained as
+    legacy tokens instead of being exposed as live importer references. It
+    never infers a company, ticker, outcome, eligibility, or evidence value.
     """
 
-    existing_case_ids = {
-        case_id
-        for record in repaired_records
-        for case_id in (
-            _first_string(
-                record.get("theme_case_id"),
-                record.get("theme_formation_case_id"),
-            ),
-        )
-        if case_id is not None
-    }
-    next_index = len(repaired_records) + 1
-    for case in theme_cases:
-        case_id = _first_string(
-            case.get("theme_case_id"),
-            case.get("theme_formation_case_id"),
-            case.get("case_id"),
-        )
-        if case_id is None or case_id in existing_case_ids:
+    for block_name, record_type, id_fields, target_field in _CASE_POPULATION_REPAIR_SPECS:
+        if block_name not in _EXPLICIT_CASE_RECORD_MATERIALIZATION_BLOCKS:
             continue
-        if not (
-            case.get("retrospective_only") is True
-            and case.get("blind_candidate_generated") is False
-            and case.get("training_eligible") is False
-            and _first_string(case.get("no_direct_bridge_reason")) is not None
-        ):
-            continue
+        existing_case_ids: set[str] = set()
+        for record in repaired_records:
+            existing_case_ids.update(
+                value
+                for field in (*id_fields, target_field)
+                for value in _string_list(record.get(field))
+            )
+            derivations = record.get("repair_population_derivations")
+            if isinstance(derivations, list):
+                existing_case_ids.update(
+                    source_case_id
+                    for item in derivations
+                    if isinstance(item, dict)
+                    and item.get("source_artifact") == block_name
+                    for source_case_id in [_first_string(item.get("source_case_id"))]
+                    if source_case_id is not None
+                )
 
-        fact_ids = _filter_known(
-            [
-                *_string_list(case.get("source_fact_ids")),
-                *_string_list(case.get("fact_ids")),
-            ],
-            known_fact_ids,
-        )
-        inference_ids = _filter_known(
-            [
-                *_string_list(case.get("source_inference_ids")),
-                *_string_list(case.get("inference_ids")),
-            ],
-            known_inference_ids,
-        )
-        source_ids = _merge_unique(
-            _filter_known(
+        for case in jsonl_blocks.get(block_name, []):
+            case_id = _first_string(*(case.get(field) for field in id_fields))
+            if case_id is None or case_id in existing_case_ids:
+                continue
+            if not isinstance(case.get("training_eligible"), bool):
+                # Source ambiguity is not permission to invent either a
+                # positive or a negative training decision.
+                continue
+            if case.get("training_eligible") is False and _first_string(
+                case.get("training_exclusion_reason"),
+                case.get("eligibility_reason"),
+                case.get("no_direct_bridge_reason"),
+                case.get("exclusion_reason"),
+                case.get("case_status"),
+                case.get("classification"),
+            ) is None:
+                continue
+
+            case_sha256 = sha256_text(canonical_json(case))
+            derived = deepcopy(case)
+            derived_record_id = f"DERIVED-CASE-{case_sha256[:16].upper()}"
+            declared_weight = _float_or_none(case.get("sample_weight"))
+            case_source_ids = _ordered_unique(
                 [
-                    *_string_list(case.get("source_ids")),
                     *_string_list(case.get("provenance_source_ids")),
-                ],
-                known_source_ids,
-            ),
-            _source_ids_from_fact_inference(
-                fact_ids,
-                inference_ids,
-                fact_source_ids_by_id=fact_source_ids_by_id,
-                inference_fact_ids_by_id=inference_fact_ids_by_id,
-                known_source_ids=known_source_ids,
-            ),
-        )
-        source_record: dict[str, Any] = {
-            "record_id": f"DERIVED-THEME-{case_id}",
-            "record_type": "theme_formation_case",
-            "theme_case_id": case_id,
-            "episode_id": episode_id,
-            "trade_date": trade_date,
-            "available_from": available_from,
-            "source_phase": "RETROSPECTIVE",
-            "retrospective_only": True,
-            "blind_candidate_generated": False,
-            "no_direct_bridge_reason": case["no_direct_bridge_reason"],
-            "source_fact_ids": fact_ids,
-            "fact_ids": fact_ids,
-            "source_inference_ids": inference_ids,
-            "inference_ids": inference_ids,
-            "provenance_source_ids": source_ids,
-            "source_ids": source_ids,
-            "training_eligible": False,
-            "sample_weight": 0.0,
-            "training_exclusion_reason": "retrospective_theme_case_no_direct_bridge",
-            "repair_population_derivations": [
+                    *_string_list(case.get("source_ids")),
+                    *_string_list(case.get("matched_source_row_ids")),
+                    *_string_list(case.get("matched_source_ids")),
+                ]
+            )
+            derived.update(
                 {
-                    "rule_id": "derived_brain_record_from_explicit_case_artifact.v1",
-                    "source_artifact": "theme_formation_cases.jsonl",
-                    "source_case_id": case_id,
-                    "source_case_payload_sha256": sha256_text(canonical_json(case)),
-                    "target_field": "theme_case_id",
-                    "record_type_relation": (
-                        "theme_formation_cases.jsonl:retrospective_only->theme_formation_case"
+                    "record_id": derived_record_id,
+                    "brain_delta_id": derived_record_id,
+                    "record_type": record_type,
+                    target_field: case_id,
+                    "episode_id": episode_id,
+                    "trade_date": _first_string(case.get("trade_date"), trade_date),
+                    "available_from": _valid_available_from(
+                        case.get("available_from"),
+                        available_from,
                     ),
-                    "derivation_inputs": [
-                        *fact_ids,
-                        *inference_ids,
-                        *source_ids,
+                    "sample_weight": (
+                        declared_weight
+                        if declared_weight is not None
+                        else 1.0
+                        if case.get("training_eligible") is True
+                        else 0.0
+                    ),
+                    "repair_population_derivations": [
+                        {
+                            "rule_id": (
+                                "derived_brain_record_from_explicit_case_artifact.v1"
+                            ),
+                            "source_artifact": block_name,
+                            "source_case_id": case_id,
+                            "source_case_payload_sha256": case_sha256,
+                            "target_field": target_field,
+                            "record_type_relation": (
+                                f"{block_name}:explicit_case->{record_type}"
+                            ),
+                            "derivation_inputs": _ordered_unique(
+                                [
+                                    case_id,
+                                    *_string_list(case.get("source_fact_ids")),
+                                    *_string_list(case.get("fact_ids")),
+                                    *_string_list(case.get("source_inference_ids")),
+                                    *_string_list(case.get("inference_ids")),
+                                    *case_source_ids,
+                                ]
+                            ),
+                        }
                     ],
                 }
-            ],
-        }
-        repaired = _existing_direct_ingest_case(
-            source_record,
-            index=next_index,
-            episode_id=episode_id,
-            trade_date=trade_date,
-            available_from=available_from,
-            known_source_ids=known_source_ids,
-            source_rows_by_id=source_rows_by_id,
-            known_fact_ids=known_fact_ids,
-            known_inference_ids=known_inference_ids,
-            fact_source_ids_by_id=fact_source_ids_by_id,
-            inference_fact_ids_by_id=inference_fact_ids_by_id,
-        )
-        _normalize_ineligible_training_metadata([repaired])
-        _namespace_record_identity(repaired, episode_id=episode_id)
-        repaired_records.append(repaired)
-        existing_case_ids.add(case_id)
-        next_index += 1
+            )
+            if case_source_ids:
+                # Legacy error cases call their sealed provenance edge
+                # ``matched_source_row_ids``. Mirror that exact declared set
+                # into the importer field without changing the source case.
+                derived["provenance_source_ids"] = case_source_ids
+            unresolved_fact_ids, unresolved_inference_ids = (
+                _sanitize_unknown_typed_references(
+                    derived,
+                    known_fact_ids=known_fact_ids,
+                    known_inference_ids=known_inference_ids,
+                )
+            )
+            if unresolved_fact_ids:
+                derived["legacy_unresolved_fact_tokens"] = _ordered_unique(
+                    unresolved_fact_ids
+                )
+            if unresolved_inference_ids:
+                derived["legacy_unresolved_inference_tokens"] = _ordered_unique(
+                    unresolved_inference_ids
+                )
+            if unresolved_fact_ids or unresolved_inference_ids:
+                derived["unresolved_reference_reason"] = (
+                    "typed_reference_not_present_in_bundle_ledger"
+                )
+            # An explicit pair can be preserved as a record, but it is not a
+            # training example unless the source also proves the sealed pair
+            # contract. This mirrors the guard applied to original records.
+            _drop_unsealed_preference_pair(derived)
+            _normalize_ineligible_training_metadata([derived])
+            _namespace_record_identity(derived, episode_id=episode_id)
+            repaired_records.append(derived)
+            existing_case_ids.add(case_id)
 
 
 def _namespace_record_identity(record: dict[str, Any], *, episode_id: str) -> None:
@@ -1428,6 +1527,8 @@ def _global_record_id(episode_id: str, record_id: str) -> str:
     prefix = f"{episode_id}__"
     if record_id.startswith(prefix):
         return record_id
+    if record_id.casefold().startswith(prefix.casefold()):
+        return f"{prefix}{record_id[len(prefix):]}"
     return f"{prefix}{record_id}"
 
 
@@ -1543,10 +1644,10 @@ def _repair_provenance_closure_rows(
             }
         )
         repaired_rows.append(_compact(repaired))
-    # A repair-only adapter may preserve an explicit audit/case artifact as a
-    # new zero-weight brain context record.  Its closure row is derived from
-    # that same record; do not synthesize closure for ordinary source records
-    # whose original audit row is genuinely missing.
+    # A repair-only adapter may preserve an explicit case artifact as a new
+    # brain record. Its closure row is derived from that same hashed case; do
+    # not synthesize closure for ordinary source records whose original audit
+    # row is genuinely missing.
     for record in repaired_records:
         record_id = _first_string(record.get("record_id"))
         derivations = record.get("repair_population_derivations")
@@ -1577,6 +1678,7 @@ def _repair_provenance_closure_rows(
                     source_ids,
                     fact_source_ids_by_id.get(fact_id, []),
                 )
+        eligible = record.get("training_eligible") is True
         repaired_rows.append(
             {
                 "record_id": record_id,
@@ -1585,11 +1687,19 @@ def _repair_provenance_closure_rows(
                 "source_fact_ids": source_fact_ids,
                 "source_inference_ids": source_inference_ids,
                 "closure_status": (
-                    "CLOSED_NOT_TRAINING" if source_ids else "NOT_TRAINING_NO_CLOSURE_REQUIRED"
+                    "CLOSED"
+                    if eligible
+                    else "CLOSED_NOT_TRAINING"
+                    if source_ids
+                    else "NOT_TRAINING_NO_CLOSURE_REQUIRED"
                 ),
-                "training_eligible_after_closure": False,
-                "sample_weight_after_closure": 0.0,
-                "downgrade_reason": record.get("training_exclusion_reason"),
+                "training_eligible_after_closure": eligible,
+                "sample_weight_after_closure": (
+                    _float_or_none(record.get("sample_weight")) or 0.0
+                ),
+                "downgrade_reason": (
+                    None if eligible else record.get("training_exclusion_reason")
+                ),
                 "repair_generated_for_derived_record": True,
             }
         )
@@ -1989,7 +2099,17 @@ def _existing_direct_ingest_case(
         repaired["provenance_source_ids"] = source_ids
         repaired.setdefault("source_ids", source_ids)
 
-    if (
+    unresolved_inference_dependencies = [
+        inference_id
+        for inference_id in inference_ids
+        if inference_id not in inference_fact_ids_by_id
+    ]
+    if unresolved_fact_ids and unresolved_inference_dependencies:
+        # A known inference is not training evidence when its declared fact
+        # dependency is absent from the embedded fact ledger. Keep all legacy
+        # tokens and direct sources for audit, but fail the record closed.
+        _downgrade_unresolved_reference_training(repaired)
+    elif (
         (unresolved_fact_ids or unresolved_inference_ids)
         and not fact_ids
         and not inference_ids
@@ -2042,7 +2162,7 @@ def _existing_direct_ingest_case(
         repaired.get("record_type") == "company_memory_delta"
         and _first_string(repaired.get("known_at"), payload.get("known_at")) is None
     ):
-        repaired["known_at"] = repaired["available_from"]
+        repaired["known_at"] = _company_memory_known_at(repaired["available_from"])
     compacted = _compact(repaired)
     _normalize_ineligible_known_null_outcome(
         compacted,
@@ -2061,7 +2181,10 @@ def _normalize_known_record_scalar_types(
 
     nested_label_quality = payload.get("label_quality")
     if "label_quality" not in record and isinstance(nested_label_quality, str):
-        record["label_quality"] = nested_label_quality.lower()
+        normalized_label_quality = nested_label_quality.lower()
+        if normalized_label_quality == "verified_normal_day":
+            normalized_label_quality = "verified"
+        record["label_quality"] = normalized_label_quality
     if _first_string(record.get("record_type")) != "research_question":
         return
     nested_question = payload.get("question")
@@ -2115,6 +2238,17 @@ def _standardize_custom_record_type(
     if original_type is None:
         return
     source_record_type = original_type
+    company_name_payload = record.get("company_name")
+    if isinstance(company_name_payload, dict):
+        extracted_company_name = _first_string(
+            company_name_payload.get("company_name"),
+            company_name_payload.get("issuer_name"),
+            company_name_payload.get("name"),
+            company_name_payload.get("company"),
+        )
+        if extracted_company_name is not None:
+            record["legacy_company_name_payload"] = deepcopy(company_name_payload)
+            record["company_name"] = extracted_company_name
     ticker = _first_string(record.get("ticker"), payload.get("ticker"))
     ticker = _first_string(
         ticker,
@@ -2230,6 +2364,7 @@ def _standardize_custom_record_type(
         "direct_event_labeled_response",
         "direct_event_fact_outcome",
         "direct_event_hit_pattern",
+        "direct_event_case",
     }:
         record["legacy_record_type"] = original_type
         record["record_type"] = "supervised_direct_event_case"
@@ -2276,10 +2411,72 @@ def _standardize_custom_record_type(
         record["response_class"] = _label_as_string(
             record.get("response_class"),
             record.get("label"),
+            payload.get("response_label"),
             payload.get("label"),
         )
         record["label_quality"] = "verified"
         record["attribution_status"] = "postseal_label_attached_to_sealed_direct_event"
+    elif original_type == "counterfactual_pair":
+        selected = _as_dict(payload.get("selected"))
+        missed = _as_dict(payload.get("missed_leader"))
+        selected_ticker = _first_string(selected.get("ticker"))
+        missed_ticker = _first_string(missed.get("ticker"))
+        if selected_ticker and missed_ticker and selected_ticker != missed_ticker:
+            record["legacy_record_type"] = original_type
+            record["record_type"] = "blind_leader_preference_pair"
+            record["blind_pair_id"] = _first_string(
+                record.get("blind_pair_id"),
+                record.get("record_id"),
+                record.get("brain_delta_id"),
+            )
+            record["blind_preferred_ticker"] = selected_ticker
+            record["blind_preferred_company_name"] = _first_string(
+                selected.get("company_name"),
+                selected.get("issuer_name"),
+                selected.get("name"),
+            )
+            record["blind_rejected_ticker"] = missed_ticker
+            record["blind_rejected_company_name"] = _first_string(
+                missed.get("company_name"),
+                missed.get("issuer_name"),
+                missed.get("name"),
+            )
+            record["outcome_winner_ticker"] = missed_ticker
+            record["outcome_winner_company_name"] = record.get(
+                "blind_rejected_company_name"
+            )
+            record["blind_preference_correct"] = False
+            record["training_target"] = "outcome_preferred_candidate"
+            record["training_mode"] = "postseal_counterfactual_pair"
+            record["correction_mode"] = _first_string(
+                payload.get("comparison_axis"),
+                "counterfactual_pair",
+            )
+        else:
+            _downgrade_unresolved_reference_training(
+                record,
+                reason="counterfactual_pair_missing_distinct_source_tickers",
+            )
+    elif (
+        original_type == "outcome_leader_case"
+        and record.get("training_eligible") is True
+        and payload.get("blind_selected") is False
+        and payload.get("premarket_news_state") == "NEWS_PRESENT_NOT_SELECTED"
+        and ticker is not None
+    ):
+        record["legacy_record_type"] = original_type
+        record["record_type"] = "candidate_generation_error_case"
+        record["error_id"] = _first_string(
+            record.get("error_id"),
+            record.get("record_id"),
+            record.get("brain_delta_id"),
+        )
+        record["error_type"] = payload["premarket_news_state"]
+        record["correction_mode"] = payload["premarket_news_state"]
+        record["missed_ticker"] = ticker
+        if company_name is not None:
+            record["missed_company_name"] = company_name
+        record["training_target"] = "candidate_generation_correction"
     elif original_type in {
         "nonfinal_rankable_pairwise_case",
         "negative_control_final_false_positive",
@@ -3217,6 +3414,134 @@ def _repair_semantic_audit_row(row: dict[str, Any]) -> dict[str, Any]:
     return _compact(repaired)
 
 
+def _materialize_postseal_validated_final_watchlist(
+    json_blocks: dict[str, Any],
+    jsonl_blocks: dict[str, list[dict[str, Any]]],
+) -> None:
+    """Publish a receipt-bound final list instead of hiding sealed candidates.
+
+    The sealed BLIND prediction remains immutable. A removal-only post-seal
+    receipt may define a second validated output only when every removal is an
+    outcome-independent semantic failure and the repaired ranking is exact.
+    """
+
+    receipt = _as_dict(json_blocks.get("postseal_semantic_repair_receipt.json"))
+    prediction = _as_dict(json_blocks.get("blind_prediction.json"))
+    sealed_rows = prediction.get("final_watchlist")
+    removed_rows = receipt.get("removed_candidates")
+    if (
+        not receipt
+        or "validated_final_watchlist" in receipt
+        or not isinstance(sealed_rows, list)
+        or not sealed_rows
+        or not all(isinstance(row, dict) for row in sealed_rows)
+        or not isinstance(removed_rows, list)
+        or not removed_rows
+        or not all(isinstance(row, dict) for row in removed_rows)
+        or receipt.get("outcome_independent") is not True
+        or receipt.get("outcome_metrics_used_to_remove_or_rank") is not False
+        or _string_list(receipt.get("outcome_snapshot_fields_read_by_repair"))
+        or _int_or_none(receipt.get("replacement_candidate_count")) != 0
+        or _int_or_none(receipt.get("sealed_final_watchlist_count")) != len(sealed_rows)
+        or _int_or_none(receipt.get("removed_count")) != len(removed_rows)
+    ):
+        return
+
+    sealed_by_id: dict[str, dict[str, Any]] = {}
+    for row in sealed_rows:
+        candidate_id = _first_string(row.get("candidate_id"))
+        if candidate_id is None or candidate_id in sealed_by_id:
+            return
+        sealed_by_id[candidate_id] = row
+    removed_by_id: dict[str, dict[str, Any]] = {}
+    for row in removed_rows:
+        candidate_id = _first_string(row.get("candidate_id"))
+        if (
+            candidate_id is None
+            or candidate_id not in sealed_by_id
+            or candidate_id in removed_by_id
+            or _string_list(row.get("outcome_fields_used"))
+        ):
+            return
+        removed_by_id[candidate_id] = row
+
+    semantic_by_id: dict[str, list[dict[str, Any]]] = {}
+    for row in jsonl_blocks.get("candidate_semantic_witness.jsonl", []):
+        candidate_id = _first_string(row.get("candidate_id"))
+        if candidate_id is not None:
+            semantic_by_id.setdefault(candidate_id, []).append(row)
+    ranking_by_id: dict[str, list[dict[str, Any]]] = {}
+    for row in jsonl_blocks.get("candidate_ranking_audit.jsonl", []):
+        candidate_id = _first_string(row.get("candidate_id"))
+        if candidate_id is not None:
+            ranking_by_id.setdefault(candidate_id, []).append(row)
+
+    for candidate_id, removed in removed_by_id.items():
+        semantic_matches = semantic_by_id.get(candidate_id, [])
+        ranking_matches = ranking_by_id.get(candidate_id, [])
+        if len(semantic_matches) != 1 or len(ranking_matches) != 1:
+            return
+        semantic = semantic_matches[0]
+        ranking = ranking_matches[0]
+        reason = _first_string(removed.get("repair_reason"))
+        if (
+            semantic.get("final_eligible") is not False
+            or semantic.get("pass") is not False
+            or str(semantic.get("semantic_verdict") or "").upper() != "FAIL"
+            or reason is None
+            or reason not in _string_list(semantic.get("fail_reasons"))
+            or ranking.get("included_in_final") is not False
+            or ranking.get("postseal_semantic_repair_outcome_independent") is not True
+            or _first_string(ranking.get("why_not_final_if_excluded")) is None
+        ):
+            return
+
+    included_ids = set(sealed_by_id) - set(removed_by_id)
+    included_rankings: list[tuple[int, str, dict[str, Any]]] = []
+    for candidate_id in included_ids:
+        matches = ranking_by_id.get(candidate_id, [])
+        if len(matches) != 1 or matches[0].get("included_in_final") is not True:
+            return
+        rank = _int_or_none(matches[0].get("rank_if_final_or_null"))
+        if rank is None:
+            return
+        included_rankings.append((rank, candidate_id, matches[0]))
+    included_rankings.sort()
+    if [rank for rank, _, _ in included_rankings] != list(
+        range(1, len(included_ids) + 1)
+    ):
+        return
+    if _int_or_none(receipt.get("validated_final_watchlist_count")) != len(
+        included_ids
+    ):
+        return
+
+    validated_rows: list[dict[str, Any]] = []
+    for rank, candidate_id, _ in included_rankings:
+        validated = deepcopy(sealed_by_id[candidate_id])
+        validated["sealed_rank"] = validated.get("rank")
+        validated["rank"] = rank
+        validated_rows.append(validated)
+    relevant_rankings = [
+        ranking_by_id[candidate_id][0]
+        for candidate_id in sorted(sealed_by_id)
+    ]
+    relevant_semantics = [
+        semantic_by_id[candidate_id][0]
+        for candidate_id in sorted(removed_by_id)
+    ]
+    receipt["validated_final_watchlist"] = validated_rows
+    receipt["validated_final_watchlist_derivation"] = {
+        "rule_id": "validated_final_watchlist_from_outcome_independent_removal.v1",
+        "sealed_final_watchlist_sha256": sha256_text(canonical_json(sealed_rows)),
+        "removed_candidates_sha256": sha256_text(canonical_json(removed_rows)),
+        "candidate_ranking_rows_sha256": sha256_text(canonical_json(relevant_rankings)),
+        "removed_semantic_rows_sha256": sha256_text(canonical_json(relevant_semantics)),
+        "validated_final_watchlist_sha256": sha256_text(canonical_json(validated_rows)),
+    }
+    json_blocks["postseal_semantic_repair_receipt.json"] = receipt
+
+
 def _repair_candidate_semantic_alias_rows(
     rows: list[dict[str, Any]],
     *,
@@ -3281,6 +3606,283 @@ def _repair_candidate_semantic_alias_rows(
         }
         repaired_rows.append(repaired)
     return repaired_rows
+
+
+def _materialize_missing_candidate_semantic_witness_rows(
+    rows: list[dict[str, Any]],
+    *,
+    screening_rows: list[dict[str, Any]],
+    ranking_rows: list[dict[str, Any]],
+    fact_rows: list[dict[str, Any]],
+    inference_rows: list[dict[str, Any]],
+    material_review_rows: list[dict[str, Any]],
+    source_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Copy an omitted rankable witness from one exact existing evidence chain."""
+
+    def unique_index(
+        source_rows: list[dict[str, Any]],
+        *fields: str,
+    ) -> dict[str, dict[str, Any]]:
+        candidates: dict[str, list[dict[str, Any]]] = {}
+        for source_row in source_rows:
+            for field in fields:
+                value = _first_string(source_row.get(field))
+                if value is not None:
+                    candidates.setdefault(value, []).append(source_row)
+        return {
+            value: matches[0]
+            for value, matches in candidates.items()
+            if len(matches) == 1
+        }
+
+    screenings = unique_index(screening_rows, "screening_id")
+    rankings = unique_index(
+        ranking_rows,
+        "source_screening_id",
+        "screening_id",
+    )
+    facts = unique_index(fact_rows, "fact_id")
+    inferences = unique_index(inference_rows, "inference_id")
+    reviews = unique_index(material_review_rows, "material_review_id", "review_id")
+    sources = unique_index(source_rows, "source_id", "source_row_id", "row_id")
+
+    def modern_expected_values(screening_id: str) -> dict[str, Any] | None:
+        screening = screenings.get(screening_id)
+        ranking = rankings.get(screening_id)
+        if screening is None or ranking is None:
+            return None
+        decision = str(screening.get("screening_decision") or "").upper()
+        if decision not in _RANKABLE_SCREENING_DECISIONS and screening.get("rankable") is not True:
+            return None
+        fact_ids = _string_list(screening.get("source_fact_ids"))
+        inference_ids = _string_list(screening.get("source_inference_ids"))
+        review_ids = _string_list(
+            screening.get("source_material_review_ids")
+            or screening.get("material_review_ids")
+        )
+        if len(fact_ids) != 1 or len(inference_ids) != 1 or len(review_ids) != 1:
+            return None
+        fact = facts.get(fact_ids[0])
+        inference = inferences.get(inference_ids[0])
+        review = reviews.get(review_ids[0])
+        if fact is None or inference is None or review is None:
+            return None
+        source_id = _first_string(fact.get("source_row_id"), fact.get("source_id"))
+        source = sources.get(source_id or "")
+        exact_quote = _first_string(fact.get("exact_quote"))
+        semantic_witness = _first_string(screening.get("decision_reason_specific"))
+        candidate_id = _first_string(screening.get("candidate_id"))
+        company = _first_string(screening.get("company"), screening.get("candidate_company"))
+        ticker = _first_string(screening.get("ticker"), screening.get("code"))
+        inference_text = _first_string(
+            inference.get("mechanism_sentence"),
+            inference.get("statement"),
+        )
+        ranking_screening_id = _first_string(
+            ranking.get("source_screening_id"),
+            ranking.get("screening_id"),
+        )
+        if (
+            source is None
+            or exact_quote is None
+            or semantic_witness is None
+            or candidate_id is None
+            or company is None
+            or ticker is None
+            or inference_text != semantic_witness
+            or ranking_screening_id != screening_id
+            or _first_string(ranking.get("candidate_id")) != candidate_id
+            or _first_string(ranking.get("ticker"), ranking.get("code")) != ticker
+            or _first_string(ranking.get("company"), ranking.get("candidate_company"))
+            != company
+            or _string_list(
+                inference.get("source_fact_ids")
+                or inference.get("supporting_fact_ids")
+            )
+            != fact_ids
+            or inference.get("mechanism_supported") is not True
+            or _first_string(review.get("source_id"), review.get("source_row_id"))
+            != source_id
+            or _first_string(review.get("exact_quote")) != exact_quote
+            or fact.get("quote_found_in_source_row") is not True
+            or review.get("quote_found_in_source_row") is not True
+            or review.get("material_reviewed") is not True
+        ):
+            return None
+        return {
+            "candidate_id": candidate_id,
+            "chain_complete": True,
+            "company": company,
+            "exact_quote": exact_quote,
+            "fact_id": fact_ids[0],
+            "inference_id": inference_ids[0],
+            "material_review_id": review_ids[0],
+            "screening_id": screening_id,
+            "semantic_witness": semantic_witness,
+            "source_id": source_id,
+            "source_phase": _first_string(screening.get("source_phase")) or "BLIND",
+            "ticker": ticker,
+        }
+
+    def legacy_expected_values(screening_id: str) -> dict[str, Any] | None:
+        """Rebuild the compact CSW-* shape only from one closed ledger chain."""
+
+        screening = screenings.get(screening_id)
+        ranking = rankings.get(screening_id)
+        if screening is None or ranking is None:
+            return None
+        decision = str(screening.get("screening_decision") or "").upper()
+        if decision not in _RANKABLE_SCREENING_DECISIONS and screening.get("rankable") is not True:
+            return None
+        fact_ids = _string_list(screening.get("source_fact_ids"))
+        inference_ids = _string_list(screening.get("source_inference_ids"))
+        review_ids = _string_list(
+            screening.get("source_material_review_ids")
+            or screening.get("material_review_ids")
+        )
+        if len(fact_ids) != 1 or len(inference_ids) != 1 or len(review_ids) != 1:
+            return None
+        fact = facts.get(fact_ids[0])
+        inference = inferences.get(inference_ids[0])
+        review = reviews.get(review_ids[0])
+        if fact is None or inference is None or review is None:
+            return None
+        source_id = _first_string(fact.get("source_row_id"), fact.get("source_id"))
+        source = sources.get(source_id or "")
+        exact_quote = _first_string(fact.get("exact_quote"))
+        candidate_id = _first_string(screening.get("candidate_id"))
+        company = _first_string(screening.get("company"), screening.get("candidate_company"))
+        ticker = _first_string(screening.get("ticker"), screening.get("code"))
+        inference_text = _first_string(
+            inference.get("mechanism_sentence"),
+            inference.get("statement"),
+        )
+        decision_reason = _first_string(screening.get("decision_reason_specific"))
+        fact_class = _first_string(fact.get("fact_class"))
+        reason_matches = bool(
+            inference_text
+            and (
+                decision_reason == inference_text
+                or (
+                    fact_class is not None
+                    and decision_reason == f"{fact_class}: {inference_text}"
+                )
+            )
+        )
+        review_closed = review.get("material_reviewed") is True or (
+            review.get("materiality") is True
+            and str(review.get("review_decision") or "").upper().startswith("ACCEPT")
+        )
+        if (
+            source is None
+            or exact_quote is None
+            or candidate_id is None
+            or not candidate_id.startswith("CAND-")
+            or company is None
+            or ticker is None
+            or not reason_matches
+            or _first_string(ranking.get("source_screening_id"), ranking.get("screening_id"))
+            != screening_id
+            or _first_string(ranking.get("candidate_id")) != candidate_id
+            or _first_string(ranking.get("ticker"), ranking.get("code")) != ticker
+            or _first_string(ranking.get("company"), ranking.get("candidate_company"))
+            != company
+            or _string_list(
+                inference.get("source_fact_ids")
+                or inference.get("supporting_fact_ids")
+            )
+            != fact_ids
+            or inference.get("mechanism_supported") is not True
+            or _first_string(review.get("source_id"), review.get("source_row_id"))
+            != source_id
+            or _first_string(review.get("exact_quote")) != exact_quote
+            or fact.get("quote_found_in_source_row") is not True
+            or review.get("quote_found_in_source_row") is not True
+            or not review_closed
+        ):
+            return None
+        return {
+            "candidate_id": candidate_id,
+            "exact_quote": exact_quote,
+            "issuer_binding": {"company": company, "ticker": ticker},
+            "semantic_witness_id": f"CSW-{candidate_id.removeprefix('CAND-')}",
+            "semantic_witness_status": "CLOSED",
+            "source_fact_ids": fact_ids,
+            "source_ids": [source_id],
+            "source_inference_ids": inference_ids,
+            "source_material_review_ids": review_ids,
+            "source_phase": _first_string(screening.get("source_phase")) or "BLIND",
+            "source_screening_id": screening_id,
+        }
+
+    # Require the source's existing witnesses to prove the exact serialization
+    # convention before filling any missing row in that same artifact.
+    if not rows:
+        return rows
+    expected_values = modern_expected_values
+    for candidate_builder in (modern_expected_values, legacy_expected_values):
+        if all(
+            (expected := candidate_builder(
+                _first_string(row.get("screening_id"), row.get("source_screening_id"))
+                or ""
+            ))
+            is not None
+            and all(row.get(field) == value for field, value in expected.items())
+            for row in rows
+        ):
+            expected_values = candidate_builder
+            break
+    else:
+        return rows
+
+    existing_screening_ids = {
+        screening_id
+        for row in rows
+        for screening_id in [
+            _first_string(row.get("screening_id"), row.get("source_screening_id"))
+        ]
+        if screening_id is not None
+    }
+    repaired = [dict(row) for row in rows]
+    for screening_id in sorted(screenings):
+        if screening_id in existing_screening_ids:
+            continue
+        expected = expected_values(screening_id)
+        if expected is None:
+            continue
+        screening = screenings[screening_id]
+        ranking = rankings[screening_id]
+        fact_id = _string_list(screening.get("source_fact_ids"))[0]
+        inference_id = _string_list(screening.get("source_inference_ids"))[0]
+        review_id = _string_list(
+            screening.get("source_material_review_ids")
+            or screening.get("material_review_ids")
+        )[0]
+        fact = facts[fact_id]
+        inference = inferences[inference_id]
+        review = reviews[review_id]
+        source_id = _first_string(fact.get("source_row_id"), fact.get("source_id"))
+        assert source_id is not None
+        source = sources[source_id]
+        expected.update(
+            {
+                "candidate_semantic_witness_repair_provenance": {
+                    "rule_id": "candidate_semantic_witness_from_unique_rankable_chain.v1",
+                    "screening_id": screening_id,
+                    "screening_sha256": sha256_text(canonical_json(screening)),
+                    "ranking_sha256": sha256_text(canonical_json(ranking)),
+                    "fact_sha256": sha256_text(canonical_json(fact)),
+                    "inference_sha256": sha256_text(canonical_json(inference)),
+                    "material_review_sha256": sha256_text(canonical_json(review)),
+                    "source_row_sha256": sha256_text(canonical_json(source)),
+                },
+            }
+        )
+        if expected_values is modern_expected_values:
+            expected["witness_id"] = f"CW-REPAIR-{screening_id}"
+        repaired.append(expected)
+    return repaired
 
 
 def _repair_semantic_primary_fact_references(
@@ -4085,14 +4687,20 @@ def _normalize_mistyped_related_event_references(
 ) -> None:
     """Preserve non-event domain IDs without pretending they define events."""
 
-    known_event_ids: set[str] = set()
+    known_event_ids = _authoritative_event_definition_ids(
+        json_blocks,
+        jsonl_blocks,
+    )
     known_domain_ids: set[str] = set()
+    known_screening_ids: set[str] = set()
     for value in (records, *json_blocks.values(), *jsonl_blocks.values()):
+        incidental_event_ids: set[str] = set()
         _collect_singular_domain_ids(
             value,
-            known_event_ids=known_event_ids,
+            known_event_ids=incidental_event_ids,
             known_domain_ids=known_domain_ids,
         )
+        _collect_defined_screening_ids(value, known_screening_ids)
 
     # Only fields whose contract explicitly permits a domain-reference alias
     # are normalized here.  A legacy case may call screening IDs
@@ -4100,8 +4708,9 @@ def _normalize_mistyped_related_event_references(
     # present in its explicit ``screening_ids`` field.  Move only IDs that
     # are known screening/domain IDs and absent from the embedded event
     # population; genuine event IDs remain untouched.
-    event_reference_fields = {
+    event_reference_fields: dict[str, str | None] = {
         "related_event_ids": "related_domain_ids",
+        "blind_event_ids": None,
         "selected_blind_event_ids": "selected_blind_screening_ids",
         "all_event_ids": "screening_ids",
         "event_ids": "screening_ids",
@@ -4115,8 +4724,23 @@ def _normalize_mistyped_related_event_references(
         # an event placeholder that cannot be imported.
         "sealed_event_ids": "sealed_domain_ids",
     }
+    singular_event_reference_fields = {
+        # Legacy theme-formation rows use this field for a context/screening
+        # domain token even when no authoritative event definition exists.
+        "sealed_theme_event_id": "sealed_theme_domain_id",
+    }
+    screening_event_bindings = {
+        (screening_id, event_id)
+        for block_name, rows in jsonl_blocks.items()
+        if "candidate_screening" in block_name.lower()
+        for row in rows
+        for screening_id in [_first_string(row.get("screening_id"))]
+        for event_id in [_first_string(row.get("event_id"))]
+        if screening_id is not None and event_id is not None
+    }
     for record in records:
         moved_by_field: dict[str, list[str]] = {}
+        moved_screenings_by_field: dict[str, list[str]] = {}
         for container in _dict_containers(record):
             for field, destination_field in event_reference_fields.items():
                 event_ids = _string_list(container.get(field))
@@ -4137,12 +4761,45 @@ def _normalize_mistyped_related_event_references(
                     for reference_id in event_ids
                     if reference_id not in mistyped_set
                 ]
-                container[destination_field] = _ordered_unique(
-                    [
-                        *_string_list(container.get(destination_field)),
-                        *mistyped,
+                destination_values = mistyped
+                if destination_field in {
+                    "screening_ids",
+                    "selected_blind_screening_ids",
+                }:
+                    destination_values = [
+                        reference_id
+                        for reference_id in mistyped
+                        if reference_id in known_screening_ids
                     ]
-                )
+                    moved_screenings_by_field.setdefault(field, []).extend(
+                        destination_values
+                    )
+                if destination_field is not None and destination_values:
+                    container[destination_field] = _ordered_unique(
+                        [
+                            *_string_list(container.get(destination_field)),
+                            *destination_values,
+                        ]
+                    )
+            for field, destination_field in singular_event_reference_fields.items():
+                reference_id = _first_string(container.get(field))
+                if (
+                    reference_id is None
+                    or reference_id in known_event_ids
+                    or reference_id not in known_domain_ids
+                    or (
+                        field == "sealed_theme_event_id"
+                        and (
+                            _first_string(container.get("source_screening_id")),
+                            reference_id,
+                        )
+                        not in screening_event_bindings
+                    )
+                ):
+                    continue
+                moved_by_field.setdefault(field, []).append(reference_id)
+                container.pop(field)
+                container[destination_field] = reference_id
 
         if not moved_by_field:
             continue
@@ -4159,7 +4816,9 @@ def _normalize_mistyped_related_event_references(
                 *mistyped,
             ]
         )
-        selected_screening_ids = moved_by_field.get("selected_blind_event_ids", [])
+        selected_screening_ids = moved_screenings_by_field.get(
+            "selected_blind_event_ids", []
+        )
         if selected_screening_ids:
             record["selected_blind_screening_ids"] = _ordered_unique(
                 [
@@ -4167,6 +4826,36 @@ def _normalize_mistyped_related_event_references(
                     *selected_screening_ids,
             ]
         )
+
+
+def _normalize_null_event_references(records: list[dict[str, Any]]) -> None:
+    """Remove only explicit nulls from typed top-level event reference lists.
+
+    Some legacy writers emitted ``event_ids: [null]`` to mean that no event
+    was bound. The typed payload contract represents the same absence as an
+    empty list. The receipt lets the quality audit prove that no non-null
+    reference was removed or introduced.
+    """
+
+    event_fields = {
+        "all_event_ids",
+        "blind_event_ids",
+        "event_ids",
+        "missed_more_relevant_event_ids",
+        "related_event_ids",
+        "sealed_event_ids",
+        "selected_blind_event_ids",
+    }
+    for record in records:
+        repaired_fields: list[str] = []
+        for field in sorted(event_fields):
+            value = record.get(field)
+            if not isinstance(value, list) or not any(item is None for item in value):
+                continue
+            record[field] = [item for item in value if item is not None]
+            repaired_fields.append(field)
+        if repaired_fields:
+            record["repair_removed_null_event_reference_fields"] = repaired_fields
 
 
 def _dict_containers(value: Any) -> list[dict[str, Any]]:
@@ -4212,6 +4901,54 @@ def _collect_singular_domain_ids(
                 known_event_ids=known_event_ids,
                 known_domain_ids=known_domain_ids,
             )
+
+
+def _authoritative_event_definition_ids(
+    json_blocks: dict[str, Any],
+    jsonl_blocks: dict[str, list[dict[str, Any]]],
+) -> set[str]:
+    """Collect event identities only from artifacts that define events."""
+
+    event_ids: set[str] = set()
+    definition_tokens = ("event_ledger", "event_cluster", "row_disposition")
+    for block_name, rows in jsonl_blocks.items():
+        lower_name = block_name.lower()
+        if any(token in lower_name for token in definition_tokens):
+            _collect_event_definition_ids(rows, event_ids)
+        elif "source_ledger" in lower_name:
+            for row in rows:
+                event_ids.update(_string_list(row.get("event_ids")))
+    for block_name, payload in json_blocks.items():
+        if any(token in block_name.lower() for token in definition_tokens):
+            _collect_event_definition_ids(payload, event_ids)
+    return event_ids
+
+
+def _collect_event_definition_ids(value: Any, target: set[str]) -> None:
+    if isinstance(value, dict):
+        event_id = _first_string(value.get("event_id"))
+        if event_id is not None:
+            target.add(event_id)
+        target.update(_string_list(value.get("event_ids")))
+        for item in value.values():
+            _collect_event_definition_ids(item, target)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_event_definition_ids(item, target)
+
+
+def _collect_defined_screening_ids(value: Any, target: set[str]) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in {"screening_id", "candidate_screening_id"}:
+                target.update(_string_list(item))
+                singular = _first_string(item)
+                if singular is not None:
+                    target.add(singular)
+            _collect_defined_screening_ids(item, target)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_defined_screening_ids(item, target)
 
 
 def _ordered_unique(values: list[str]) -> list[str]:
@@ -4686,6 +5423,9 @@ def _bundle_cutoff(
                 block.get("cutoff"),
             )
         )
+        if block_name == "research_episode.json":
+            coverage = _as_dict(block.get("coverage"))
+            candidates.append(coverage.get("expected_end"))
     for candidate in candidates:
         if not isinstance(candidate, str) or not candidate:
             continue
@@ -4745,6 +5485,14 @@ def _valid_available_from(*values: Any) -> str | None:
     return None
 
 
+def _company_memory_known_at(available_from: str) -> str:
+    """Materialize a timezone-aware known_at without changing its source day."""
+
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", available_from):
+        return f"{available_from}T00:00:00+09:00"
+    return available_from
+
+
 def _as_dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -4785,12 +5533,19 @@ def _ledger_rows(
             if not isinstance(row, dict):
                 continue
             identifier_key = "fact_id" if prefix == "fact_ledger" else "inference_id"
-            identifier = _first_string(row.get(identifier_key))
+            postmortem_identifier_key = f"postmortem_{identifier_key}"
+            identifier = _first_string(
+                row.get(identifier_key),
+                row.get(postmortem_identifier_key),
+            )
             if identifier is not None:
                 if identifier in seen_ids:
                     continue
                 seen_ids.add(identifier)
-            rows.append(row)
+            normalized = dict(row)
+            if identifier is not None:
+                normalized.setdefault(identifier_key, identifier)
+            rows.append(normalized)
     return rows
 
 

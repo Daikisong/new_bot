@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -57,6 +58,65 @@ def test_quarantine_existing_repaired_artifacts_moves_them_out_of_ingest_root(
     ]
     assert not stale.exists()
     assert Path(moved[0]).read_text(encoding="utf-8") == "stale"
+
+
+def test_cross_source_conflict_quarantines_all_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repaired_root = tmp_path / "repaired"
+    work_root = tmp_path / "work"
+    manifest_path = repaired_root / "sequential_repair_manifest.v2.jsonl"
+    monkeypatch.setattr(sequential_repair, "REPAIRED_ROOT", repaired_root)
+    monkeypatch.setattr(sequential_repair, "WORK_ROOT", work_root)
+    monkeypatch.setattr(sequential_repair, "MANIFEST_PATH", manifest_path)
+
+    source_shas = ["a" * 64, "b" * 64]
+    repaired_paths: list[Path] = []
+    rows: list[dict[str, object]] = []
+    for index, source_sha in enumerate(source_shas, start=1):
+        repaired_path = repaired_root / "2019" / f"candidate-{index}.repaired.md"
+        repaired_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "record_id": "NSLAB-20190904-shared__BD-1",
+            "episode_id": "NSLAB-20190904-shared",
+            "record_type": "memory_claim",
+            "payload": {"version": index},
+        }
+        repaired_path.write_text(
+            "<!-- NSLAB:BEGIN brain_delta.jsonl -->\n"
+            + json.dumps(record, sort_keys=True)
+            + "\n<!-- NSLAB:END brain_delta.jsonl -->\n",
+            encoding="utf-8",
+        )
+        repaired_paths.append(repaired_path)
+        rows.append(
+            {
+                "source_sha256": source_sha,
+                "filename_date": "20190904",
+                "final_status": "REPAIRED_PASS",
+                "ready_for_import": True,
+                "repaired_path": str(repaired_path),
+                "warnings": [],
+            }
+        )
+    sequential_repair._write_manifest(rows)
+
+    result = sequential_repair.quarantine_conflicting_sources(source_shas)
+
+    assert result["shared_episode_ids"] == ["NSLAB-20190904-shared"]
+    assert result["conflicting_record_id_count"] == 1
+    assert all(not path.exists() for path in repaired_paths)
+    updated = sequential_repair._read_manifest()
+    assert len(updated) == 2
+    assert all(
+        row["final_status"] == "PRESERVED_PARTIAL_NOT_CURRENT_GOLD"
+        and row["ready_for_import"] is False
+        and row["brain_ingest_blocked"] is True
+        and row["repaired_path"] is None
+        and Path(row["quarantined_repaired_paths"][0]).is_file()
+        for row in updated
+    )
 
 
 @pytest.mark.parametrize(

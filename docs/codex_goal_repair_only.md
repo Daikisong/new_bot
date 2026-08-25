@@ -59,6 +59,9 @@
     복사한 deterministic zero-weight audit/context record를 만들 수 있다. 이 derived
     record는 provenance closure와 derivation hash를 남기며 ticker/company/outcome/semantic
     판단을 새로 만들거나 학습 record로 승격하지 않는다.
+16. 서로 다른 source SHA가 같은 episode/record ID에 상충 payload를 선언하면 월간
+    cross-file 감사에서 확인한 뒤 관련 source를 모두 격리한다. 파일명·크기·다운로드
+    순서로 권위본을 추정하거나 자동 병합하지 않는다.
 ```
 
 ## 월간 읽기 전용 brain ingest 검토

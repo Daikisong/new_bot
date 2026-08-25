@@ -110,6 +110,23 @@ def test_direct_event_case_aliases_are_known_event_definitions() -> None:
     assert known["event"] == {"DEC-1"}
 
 
+def test_postmortem_ledger_aliases_are_known_typed_definitions() -> None:
+    known = known_reference_ids_from_blocks(
+        {},
+        {
+            "postmortem_fact_ledger.jsonl": [
+                {"postmortem_fact_id": "POSTFACT-1"}
+            ],
+            "postmortem_inference_ledger.jsonl": [
+                {"postmortem_inference_id": "POSTINF-1"}
+            ],
+        },
+    )
+
+    assert known["fact"] == {"POSTFACT-1"}
+    assert known["inference"] == {"POSTINF-1"}
+
+
 def _rewrite_synthetic_record_payloads(
     root: Path,
     mutator: object,
@@ -3166,6 +3183,57 @@ def test_v23_direct_ingest_contract_normalizes_nested_payloads(
     assert report["raw_training_eligible_record_count"] == 5
     assert report["training_eligible_count_matches_raw"] is True
     assert report["dropped_record_count"] == 0
+
+
+def test_auxiliary_scalar_jsonl_is_preserved_without_becoming_records(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    ensure_project_dirs(settings)
+    bundle = tmp_path / "v23_with_scalar_warnings.md"
+    bundle.write_text(
+        _v23_direct_ingest_bundle()
+        + """
+<!-- NSLAB:BEGIN acquisition_warnings.jsonl -->
+"STOCK_WEB_JSON_WEB_VIEW_ONLY_UNHASHED"
+"JSON_DOWNLOAD_TOOL_CONTENT_TYPE_BLOCK"
+<!-- NSLAB:END acquisition_warnings.jsonl -->
+""",
+        encoding="utf-8",
+    )
+
+    inspection = inspect_versioned_bundle(bundle)
+    result = import_versioned_bundle(bundle, root=tmp_path)
+
+    assert inspection["validation_passed"] is True
+    assert inspection["raw_record_count"] == 5
+    assert result.status == "imported"
+    assert result.record_count == 5
+    assert result.envelope_path is not None
+    envelope = _read_json(result.envelope_path)
+    assert envelope["raw_block_counts"]["acquisition_warnings.jsonl"] == 2
+
+
+def test_jsonl_mixing_object_and_non_object_values_is_rejected(
+    tmp_path: Path,
+) -> None:
+    bundle = tmp_path / "v23_with_mixed_warnings.md"
+    bundle.write_text(
+        _v23_direct_ingest_bundle()
+        + """
+<!-- NSLAB:BEGIN acquisition_warnings.jsonl -->
+{"warning":"OBJECT_ROW"}
+"SCALAR_ROW"
+<!-- NSLAB:END acquisition_warnings.jsonl -->
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(
+        VersionedBundleImportError,
+        match="must not mix object and non-object values",
+    ):
+        inspect_versioned_bundle(bundle)
 
 
 def test_v23_nested_null_convenience_fields_are_not_promoted(

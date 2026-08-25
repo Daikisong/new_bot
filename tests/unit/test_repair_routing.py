@@ -79,6 +79,86 @@ brain_eligible: false
     assert reason == "blind_research_preserved_pending_outcome_source"
 
 
+def test_routes_front_matterless_artifact_declared_price_missing_as_partial(
+    tmp_path: Path,
+) -> None:
+    source = _write(
+        tmp_path / "artifact-declared-price-missing.md",
+        """# Legacy partial bundle
+
+```json
+{"schema_version":"nslab.episode_bundle.v1","status":"PRICE_SOURCE_MISSING"}
+```
+
+<!-- NSLAB:BEGIN bundle_manifest.json -->
+{"schema_version":"nslab.bundle_manifest.v1","calendar_date":"2020-02-12","status":"PRICE_SOURCE_MISSING","brain_delta_count":0,"brain_delta_record_count":0,"files":{"brain_delta.jsonl":{"row_count":0}}}
+<!-- NSLAB:END bundle_manifest.json -->
+<!-- NSLAB:BEGIN direct_ingest_contract.json -->
+{"schema_version":"nslab.direct_ingest_contract.v1","calendar_date":"2020-02-12","status":"PRICE_SOURCE_MISSING","blind_valid":true,"brain_eligible":false,"direct_brain_ingest_ready":false,"brain_delta_count":0,"brain_delta_record_count":0,"parsed_brain_delta_jsonl_row_count":0}
+<!-- NSLAB:END direct_ingest_contract.json -->
+<!-- NSLAB:BEGIN validation_report.json -->
+{"schema_version":"nslab.validation_report.v1","validation_status":"PRICE_SOURCE_MISSING","final_markdown_parsed":true,"jsonl_parse_error_count":0,"brain_delta_count":0,"brain_delta_record_count":0,"parsed_brain_delta_jsonl_row_count":0,"brain_delta_requirements_pass":true}
+<!-- NSLAB:END validation_report.json -->
+""",
+    )
+
+    state, reason = classify_repair_source(source)
+
+    assert state is RepairTaskState.PARTIAL_PRICE_SOURCE_MISSING
+    assert reason == "blind_research_preserved_pending_outcome_source"
+
+
+def test_artifact_declared_price_missing_with_brain_record_requires_adapter(
+    tmp_path: Path,
+) -> None:
+    source = _write(
+        tmp_path / "artifact-declared-price-missing-with-record.md",
+        """# Invalid legacy partial bundle
+
+<!-- NSLAB:BEGIN bundle_manifest.json -->
+{"calendar_date":"2020-02-12","status":"PRICE_SOURCE_MISSING","brain_delta_count":0,"brain_delta_record_count":0,"files":{"brain_delta.jsonl":{"row_count":0}}}
+<!-- NSLAB:END bundle_manifest.json -->
+<!-- NSLAB:BEGIN direct_ingest_contract.json -->
+{"calendar_date":"2020-02-12","status":"PRICE_SOURCE_MISSING","blind_valid":true,"brain_eligible":false,"direct_brain_ingest_ready":false,"brain_delta_count":0,"brain_delta_record_count":0,"parsed_brain_delta_jsonl_row_count":0}
+<!-- NSLAB:END direct_ingest_contract.json -->
+<!-- NSLAB:BEGIN validation_report.json -->
+{"validation_status":"PRICE_SOURCE_MISSING","final_markdown_parsed":true,"jsonl_parse_error_count":0,"brain_delta_count":0,"brain_delta_record_count":0,"parsed_brain_delta_jsonl_row_count":0,"brain_delta_requirements_pass":true}
+<!-- NSLAB:END validation_report.json -->
+<!-- NSLAB:BEGIN brain_delta.jsonl -->
+{"record_id":"BD-1","record_type":"memory_claim"}
+<!-- NSLAB:END brain_delta.jsonl -->
+""",
+    )
+
+    state, _reason = classify_repair_source(source)
+
+    assert state is RepairTaskState.ADAPTER_REQUIRED
+
+
+def test_artifact_declared_price_missing_requires_consistent_contracts(
+    tmp_path: Path,
+) -> None:
+    source = _write(
+        tmp_path / "artifact-declared-price-missing-conflict.md",
+        """# Conflicting legacy partial bundle
+
+<!-- NSLAB:BEGIN bundle_manifest.json -->
+{"calendar_date":"2020-02-12","status":"PRICE_SOURCE_MISSING","brain_delta_count":0,"brain_delta_record_count":0,"files":{"brain_delta.jsonl":{"row_count":0}}}
+<!-- NSLAB:END bundle_manifest.json -->
+<!-- NSLAB:BEGIN direct_ingest_contract.json -->
+{"calendar_date":"2020-02-12","status":"ACCEPT_FULL","blind_valid":true,"brain_eligible":false,"direct_brain_ingest_ready":false,"brain_delta_count":0,"brain_delta_record_count":0,"parsed_brain_delta_jsonl_row_count":0}
+<!-- NSLAB:END direct_ingest_contract.json -->
+<!-- NSLAB:BEGIN validation_report.json -->
+{"validation_status":"PRICE_SOURCE_MISSING","final_markdown_parsed":true,"jsonl_parse_error_count":0,"brain_delta_count":0,"brain_delta_record_count":0,"parsed_brain_delta_jsonl_row_count":0,"brain_delta_requirements_pass":true}
+<!-- NSLAB:END validation_report.json -->
+""",
+    )
+
+    state, _reason = classify_repair_source(source)
+
+    assert state is RepairTaskState.ADAPTER_REQUIRED
+
+
 def test_preserves_declared_quarantine_without_repair(tmp_path: Path) -> None:
     source = _write(
         tmp_path / "quarantine.md",
