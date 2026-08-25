@@ -23,6 +23,56 @@ def test_source_ledger_source_row_id_is_materialized_as_source_id() -> None:
     assert repaired[1]["source_id"] == "SRC-2"
 
 
+def test_null_event_references_are_removed_with_exact_receipt() -> None:
+    records = [
+        {
+            "record_id": "BD-1",
+            "record_type": "supervised_issuer_day_case",
+            "event_ids": [None, "EVT-1", None],
+        }
+    ]
+
+    repair._normalize_null_event_references(records)
+
+    assert records[0]["event_ids"] == ["EVT-1"]
+    assert records[0]["repair_removed_null_event_reference_fields"] == [
+        "event_ids"
+    ]
+
+
+def test_bundle_cutoff_uses_research_episode_coverage_end() -> None:
+    cutoff = repair._bundle_cutoff(
+        {},
+        {
+            "research_episode.json": {
+                "coverage": {
+                    "expected_start": "2020-03-26T15:30:00+09:00",
+                    "expected_end": "2020-03-27T08:59:59+09:00",
+                }
+            }
+        },
+    )
+
+    assert cutoff is not None
+    assert cutoff.isoformat() == "2020-03-27T08:59:59+09:00"
+
+
+def test_bundle_cutoff_prefers_explicit_front_matter_cutoff() -> None:
+    cutoff = repair._bundle_cutoff(
+        {"cutoff_at": "2020-03-27T08:55:00+09:00"},
+        {
+            "research_episode.json": {
+                "coverage": {
+                    "expected_end": "2020-03-27T08:59:59+09:00",
+                }
+            }
+        },
+    )
+
+    assert cutoff is not None
+    assert cutoff.isoformat() == "2020-03-27T08:55:00+09:00"
+
+
 def test_strip_optional_fence_supports_tilde_markdown() -> None:
     block = "~~~~markdown\n# report\n~~~~"
 
@@ -275,6 +325,25 @@ def test_namespace_record_identity_makes_record_id_global() -> None:
     assert record["payload"]["record_id"] == expected
 
 
+def test_namespace_record_identity_normalizes_existing_episode_prefix_case() -> None:
+    old_id = "NSLAB-20200615-53B29FAE__BD-000001"
+    record = {
+        "record_id": old_id,
+        "brain_delta_id": old_id,
+        "payload": {"record_id": old_id},
+    }
+
+    repair._namespace_record_identity(
+        record,
+        episode_id="NSLAB-20200615-53b29fae",
+    )
+
+    expected = "NSLAB-20200615-53b29fae__BD-000001"
+    assert record["record_id"] == expected
+    assert record["brain_delta_id"] == expected
+    assert record["payload"]["record_id"] == expected
+
+
 def test_missing_episode_id_gets_content_addressed_namespace(tmp_path: Path) -> None:
     source = tmp_path / "legacy-bundle.md"
     source.write_bytes(b"legacy bundle bytes")
@@ -312,10 +381,14 @@ def test_ledger_rows_include_postmortem_variants_without_duplicates() -> None:
             {"fact_id": "FACT-POST-1"},
             {"fact_id": "FACT-1"},
         ],
-        "postmortem_fact_ledger.jsonl": [{"fact_id": "PFACT-1"}],
+        "postmortem_fact_ledger.jsonl": [
+            {"postmortem_fact_id": "PFACT-1"}
+        ],
         "inference_ledger_blind.jsonl": [{"inference_id": "INF-1"}],
         "inference_ledger_postmortem.jsonl": [{"inference_id": "INF-POST-1"}],
-        "postmortem_inference_ledger.jsonl": [{"inference_id": "PINF-1"}],
+        "postmortem_inference_ledger.jsonl": [
+            {"postmortem_inference_id": "PINF-1"}
+        ],
     }
 
     assert [row["fact_id"] for row in repair._ledger_rows(blocks, "fact_ledger")] == [
@@ -371,6 +444,40 @@ def test_unknown_postmortem_reference_tokens_are_not_typed_import_refs() -> None
     assert repaired["training_eligible"] is True
 
 
+def test_missing_fact_dependency_downgrades_known_inference_training() -> None:
+    row = {
+        "record_id": "BD-INCOMPLETE-INF-1",
+        "record_type": "candidate_generation_error_case",
+        "training_eligible": True,
+        "sample_weight": 1.0,
+        "provenance_source_ids": ["SRC-NEWS-1"],
+        "source_fact_ids": ["FACT-POST-MISSING"],
+        "source_inference_ids": ["INF-POST-1"],
+    }
+
+    repaired = repair._existing_direct_ingest_case(
+        row,
+        index=1,
+        episode_id="EPISODE",
+        trade_date="2024-04-29",
+        available_from="2024-04-30T00:00:00+09:00",
+        known_source_ids={"SRC-NEWS-1"},
+        source_rows_by_id={"SRC-NEWS-1": {"source_type": "news_csv_row"}},
+        known_fact_ids=set(),
+        known_inference_ids={"INF-POST-1"},
+        fact_source_ids_by_id={},
+        inference_fact_ids_by_id={},
+    )
+
+    assert repaired["training_eligible"] is False
+    assert repaired["sample_weight"] == 0.0
+    assert repaired["training_exclusion_reason"] == (
+        "unresolved_postmortem_fact_inference_reference"
+    )
+    assert repaired["legacy_unresolved_fact_tokens"] == ["FACT-POST-MISSING"]
+    assert repaired["source_inference_ids"] == ["INF-POST-1"]
+
+
 def test_unresolved_source_reference_downgrades_placeholder_only_training() -> None:
     record = {
         "record_id": "BD-SOURCE-1",
@@ -420,6 +527,117 @@ def test_eligible_legacy_record_without_weight_gets_deterministic_default() -> N
 
     assert repaired["training_eligible"] is True
     assert repaired["sample_weight"] == 1.0
+
+
+def test_company_name_binding_object_is_preserved_and_canonicalized() -> None:
+    binding = {
+        "issuer_name": "Example Issuer",
+        "binding_type": "EXPLICIT_GROUP_RELATION",
+        "confidence": "HIGH",
+    }
+    repaired = repair._existing_direct_ingest_case(
+        {
+            "record_id": "BD-COMPANY-BINDING",
+            "record_type": "negative_control_case",
+            "company_name": binding,
+            "training_eligible": True,
+            "sample_weight": 1.0,
+            "provenance_source_ids": ["SRC-NEWS-1"],
+            "payload": {"company_name": binding},
+        },
+        index=1,
+        episode_id="EPISODE",
+        trade_date="2023-11-24",
+        available_from="2023-11-27T00:00:00+09:00",
+        known_source_ids={"SRC-NEWS-1"},
+        source_rows_by_id={"SRC-NEWS-1": {"source_type": "news_csv_row"}},
+        known_fact_ids=set(),
+        known_inference_ids=set(),
+        fact_source_ids_by_id={},
+        inference_fact_ids_by_id={},
+    )
+
+    assert repaired["company_name"] == "Example Issuer"
+    assert repaired["legacy_company_name_payload"] == binding
+    assert repaired["payload"]["company_name"] == binding
+
+
+def test_postseal_legacy_training_lanes_use_source_anchored_canonical_types() -> None:
+    common = {
+        "trade_date": "2023-08-28",
+        "available_from": "2023-08-29T00:00:00+09:00",
+        "training_eligible": True,
+        "sample_weight": 1.0,
+        "provenance_source_ids": ["SRC-NEWS-1"],
+        "source_phase": "POSTSEAL_SUPERVISED",
+    }
+    rows = [
+        {
+            **common,
+            "record_id": "BD-DIRECT-1",
+            "record_type": "direct_event_case",
+            "source_fact_ids": ["FACT-1"],
+            "payload": {
+                "ticker": "000001",
+                "issuer_name": "Direct Issuer",
+                "exact_quote": "source quote",
+                "high_return_pct": 9.5,
+                "close_return_pct": 3.0,
+                "response_label": "POSITIVE_RESPONSE",
+            },
+        },
+        {
+            **common,
+            "record_id": "BD-PAIR-1",
+            "record_type": "counterfactual_pair",
+            "payload": {
+                "comparison_axis": "sealed selection versus outcome leader",
+                "selected": {"ticker": "000001", "issuer_name": "Selected"},
+                "missed_leader": {"ticker": "000002", "issuer_name": "Missed"},
+            },
+        },
+        {
+            **common,
+            "record_id": "BD-LEADER-1",
+            "record_type": "outcome_leader_case",
+            "payload": {
+                "blind_selected": False,
+                "premarket_news_state": "NEWS_PRESENT_NOT_SELECTED",
+                "ticker": "000002",
+                "issuer_name": "Missed",
+                "high_return_pct": 30.0,
+            },
+        },
+    ]
+
+    repaired = [
+        repair._existing_direct_ingest_case(
+            row,
+            index=index,
+            episode_id="EPISODE",
+            trade_date="2023-08-28",
+            available_from="2023-08-29T00:00:00+09:00",
+            known_source_ids={"SRC-NEWS-1"},
+            source_rows_by_id={"SRC-NEWS-1": {"source_type": "news_csv_row"}},
+            known_fact_ids={"FACT-1"},
+            known_inference_ids=set(),
+            fact_source_ids_by_id={"FACT-1": ["SRC-NEWS-1"]},
+            inference_fact_ids_by_id={},
+        )
+        for index, row in enumerate(rows, start=1)
+    ]
+
+    direct, pair, leader = repaired
+    assert direct["record_type"] == "supervised_direct_event_case"
+    assert direct["D_outcome"]["high_return_pct"] == 9.5
+    assert direct["response_class"] == "POSITIVE_RESPONSE"
+    assert pair["record_type"] == "blind_leader_preference_pair"
+    assert pair["blind_preferred_ticker"] == "000001"
+    assert pair["blind_rejected_ticker"] == "000002"
+    assert pair["outcome_winner_ticker"] == "000002"
+    assert leader["record_type"] == "candidate_generation_error_case"
+    assert leader["missed_ticker"] == "000002"
+    assert leader["error_type"] == "NEWS_PRESENT_NOT_SELECTED"
 
 
 def test_single_related_ticker_alias_closes_direct_event_weight_group() -> None:
@@ -643,6 +861,112 @@ def test_candidate_semantic_owner_is_repaired_from_verified_alias_evidence() -> 
         "entity_resolution_id": "ER-1",
         "final_evidence_witness_id": "FEW-1",
     }
+
+
+def test_missing_rankable_candidate_witness_is_copied_from_exact_chain() -> None:
+    screenings = [
+        {
+            "screening_id": f"SCR-{index}",
+            "candidate_id": f"CAND-{index}",
+            "company": f"Issuer {index}",
+            "ticker": f"00000{index}",
+            "screening_decision": "WATCH_SECONDARY",
+            "decision_reason_specific": f"Issuer {index} mechanism.",
+            "source_fact_ids": [f"FACT-{index}"],
+            "source_inference_ids": [f"INF-{index}"],
+            "source_material_review_ids": [f"MR-{index}"],
+            "source_phase": "BLIND",
+        }
+        for index in (1, 2)
+    ]
+    rankings = [
+        {
+            "source_screening_id": f"SCR-{index}",
+            "candidate_id": f"CAND-{index}",
+            "company": f"Issuer {index}",
+            "ticker": f"00000{index}",
+            "included_in_final": index == 1,
+        }
+        for index in (1, 2)
+    ]
+    facts = [
+        {
+            "fact_id": f"FACT-{index}",
+            "source_row_id": f"SRC-{index}",
+            "exact_quote": f"Issuer {index} event.",
+            "quote_found_in_source_row": True,
+        }
+        for index in (1, 2)
+    ]
+    inferences = [
+        {
+            "inference_id": f"INF-{index}",
+            "source_fact_ids": [f"FACT-{index}"],
+            "mechanism_sentence": f"Issuer {index} mechanism.",
+            "mechanism_supported": True,
+        }
+        for index in (1, 2)
+    ]
+    reviews = [
+        {
+            "material_review_id": f"MR-{index}",
+            "source_id": f"SRC-{index}",
+            "exact_quote": f"Issuer {index} event.",
+            "quote_found_in_source_row": True,
+            "material_reviewed": True,
+        }
+        for index in (1, 2)
+    ]
+    sources = [{"source_id": f"SRC-{index}"} for index in (1, 2)]
+    existing = [
+        {
+            "witness_id": "CW-1",
+            "candidate_id": "CAND-1",
+            "chain_complete": True,
+            "company": "Issuer 1",
+            "exact_quote": "Issuer 1 event.",
+            "fact_id": "FACT-1",
+            "inference_id": "INF-1",
+            "material_review_id": "MR-1",
+            "screening_id": "SCR-1",
+            "semantic_witness": "Issuer 1 mechanism.",
+            "source_id": "SRC-1",
+            "source_phase": "BLIND",
+            "ticker": "000001",
+        }
+    ]
+
+    repaired = repair._materialize_missing_candidate_semantic_witness_rows(
+        existing,
+        screening_rows=screenings,
+        ranking_rows=rankings,
+        fact_rows=facts,
+        inference_rows=inferences,
+        material_review_rows=reviews,
+        source_rows=sources,
+    )
+
+    assert len(repaired) == 2
+    derived = repaired[1]
+    assert derived["witness_id"] == "CW-REPAIR-SCR-2"
+    assert derived["candidate_id"] == "CAND-2"
+    assert derived["exact_quote"] == "Issuer 2 event."
+    assert derived["semantic_witness"] == "Issuer 2 mechanism."
+    assert derived["candidate_semantic_witness_repair_provenance"]["rule_id"] == (
+        "candidate_semantic_witness_from_unique_rankable_chain.v1"
+    )
+
+    ambiguous_facts = [*facts, dict(facts[1])]
+    rejected = repair._materialize_missing_candidate_semantic_witness_rows(
+        existing,
+        screening_rows=screenings,
+        ranking_rows=rankings,
+        fact_rows=ambiguous_facts,
+        inference_rows=inferences,
+        material_review_rows=reviews,
+        source_rows=sources,
+    )
+    assert rejected == existing
 
 
 def test_semantic_primary_fact_uses_unique_declared_candidate_surface() -> None:
@@ -1082,6 +1406,21 @@ def test_nested_label_quality_is_promoted_and_canonicalized() -> None:
 
     assert record["label_quality"] == "verified"
     assert record["payload"]["label_quality"] == "VERIFIED"
+
+
+def test_verified_normal_day_label_is_promoted_to_verified() -> None:
+    record = {
+        "record_type": "supervised_direct_event_case",
+        "payload": {"label_quality": "VERIFIED_NORMAL_DAY"},
+    }
+
+    repair._normalize_known_record_scalar_types(
+        record,
+        payload=record["payload"],
+    )
+
+    assert record["label_quality"] == "verified"
+    assert record["payload"]["label_quality"] == "VERIFIED_NORMAL_DAY"
 
 
 def test_missing_outcome_label_is_excluded_without_dropping_audit_record() -> None:
@@ -1544,6 +1883,32 @@ def test_company_memory_missing_known_at_uses_available_from() -> None:
     assert repaired["known_at"] == "2018-04-05T00:00:00+09:00"
 
 
+def test_company_memory_date_only_available_from_gets_kst_known_at() -> None:
+    repaired = repair._existing_direct_ingest_case(
+        {
+            "record_id": "BD-COMPANY-DATE",
+            "record_type": "company_memory_delta",
+            "available_from": "2023-09-22",
+            "training_eligible": False,
+            "sample_weight": 0.0,
+            "payload": {},
+        },
+        index=1,
+        episode_id="NSLAB-20230921-test",
+        trade_date="2023-09-21",
+        available_from="2023-09-22T00:00:00+09:00",
+        known_source_ids=set(),
+        source_rows_by_id={},
+        known_fact_ids=set(),
+        known_inference_ids=set(),
+        fact_source_ids_by_id={},
+        inference_fact_ids_by_id={},
+    )
+
+    assert repaired["available_from"] == "2023-09-22"
+    assert repaired["known_at"] == "2023-09-22T00:00:00+09:00"
+
+
 def test_existing_record_uses_canonical_episode_and_preserves_legacy_id() -> None:
     repaired = repair._existing_direct_ingest_case(
         {
@@ -1663,6 +2028,78 @@ def test_nested_screening_ids_are_not_exposed_as_event_references() -> None:
     assert records[0]["related_domain_ids"] == ["SCR-1"]
 
 
+def test_case_event_alias_does_not_override_authoritative_screening_identity() -> None:
+    records = [
+        {
+            "record_id": "BD-1",
+            "payload": {"all_event_ids": ["SCR-1"]},
+        }
+    ]
+
+    repair._normalize_mistyped_related_event_references(
+        records,
+        json_blocks={},
+        jsonl_blocks={
+            "candidate_screening.jsonl": [{"screening_id": "SCR-1"}],
+            "direct_event_cases.jsonl": [
+                {"event_id": "SCR-1", "screening_id": "SCR-1"}
+            ],
+        },
+    )
+
+    assert records[0]["payload"]["all_event_ids"] == []
+    assert records[0]["payload"]["screening_ids"] == ["SCR-1"]
+    assert records[0]["legacy_mistyped_event_reference_values"] == ["SCR-1"]
+    assert records[0]["related_domain_ids"] == ["SCR-1"]
+
+
+def test_direct_event_case_id_is_not_added_to_nested_screening_ids() -> None:
+    records = [
+        {
+            "record_id": "BD-1",
+            "payload": {
+                "event_ids": ["DEV-1"],
+                "screening_ids": ["SCR-1"],
+            },
+        }
+    ]
+
+    repair._normalize_mistyped_related_event_references(
+        records,
+        json_blocks={},
+        jsonl_blocks={
+            "candidate_screening.jsonl": [{"screening_id": "SCR-1"}],
+            "direct_event_cases.jsonl": [{"direct_event_id": "DEV-1"}],
+        },
+    )
+
+    assert records[0]["payload"]["event_ids"] == []
+    assert records[0]["payload"]["screening_ids"] == ["SCR-1"]
+    assert records[0]["related_domain_ids"] == ["DEV-1"]
+    assert records[0]["legacy_mistyped_event_reference_values"] == ["DEV-1"]
+
+
+def test_blind_observation_id_is_removed_from_event_reference_surface() -> None:
+    records = [
+        {
+            "record_id": "BD-1",
+            "blind_event_ids": ["OBS-1"],
+        }
+    ]
+
+    repair._normalize_mistyped_related_event_references(
+        records,
+        json_blocks={},
+        jsonl_blocks={
+            "observation_ledger_blind.jsonl": [{"observation_id": "OBS-1"}],
+        },
+    )
+
+    assert records[0]["blind_event_ids"] == []
+    assert records[0]["related_domain_ids"] == ["OBS-1"]
+    assert records[0]["legacy_mistyped_event_reference_values"] == ["OBS-1"]
+
+
 def test_sealed_case_ids_are_not_exposed_as_event_references() -> None:
     records = [
         {
@@ -1681,6 +2118,41 @@ def test_sealed_case_ids_are_not_exposed_as_event_references() -> None:
     assert records[0]["sealed_event_ids"] == []
     assert records[0]["sealed_domain_ids"] == ["REC-1"]
     assert records[0]["legacy_mistyped_event_reference_values"] == ["REC-1"]
+
+
+def test_sealed_theme_context_id_requires_exact_screening_binding() -> None:
+    bound = {
+        "record_id": "BD-1",
+        "payload": {
+            "sealed_theme_event_id": "EVT-CONTEXT-1",
+            "source_screening_id": "SCR-1",
+        },
+    }
+    unbound = {
+        "record_id": "BD-2",
+        "payload": {
+            "sealed_theme_event_id": "EVT-CONTEXT-2",
+            "source_screening_id": "SCR-2",
+        },
+    }
+    records = [bound, unbound]
+
+    repair._normalize_mistyped_related_event_references(
+        records,
+        json_blocks={},
+        jsonl_blocks={
+            "candidate_screening.jsonl": [
+                {"screening_id": "SCR-1", "event_id": "EVT-CONTEXT-1"}
+            ]
+        },
+    )
+
+    assert bound["payload"]["sealed_theme_domain_id"] == "EVT-CONTEXT-1"
+    assert "sealed_theme_event_id" not in bound["payload"]
+    assert bound["related_domain_ids"] == ["EVT-CONTEXT-1"]
+    assert bound["legacy_mistyped_event_reference_values"] == ["EVT-CONTEXT-1"]
+    assert unbound["payload"]["sealed_theme_event_id"] == "EVT-CONTEXT-2"
+    assert "sealed_theme_domain_id" not in unbound["payload"]
 
 
 def test_news_row_identity_is_material_news_provenance_without_source_type() -> None:
@@ -2259,3 +2731,299 @@ def test_provenance_closure_expands_facts_referenced_by_inference() -> None:
         "SRC-DIRECT",
         "SRC-INFERRED",
     ]
+
+
+def test_materializes_missing_explicit_case_records_without_semantic_inference() -> None:
+    beneficiary = {
+        "beneficiary_discovery_case_id": "BEN-1",
+        "ticker": "000001",
+        "source_fact_ids": ["FACT-1"],
+        "provenance_source_ids": ["SRC-1"],
+        "training_eligible": True,
+    }
+    theme = {
+        "theme_formation_case_id": "THEME-1",
+        "case_status": "NO_CUTOFF_SAFE_THEME_IDENTIFIED",
+        "training_eligible": False,
+        "provenance_source_ids": [],
+    }
+    candidate_generation = {
+        "candidate_generation_error_case_id": "CGE-CLOSURE-1",
+        "case_status": "NO_CUTOFF_SAFE_CANDIDATE_GENERATION_MISS_IDENTIFIED",
+        "training_eligible": False,
+    }
+    candidate_generation_with_matched_source = {
+        "candidate_generation_error_case_id": "CGE-MATCHED-SOURCE-1",
+        "matched_source_row_ids": ["SRC-MATCHED-1"],
+        "training_eligible": True,
+    }
+    records: list[dict[str, object]] = []
+
+    repair._materialize_missing_explicit_case_records(
+        records,
+        jsonl_blocks={
+            "beneficiary_discovery_cases.jsonl": [beneficiary],
+            "candidate_generation_error_cases.jsonl": [
+                candidate_generation,
+                candidate_generation_with_matched_source,
+            ],
+            "theme_formation_cases.jsonl": [theme],
+        },
+        episode_id="NSLAB-20230801-test",
+        trade_date="2023-08-01",
+        available_from="2023-08-02T00:00:00+09:00",
+        known_fact_ids={"FACT-1"},
+        known_inference_ids=set(),
+    )
+
+    assert len(records) == 4
+    beneficiary_record = next(
+        row for row in records if row["record_type"] == "beneficiary_discovery_case"
+    )
+    theme_record = next(row for row in records if row["record_type"] == "theme_formation_case")
+    candidate_generation_record = next(
+        row for row in records if row["record_type"] == "candidate_generation_error_case"
+    )
+    assert all(beneficiary_record[field] == value for field, value in beneficiary.items())
+    assert beneficiary_record["beneficiary_case_id"] == "BEN-1"
+    assert beneficiary_record["sample_weight"] == 1.0
+    assert all(theme_record[field] == value for field, value in theme.items())
+    assert theme_record["theme_case_id"] == "THEME-1"
+    assert theme_record["sample_weight"] == 0.0
+    assert all(
+        candidate_generation_record[field] == value
+        for field, value in candidate_generation.items()
+    )
+    assert (
+        candidate_generation_record["candidate_generation_error_case_id"]
+        == "CGE-CLOSURE-1"
+    )
+    assert candidate_generation_record["sample_weight"] == 0.0
+    matched_source_record = next(
+        row
+        for row in records
+        if row.get("candidate_generation_error_case_id") == "CGE-MATCHED-SOURCE-1"
+    )
+    assert matched_source_record["provenance_source_ids"] == ["SRC-MATCHED-1"]
+    assert matched_source_record["repair_population_derivations"][0][
+        "derivation_inputs"
+    ] == ["CGE-MATCHED-SOURCE-1", "SRC-MATCHED-1"]
+
+    closures = repair._repair_provenance_closure_rows([], records)
+    eligible_closure = next(
+        row for row in closures if row["record_type"] == "beneficiary_discovery_case"
+    )
+    assert eligible_closure["closure_status"] == "CLOSED"
+    assert eligible_closure["training_eligible_after_closure"] is True
+    assert eligible_closure["sample_weight_after_closure"] == 1.0
+
+
+def test_materialized_cases_preserve_unresolved_typed_ids_as_legacy_tokens() -> None:
+    records: list[dict[str, object]] = []
+    repair._materialize_missing_explicit_case_records(
+        records,
+        jsonl_blocks={
+            "beneficiary_discovery_cases.jsonl": [
+                {
+                    "beneficiary_discovery_case_id": "BEN-PM-1",
+                    "source_fact_ids": ["PMFACT-1"],
+                    "source_inference_ids": ["PMINF-1"],
+                    "provenance_source_ids": ["SRC-1"],
+                    "training_eligible": True,
+                }
+            ],
+            "newsless_or_unexplained_cases.jsonl": [
+                {
+                    "newsless_case_id": "NL-1",
+                    "ticker": "000001",
+                    "training_eligible": False,
+                    "training_exclusion_reason": "no_cutoff_safe_direct_issuer_fact",
+                }
+            ],
+        },
+        episode_id="NSLAB-20231101-test",
+        trade_date="2023-11-01",
+        available_from="2023-11-02T00:00:00+09:00",
+        known_fact_ids=set(),
+        known_inference_ids=set(),
+    )
+
+    beneficiary = next(
+        row for row in records if row["record_type"] == "beneficiary_discovery_case"
+    )
+    newsless = next(
+        row for row in records if row["record_type"] == "newsless_or_unexplained_case"
+    )
+    assert "source_fact_ids" not in beneficiary
+    assert "source_inference_ids" not in beneficiary
+    assert beneficiary["legacy_unresolved_fact_tokens"] == ["PMFACT-1"]
+    assert beneficiary["legacy_unresolved_inference_tokens"] == ["PMINF-1"]
+    assert beneficiary["training_eligible"] is True
+    assert newsless["newsless_case_id"] == "NL-1"
+    assert newsless["training_eligible"] is False
+    assert newsless["sample_weight"] == 0.0
+
+
+def test_pair_population_join_preserves_declared_fact_order() -> None:
+    forward = {
+        "record_id": "BD-FORWARD",
+        "record_type": "blind_leader_preference_pair",
+        "source_fact_ids": ["FACT-1", "FACT-2"],
+    }
+    reverse = {
+        "record_id": "BD-REVERSE",
+        "record_type": "blind_leader_preference_pair",
+        "source_fact_ids": ["FACT-2", "FACT-1"],
+    }
+
+    repair._materialize_case_population_ids(
+        [forward, reverse],
+        {
+            "blind_leader_preference_pairs.jsonl": [
+                {
+                    "pair_id": "PAIR-FORWARD",
+                    "source_fact_ids": ["FACT-1", "FACT-2"],
+                }
+            ]
+        },
+    )
+
+    assert forward["pair_id"] == "PAIR-FORWARD"
+    assert "pair_id" not in reverse
+
+
+def test_materializes_declared_nontraining_case_and_quarantines_unsealed_pair() -> None:
+    records: list[dict[str, object]] = []
+    repair._materialize_missing_explicit_case_records(
+        records,
+        jsonl_blocks={
+            "candidate_generation_error_cases.jsonl": [
+                {
+                    "case_id": "CGE-1",
+                    "classification": "SEMANTIC_FALSE_POSITIVE",
+                    "training_eligible": False,
+                }
+            ],
+            "blind_leader_preference_pairs.jsonl": [
+                {
+                    "pair_id": "PAIR-1",
+                    "source_fact_ids": ["FACT-1", "FACT-2"],
+                    "source_inference_ids": ["INF-1", "INF-2"],
+                    "provenance_source_ids": ["SRC-1", "SRC-2"],
+                    "training_eligible": True,
+                }
+            ],
+        },
+        episode_id="NSLAB-20200227-test",
+        trade_date="2020-02-27",
+        available_from="2020-02-28T00:00:00+09:00",
+        known_fact_ids={"FACT-1", "FACT-2"},
+        known_inference_ids={"INF-1", "INF-2"},
+    )
+
+    candidate_case = next(
+        row for row in records if row["record_type"] == "candidate_generation_error_case"
+    )
+    pair = next(
+        row for row in records if row["record_type"] == "blind_leader_preference_pair"
+    )
+    assert candidate_case["candidate_generation_error_case_id"] == "CGE-1"
+    assert candidate_case["training_eligible"] is False
+    assert candidate_case["sample_weight"] == 0.0
+    assert candidate_case["training_exclusion_reason"] == (
+        "source_declared_ineligible_without_reason"
+    )
+    assert pair["pair_id"] == "PAIR-1"
+    assert pair["training_eligible"] is False
+    assert pair["sample_weight"] == 0.0
+    assert pair["training_exclusion_reason"] == "sealed_preference_pair_missing"
+
+
+def test_missing_compact_candidate_witness_uses_existing_csw_convention() -> None:
+    screenings = [
+        {
+            "screening_id": f"SCR-{index}",
+            "candidate_id": f"CAND-{index}",
+            "company": f"Issuer {index}",
+            "ticker": f"00000{index}",
+            "screening_decision": "WATCH_SECONDARY",
+            "decision_reason_specific": f"EVENT: Issuer {index} mechanism.",
+            "source_fact_ids": [f"FACT-{index}"],
+            "source_inference_ids": [f"INF-{index}"],
+            "source_material_review_ids": [f"MR-{index}"],
+            "source_phase": "BLIND",
+        }
+        for index in (1, 2)
+    ]
+    rankings = [
+        {
+            "source_screening_id": f"SCR-{index}",
+            "candidate_id": f"CAND-{index}",
+            "company": f"Issuer {index}",
+            "ticker": f"00000{index}",
+        }
+        for index in (1, 2)
+    ]
+    facts = [
+        {
+            "fact_id": f"FACT-{index}",
+            "source_id": f"SRC-{index}",
+            "exact_quote": f"Issuer {index} event.",
+            "fact_class": "EVENT",
+            "quote_found_in_source_row": True,
+        }
+        for index in (1, 2)
+    ]
+    inferences = [
+        {
+            "inference_id": f"INF-{index}",
+            "source_fact_ids": [f"FACT-{index}"],
+            "mechanism_sentence": f"Issuer {index} mechanism.",
+            "mechanism_supported": True,
+        }
+        for index in (1, 2)
+    ]
+    reviews = [
+        {
+            "material_review_id": f"MR-{index}",
+            "source_id": f"SRC-{index}",
+            "exact_quote": f"Issuer {index} event.",
+            "quote_found_in_source_row": True,
+            "materiality": True,
+            "review_decision": "ACCEPT_DIRECT_FACT",
+        }
+        for index in (1, 2)
+    ]
+    existing = [
+        {
+            "candidate_id": "CAND-1",
+            "exact_quote": "Issuer 1 event.",
+            "issuer_binding": {"company": "Issuer 1", "ticker": "000001"},
+            "semantic_witness_id": "CSW-1",
+            "semantic_witness_status": "CLOSED",
+            "source_fact_ids": ["FACT-1"],
+            "source_ids": ["SRC-1"],
+            "source_inference_ids": ["INF-1"],
+            "source_material_review_ids": ["MR-1"],
+            "source_phase": "BLIND",
+            "source_screening_id": "SCR-1",
+        }
+    ]
+
+    repaired = repair._materialize_missing_candidate_semantic_witness_rows(
+        existing,
+        screening_rows=screenings,
+        ranking_rows=rankings,
+        fact_rows=facts,
+        inference_rows=inferences,
+        material_review_rows=reviews,
+        source_rows=[{"source_id": "SRC-1"}, {"source_id": "SRC-2"}],
+    )
+
+    assert len(repaired) == 2
+    derived = repaired[1]
+    assert derived["semantic_witness_id"] == "CSW-2"
+    assert derived["source_screening_id"] == "SCR-2"
+    assert derived["candidate_semantic_witness_repair_provenance"]["rule_id"] == (
+        "candidate_semantic_witness_from_unique_rankable_chain.v1"
+    )

@@ -13,12 +13,14 @@ from news_scalping_lab.research_import.repair_quality import (
     _artifact_occurrence_lineage_audit,
     _build_lineage,
     _case_population_record_ids,
+    _case_population_record_index,
     _case_population_source_gap,
     _case_relation_values,
     _combined_population,
     _declared_join_values_match,
     _derived_case_population_audit,
     _illegal_transform_paths,
+    _indexed_case_population_candidates,
     _is_aggregate_news_source,
     _leader_policy_thresholds,
     _nontraining_case_underfill_only,
@@ -34,15 +36,48 @@ from news_scalping_lab.research_import.repair_quality import (
     _semantic_verdict_value,
     _source_semantic_row_passes,
     _temporal_audit,
+    _verified_news_source_aliases,
     evaluate_bundle_quality,
     semantic_exclusion_relation_ids,
 )
+from news_scalping_lab.tools import repair_research_bundle as repair_bundle_module
 from news_scalping_lab.utils import canonical_json, sha256_text
 
 
 def test_relation_scalar_equal_preserves_nan_metrics() -> None:
     assert _relation_scalar_equal(float("nan"), float("nan")) is True
     assert _relation_scalar_equal("NaN", "NaN") is True
+
+
+def test_case_population_index_keeps_only_possible_relation_matches() -> None:
+    records = [
+        {
+            "record_id": f"BD-{index}",
+            "record_type": "negative_control_case",
+            "source_fact_ids": [f"FACT-{index}"],
+            "ticker": f"{index:06d}",
+        }
+        for index in range(1, 501)
+    ]
+    target = {
+        "record_id": "BD-TARGET",
+        "record_type": "negative_control_case",
+        "source_fact_ids": ["FACT-TARGET"],
+        "ticker": "999999",
+    }
+    records.append(target)
+    index = _case_population_record_index(records)
+
+    candidates = _indexed_case_population_candidates(
+        {
+            "source_fact_ids": ["FACT-TARGET"],
+            "ticker": "999999",
+        },
+        records=records,
+        record_index=index,
+    )
+
+    assert candidates == [target]
 
 
 def test_illegal_transform_allows_unchanged_nan_metric() -> None:
@@ -53,6 +88,51 @@ def test_illegal_transform_allows_unchanged_nan_metric() -> None:
         )
         == []
     )
+
+
+def test_illegal_transform_allows_exact_verified_normal_day_label_alias() -> None:
+    before = {
+        "record_id": "BD-1",
+        "record_type": "supervised_direct_event_case",
+        "payload": {"label_quality": "VERIFIED_NORMAL_DAY"},
+    }
+
+    assert _illegal_transform_paths(
+        before,
+        {**before, "label_quality": "verified"},
+    ) == []
+    assert _illegal_transform_paths(
+        before,
+        {**before, "label_quality": "quarantined"},
+    ) == ["label_quality"]
+
+
+def test_illegal_transform_allows_only_receipted_null_event_removal() -> None:
+    before = {
+        "record_id": "BD-1",
+        "record_type": "supervised_issuer_day_case",
+        "event_ids": [None, "EVT-1", None],
+    }
+    after = {
+        **before,
+        "event_ids": ["EVT-1"],
+        "repair_removed_null_event_reference_fields": ["event_ids"],
+    }
+
+    assert _illegal_transform_paths(before, after) == []
+    assert _illegal_transform_paths(
+        before,
+        {**after, "event_ids": []},
+    ) == ["event_ids", "repair_removed_null_event_reference_fields"]
+
+    null_only_before = {**before, "event_ids": [None]}
+    compacted_after = {
+        key: value
+        for key, value in null_only_before.items()
+        if key != "event_ids"
+    }
+    compacted_after["repair_removed_null_event_reference_fields"] = ["event_ids"]
+    assert _illegal_transform_paths(null_only_before, compacted_after) == []
 
 
 def test_illegal_transform_allows_source_anchored_nested_row_alias() -> None:
@@ -123,6 +203,77 @@ def test_illegal_transform_allows_nested_mistyped_event_to_screening_alias() -> 
         "payload": {"event_ids": [], "screening_ids": ["SCR-1"]},
         "related_domain_ids": ["SCR-1"],
         "legacy_mistyped_event_reference_values": ["SCR-1"],
+    }
+
+    assert _illegal_transform_paths(before, after) == []
+
+
+def test_illegal_transform_allows_nested_event_to_root_domain_preservation() -> None:
+    before = {
+        "record_id": "BD-1",
+        "record_type": "supervised_issuer_day_case",
+        "payload": {
+            "event_ids": ["DEV-1"],
+            "screening_ids": ["SCR-1"],
+        },
+    }
+    after = {
+        "record_id": "EP-20260528__BD-1",
+        "brain_delta_id": "EP-20260528__BD-1",
+        "record_type": "supervised_issuer_day_case",
+        "payload": {"event_ids": [], "screening_ids": ["SCR-1"]},
+        "related_domain_ids": ["DEV-1"],
+        "legacy_mistyped_event_reference_values": ["DEV-1"],
+    }
+
+    assert _illegal_transform_paths(before, after) == []
+
+
+def test_illegal_transform_allows_exact_sealed_theme_domain_split() -> None:
+    before = {
+        "record_id": "BD-1",
+        "record_type": "theme_formation_case",
+        "payload": {
+            "sealed_theme_event_id": "EVT-CONTEXT-1",
+            "source_screening_id": "SCR-1",
+        },
+    }
+    after = {
+        **before,
+        "payload": {
+            "sealed_theme_domain_id": "EVT-CONTEXT-1",
+            "source_screening_id": "SCR-1",
+        },
+        "related_domain_ids": ["EVT-CONTEXT-1"],
+        "legacy_mistyped_event_reference_values": ["EVT-CONTEXT-1"],
+    }
+
+    assert _illegal_transform_paths(before, after) == []
+    assert _illegal_transform_paths(
+        before,
+        {
+            **after,
+            "payload": {
+                **after["payload"],
+                "sealed_theme_domain_id": "EVT-CONTEXT-2",
+            },
+        },
+    ) == ["payload.sealed_theme_domain_id"]
+
+
+def test_illegal_transform_allows_blind_event_to_observation_domain() -> None:
+    before = {
+        "record_id": "BD-1",
+        "record_type": "supervised_issuer_day_case",
+        "blind_event_ids": ["OBS-1"],
+    }
+    after = {
+        **before,
+        "record_id": "EP-20260528__BD-1",
+        "brain_delta_id": "EP-20260528__BD-1",
+        "blind_event_ids": [],
+        "related_domain_ids": ["OBS-1"],
+        "legacy_mistyped_event_reference_values": ["OBS-1"],
     }
 
     assert _illegal_transform_paths(before, after) == []
@@ -324,6 +475,34 @@ def test_leader_policy_reads_legacy_census_policy_and_cohort_tags() -> None:
     assert high_return_threshold == 10.0
 
 
+def test_leader_policy_reads_row_cohort_policy() -> None:
+    rows = [
+        type(
+            "ArtifactRowStub",
+            (object,),
+            {
+                "row": {
+                    "cohort_policy": {
+                        "high_return_thresholds": [5, 10, 15, 20],
+                        "high_return_top_n_clean": 30,
+                        "amount_top_n": 30,
+                        "turnover_top_n": 30,
+                    }
+                }
+            },
+        )()
+    ]
+
+    amount_top_n, turnover_top_n, high_return_threshold, high_return_rank_top_n = (
+        _leader_policy_thresholds(rows)
+    )
+
+    assert amount_top_n == 30
+    assert turnover_top_n == 30
+    assert high_return_threshold == 5.0
+    assert high_return_rank_top_n == 30
+
+
 def test_outcome_nested_value_reads_data_container() -> None:
     assert _outcome_nested_value(
         {"data": {"amount_rank": 7}}, "amount_rank"
@@ -506,6 +685,19 @@ def test_numeric_identifier_string_normalization_is_legal() -> None:
     assert _illegal_transform_paths(before, after) == []
 
 
+def test_episode_namespace_prefix_case_normalization_is_legal() -> None:
+    before = {
+        "record_id": "NSLAB-20200615-53B29FAE__BD-000001",
+        "record_type": "memory_claim",
+    }
+    after = {
+        "record_id": "NSLAB-20200615-53b29fae__BD-000001",
+        "record_type": "memory_claim",
+    }
+
+    assert _illegal_transform_paths(before, after) == []
+
+
 def test_semantic_exclusion_can_fill_null_eligibility_reason() -> None:
     before = {
         "record_type": "supervised_issuer_day_case",
@@ -523,6 +715,37 @@ def test_semantic_exclusion_can_fill_null_eligibility_reason() -> None:
     }
 
     assert _illegal_transform_paths(before, after) == []
+
+
+def test_null_training_eligibility_can_only_be_conservatively_excluded() -> None:
+    before = {
+        "record_type": "prediction_outcome",
+        "training_eligible": None,
+    }
+    excluded = {
+        **before,
+        "training_eligible": False,
+        "sample_weight": 0.0,
+        "training_exclusion_reason": "source_declared_ineligible_without_reason",
+    }
+    included = {
+        **before,
+        "training_eligible": True,
+        "sample_weight": 1.0,
+    }
+
+    assert _illegal_transform_paths(before, excluded) == []
+    assert _illegal_transform_paths(before, included) == [
+        "sample_weight",
+        "training_eligible",
+    ]
+
+    absent_before = {"record_type": "prediction_outcome"}
+    assert _illegal_transform_paths(absent_before, excluded) == []
+    assert _illegal_transform_paths(absent_before, included) == [
+        "sample_weight",
+        "training_eligible",
+    ]
 
 
 def test_case_population_accepts_explicit_derivation_source_case_id() -> None:
@@ -617,6 +840,283 @@ def test_artifact_lineage_joins_source_id_and_source_row_id_aliases(
     assert audit["artifact_orphan_repaired_row_count"] == 0
     assert audit["artifact_missing_source_row_count"] == 0
     assert audit["artifact_illegal_transform_count"] == 0
+
+
+def test_source_time_verification_transform_requires_independent_csv_audit(
+    tmp_path: Path,
+) -> None:
+    timestamp = "2020-03-27T08:59:35+09:00"
+    source_row = {
+        "source_id": "SRC-1",
+        "source_type": "NEWS_ROW",
+        "input_file": "generated.csv",
+        "input_sha256": "a" * 64,
+        "row_index": 1,
+        "raw_row_sha256": "b" * 64,
+        "published_at": timestamp,
+    }
+    provenance = {
+        "rule_id": "news_csv_timestamp_sha256_row_join.v2",
+        "input_file": "generated.csv",
+        "input_sha256": "a" * 64,
+        "input_hash_mode": "CRLF_TO_LF",
+        "evidence_file": "news_20200327.csv",
+        "evidence_resolution": "CONTENT_SHA256",
+        "row_index": 1,
+        "content_sha256": "c" * 64,
+        "published_at": timestamp,
+    }
+    source = _write_bundle(
+        tmp_path / "source-time-unverified.md",
+        {"source_ledger.jsonl": [source_row]},
+    )
+    repaired = _write_bundle(
+        tmp_path / "repaired-time-verified.md",
+        {
+            "source_ledger.jsonl": [
+                {
+                    **source_row,
+                    "time_verified": True,
+                    "available_before_cutoff": True,
+                    "timestamp_repair_provenance": provenance,
+                }
+            ]
+        },
+    )
+
+    unaudited = _artifact_lineage_audit(
+        artifact_rows(source),
+        artifact_rows(repaired),
+    )
+    audited = _artifact_lineage_audit(
+        artifact_rows(source),
+        artifact_rows(repaired),
+        verified_source_timestamps={"SRC-1": timestamp},
+    )
+
+    assert unaudited["artifact_illegal_transform_count"] == 1
+    assert audited["artifact_illegal_transform_count"] == 0
+
+    source_row_without_filename = dict(source_row)
+    source_row_without_filename.pop("input_file")
+    source_without_filename = _write_bundle(
+        tmp_path / "source-time-with-bundle-csv-declaration.md",
+        {"source_ledger.jsonl": [source_row_without_filename]},
+    )
+    repaired_without_filename = _write_bundle(
+        tmp_path / "repaired-time-with-bundle-csv-declaration.md",
+        {
+            "source_ledger.jsonl": [
+                {
+                    **source_row_without_filename,
+                    "time_verified": True,
+                    "available_before_cutoff": True,
+                    "timestamp_repair_provenance": provenance,
+                }
+            ]
+        },
+    )
+
+    missing_filename_unaudited = _artifact_lineage_audit(
+        artifact_rows(source_without_filename),
+        artifact_rows(repaired_without_filename),
+    )
+    missing_filename_audited = _artifact_lineage_audit(
+        artifact_rows(source_without_filename),
+        artifact_rows(repaired_without_filename),
+        verified_source_timestamps={"SRC-1": timestamp},
+    )
+
+    assert missing_filename_unaudited["artifact_illegal_transform_count"] == 1
+    assert missing_filename_audited["artifact_illegal_transform_count"] == 0
+
+    source_row_without_identity = dict(source_row_without_filename)
+    source_row_without_identity.pop("input_sha256")
+    source_without_identity = _write_bundle(
+        tmp_path / "source-time-with-only-bundle-csv-identity.md",
+        {"source_ledger.jsonl": [source_row_without_identity]},
+    )
+    repaired_without_identity = _write_bundle(
+        tmp_path / "repaired-time-with-only-bundle-csv-identity.md",
+        {
+            "source_ledger.jsonl": [
+                {
+                    **source_row_without_identity,
+                    "time_verified": True,
+                    "available_before_cutoff": True,
+                    "timestamp_repair_provenance": provenance,
+                }
+            ]
+        },
+    )
+
+    identity_unaudited = _artifact_lineage_audit(
+        artifact_rows(source_without_identity),
+        artifact_rows(repaired_without_identity),
+    )
+    identity_audited = _artifact_lineage_audit(
+        artifact_rows(source_without_identity),
+        artifact_rows(repaired_without_identity),
+        verified_source_timestamps={"SRC-1": timestamp},
+    )
+    assert identity_unaudited["artifact_illegal_transform_count"] == 1
+    assert identity_audited["artifact_illegal_transform_count"] == 0
+
+    alias_source_row = {
+        "source_row_id": "SRC-1",
+        "source_file": "generated.csv",
+        "source_sha256": "a" * 64,
+        "input_row_number": 1,
+        "raw_row_sha256": "b" * 64,
+        "published_at_kst": timestamp,
+    }
+    alias_source = _write_bundle(
+        tmp_path / "source-time-v1-aliases.md",
+        {"source_ledger.jsonl": [alias_source_row]},
+    )
+    alias_repaired = _write_bundle(
+        tmp_path / "repaired-time-v1-aliases.md",
+        {
+            "source_ledger.jsonl": [
+                {
+                    **alias_source_row,
+                    "source_id": "SRC-1",
+                    "time_verified": True,
+                    "available_before_cutoff": True,
+                    "timestamp_repair_provenance": provenance,
+                }
+            ]
+        },
+    )
+
+    alias_audited = _artifact_lineage_audit(
+        artifact_rows(alias_source),
+        artifact_rows(alias_repaired),
+        verified_source_timestamps={"SRC-1": timestamp},
+    )
+
+    assert alias_audited["artifact_illegal_transform_count"] == 0
+
+
+def test_verified_source_timestamp_alias_mirror_is_audited() -> None:
+    timestamp = "2023-07-31T08:58:33+09:00"
+    source = {
+        "source_row_id": "SRC-1",
+        "published_at_kst": timestamp,
+    }
+    repaired = {
+        **source,
+        "source_id": "SRC-1",
+        "published_at": timestamp,
+        "time_verified": True,
+    }
+
+    assert _illegal_transform_paths(
+        source,
+        repaired,
+        artifact_name="source_ledger.jsonl",
+        verified_source_timestamp=timestamp,
+    ) == []
+    assert _illegal_transform_paths(
+        source,
+        {**repaired, "published_at": "2023-07-31T08:58:34+09:00"},
+        artifact_name="source_ledger.jsonl",
+        verified_source_timestamp=timestamp,
+    ) == ["published_at"]
+
+
+def test_postseal_legacy_type_transitions_require_exact_source_values() -> None:
+    issuer_source = {
+        "record_id": "BD-ISSUER-1",
+        "record_type": "issuer_day_case",
+        "payload": {
+            "outcome": {
+                "high_return_pct": 8.1,
+                "close_return_pct": 3.4,
+                "response_label": "POSITIVE_RESPONSE",
+            }
+        },
+    }
+    verified_outcome = {
+        **issuer_source["payload"]["outcome"],
+        "label_quality": "verified",
+    }
+    issuer_repaired = {
+        **issuer_source,
+        "record_type": "supervised_issuer_day_case",
+        "legacy_record_type": "issuer_day_case",
+        "issuer_day_case_id": "BD-ISSUER-1",
+        "D_outcome": verified_outcome,
+        "outcome": verified_outcome,
+        "label_quality": "verified",
+        "attribution_status": "postseal_label_attached_to_sealed_final",
+    }
+    assert _illegal_transform_paths(issuer_source, issuer_repaired) == []
+    assert "D_outcome" in _illegal_transform_paths(
+        issuer_source,
+        {
+            **issuer_repaired,
+            "D_outcome": {**verified_outcome, "high_return_pct": 99.0},
+        },
+    )
+
+    pair_source = {
+        "record_id": "BD-PAIR-1",
+        "record_type": "counterfactual_pair",
+        "payload": {
+            "comparison_axis": "sealed selection versus outcome leader",
+            "selected": {"ticker": "000001", "issuer_name": "Selected"},
+            "missed_leader": {"ticker": "000002", "issuer_name": "Missed"},
+        },
+    }
+    pair_repaired = {
+        **pair_source,
+        "record_type": "blind_leader_preference_pair",
+        "legacy_record_type": "counterfactual_pair",
+        "blind_pair_id": "BD-PAIR-1",
+        "blind_preferred_ticker": "000001",
+        "blind_preferred_company_name": "Selected",
+        "blind_rejected_ticker": "000002",
+        "blind_rejected_company_name": "Missed",
+        "outcome_winner_ticker": "000002",
+        "outcome_winner_company_name": "Missed",
+        "blind_preference_correct": False,
+        "training_mode": "postseal_counterfactual_pair",
+        "correction_mode": "sealed selection versus outcome leader",
+        "training_target": "outcome_preferred_candidate",
+    }
+    assert _illegal_transform_paths(pair_source, pair_repaired) == []
+    assert _illegal_transform_paths(
+        pair_source,
+        {**pair_repaired, "outcome_winner_ticker": "999999"},
+    ) == ["outcome_winner_ticker"]
+
+    leader_source = {
+        "record_id": "BD-LEADER-1",
+        "record_type": "outcome_leader_case",
+        "payload": {
+            "blind_selected": False,
+            "premarket_news_state": "NEWS_PRESENT_NOT_SELECTED",
+            "ticker": "000002",
+            "issuer_name": "Missed",
+        },
+    }
+    leader_repaired = {
+        **leader_source,
+        "record_type": "candidate_generation_error_case",
+        "legacy_record_type": "outcome_leader_case",
+        "error_id": "BD-LEADER-1",
+        "error_type": "NEWS_PRESENT_NOT_SELECTED",
+        "correction_mode": "NEWS_PRESENT_NOT_SELECTED",
+        "missed_ticker": "000002",
+        "missed_company_name": "Missed",
+        "training_target": "candidate_generation_correction",
+    }
+    assert _illegal_transform_paths(leader_source, leader_repaired) == []
+    assert _illegal_transform_paths(
+        leader_source,
+        {**leader_repaired, "missed_ticker": "999999"},
+    ) == ["missed_ticker"]
 
 
 def test_trade_date_materialization_must_match_outcome_snapshot() -> None:
@@ -725,6 +1225,43 @@ def test_legacy_population_mismatch_is_quarantined_only_when_source_matches_repa
     assert _combined_population(source, changed)["legacy_contract_population_quarantine"] is False
 
 
+def test_legacy_population_allows_exact_derived_closure_growth() -> None:
+    source = {
+        "current_contract_blocks_present": False,
+        "population_underfill_count": 621,
+        "population_extra_count": 0,
+        "duplicate_logical_key_count": 0,
+        "liquidity_policy_underspecified_count": 0,
+        "rules": {
+            "outcome_to_leader_census": {
+                "mode": "EXACT",
+                "expected_count": 803,
+                "actual_count": 182,
+                "missing_keys": ["OUT-MISSING"],
+                "extra_keys": [],
+            },
+            "brain_to_provenance_closure": {
+                "mode": "EXACT",
+                "expected_count": 692,
+                "actual_count": 692,
+                "missing_keys": [],
+                "extra_keys": [],
+            },
+        },
+    }
+    repaired = json.loads(json.dumps(source))
+    repaired["rules"]["brain_to_provenance_closure"].update(
+        {"expected_count": 885, "actual_count": 885}
+    )
+
+    combined = _combined_population(source, repaired)
+
+    assert combined["legacy_contract_population_quarantine"] is True
+
+    repaired["rules"]["brain_to_provenance_closure"]["missing_keys"] = ["BD-1"]
+    assert _combined_population(source, repaired)["legacy_contract_population_quarantine"] is False
+
+
 def test_legacy_population_case_alias_normalization_is_quarantined() -> None:
     source = {
         "current_contract_blocks_present": False,
@@ -814,6 +1351,37 @@ def test_lineage_allows_record_id_materialized_from_brain_delta_id(
     )
 
     assert audit["illegal_transform_count"] == 0
+
+
+def test_lineage_joins_case_normalized_episode_namespace(tmp_path: Path) -> None:
+    source_record = {
+        "record_id": "NSLAB-20200615-53B29FAE__BD-000001",
+        "record_type": "memory_claim",
+        "training_eligible": False,
+        "sample_weight": 0.0,
+        "training_exclusion_reason": "legacy_nontraining",
+    }
+    repaired_record = {
+        **source_record,
+        "record_id": "NSLAB-20200615-53b29fae__BD-000001",
+        "brain_delta_id": "NSLAB-20200615-53b29fae__BD-000001",
+    }
+    source = _write_bundle(
+        tmp_path / "case-normalized-namespace.md",
+        {"brain_delta.jsonl": [source_record]},
+    )
+
+    lineage, audit = _build_lineage(
+        census_source(source),
+        artifact_rows(source),
+        [repaired_record],
+    )
+
+    assert audit["matched_original_record_count"] == 1
+    assert audit["unaccounted_original_record_count"] == 0
+    assert audit["orphan_repaired_record_count"] == 0
+    assert audit["illegal_transform_count"] == 0
+    assert lineage[0].status == "PRESERVED"
 
 
 def test_lineage_joins_legacy_brain_record_id_alias(
@@ -2080,6 +2648,54 @@ def test_payload_company_mirror_is_an_allowed_existing_field_transform() -> None
     assert _illegal_transform_paths(before, after) == []
 
 
+def test_company_binding_object_extraction_requires_exact_preservation() -> None:
+    binding = {
+        "issuer_name": "Example Issuer",
+        "binding_type": "EXPLICIT_GROUP_RELATION",
+        "confidence": "HIGH",
+    }
+    before = {
+        "record_type": "negative_control_case",
+        "company_name": binding,
+    }
+    repaired = {
+        **before,
+        "company_name": "Example Issuer",
+        "legacy_company_name_payload": binding,
+    }
+
+    assert _illegal_transform_paths(before, repaired) == []
+    assert _illegal_transform_paths(
+        before,
+        {**repaired, "company_name": "Other Issuer"},
+    ) == ["company_name", "legacy_company_name_payload"]
+    assert _illegal_transform_paths(
+        before,
+        {
+            **repaired,
+            "legacy_company_name_payload": {**binding, "confidence": "LOW"},
+        },
+    ) == ["company_name", "legacy_company_name_payload"]
+
+
+def test_company_memory_date_only_known_at_mirror_is_strict() -> None:
+    before = {
+        "record_id": "BD-COMPANY",
+        "record_type": "company_memory_delta",
+        "available_from": "2023-09-22",
+    }
+    repaired = {
+        **before,
+        "known_at": "2023-09-22T00:00:00+09:00",
+    }
+
+    assert _illegal_transform_paths(before, repaired) == []
+    assert _illegal_transform_paths(
+        before,
+        {**before, "known_at": "2023-09-21T00:00:00+09:00"},
+    ) == ["known_at"]
+
+
 def test_issuer_name_company_mirror_is_an_allowed_existing_field_transform() -> None:
     before = {
         "record_type": "supervised_issuer_day_case",
@@ -2110,6 +2726,34 @@ def test_fractional_issuer_weight_group_normalization_is_allowed() -> None:
     }
 
     assert _illegal_transform_paths(before, after) == []
+
+
+def test_issuer_case_id_change_requires_exact_population_join_receipt() -> None:
+    before = {
+        "record_id": "BD-1",
+        "record_type": "supervised_direct_event_case",
+        "issuer_day_case_id": "IDAY-20231106-005930",
+    }
+    receipt = {
+        "rule_id": "case_id_from_unique_evidence_join.v2",
+        "source_artifact": "issuer_day_cases.jsonl",
+        "source_case_id": "IDCASE-0013",
+        "target_field": "issuer_day_case_id",
+    }
+    after = {
+        **before,
+        "issuer_day_case_id": "IDCASE-0013",
+        "repair_population_derivations": [receipt],
+    }
+
+    assert _illegal_transform_paths(before, after) == []
+    assert _illegal_transform_paths(
+        before,
+        {
+            **after,
+            "issuer_day_case_id": "IDCASE-TAMPERED",
+        },
+    ) == ["issuer_day_case_id"]
 
 
 def test_legacy_witness_status_and_source_fact_aliases_are_supported(
@@ -3309,6 +3953,113 @@ def test_leader_policy_reads_cohort_memberships_alias(tmp_path: Path) -> None:
     assert population["rules"]["outcome_to_leader_census"]["extra_keys"] == []
 
 
+def test_leader_policy_reads_membership_classes_for_complete_population(
+    tmp_path: Path,
+) -> None:
+    outcome_rows: list[dict[str, object]] = []
+    leader_rows: list[dict[str, object]] = []
+    audit_rows: list[dict[str, object]] = []
+    for index in range(1, 76):
+        outcome_id = f"OUT-{index:03d}"
+        leader_id = f"LEAD-{index:03d}"
+        if index <= 20:
+            membership = "AMOUNT_TOP20"
+            amount_rank = index
+            turnover_rank = 999
+            high_return_pct = 1.0
+        elif index <= 40:
+            membership = "TURNOVER_TOP20"
+            amount_rank = 999
+            turnover_rank = index - 20
+            high_return_pct = 1.0
+        else:
+            membership = "HIGH10"
+            amount_rank = 999
+            turnover_rank = 999
+            high_return_pct = 10.0
+        outcome_rows.append(
+            {
+                "outcome_row_id": outcome_id,
+                "ticker": f"{index:06d}",
+                "amount_rank": amount_rank,
+                "turnover_rank": turnover_rank,
+                "high_return_pct": high_return_pct,
+            }
+        )
+        leader_rows.append(
+            {
+                "outcome_leader_id": leader_id,
+                "outcome_row_id": outcome_id,
+                "membership_classes": [membership],
+            }
+        )
+        audit_rows.append({"outcome_leader_id": leader_id})
+    bundle = _write_bundle(
+        tmp_path / "membership-classes-complete-leaders.md",
+        {
+            "outcome_ledger.jsonl": outcome_rows,
+            "outcome_leader_census.jsonl": leader_rows,
+            "outcome_to_news_audit.jsonl": audit_rows,
+        },
+    )
+
+    population = _population_audit(artifact_rows(bundle))
+    rule = population["rules"]["outcome_to_leader_census"]
+
+    assert population["leader_amount_top_n"] == 20
+    assert population["leader_turnover_top_n"] == 20
+    assert rule["expected_count"] == 75
+    assert rule["actual_count"] == 75
+    assert rule["missing_keys"] == []
+    assert rule["extra_keys"] == []
+
+
+@pytest.mark.parametrize(
+    "memberships",
+    [
+        ["AMOUNT_TOPX"],
+        ["AMOUNT_TOP20", "AMOUNT_TOP30"],
+        ["AMOUNT_TOP20"],
+    ],
+    ids=["malformed", "contradictory", "rank-inconsistent"],
+)
+def test_membership_classes_policy_fails_closed(
+    tmp_path: Path,
+    memberships: list[str],
+) -> None:
+    rank = 21 if memberships == ["AMOUNT_TOP20"] else 1
+    bundle = _write_bundle(
+        tmp_path / "invalid-membership-classes.md",
+        {
+            "outcome_ledger.jsonl": [
+                {
+                    "outcome_row_id": "OUT-1",
+                    "ticker": "000001",
+                    "amount_rank": rank,
+                    "turnover_rank": 999,
+                    "high_return_pct": 1.0,
+                }
+            ],
+            "outcome_leader_census.jsonl": [
+                {
+                    "outcome_leader_id": "LEAD-1",
+                    "outcome_row_id": "OUT-1",
+                    "membership_classes": memberships,
+                }
+            ],
+            "outcome_to_news_audit.jsonl": [
+                {"outcome_leader_id": "LEAD-1"}
+            ],
+        },
+    )
+
+    population = _population_audit(artifact_rows(bundle))
+
+    assert population["rules"]["outcome_to_leader_census"]["extra_keys"] == [
+        "OUT-1"
+    ]
+
+
 def test_leader_policy_reads_high_return_rank_membership(tmp_path: Path) -> None:
     bundle = _write_bundle(
         tmp_path / "high-rank-membership-leaders.md",
@@ -4075,6 +4826,202 @@ def test_candidate_witness_population_requires_rankable_screenings_only(
     assert rule["extra_keys"] == []
 
 
+def test_candidate_witness_population_excludes_explicit_audit_only_watch(
+    tmp_path: Path,
+) -> None:
+    bundle = _write_bundle(
+        tmp_path / "audit-only-watch-witness-population.md",
+        {
+            "candidate_screening.jsonl": [
+                {
+                    "screening_id": "OBS-SCR-1",
+                    "record_type": "material_observation_screening",
+                    "screening_decision": "WATCH_SECONDARY",
+                    "rankable": True,
+                    "rejection_reason": "secondary signal retained for audit only",
+                    "source_fact_ids": ["FACT-1"],
+                },
+                {
+                    "screening_id": "SCR-1",
+                    "record_type": "issuer_candidate_screening",
+                    "screening_decision": "INCLUDE",
+                    "rankable": True,
+                    "source_inference_ids": ["INF-1"],
+                },
+            ],
+            "candidate_semantic_witness.jsonl": [
+                {"source_screening_id": "SCR-1"}
+            ],
+        },
+    )
+
+    population = _population_audit(artifact_rows(bundle))
+
+    rule = population["rules"]["screening_to_candidate_witness"]
+    assert rule["expected_count"] == 1
+    assert rule["missing_keys"] == []
+
+
+def test_candidate_witness_population_accepts_exact_final_only_alias_artifact(
+    tmp_path: Path,
+) -> None:
+    final_witness = {
+        "final_evidence_witness_id": "FEW-1",
+        "candidate_id": "CAND-1",
+        "source_row_id": "SRC-1",
+    }
+    bundle = _write_bundle(
+        tmp_path / "final-only-candidate-witness.md",
+        {
+            "candidate_screening.jsonl": [
+                {
+                    "screening_id": "SCR-1",
+                    "candidate_id": "CAND-1",
+                    "screening_decision": "INCLUDE",
+                },
+                {
+                    "screening_id": "SCR-2",
+                    "candidate_id": "CAND-2",
+                    "screening_decision": "WATCH_SECONDARY",
+                },
+            ],
+            "candidate_ranking_audit.jsonl": [
+                {
+                    "source_screening_id": "SCR-1",
+                    "candidate_id": "CAND-1",
+                    "included_in_final": True,
+                },
+                {
+                    "source_screening_id": "SCR-2",
+                    "candidate_id": "CAND-2",
+                    "included_in_final": False,
+                },
+            ],
+            "candidate_semantic_witness.jsonl": [final_witness],
+            "final_evidence_witness.jsonl": [final_witness],
+        },
+    )
+
+    population = _population_audit(artifact_rows(bundle))
+
+    rule = population["rules"]["screening_to_candidate_witness"]
+    assert rule["expected_count"] == 1
+    assert rule["actual_count"] == 1
+    assert rule["missing_keys"] == []
+    assert rule["extra_keys"] == []
+
+
+def test_repair_derived_candidate_witness_requires_exact_source_chain(
+    tmp_path: Path,
+) -> None:
+    blocks = {
+        "source_ledger.jsonl": [
+            {"source_id": f"SRC-{index}"} for index in (1, 2)
+        ],
+        "material_review.jsonl": [
+            {
+                "material_review_id": f"MR-{index}",
+                "source_id": f"SRC-{index}",
+                "exact_quote": f"Issuer {index} event.",
+                "quote_found_in_source_row": True,
+                "material_reviewed": True,
+            }
+            for index in (1, 2)
+        ],
+        "fact_ledger_blind.jsonl": [
+            {
+                "fact_id": f"FACT-{index}",
+                "source_row_id": f"SRC-{index}",
+                "exact_quote": f"Issuer {index} event.",
+                "quote_found_in_source_row": True,
+            }
+            for index in (1, 2)
+        ],
+        "inference_ledger_blind.jsonl": [
+            {
+                "inference_id": f"INF-{index}",
+                "source_fact_ids": [f"FACT-{index}"],
+                "mechanism_sentence": f"Issuer {index} mechanism.",
+                "mechanism_supported": True,
+            }
+            for index in (1, 2)
+        ],
+        "candidate_screening.jsonl": [
+            {
+                "screening_id": f"SCR-{index}",
+                "candidate_id": f"CAND-{index}",
+                "company": f"Issuer {index}",
+                "ticker": f"00000{index}",
+                "screening_decision": "WATCH_SECONDARY",
+                "decision_reason_specific": f"Issuer {index} mechanism.",
+                "source_fact_ids": [f"FACT-{index}"],
+                "source_inference_ids": [f"INF-{index}"],
+                "source_material_review_ids": [f"MR-{index}"],
+                "source_phase": "BLIND",
+            }
+            for index in (1, 2)
+        ],
+        "candidate_ranking_audit.jsonl": [
+            {
+                "source_screening_id": f"SCR-{index}",
+                "candidate_id": f"CAND-{index}",
+                "company": f"Issuer {index}",
+                "ticker": f"00000{index}",
+                "included_in_final": index == 1,
+            }
+            for index in (1, 2)
+        ],
+        "candidate_semantic_witness.jsonl": [
+            {
+                "witness_id": "CW-1",
+                "candidate_id": "CAND-1",
+                "chain_complete": True,
+                "company": "Issuer 1",
+                "exact_quote": "Issuer 1 event.",
+                "fact_id": "FACT-1",
+                "inference_id": "INF-1",
+                "material_review_id": "MR-1",
+                "screening_id": "SCR-1",
+                "semantic_witness": "Issuer 1 mechanism.",
+                "source_id": "SRC-1",
+                "source_phase": "BLIND",
+                "ticker": "000001",
+            }
+        ],
+    }
+    derived = repair_bundle_module._materialize_missing_candidate_semantic_witness_rows(
+        blocks["candidate_semantic_witness.jsonl"],
+        screening_rows=blocks["candidate_screening.jsonl"],
+        ranking_rows=blocks["candidate_ranking_audit.jsonl"],
+        fact_rows=blocks["fact_ledger_blind.jsonl"],
+        inference_rows=blocks["inference_ledger_blind.jsonl"],
+        material_review_rows=blocks["material_review.jsonl"],
+        source_rows=blocks["source_ledger.jsonl"],
+    )
+    repaired_blocks = {**blocks, "candidate_semantic_witness.jsonl": derived}
+    source = _write_bundle(tmp_path / "source-witness-gap.md", blocks)
+    repaired = _write_bundle(tmp_path / "repaired-witness-gap.md", repaired_blocks)
+
+    audit = _artifact_lineage_audit(
+        artifact_rows(source),
+        artifact_rows(repaired),
+    )
+
+    assert audit["artifact_orphan_repaired_row_count"] == 0
+    assert audit["artifact_derived_placeholder_count"] == 1
+
+    tampered = [*derived[:-1], {**derived[-1], "exact_quote": "tampered"}]
+    forged = _write_bundle(
+        tmp_path / "forged-witness-gap.md",
+        {**blocks, "candidate_semantic_witness.jsonl": tampered},
+    )
+    forged_audit = _artifact_lineage_audit(
+        artifact_rows(source),
+        artifact_rows(forged),
+    )
+    assert forged_audit["artifact_orphan_repaired_row_count"] == 1
+
+
 def test_candidate_witness_allows_multiple_observations_per_screening(
     tmp_path: Path,
 ) -> None:
@@ -4103,6 +5050,115 @@ def test_candidate_witness_allows_multiple_observations_per_screening(
 
     assert population["duplicate_logical_key_count"] == 0
     assert population["rules"]["screening_to_candidate_witness"]["missing_keys"] == []
+
+
+def test_compact_csw_derivation_is_accepted_only_with_exact_source_chain(
+    tmp_path: Path,
+) -> None:
+    blocks = {
+        "source_ledger.jsonl": [
+            {"source_id": f"SRC-{index}"} for index in (1, 2)
+        ],
+        "fact_ledger_blind.jsonl": [
+            {
+                "fact_id": f"FACT-{index}",
+                "source_id": f"SRC-{index}",
+                "exact_quote": f"Issuer {index} event.",
+                "fact_class": "EVENT",
+                "quote_found_in_source_row": True,
+            }
+            for index in (1, 2)
+        ],
+        "inference_ledger_blind.jsonl": [
+            {
+                "inference_id": f"INF-{index}",
+                "source_fact_ids": [f"FACT-{index}"],
+                "mechanism_sentence": f"Issuer {index} mechanism.",
+                "mechanism_supported": True,
+            }
+            for index in (1, 2)
+        ],
+        "material_review.jsonl": [
+            {
+                "material_review_id": f"MR-{index}",
+                "source_id": f"SRC-{index}",
+                "exact_quote": f"Issuer {index} event.",
+                "quote_found_in_source_row": True,
+                "materiality": True,
+                "review_decision": "ACCEPT_DIRECT_FACT",
+            }
+            for index in (1, 2)
+        ],
+        "candidate_screening.jsonl": [
+            {
+                "screening_id": f"SCR-{index}",
+                "candidate_id": f"CAND-{index}",
+                "company": f"Issuer {index}",
+                "ticker": f"00000{index}",
+                "screening_decision": "WATCH_SECONDARY",
+                "decision_reason_specific": f"EVENT: Issuer {index} mechanism.",
+                "source_fact_ids": [f"FACT-{index}"],
+                "source_inference_ids": [f"INF-{index}"],
+                "source_material_review_ids": [f"MR-{index}"],
+                "source_phase": "BLIND",
+            }
+            for index in (1, 2)
+        ],
+        "candidate_ranking_audit.jsonl": [
+            {
+                "source_screening_id": f"SCR-{index}",
+                "candidate_id": f"CAND-{index}",
+                "company": f"Issuer {index}",
+                "ticker": f"00000{index}",
+            }
+            for index in (1, 2)
+        ],
+        "candidate_semantic_witness.jsonl": [
+            {
+                "candidate_id": "CAND-1",
+                "exact_quote": "Issuer 1 event.",
+                "issuer_binding": {"company": "Issuer 1", "ticker": "000001"},
+                "semantic_witness_id": "CSW-1",
+                "semantic_witness_status": "CLOSED",
+                "source_fact_ids": ["FACT-1"],
+                "source_ids": ["SRC-1"],
+                "source_inference_ids": ["INF-1"],
+                "source_material_review_ids": ["MR-1"],
+                "source_phase": "BLIND",
+                "source_screening_id": "SCR-1",
+            }
+        ],
+    }
+    derived = repair_bundle_module._materialize_missing_candidate_semantic_witness_rows(
+        blocks["candidate_semantic_witness.jsonl"],
+        screening_rows=blocks["candidate_screening.jsonl"],
+        ranking_rows=blocks["candidate_ranking_audit.jsonl"],
+        fact_rows=blocks["fact_ledger_blind.jsonl"],
+        inference_rows=blocks["inference_ledger_blind.jsonl"],
+        material_review_rows=blocks["material_review.jsonl"],
+        source_rows=blocks["source_ledger.jsonl"],
+    )
+    source = _write_bundle(tmp_path / "compact-csw-source.md", blocks)
+    repaired = _write_bundle(
+        tmp_path / "compact-csw-repaired.md",
+        {**blocks, "candidate_semantic_witness.jsonl": derived},
+    )
+
+    audit = _artifact_lineage_audit(artifact_rows(source), artifact_rows(repaired))
+
+    assert audit["artifact_orphan_repaired_row_count"] == 0
+    assert audit["artifact_derived_placeholder_count"] == 1
+
+    derived[-1]["exact_quote"] = "tampered"
+    forged = _write_bundle(
+        tmp_path / "compact-csw-forged.md",
+        {**blocks, "candidate_semantic_witness.jsonl": derived},
+    )
+    forged_audit = _artifact_lineage_audit(
+        artifact_rows(source),
+        artifact_rows(forged),
+    )
+    assert forged_audit["artifact_orphan_repaired_row_count"] == 1
 
 
 def test_news_csv_input_descriptor_is_not_a_row_population_requirement(tmp_path: Path) -> None:
@@ -4136,6 +5192,123 @@ def test_news_csv_input_descriptor_is_not_a_row_population_requirement(tmp_path:
     population = _population_audit(artifact_rows(bundle))
 
     assert population["rules"]["source_to_disposition"]["missing_keys"] == []
+
+
+def test_verified_news_source_alias_closes_population_and_time_provenance(
+    tmp_path: Path,
+) -> None:
+    canonical = {
+        "source_id": "SRC-NEWS-ROW-000001",
+        "source_type": "NEWS_CSV_ROW",
+        "raw_row_sha256": "a" * 64,
+        "row_index": 1,
+        "published_at_kst": "2019-09-23T08:59:55+09:00",
+        "time_verified": True,
+    }
+    alias = {
+        "source_id": "SRC-000001",
+        "source_type": "NEWS_CSV_ROW_ALIAS",
+        "canonical_source_id": "SRC-NEWS-ROW-000001",
+        "raw_row_sha256": "a" * 64,
+        "row_index": 1,
+    }
+    record = {
+        "record_id": "BD-1",
+        "record_type": "memory_claim",
+        "training_eligible": True,
+        "sample_weight": 1.0,
+        "provenance_source_ids": ["SRC-000001"],
+        "available_from": "2019-09-24T00:00:00+09:00",
+    }
+    bundle = _write_bundle(
+        tmp_path / "verified-news-source-alias.md",
+        {
+            "source_ledger.jsonl": [canonical, alias],
+            "row_disposition.jsonl": [
+                {"source_id": "SRC-000001", "disposition": "NON_MARKET_NEWS"}
+            ],
+            "brain_delta.jsonl": [record],
+            "record_provenance_closure_audit.jsonl": [
+                {
+                    "record_id": "BD-1",
+                    "resolved_provenance_source_ids": ["SRC-000001"],
+                    "closure_status": "CLOSED",
+                    "training_eligible_after_closure": True,
+                    "sample_weight_after_closure": 1.0,
+                }
+            ],
+        },
+    )
+
+    rows = artifact_rows(bundle)
+    population = _population_audit(rows)
+    provenance, _ = _provenance_and_eligibility_audit(rows, [record], [])
+
+    assert population["rules"]["source_to_disposition"]["missing_keys"] == []
+    assert population["rules"]["source_to_disposition"]["extra_keys"] == []
+    assert provenance["eligible_time_unverified_source_count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("canonical_rows", "alias_updates"),
+    [
+        ([], {}),
+        (
+            [
+                {
+                    "source_id": "SRC-NEWS-ROW-000001",
+                    "source_type": "NEWS_CSV_ROW",
+                    "raw_row_sha256": "a" * 64,
+                    "row_index": 1,
+                },
+                {
+                    "source_id": "SRC-NEWS-ROW-000001",
+                    "source_type": "NEWS_CSV_ROW",
+                    "raw_row_sha256": "a" * 64,
+                    "row_index": 1,
+                },
+            ],
+            {},
+        ),
+        (
+            [
+                {
+                    "source_id": "SRC-NEWS-ROW-000001",
+                    "source_type": "NEWS_CSV_ROW",
+                    "raw_row_sha256": "a" * 64,
+                    "row_index": 1,
+                }
+            ],
+            {"raw_row_sha256": "b" * 64},
+        ),
+        (
+            [
+                {
+                    "source_id": "SRC-NEWS-ROW-000001",
+                    "source_type": "NEWS_CSV_ROW",
+                    "raw_row_sha256": "a" * 64,
+                    "row_index": 1,
+                }
+            ],
+            {"row_index": 2},
+        ),
+    ],
+    ids=["missing", "ambiguous", "hash-mismatch", "index-mismatch"],
+)
+def test_news_source_alias_equivalence_fails_closed(
+    canonical_rows: list[dict[str, object]],
+    alias_updates: dict[str, object],
+) -> None:
+    alias = {
+        "source_id": "SRC-000001",
+        "source_type": "NEWS_CSV_ROW_ALIAS",
+        "canonical_source_id": "SRC-NEWS-ROW-000001",
+        "raw_row_sha256": "a" * 64,
+        "row_index": 1,
+        **alias_updates,
+    }
+
+    assert _verified_news_source_aliases([*canonical_rows, alias]) == {}
 
 
 def test_ranking_may_collapse_ticker_but_must_match_screening_candidate(
@@ -4384,6 +5557,40 @@ def test_pair_case_aliases_are_one_source_row_not_two_cases(tmp_path: Path) -> N
 
     assert audit["derived_case_link_count"] == 1
     assert audit["derived_case_link_failure_count"] == 0
+
+    namespaced_source_record = {
+        **source_record,
+        "record_id": "NSLAB-20200615-53B29FAE__BD-PAIR-1",
+    }
+    namespaced_source = _write_bundle(
+        tmp_path / "pair-alias-case-normalized-source.md",
+        {
+            "blind_leader_preference_pairs.jsonl": [case],
+            "brain_delta.jsonl": [namespaced_source_record],
+        },
+    )
+    namespaced_repaired = _write_bundle(
+        tmp_path / "pair-alias-case-normalized-repaired.md",
+        {
+            "blind_leader_preference_pairs.jsonl": [case],
+            "brain_delta.jsonl": [
+                {
+                    **namespaced_source_record,
+                    "record_id": "NSLAB-20200615-53b29fae__BD-PAIR-1",
+                    "pair_id": "BPC-1",
+                    "repair_population_derivations": [derivation],
+                }
+            ],
+        },
+    )
+
+    namespaced_audit = _derived_case_population_audit(
+        artifact_rows(namespaced_source),
+        artifact_rows(namespaced_repaired),
+    )
+
+    assert namespaced_audit["derived_case_link_count"] == 1
+    assert namespaced_audit["derived_case_link_failure_count"] == 0
 
 
 def test_population_accepts_paircase_identity_alias(tmp_path: Path) -> None:
@@ -4645,6 +5852,72 @@ def test_theme_derivation_prefers_supervised_row_over_context_alias(
     assert audit["derived_case_link_failure_count"] == 0
 
 
+def test_theme_derivation_prefers_exact_canonical_row_over_supervised_sibling(
+    tmp_path: Path,
+) -> None:
+    case = {
+        "theme_case_id": "THEME-PAIRED-1",
+        "theme_id": "THEME-PAIRED",
+        "source_fact_ids": ["FACT-PAIRED-1"],
+    }
+    canonical_record = {
+        "record_id": "BD-CANONICAL",
+        "record_type": "theme_formation_case",
+        "training_target": "theme_formation_response",
+        "theme_id": "THEME-PAIRED",
+        "source_fact_ids": ["FACT-PAIRED-1"],
+    }
+    supervised_sibling = {
+        "record_id": "BD-SUPERVISED",
+        "record_type": "supervised_theme_formation_case",
+        "training_target": "legacy_supervised_theme_response",
+        "theme_id": "THEME-PAIRED",
+        "source_fact_ids": ["FACT-PAIRED-1"],
+    }
+    derivation = {
+        "rule_id": "case_id_from_unique_evidence_join.v2",
+        "source_artifact": "theme_formation_cases.jsonl",
+        "source_case_id": "THEME-PAIRED-1",
+        "source_case_payload_sha256": sha256_text(canonical_json(case)),
+        "target_field": "theme_case_id",
+        "join_field": "theme_id",
+        "join_value": "THEME-PAIRED",
+        "join_values": {"theme_id": ["THEME-PAIRED"]},
+        "record_type_relation": (
+            "theme_formation_cases.jsonl:None->theme_formation_case"
+        ),
+    }
+    source = _write_bundle(
+        tmp_path / "theme-paired-source.md",
+        {
+            "theme_formation_cases.jsonl": [case],
+            "brain_delta.jsonl": [supervised_sibling, canonical_record],
+        },
+    )
+    repaired = _write_bundle(
+        tmp_path / "theme-paired-repaired.md",
+        {
+            "theme_formation_cases.jsonl": [case],
+            "brain_delta.jsonl": [
+                supervised_sibling,
+                {
+                    **canonical_record,
+                    "theme_case_id": "THEME-PAIRED-1",
+                    "repair_population_derivations": [derivation],
+                },
+            ],
+        },
+    )
+
+    audit = _derived_case_population_audit(
+        artifact_rows(source),
+        artifact_rows(repaired),
+    )
+
+    assert audit["derived_case_link_count"] == 1
+    assert audit["derived_case_link_failure_count"] == 0
+
+
 def test_theme_derivation_accepts_legacy_theme_row_with_context_alias(
     tmp_path: Path,
 ) -> None:
@@ -4867,6 +6140,59 @@ def test_repair_receipt_occurrence_allows_only_record_id_namespacing(
 
     assert valid_audit["artifact_occurrence_changed_count"] == 0
     assert invalid_audit["artifact_occurrence_changed_names"] == ["brain_delta_repair_receipt.json"]
+
+
+def test_artifact_occurrence_allows_only_unique_date_qualified_source_alias(
+    tmp_path: Path,
+) -> None:
+    provisional = {
+        "hypothesis_id": "HYP-1",
+        "trigger_source_ids": ["SRC-000075"],
+    }
+    canonical_source = {"source_id": "SRC-NEWS-20190521-000075"}
+    source = _write_bundle(
+        tmp_path / "source-date-qualified-alias.md",
+        {
+            "source_ledger.jsonl": [canonical_source],
+            "provisional_hypothesis.jsonl": [provisional],
+        },
+    )
+    repaired = _write_bundle(
+        tmp_path / "repaired-date-qualified-alias.md",
+        {
+            "source_ledger.jsonl": [canonical_source],
+            "provisional_hypothesis.jsonl": [
+                {
+                    **provisional,
+                    "trigger_source_ids": ["SRC-NEWS-20190521-000075"],
+                }
+            ],
+        },
+    )
+    ambiguous_source = _write_bundle(
+        tmp_path / "ambiguous-source-date-qualified-alias.md",
+        {
+            "source_ledger.jsonl": [
+                canonical_source,
+                {"source_id": "SRC-NEWS-20190520-000075"},
+            ],
+            "provisional_hypothesis.jsonl": [provisional],
+        },
+    )
+
+    valid_audit = _artifact_occurrence_lineage_audit(
+        census_source(source),
+        census_source(repaired),
+    )
+    ambiguous_audit = _artifact_occurrence_lineage_audit(
+        census_source(ambiguous_source),
+        census_source(repaired),
+    )
+
+    assert valid_audit["artifact_occurrence_changed_count"] == 0
+    assert ambiguous_audit["artifact_occurrence_changed_names"] == [
+        "provisional_hypothesis.jsonl"
+    ]
 
 
 def test_id_registry_occurrence_allows_only_record_id_namespacing(
@@ -5325,6 +6651,78 @@ def test_final_relations_resolve_unique_rank_ticker_fact_legacy_join(
     assert invalid_population["rules"]["final_to_semantic_audit"]["missing_keys"] == ["CAND-1"]
 
 
+def test_final_relations_honor_exact_outcome_independent_removal_receipt(
+    tmp_path: Path,
+) -> None:
+    bundle = _write_bundle(
+        tmp_path / "postseal-validated-final-relations.md",
+        {
+            "blind_prediction.json": [
+                {
+                    "final_watchlist": [
+                        {"candidate_id": "CAND-1", "rank": 1},
+                        {"candidate_id": "CAND-2", "rank": 2},
+                    ]
+                }
+            ],
+            "candidate_ranking_audit.jsonl": [
+                {
+                    "candidate_id": "CAND-1",
+                    "included_in_final": True,
+                    "rank_if_final_or_null": 1,
+                },
+                {
+                    "candidate_id": "CAND-2",
+                    "included_in_final": False,
+                    "rank_if_final_or_null": None,
+                    "postseal_semantic_repair_outcome_independent": True,
+                    "why_not_final_if_excluded": "semantic hard-gate failure",
+                },
+            ],
+            "candidate_semantic_witness.jsonl": [
+                {
+                    "candidate_id": "CAND-1",
+                    "final_eligible": True,
+                    "pass": True,
+                    "semantic_verdict": "PASS",
+                },
+                {
+                    "candidate_id": "CAND-2",
+                    "final_eligible": False,
+                    "pass": False,
+                    "semantic_verdict": "FAIL",
+                    "fail_reasons": ["UNNAMED_BENEFICIARY"],
+                },
+            ],
+            "final_evidence_witness.jsonl": [{"candidate_id": "CAND-1"}],
+            "final_semantic_audit.jsonl": [{"candidate_id": "CAND-1"}],
+            "postseal_semantic_repair_receipt.json": [
+                {
+                    "outcome_independent": True,
+                    "outcome_metrics_used_to_remove_or_rank": False,
+                    "outcome_snapshot_fields_read_by_repair": [],
+                    "replacement_candidate_count": 0,
+                    "sealed_final_watchlist_count": 2,
+                    "validated_final_watchlist_count": 1,
+                    "removed_count": 1,
+                    "removed_candidates": [
+                        {
+                            "candidate_id": "CAND-2",
+                            "repair_reason": "UNNAMED_BENEFICIARY",
+                            "outcome_fields_used": [],
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+
+    population = _population_audit(artifact_rows(bundle))
+
+    assert population["rules"]["final_to_evidence_witness"]["missing_keys"] == []
+    assert population["rules"]["final_to_semantic_audit"]["missing_keys"] == []
+
+
 def test_final_semantic_audit_accepts_final_rank_alias(tmp_path: Path) -> None:
     bundle = _write_bundle(
         tmp_path / "final-rank-alias.md",
@@ -5534,6 +6932,66 @@ def test_case_population_source_gap_ignores_other_ticker_fact_occurrence(
     ) is True
 
 
+@pytest.mark.parametrize(
+    ("leader_ticker", "expected_source_gap"),
+    [("000002", True), ("000001", False)],
+)
+def test_case_population_source_gap_resolves_tickerless_outcome_leader_row(
+    tmp_path: Path,
+    leader_ticker: str,
+    expected_source_gap: bool,
+) -> None:
+    case = {
+        "issuer_day_case_id": "DAY-1",
+        "ticker": "000001",
+        "trade_date": "2025-05-08",
+        "combined_fact_ids": ["FACT-1", "FACT-2"],
+    }
+    source = _write_bundle(
+        tmp_path / f"linked-gap-{leader_ticker}.md",
+        {
+            "issuer_day_cases.jsonl": [case],
+            "outcome_leader_census.jsonl": [
+                {"outcome_leader_id": "LEAD-1", "ticker": leader_ticker}
+            ],
+            "brain_delta.jsonl": [
+                {
+                    "record_id": "BD-1",
+                    "ticker": "000001",
+                    "trade_date": "2025-05-08",
+                    "source_fact_ids": ["FACT-1"],
+                },
+                {
+                    "record_id": "BD-2",
+                    "trade_date": "2025-05-08",
+                    "source_fact_ids": ["FACT-2"],
+                    "payload": {"outcome_leader_id": "LEAD-1"},
+                },
+            ],
+        },
+    )
+    rows = artifact_rows(source)
+    source_by_name = {
+        name: [row for row in rows if row.canonical_name == name]
+        for name in (
+            "issuer_day_cases.jsonl",
+            "outcome_leader_census.jsonl",
+            "brain_delta.jsonl",
+        )
+    }
+
+    assert (
+        _case_population_source_gap(
+            {
+                "source_artifact": "issuer_day_cases.jsonl",
+                "source_case_id": "DAY-1",
+            },
+            source_by_name=source_by_name,
+        )
+        is expected_source_gap
+    )
+
+
 def test_ranking_derivation_prefers_specific_error_row_over_mirror(
     tmp_path: Path,
 ) -> None:
@@ -5657,6 +7115,24 @@ def test_ranking_derivation_prefers_specific_error_row_over_mirror(
             },
             "newsless_case_id",
             "NEWSLESS-LEGACY-1",
+        ),
+        (
+            "context_market_state_or_fact_cases.jsonl",
+            {
+                "case_id": "CTX-LEGACY-1",
+                "outcome_audit_id": "AUDIT-CONTEXT-1",
+                "ticker": "000003",
+                "trade_date": "2021-03-24",
+            },
+            {
+                "record_id": "BD-CONTEXT-1",
+                "record_type": "context_market_state_or_fact_case",
+                "ticker": "000003",
+                "trade_date": "2021-03-24",
+                "outcome_audit_ids": ["AUDIT-CONTEXT-1"],
+            },
+            "context_case_id",
+            "CTX-LEGACY-1",
         ),
     ],
 )
@@ -6379,6 +7855,156 @@ def test_provenance_closure_is_recomputed_through_fact_and_inference(
     assert eligibility["false_to_true_count"] == 0
 
 
+def test_closure_fact_list_compares_only_direct_record_facts(tmp_path: Path) -> None:
+    record = {
+        "record_id": "BD-1",
+        "record_type": "memory_claim",
+        "training_eligible": True,
+        "sample_weight": 1.0,
+        "source_fact_ids": ["FACT-DIRECT"],
+        "source_inference_ids": ["INF-1"],
+        "provenance_source_ids": ["SRC-DIRECT", "SRC-INFERENCE"],
+    }
+    repaired = _write_bundle(
+        tmp_path / "direct-and-inference-facts.md",
+        {
+            "source_ledger.jsonl": [
+                {"source_id": "SRC-DIRECT", "source_type": "NEWS"},
+                {"source_id": "SRC-INFERENCE", "source_type": "NEWS"},
+            ],
+            "fact_ledger_blind.jsonl": [
+                {"fact_id": "FACT-DIRECT", "source_id": "SRC-DIRECT"},
+                {"fact_id": "FACT-INFERENCE", "source_id": "SRC-INFERENCE"},
+            ],
+            "inference_ledger_blind.jsonl": [
+                {"inference_id": "INF-1", "source_fact_ids": ["FACT-INFERENCE"]}
+            ],
+            "brain_delta.jsonl": [record],
+            "record_provenance_closure_audit.jsonl": [
+                {
+                    "record_id": "BD-1",
+                    "resolved_provenance_source_ids": [
+                        "SRC-DIRECT",
+                        "SRC-INFERENCE",
+                    ],
+                    "source_fact_ids": ["FACT-DIRECT"],
+                    "source_inference_ids": ["INF-1"],
+                    "closure_status": "CLOSED",
+                    "training_eligible_after_closure": True,
+                    "sample_weight_after_closure": 1.0,
+                }
+            ],
+        },
+    )
+
+    provenance, _ = _provenance_and_eligibility_audit(
+        artifact_rows(repaired),
+        [record],
+        [],
+    )
+
+    assert provenance["closure_content_mismatch_count"] == 0
+
+    expanded = _write_bundle(
+        tmp_path / "expanded-inference-facts.md",
+        {
+            "source_ledger.jsonl": [
+                {"source_id": "SRC-DIRECT", "source_type": "NEWS"},
+                {"source_id": "SRC-INFERENCE", "source_type": "NEWS"},
+            ],
+            "fact_ledger_blind.jsonl": [
+                {"fact_id": "FACT-DIRECT", "source_id": "SRC-DIRECT"},
+                {"fact_id": "FACT-INFERENCE", "source_id": "SRC-INFERENCE"},
+            ],
+            "inference_ledger_blind.jsonl": [
+                {"inference_id": "INF-1", "source_fact_ids": ["FACT-INFERENCE"]}
+            ],
+            "brain_delta.jsonl": [record],
+            "record_provenance_closure_audit.jsonl": [
+                {
+                    "record_id": "BD-1",
+                    "resolved_provenance_source_ids": [
+                        "SRC-DIRECT",
+                        "SRC-INFERENCE",
+                    ],
+                    "source_fact_ids": ["FACT-DIRECT", "FACT-INFERENCE"],
+                    "source_inference_ids": ["INF-1"],
+                    "closure_status": "CLOSED",
+                    "training_eligible_after_closure": True,
+                    "sample_weight_after_closure": 1.0,
+                }
+            ],
+        },
+    )
+    expanded_provenance, _ = _provenance_and_eligibility_audit(
+        artifact_rows(expanded),
+        [record],
+        [],
+    )
+
+    assert expanded_provenance["closure_content_mismatch_count"] == 0
+
+
+def test_inference_only_closure_accepts_postmortem_ledger_name_aliases(
+    tmp_path: Path,
+) -> None:
+    record = {
+        "record_id": "BD-POST-1",
+        "record_type": "candidate_generation_error_case",
+        "training_eligible": True,
+        "sample_weight": 1.0,
+        "provenance_source_ids": ["SRC-NEWS-1", "SRC-OUTCOME"],
+        "source_inference_ids": ["INF-POST-1"],
+    }
+    blocks = {
+        "source_ledger.jsonl": [
+            {"source_id": "SRC-NEWS-1", "source_type": "NEWS"},
+            {"source_id": "SRC-OUTCOME", "source_type": "OUTCOME"},
+        ],
+        "postmortem_fact_ledger.jsonl": [
+            {
+                "fact_id": "FACT-POST-1",
+                "provenance_source_ids": ["SRC-NEWS-1"],
+            }
+        ],
+        "postmortem_inference_ledger.jsonl": [
+            {
+                "inference_id": "INF-POST-1",
+                "source_fact_ids": ["FACT-POST-1"],
+            }
+        ],
+        "brain_delta.jsonl": [record],
+        "record_provenance_closure_audit.jsonl": [
+            {
+                "record_id": "BD-POST-1",
+                "record_type": "candidate_generation_error_case",
+                "closure_status": "CLOSED",
+                "resolved_provenance_source_ids": ["SRC-NEWS-1", "SRC-OUTCOME"],
+                "source_inference_ids": ["INF-POST-1"],
+                "training_eligible_after_closure": True,
+                "sample_weight_after_closure": 1.0,
+            }
+        ],
+    }
+    repaired = _write_bundle(tmp_path / "postmortem-alias.md", blocks)
+
+    provenance, _ = _provenance_and_eligibility_audit(
+        artifact_rows(repaired),
+        [record],
+        [],
+    )
+    assert provenance["closure_content_mismatch_count"] == 0
+
+    blocks["postmortem_fact_ledger.jsonl"] = []
+    broken = _write_bundle(tmp_path / "postmortem-alias-broken.md", blocks)
+    broken_provenance, _ = _provenance_and_eligibility_audit(
+        artifact_rows(broken),
+        [record],
+        [],
+    )
+    assert broken_provenance["closure_content_mismatch_count"] == 1
+
+
 def test_event_edge_closure_excludes_lineage_checked_retrospective_outcome_source(
     tmp_path: Path,
 ) -> None:
@@ -6914,6 +8540,65 @@ def test_context_record_accepts_only_verified_blind_price_snapshot_provenance(
     assert provenance["closure_content_mismatch_count"] == 0
 
 
+def test_recovered_v2_source_row_is_verified_news_provenance(tmp_path: Path) -> None:
+    record = {
+        "record_id": "BD-1",
+        "record_type": "supervised_direct_event_case",
+        "training_eligible": True,
+        "sample_weight": 1.0,
+        "provenance_source_ids": ["SRC-20231204-000001"],
+        "source_fact_ids": [],
+        "source_inference_ids": [],
+        "available_from": "2023-12-04T16:00:00+09:00",
+    }
+    bundle = _write_bundle(
+        tmp_path / "recovered-v2-news.md",
+        {
+            "source_ledger.jsonl": [
+                {
+                    "schema_version": "nslab.source_ledger.v2",
+                    "source_id": "SRC-20231204-000001",
+                    "source_row_index": 1,
+                    "page": "238",
+                    "provider_row": "2",
+                    "title": "Alpha event",
+                    "body": "Complete body",
+                    "published_at": "2023-12-04T08:59:55+09:00",
+                    "time_verified": True,
+                    "available_before_cutoff": True,
+                    "input_file": "news_20231204.csv",
+                    "input_sha256": "a" * 64,
+                    "raw_row_sha256": "b" * 64,
+                }
+            ],
+            "brain_delta.jsonl": [record],
+            "record_provenance_closure_audit.jsonl": [
+                {
+                    "record_id": "BD-1",
+                    "resolved_provenance_source_ids": [
+                        "SRC-20231204-000001"
+                    ],
+                    "source_fact_ids": [],
+                    "source_inference_ids": [],
+                    "closure_status": "CLOSED",
+                    "training_eligible_after_closure": True,
+                    "sample_weight_after_closure": 1.0,
+                }
+            ],
+        },
+    )
+
+    provenance, _ = _provenance_and_eligibility_audit(
+        artifact_rows(bundle),
+        [record],
+        [],
+    )
+
+    assert provenance["eligible_unresolved_source_count"] == 0
+    assert provenance["eligible_time_unverified_source_count"] == 0
+    assert provenance["closure_content_mismatch_count"] == 0
+
+
 def test_training_eligible_record_cannot_use_time_unverified_news_source(
     tmp_path: Path,
 ) -> None:
@@ -6955,6 +8640,30 @@ def test_training_eligible_record_cannot_use_time_unverified_news_source(
     provenance, _ = _provenance_and_eligibility_audit(artifact_rows(bundle), [record], [])
 
     assert provenance["eligible_time_unverified_source_count"] == 1
+
+
+def test_quality_cutoff_uses_research_episode_coverage_end(
+    tmp_path: Path,
+) -> None:
+    bundle = _write_bundle(
+        tmp_path / "coverage-cutoff.md",
+        {
+            "research_episode.json": [
+                {
+                    "coverage": {
+                        "expected_end": "2020-03-27T08:59:59+09:00",
+                    }
+                }
+            ]
+        },
+    )
+
+    cutoff = repair_quality_module._bundle_cutoff(
+        repair_quality_module._rows_by_name(artifact_rows(bundle))
+    )
+
+    assert cutoff is not None
+    assert cutoff.isoformat() == "2020-03-27T08:59:59+09:00"
 
 
 def test_postmortem_record_accepts_sealed_outcome_snapshot_provenance(
@@ -7567,6 +9276,438 @@ def test_evaluate_raw_gate_ignores_record_type_token_in_markdown_prose(
     assert census.raw_record_type_token_count == 2
     assert gate.raw_census["source_unreconciled_record_type_token_count"] == 0
     assert gate.current_gold_pass is True
+
+
+def test_derived_eligible_case_record_requires_exact_hashed_source_case(
+    tmp_path: Path,
+) -> None:
+    case = {
+        "beneficiary_discovery_case_id": "BEN-1",
+        "ticker": "000001",
+        "source_fact_ids": ["FACT-1"],
+        "provenance_source_ids": ["SRC-1"],
+        "training_eligible": True,
+    }
+    derivation = {
+        "rule_id": "derived_brain_record_from_explicit_case_artifact.v1",
+        "source_artifact": "beneficiary_discovery_cases.jsonl",
+        "source_case_id": "BEN-1",
+        "source_case_payload_sha256": sha256_text(canonical_json(case)),
+        "target_field": "beneficiary_case_id",
+        "record_type_relation": (
+            "beneficiary_discovery_cases.jsonl:explicit_case->beneficiary_discovery_case"
+        ),
+        "derivation_inputs": ["BEN-1", "FACT-1", "SRC-1"],
+    }
+    repaired_record = {
+        **case,
+        "record_id": "NSLAB-20230801-test__DERIVED-CASE-1",
+        "brain_delta_id": "NSLAB-20230801-test__DERIVED-CASE-1",
+        "record_type": "beneficiary_discovery_case",
+        "beneficiary_case_id": "BEN-1",
+        "episode_id": "NSLAB-20230801-test",
+        "available_from": "2023-08-02T00:00:00+09:00",
+        "sample_weight": 1.0,
+        "repair_population_derivations": [derivation],
+    }
+    source = _write_bundle(
+        tmp_path / "derived-eligible-source.md",
+        {"beneficiary_discovery_cases.jsonl": [case], "brain_delta.jsonl": []},
+    )
+    repaired = _write_bundle(
+        tmp_path / "derived-eligible-repaired.md",
+        {
+            "beneficiary_discovery_cases.jsonl": [case],
+            "brain_delta.jsonl": [repaired_record],
+        },
+    )
+
+    audit = _derived_case_population_audit(
+        artifact_rows(source),
+        artifact_rows(repaired),
+    )
+    assert audit["derived_case_link_count"] == 1
+    assert audit["derived_case_link_failure_count"] == 0
+    lineage, _ = _build_lineage(
+        census_source(source),
+        artifact_rows(source),
+        [repaired_record],
+    )
+    _, eligibility = _provenance_and_eligibility_audit(
+        artifact_rows(repaired),
+        [repaired_record],
+        lineage,
+    )
+    assert eligibility["false_to_true_count"] == 0
+
+    repaired_record["ticker"] = "000002"
+    tampered = _write_bundle(
+        tmp_path / "derived-eligible-tampered.md",
+        {
+            "beneficiary_discovery_cases.jsonl": [case],
+            "brain_delta.jsonl": [repaired_record],
+        },
+    )
+    tampered_audit = _derived_case_population_audit(
+        artifact_rows(source),
+        artifact_rows(tampered),
+    )
+    assert tampered_audit["derived_case_link_failure_count"] == 1
+
+
+def test_derived_eligible_case_accepts_exact_matched_source_alias(
+    tmp_path: Path,
+) -> None:
+    case = {
+        "candidate_generation_error_case_id": "CGEN-1",
+        "matched_source_row_ids": ["SRC-1"],
+        "training_eligible": True,
+    }
+    derivation = {
+        "rule_id": "derived_brain_record_from_explicit_case_artifact.v1",
+        "source_artifact": "candidate_generation_error_cases.jsonl",
+        "source_case_id": "CGEN-1",
+        "source_case_payload_sha256": sha256_text(canonical_json(case)),
+        "target_field": "candidate_generation_error_case_id",
+        "record_type_relation": (
+            "candidate_generation_error_cases.jsonl:explicit_case->"
+            "candidate_generation_error_case"
+        ),
+        "derivation_inputs": ["CGEN-1", "SRC-1"],
+    }
+    repaired_record = {
+        **case,
+        "record_id": "NSLAB-20240603-test__DERIVED-CASE-1",
+        "brain_delta_id": "NSLAB-20240603-test__DERIVED-CASE-1",
+        "record_type": "candidate_generation_error_case",
+        "episode_id": "NSLAB-20240603-test",
+        "available_from": "2024-06-04T00:00:00+09:00",
+        "provenance_source_ids": ["SRC-1"],
+        "sample_weight": 1.0,
+        "repair_population_derivations": [derivation],
+    }
+    source = _write_bundle(
+        tmp_path / "derived-matched-source-alias-source.md",
+        {"candidate_generation_error_cases.jsonl": [case]},
+    )
+    repaired = _write_bundle(
+        tmp_path / "derived-matched-source-alias-repaired.md",
+        {
+            "candidate_generation_error_cases.jsonl": [case],
+            "brain_delta.jsonl": [repaired_record],
+        },
+    )
+
+    audit = _derived_case_population_audit(
+        artifact_rows(source),
+        artifact_rows(repaired),
+    )
+
+    assert audit["derived_case_link_count"] == 1
+    assert audit["derived_case_link_failure_count"] == 0
+
+
+def test_derived_ineligible_closure_case_accepts_exact_source_case_status(
+    tmp_path: Path,
+) -> None:
+    case = {
+        "candidate_generation_error_case_id": "CGE-CLOSURE-1",
+        "case_status": "NO_CUTOFF_SAFE_CANDIDATE_GENERATION_MISS_IDENTIFIED",
+        "training_eligible": False,
+    }
+    derivation = {
+        "rule_id": "derived_brain_record_from_explicit_case_artifact.v1",
+        "source_artifact": "candidate_generation_error_cases.jsonl",
+        "source_case_id": "CGE-CLOSURE-1",
+        "source_case_payload_sha256": sha256_text(canonical_json(case)),
+        "target_field": "candidate_generation_error_case_id",
+        "record_type_relation": (
+            "candidate_generation_error_cases.jsonl:explicit_case->"
+            "candidate_generation_error_case"
+        ),
+        "derivation_inputs": ["CGE-CLOSURE-1"],
+    }
+    repaired_record = {
+        **case,
+        "record_id": "NSLAB-20240227-test__DERIVED-CASE-1",
+        "brain_delta_id": "NSLAB-20240227-test__DERIVED-CASE-1",
+        "record_type": "candidate_generation_error_case",
+        "episode_id": "NSLAB-20240227-test",
+        "available_from": "2024-02-28T00:00:00+09:00",
+        "sample_weight": 0.0,
+        "training_exclusion_reason": "source_declared_ineligible_without_reason",
+        "eligibility_reason": "source_declared_ineligible_without_reason",
+        "repair_population_derivations": [derivation],
+    }
+    source = _write_bundle(
+        tmp_path / "derived-closure-source.md",
+        {"candidate_generation_error_cases.jsonl": [case], "brain_delta.jsonl": []},
+    )
+    repaired = _write_bundle(
+        tmp_path / "derived-closure-repaired.md",
+        {
+            "candidate_generation_error_cases.jsonl": [case],
+            "brain_delta.jsonl": [repaired_record],
+        },
+    )
+
+    audit = _derived_case_population_audit(
+        artifact_rows(source),
+        artifact_rows(repaired),
+    )
+    assert audit["derived_case_link_count"] == 1
+    assert audit["derived_case_link_failure_count"] == 0
+
+    repaired_record["case_status"] = "TAMPERED"
+    tampered = _write_bundle(
+        tmp_path / "derived-closure-tampered.md",
+        {
+            "candidate_generation_error_cases.jsonl": [case],
+            "brain_delta.jsonl": [repaired_record],
+        },
+    )
+    tampered_audit = _derived_case_population_audit(
+        artifact_rows(source),
+        artifact_rows(tampered),
+    )
+    assert tampered_audit["derived_case_link_failure_count"] == 1
+
+
+def test_derived_ineligible_case_accepts_source_classification_reason(
+    tmp_path: Path,
+) -> None:
+    case = {
+        "case_id": "CGE-CLASSIFIED-1",
+        "classification": "SEMANTIC_FALSE_POSITIVE",
+        "training_eligible": False,
+    }
+    records: list[dict[str, object]] = []
+    repair_bundle_module._materialize_missing_explicit_case_records(
+        records,
+        jsonl_blocks={"candidate_generation_error_cases.jsonl": [case]},
+        episode_id="NSLAB-20200227-test",
+        trade_date="2020-02-27",
+        available_from="2020-02-28T00:00:00+09:00",
+        known_fact_ids=set(),
+        known_inference_ids=set(),
+    )
+    source = _write_bundle(
+        tmp_path / "derived-classified-source.md",
+        {"candidate_generation_error_cases.jsonl": [case]},
+    )
+    repaired = _write_bundle(
+        tmp_path / "derived-classified-repaired.md",
+        {
+            "candidate_generation_error_cases.jsonl": [case],
+            "brain_delta.jsonl": records,
+        },
+    )
+
+    audit = _derived_case_population_audit(
+        artifact_rows(source),
+        artifact_rows(repaired),
+    )
+
+    assert audit["derived_case_link_count"] == 1
+    assert audit["derived_case_link_failure_count"] == 0
+
+
+def test_derived_unsealed_pair_accepts_fail_closed_eligibility(
+    tmp_path: Path,
+) -> None:
+    case = {
+        "pair_id": "PAIR-1",
+        "source_fact_ids": ["FACT-1", "FACT-2"],
+        "source_inference_ids": ["INF-1", "INF-2"],
+        "provenance_source_ids": ["SRC-1", "SRC-2"],
+        "training_eligible": True,
+    }
+    records: list[dict[str, object]] = []
+    repair_bundle_module._materialize_missing_explicit_case_records(
+        records,
+        jsonl_blocks={"blind_leader_preference_pairs.jsonl": [case]},
+        episode_id="NSLAB-20200227-test",
+        trade_date="2020-02-27",
+        available_from="2020-02-28T00:00:00+09:00",
+        known_fact_ids={"FACT-1", "FACT-2"},
+        known_inference_ids={"INF-1", "INF-2"},
+    )
+    source = _write_bundle(
+        tmp_path / "derived-pair-source.md",
+        {"blind_leader_preference_pairs.jsonl": [case]},
+    )
+    repaired = _write_bundle(
+        tmp_path / "derived-pair-repaired.md",
+        {
+            "blind_leader_preference_pairs.jsonl": [case],
+            "brain_delta.jsonl": records,
+        },
+    )
+
+    audit = _derived_case_population_audit(
+        artifact_rows(source),
+        artifact_rows(repaired),
+    )
+
+    assert records[0]["training_eligible"] is False
+    assert records[0]["training_exclusion_reason"] == "sealed_preference_pair_missing"
+    assert audit["derived_case_link_count"] == 1
+    assert audit["derived_case_link_failure_count"] == 0
+
+
+def test_derived_case_allows_exact_unresolved_reference_token_preservation(
+    tmp_path: Path,
+) -> None:
+    case = {
+        "beneficiary_discovery_case_id": "BEN-PM-1",
+        "source_fact_ids": ["PMFACT-1"],
+        "source_inference_ids": ["PMINF-1"],
+        "provenance_source_ids": ["SRC-1"],
+        "training_eligible": True,
+    }
+    derivation = {
+        "rule_id": "derived_brain_record_from_explicit_case_artifact.v1",
+        "source_artifact": "beneficiary_discovery_cases.jsonl",
+        "source_case_id": "BEN-PM-1",
+        "source_case_payload_sha256": sha256_text(canonical_json(case)),
+        "target_field": "beneficiary_case_id",
+        "record_type_relation": (
+            "beneficiary_discovery_cases.jsonl:explicit_case->beneficiary_discovery_case"
+        ),
+        "derivation_inputs": ["BEN-PM-1", "PMFACT-1", "PMINF-1", "SRC-1"],
+    }
+    repaired_record = {
+        "beneficiary_discovery_case_id": "BEN-PM-1",
+        "provenance_source_ids": ["SRC-1"],
+        "training_eligible": True,
+        "record_id": "NSLAB-20231101-test__DERIVED-CASE-1",
+        "brain_delta_id": "NSLAB-20231101-test__DERIVED-CASE-1",
+        "record_type": "beneficiary_discovery_case",
+        "beneficiary_case_id": "BEN-PM-1",
+        "episode_id": "NSLAB-20231101-test",
+        "available_from": "2023-11-02T00:00:00+09:00",
+        "sample_weight": 1.0,
+        "legacy_unresolved_fact_tokens": ["PMFACT-1"],
+        "legacy_unresolved_inference_tokens": ["PMINF-1"],
+        "unresolved_reference_reason": "typed_reference_not_present_in_bundle_ledger",
+        "repair_population_derivations": [derivation],
+    }
+    source = _write_bundle(
+        tmp_path / "derived-unresolved-source.md",
+        {"beneficiary_discovery_cases.jsonl": [case], "brain_delta.jsonl": []},
+    )
+    repaired = _write_bundle(
+        tmp_path / "derived-unresolved-repaired.md",
+        {
+            "beneficiary_discovery_cases.jsonl": [case],
+            "brain_delta.jsonl": [repaired_record],
+        },
+    )
+
+    audit = _derived_case_population_audit(
+        artifact_rows(source),
+        artifact_rows(repaired),
+    )
+    assert audit["derived_case_link_failure_count"] == 0
+
+    repaired_record["legacy_unresolved_fact_tokens"] = ["PMFACT-TAMPERED"]
+    tampered = _write_bundle(
+        tmp_path / "derived-unresolved-tampered.md",
+        {
+            "beneficiary_discovery_cases.jsonl": [case],
+            "brain_delta.jsonl": [repaired_record],
+        },
+    )
+    tampered_audit = _derived_case_population_audit(
+        artifact_rows(source),
+        artifact_rows(tampered),
+    )
+    assert tampered_audit["derived_case_link_failure_count"] == 1
+
+
+def test_liquidity_top_outcome_class_is_explicit_leader_membership(
+    tmp_path: Path,
+) -> None:
+    bundle = _write_bundle(
+        tmp_path / "liquidity-top-membership.md",
+        {
+            "outcome_ledger.jsonl": [
+                {
+                    "outcome_id": "OUT-1",
+                    "ticker": "000001",
+                    "high_return_pct": 1.0,
+                    "amount_rank": 10,
+                    "turnover_rank": 500,
+                }
+            ],
+            "outcome_leader_census.jsonl": [
+                {
+                    "outcome_leader_id": "LEAD-1",
+                    "outcome_id": "OUT-1",
+                    "ticker": "000001",
+                    "outcome_class": "LIQUIDITY_TOP",
+                }
+            ],
+            "outcome_to_news_audit.jsonl": [
+                {"outcome_leader_id": "LEAD-1"}
+            ],
+        },
+    )
+
+    population = _population_audit(artifact_rows(bundle))
+    rule = population["rules"]["outcome_to_leader_census"]
+    assert rule["missing_keys"] == []
+    assert rule["extra_keys"] == []
+
+
+def test_final_watchlist_allows_rank_ties_but_rejects_identity_duplicates(
+    tmp_path: Path,
+) -> None:
+    tied = _write_bundle(
+        tmp_path / "tied-final-watchlist.md",
+        {
+            "blind_prediction.json": [
+                {
+                    "final_watchlist": [
+                        {
+                            "watch_id": "WATCH-14-A",
+                            "rank": 14,
+                            "stock_code": "000001",
+                        },
+                        {
+                            "watch_id": "WATCH-14-B",
+                            "rank": 14,
+                            "stock_code": "000002",
+                        },
+                    ]
+                }
+            ]
+        },
+    )
+    duplicated = _write_bundle(
+        tmp_path / "duplicated-final-watchlist.md",
+        {
+            "blind_prediction.json": [
+                {
+                    "final_watchlist": [
+                        {"watch_id": "WATCH-1", "rank": 1, "ticker": "000001"},
+                        {"watch_id": "WATCH-1", "rank": 2, "ticker": "000002"},
+                    ]
+                }
+            ]
+        },
+    )
+
+    assert (
+        repair_quality_module._final_watchlist_duplicate_count(artifact_rows(tied))
+        == 0
+    )
+    assert (
+        repair_quality_module._final_watchlist_duplicate_count(
+            artifact_rows(duplicated)
+        )
+        == 1
+    )
 
 
 def _current_contract_blocks() -> dict[str, list[dict[str, object]]]:

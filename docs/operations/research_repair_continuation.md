@@ -34,6 +34,13 @@ byte size
 동일 source SHA는 중복 실행하지 않고, 경로만 같고 SHA가 달라진 파일은 덮어쓰지
 않는다. 어느 원본이 추가·교체됐는지 먼저 확인한 뒤 별도 source로 보존한다.
 
+최종 완전성 검사는 날짜 목록이나 파일명 패턴으로 세지 않는다. 같은 날짜의 두 번째
+episode, 비거래일 receipt, 이름이 다른 보존 파일이 날짜 기반 집계에서 빠질 수 있기
+때문이다. 입고 root를 재귀 열거해 모든 실제 파일의 SHA-256을 다시 계산하고, 각 SHA가
+manifest의 최신 terminal row와 정확히 일대일 대응하는지 확인한다. `REPAIRED_PASS`는
+게시된 repaired 파일의 byte/SHA도 다시 계산하고, 나머지는 허용된 보존 상태와 명시적
+classification reason을 확인한다.
+
 자료는 한 번에 모두 입고할 수 있지만 repair 실행 단위는 계속 **원본 한 파일**이다.
 전체 자료에 대해 한 명령으로 병렬 repair하거나 blocker를 건너뛰지 않는다. 중간에
 작업이 중단되면 기본 resume 동작으로 다음 미처리 파일부터 이어가며, 이미
@@ -104,6 +111,43 @@ python -m news_scalping_lab.tools.sequential_repair `
 
 재처리 전에 관련 회귀 테스트를 추가하고, 같은 구조 계열의 기존 fixture도 함께
 검증한다. 날짜, 종목, 테마별 예외를 production 코드에 추가해서는 안 된다.
+
+## 범용 repair 근거를 남기는 방법
+
+구형 bundle 표기 차이를 보강할 때는 원본 선언을 복사하는 것만으로 끝내지 않고 다음
+증명 규칙을 코드 주석, 파생 receipt, 회귀 테스트에 함께 남긴다.
+
+- `matched_source_row_ids` 같은 source alias는 원본의 정확한 집합만 canonical provenance로 옮긴다.
+- 방향이 있는 preference pair는 fact 집합뿐 아니라 원본 순서까지 같아야 같은 pair로 연결한다.
+- 명시적 비학습 case는 0-weight로 보존하고, 누락된 사유는 source-declared ineligible로 기록한다.
+- sealed pair 계약이 없는 pair는 원본이 eligible이라 해도 학습용으로 승격하지 않는다.
+- 누락 semantic witness는 기존 witness 직렬화 관례와 screening/ranking/fact/inference/review/source
+  chain이 모두 유일하고 hash로 재검증될 때만 materialize한다.
+- outcome을 보지 않는 post-seal 제거 receipt는 제거 대상의 semantic FAIL, 최종 제외, 순위와
+  개수 불변을 모두 증명한 validated final subset에서만 인정한다.
+- legacy population 증가는 source와 repaired의 exact closure가 각각 닫히고, 추가 record가
+  source case payload SHA와 derivation inputs로 전부 설명될 때만 허용한다.
+
+어느 조건 하나라도 유일하지 않으면 추정해 채우지 않고 blocker 또는 보존 상태로 남긴다.
+
+## 같은 episode를 선언한 상충 원본
+
+월간 감사에서 서로 다른 source SHA가 같은 episode ID와 record ID를 선언하면서 record
+payload가 다르다고 확인되면 어느 한쪽을 파일명이나 다운로드 순서로 권위본이라 추정하지
+않는다. 두 source의 전체 SHA를 명시해 다음 명령을 실행한다.
+
+```powershell
+python -m news_scalping_lab.tools.sequential_repair `
+  --quarantine-conflicting-source-sha <SOURCE_SHA_1> `
+  --quarantine-conflicting-source-sha <SOURCE_SHA_2>
+```
+
+명령은 실제 repaired bundle에서 공유 episode와 상충 record를 다시 증명한 경우에만
+동작한다. 모든 관련 repaired 파일을 `repaired/quarantined/<연도>/`로 옮기고 manifest를
+`PRESERVED_PARTIAL_NOT_CURRENT_GOLD`, `ready_for_import=false`로 갱신하며
+`.work/cross_source_conflicts/<conflict_id>/receipt.json`을 남긴다. 이후 명시적인
+authoritative/supersession receipt 또는 서로 다른 episode임을 증명하는 원본 metadata가
+오기 전에는 자동 병합, source-SHA namespace 재작성, 임의 권위본 선택을 하지 않는다.
 
 ## 배치 종료 후
 

@@ -549,6 +549,15 @@ def _unclaimed_machine_payloads(
     if front_matter_span is not None:
         excluded_spans.append(front_matter_span)
     candidates.extend(_bare_machine_candidates(text, excluded_spans))
+    candidates = [
+        candidate
+        for candidate in candidates
+        if not _is_exact_duplicate_of_claimed_report(
+            text,
+            candidate,
+            claimed,
+        )
+    ]
     candidates.sort(key=lambda candidate: (candidate.char_start, candidate.char_end))
     positions = {
         position
@@ -572,6 +581,25 @@ def _unclaimed_machine_payloads(
             )
         )
     return unclaimed
+
+
+def _is_exact_duplicate_of_claimed_report(
+    text: str,
+    candidate: _UnclaimedCandidate,
+    claimed: list[_RawOccurrence],
+) -> bool:
+    """Return whether a parseable narrative payload is already preserved."""
+
+    payload = text[candidate.char_start : candidate.char_end].strip()
+    shape, machine_like = _machine_payload_shape(payload)
+    if not payload or not machine_like or shape == "UNPARSEABLE":
+        return False
+    return any(
+        occurrence.canonical_name is not None
+        and occurrence.canonical_name.lower().endswith(".md")
+        and payload in occurrence.payload
+        for occurrence in claimed
+    )
 
 
 def _scan_fences(text: str) -> list[_FenceSpan]:
@@ -830,7 +858,9 @@ def _parse_payload(
     if declared_format == "json":
         try:
             parsed_json = _strict_json_loads(payload)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, ValueError, TypeError):
+            # Duplicate keys are invalid JSON and must reach the normal
+            # PARSE_ERROR result below instead of escaping the source census.
             parsed_json = None
         if isinstance(parsed_json, list) and any(
             not isinstance(item, dict) for item in parsed_json
@@ -846,6 +876,23 @@ def _parse_payload(
                 "explicit_record_ids": [],
                 "canonical_payload_sha256": sha256_text(
                     canonical_json(parsed_json)
+                ),
+                "error": None,
+            }
+    if declared_format == "jsonl":
+        metadata_values = _jsonl_metadata_values(payload)
+        if metadata_values is not None:
+            return {
+                "parse_status": "PARSED_METADATA",
+                "row_count": len(metadata_values),
+                "top_level_shape": (
+                    "ARRAY_SCALARS"
+                    if payload.lstrip().startswith("[")
+                    else "JSONL_SCALARS"
+                ),
+                "explicit_record_ids": [],
+                "canonical_payload_sha256": sha256_text(
+                    canonical_json(metadata_values)
                 ),
                 "error": None,
             }
@@ -938,6 +985,29 @@ def _payload_row_fragments(
 def _parse_jsonl(payload: str) -> list[dict[str, Any]]:
     rows, _ = _parse_jsonl_with_normalization(payload)
     return rows
+
+
+def _jsonl_metadata_values(payload: str) -> list[Any] | None:
+    """Return a scalar-only JSONL stream without treating its values as rows."""
+
+    stripped = payload.strip()
+    try:
+        if stripped.startswith("["):
+            parsed = _strict_json_loads(stripped)
+            if not isinstance(parsed, list):
+                return None
+            values = parsed
+        else:
+            values = [
+                _strict_json_loads(line)
+                for line in payload.splitlines()
+                if line.strip()
+            ]
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
+    if not values or any(isinstance(value, dict) for value in values):
+        return None
+    return values
 
 
 def _parse_jsonl_with_normalization(
