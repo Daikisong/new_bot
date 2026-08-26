@@ -24,10 +24,10 @@ from news_scalping_lab.records.routing import record_routing_metadata
 from news_scalping_lab.utils import as_kst, canonical_json, parse_datetime, sha256_text
 
 MEMORY_CELL_CLUSTERING_VERSION = "semantic_sign_lsh.v1"
-MEMORY_CELL_NORMALIZER_VERSION = "cutoff_safe_structural_projection.v4"
-MEMORY_CELL_SCHEMA_VERSION = "memory_cell_snapshot.v3"
+MEMORY_CELL_NORMALIZER_VERSION = "cutoff_safe_structural_projection.v5"
+MEMORY_CELL_SCHEMA_VERSION = "memory_cell_snapshot.v4"
 MEMORY_CELL_MEMBERSHIP_RULE = "semantic_sign_primary_adjacent_secondary"
-MEMORY_CELL_MEMBERSHIP_RULE_VERSION = "v2"
+MEMORY_CELL_MEMBERSHIP_RULE_VERSION = "v3"
 MEMORY_CELL_SIGNATURE_BITS = 10
 MEMORY_CELL_SECONDARY_LIMIT = 2
 MEMORY_VECTOR_QUANTIZATION_SCALE = 10_000_000
@@ -75,6 +75,17 @@ _STRUCTURAL_VALUE_KEYS = frozenset(
         "rejection_reason",
         "rejection_or_exclusion_reason",
         "matched_quotes",
+        "error_type",
+        "discovery_mode",
+    }
+)
+
+# These fields make an otherwise unresolved repair record usable, but they are
+# too generic to replace richer cutoff-safe source evidence when it exists.
+_EVIDENCE_ENRICHMENT_STRUCTURE_KEYS = frozenset(
+    {
+        "error_type",
+        "discovery_mode",
     }
 )
 
@@ -154,6 +165,33 @@ _EVENT_KEYS = (
 )
 _UNIT_EVENT_KEYS = ("event_id", "source_event_id", "direct_event_case_id")
 _PAIR_KEYS = ("blind_pair_id", "preference_pair_id", "pair_id")
+_CASE_UNIT_KEYS = (
+    "negative_control_case_id",
+    "negative_control_id",
+    "counterexample_id",
+    "error_id",
+    "ranking_error_case_id",
+    "candidate_ranking_error_case_id",
+    "entity_resolution_error_case_id",
+    "semantic_binding_error_case_id",
+    "semantic_binding_error_id",
+    "row_disposition_error_case_id",
+    "candidate_id",
+    "source_candidate_id",
+    "candidate_screening_id",
+    "screening_id",
+    "source_screening_id",
+    "body_table_audit_id",
+    "observation_id",
+    "row_id",
+    "material_review_id",
+    "body_table_candidate_generation_audit_id",
+)
+_CASE_UNIT_RECORD_TYPE_TOKENS = (
+    "negative_control",
+    "counterexample",
+    "error_case",
+)
 
 
 @dataclass(frozen=True)
@@ -176,7 +214,7 @@ class RecordMemoryDocumentResolver:
     def document(self, record: BrainRecordEnvelope) -> str:
         direct_structure = _dedupe_structure(_cutoff_safe_structure(record.payload))
         evidence_documents: tuple[str, ...] = ()
-        if not direct_structure:
+        if not direct_structure or _structure_requires_evidence(direct_structure):
             blind_cutoff = _record_blind_cutoff(self.root, record)
             evidence_key = (record.episode_id, blind_cutoff.isoformat())
             if self._evidence_key != evidence_key:
@@ -276,6 +314,15 @@ def _is_structural_key(key: str) -> bool:
 def _dedupe_structure(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     unique = {canonical_json(item): item for item in items}
     return [unique[key] for key in sorted(unique)]
+
+
+def _structure_requires_evidence(structure: list[dict[str, Any]]) -> bool:
+    fields = {
+        field
+        for item in structure
+        if isinstance((field := item.get("field")), str)
+    }
+    return bool(fields) and fields <= _EVIDENCE_ENRICHMENT_STRUCTURE_KEYS
 
 
 def _episode_blind_evidence(
@@ -609,7 +656,9 @@ def record_independent_unit_id(record: BrainRecordEnvelope) -> str:
     theme = _first_text(mappings, _THEME_KEYS)
     event = _first_text(mappings, _UNIT_EVENT_KEYS)
     pair = _first_text(mappings, _PAIR_KEYS)
+    case = _first_text(mappings, _CASE_UNIT_KEYS)
     day = record.trade_date.isoformat()
+    episode = _normalized_key(record.episode_id)
     issuer = ticker.upper() if ticker else _normalized_key(company) if company else None
     record_type = record.record_type.lower()
     if "leader_preference_pair" in record_type:
@@ -618,14 +667,20 @@ def record_independent_unit_id(record: BrainRecordEnvelope) -> str:
                 f"THEME_DAY_PAIR:{day}:{_normalized_key(theme)}:"
                 f"{_normalized_key(pair)}"
             )
+        if pair:
+            return f"PAIR_DAY:{day}:{episode}:{_normalized_key(pair)}"
         return f"UNSUPPORTED_RECORD:{record.record_id}"
     if "theme_formation" in record_type:
         if theme:
             return f"THEME_DAY:{day}:{_normalized_key(theme)}"
+        if issuer:
+            return f"ISSUER_DAY:{day}:{issuer}"
         return f"UNSUPPORTED_RECORD:{record.record_id}"
     if "beneficiary" in record_type:
         if theme and issuer:
             return f"THEME_DAY_TICKER_DAY:{day}:{_normalized_key(theme)}:{issuer}"
+        if issuer:
+            return f"ISSUER_DAY:{day}:{issuer}"
         return f"UNSUPPORTED_RECORD:{record.record_id}"
     if "newsless_or_unexplained" in record_type:
         if issuer:
@@ -634,6 +689,8 @@ def record_independent_unit_id(record: BrainRecordEnvelope) -> str:
     if "direct_event" in record_type:
         if event and issuer:
             return f"EVENT_ISSUER_DAY:{day}:{_normalized_key(event)}:{issuer}"
+        if issuer:
+            return f"ISSUER_DAY:{day}:{issuer}"
         return f"UNSUPPORTED_RECORD:{record.record_id}"
     if "issuer_day" in record_type:
         if issuer:
@@ -647,6 +704,13 @@ def record_independent_unit_id(record: BrainRecordEnvelope) -> str:
         return f"ISSUER_DAY:{day}:{issuer}"
     if event:
         return f"EVENT_DAY:{day}:{_normalized_key(event)}"
+    if case and any(token in record_type for token in _CASE_UNIT_RECORD_TYPE_TOKENS):
+        return f"CASE_DAY:{day}:{episode}:{_normalized_key(case)}"
+    if "negative_control" in record_type and record.provenance_source_ids:
+        source_set_sha256 = sha256_text(
+            canonical_json(sorted(set(record.provenance_source_ids)))
+        )
+        return f"CONTROL_SOURCE_DAY:{day}:{episode}:{source_set_sha256}"
     return f"UNSUPPORTED_RECORD:{record.record_id}"
 
 
@@ -658,6 +722,10 @@ def independent_unit_type(independent_unit_id: str) -> str | None:
         "THEME_DAY_PAIR": "theme-day-pair",
         "THEME_DAY": "theme-day",
         "TICKER_DAY": "ticker-day",
+        "PAIR_DAY": "pair-day",
+        "CASE_DAY": "case-day",
+        "EVENT_DAY": "event-day",
+        "CONTROL_SOURCE_DAY": "control-source-day",
     }
     for prefix, unit_type in prefixes.items():
         if independent_unit_id.startswith(f"{prefix}:"):

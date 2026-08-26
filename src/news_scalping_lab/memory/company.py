@@ -304,27 +304,40 @@ class CompanyMemoryStore:
         *,
         as_of: datetime | None = None,
     ) -> CompanyMemoryDeltaApplyResult:
+        all_records = BrainRecordStore(self.root).list_records()
         records = [
             record
-            for record in BrainRecordStore(self.root).list_records()
+            for record in all_records
             if record.record_type == "company_memory_delta"
         ]
-        return self.apply_record_delta_records(records, as_of=as_of)
+        return self.apply_record_delta_records(
+            records,
+            as_of=as_of,
+            identity_records=all_records,
+        )
 
     def apply_record_delta_records(
         self,
         records: list[BrainRecordEnvelope],
         *,
         as_of: datetime | None = None,
+        identity_records: list[BrainRecordEnvelope] | None = None,
     ) -> CompanyMemoryDeltaApplyResult:
         written: list[Path] = []
         skipped_future: list[str] = []
         skipped_invalid: list[str] = []
         cutoff = as_kst(as_of) if as_of is not None else None
+        identity_index = _company_identity_index(
+            identity_records if identity_records is not None else records,
+            target_records=records,
+        )
         for record in sorted(records, key=lambda item: item.record_id):
             if record.record_type != "company_memory_delta":
                 continue
-            memory = self._memory_from_delta_record(record)
+            memory = self._memory_from_delta_record(
+                record,
+                identity_index=identity_index,
+            )
             if memory is None:
                 skipped_invalid.append(record.record_id)
                 continue
@@ -390,10 +403,18 @@ class CompanyMemoryStore:
     def _memory_from_delta_record(
         self,
         record: BrainRecordEnvelope,
+        *,
+        identity_index: dict[tuple[str, str], list[BrainRecordEnvelope]],
     ) -> CompanyMemory | None:
         payload = record.payload
         ticker = _first_string(payload, "ticker", "ticker_symbol", "symbol")
         company_name = _first_string(payload, "company_name", "issuer_name", "name")
+        if ticker and not company_name:
+            company_name = _company_name_from_identity_records(
+                record,
+                ticker=ticker,
+                identity_index=identity_index,
+            )
         if not ticker or not company_name:
             return None
         try:
@@ -539,6 +560,105 @@ def _effective_delta_known_at(record: BrainRecordEnvelope) -> datetime:
     if isinstance(raw_known_at, str) and raw_known_at.strip():
         known_at = parse_datetime(raw_known_at)
     return max(as_kst(known_at), as_kst(record.available_from))
+
+
+def _company_identity_index(
+    records: list[BrainRecordEnvelope],
+    *,
+    target_records: list[BrainRecordEnvelope],
+) -> dict[tuple[str, str], list[BrainRecordEnvelope]]:
+    """Index only identities needed by incomplete company-memory deltas."""
+
+    target_keys = {
+        (record.episode_id, ticker)
+        for record in target_records
+        for ticker in [_first_string(record.payload, "ticker", "ticker_symbol", "symbol")]
+        if ticker is not None
+        and _first_string(record.payload, "company_name", "issuer_name", "name") is None
+    }
+    index: dict[tuple[str, str], list[BrainRecordEnvelope]] = {}
+    if not target_keys:
+        return index
+    for record in records:
+        for ticker, company_name in _record_company_identities(record):
+            key = (record.episode_id, ticker)
+            if key not in target_keys or not company_name:
+                continue
+            index.setdefault(key, []).append(record)
+    return index
+
+
+def _company_name_from_identity_records(
+    record: BrainRecordEnvelope,
+    *,
+    ticker: str,
+    identity_index: dict[tuple[str, str], list[BrainRecordEnvelope]],
+) -> str | None:
+    """Resolve an omitted name from unambiguous, contemporaneous provenance."""
+
+    source_ids = _record_source_ids(record)
+    if not source_ids:
+        return None
+    try:
+        target_known_at = _effective_delta_known_at(record)
+    except ValueError:
+        return None
+    names: set[str] = set()
+    for candidate in identity_index.get((record.episode_id, ticker), []):
+        if candidate.record_id == record.record_id:
+            continue
+        if as_kst(candidate.available_from) > as_kst(record.available_from):
+            continue
+        candidate_known_at = _record_known_at(candidate)
+        if candidate_known_at is None or candidate_known_at > target_known_at:
+            continue
+        if not (source_ids & _record_source_ids(candidate)):
+            continue
+        names.update(
+            company_name
+            for candidate_ticker, company_name in _record_company_identities(candidate)
+            if candidate_ticker == ticker
+        )
+    return next(iter(names)) if len(names) == 1 else None
+
+
+def _record_company_identities(record: BrainRecordEnvelope) -> set[tuple[str, str]]:
+    containers = [record.payload]
+    for key in ("payload", "D_outcome", "outcome", "issuer_day_outcome"):
+        nested = record.payload.get(key)
+        if isinstance(nested, dict):
+            containers.append(nested)
+    identities: set[tuple[str, str]] = set()
+    for container in containers:
+        ticker = _first_string(container, "ticker", "ticker_symbol", "symbol", "code")
+        company_name = _first_string(
+            container,
+            "company_name",
+            "issuer_name",
+            "candidate_company_name",
+            "name",
+        )
+        if ticker and company_name:
+            identities.add((ticker, company_name))
+    return identities
+
+
+def _record_source_ids(record: BrainRecordEnvelope) -> set[str]:
+    return {
+        *record.provenance_source_ids,
+        *_string_list(record.payload.get("provenance_source_ids")),
+        *_string_list(record.payload.get("source_ids")),
+    }
+
+
+def _record_known_at(record: BrainRecordEnvelope) -> datetime | None:
+    raw_known_at = record.payload.get("known_at")
+    if isinstance(raw_known_at, str) and raw_known_at.strip():
+        try:
+            return max(as_kst(parse_datetime(raw_known_at)), as_kst(record.available_from))
+        except ValueError:
+            return None
+    return as_kst(record.available_from)
 
 
 def _first_string(payload: dict[str, Any], *keys: str) -> str | None:

@@ -701,12 +701,20 @@ def _claim_inclusion_proofs(
     if not ordered:
         raise ValueError("category brain claim Merkle tree is empty")
     leaves = [_claim_merkle_leaf(claim_id, digest) for claim_id, digest in ordered]
+    levels = [leaves]
+    while len(levels[-1]) > 1:
+        level = levels[-1]
+        levels.append(
+            [
+                sha256_text(level[offset] + level[min(offset + 1, len(level) - 1)])
+                for offset in range(0, len(level), 2)
+            ]
+        )
     proofs: dict[str, CategoryClaimInclusionProof] = {}
     for leaf_index, (claim_id, digest) in enumerate(ordered):
         siblings: list[CategoryClaimMerkleStep] = []
-        level = leaves
         index = leaf_index
-        while len(level) > 1:
+        for level in levels[:-1]:
             sibling_index = index ^ 1
             if sibling_index >= len(level):
                 sibling_index = index
@@ -716,10 +724,6 @@ def _claim_inclusion_proofs(
                     sha256=level[sibling_index],
                 )
             )
-            level = [
-                sha256_text(level[offset] + level[min(offset + 1, len(level) - 1)])
-                for offset in range(0, len(level), 2)
-            ]
             index //= 2
         proofs[claim_id] = CategoryClaimInclusionProof(
             claim_id=claim_id,
@@ -728,7 +732,7 @@ def _claim_inclusion_proofs(
             leaf_count=len(ordered),
             siblings=siblings,
         )
-    return proofs, _merkle_root(leaves)
+    return proofs, levels[-1][0]
 
 
 def _claim_merkle_leaf(claim_id: str, claim_payload_digest: str) -> str:

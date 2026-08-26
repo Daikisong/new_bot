@@ -151,15 +151,25 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         current_manifest=brain_manifest,
         accepted=cutoff_accepted,
         source_hashes=source_hashes,
+        records=records,
     )
-    record_audit = _audit_record_coverage(root, current_manifest=brain_manifest)
+    record_audit = _audit_record_coverage(
+        root,
+        current_manifest=brain_manifest,
+        records=records,
+    )
     record_store_audit = audit_record_store(root, deep=deep)
-    diversity_audit = _audit_brain_diversity(root)
+    diversity_audit = _audit_brain_diversity(root, records=records)
     llm_compile_audit = _audit_llm_compile_manifest(
         root,
         current_manifest=brain_manifest,
+        records=records,
     )
-    compiled_claim_audit = _audit_compiled_claims(root, expected_episode_ids)
+    compiled_claim_audit = _audit_compiled_claims(
+        root,
+        expected_episode_ids,
+        records=records,
+    )
     hard_findings = [
         *claim_audit["invalid_claim_lines"],
         *artifact_read_findings,
@@ -592,7 +602,11 @@ def _audit_episode_coverage_manifest(
     }
 
 
-def _audit_brain_diversity(root: Path) -> dict[str, Any]:
+def _audit_brain_diversity(
+    root: Path,
+    *,
+    records: list[BrainRecordEnvelope] | None = None,
+) -> dict[str, Any]:
     current_dir = root / "brain" / "current"
     findings: list[str] = []
     file_hashes: dict[str, str] = {}
@@ -615,10 +629,15 @@ def _audit_brain_diversity(root: Path) -> dict[str, Any]:
     for group in identical_bodies:
         findings.append("brain category files differ only by title or metadata: " + ", ".join(group))
     llm_manifest = _read_llm_compile_manifest(root)
-    category_type_distribution = _category_record_type_distribution(root, llm_manifest)
+    category_type_distribution = _category_record_type_distribution(
+        root,
+        llm_manifest,
+        records=records,
+    )
     source_population_mismatches = _category_source_population_mismatches(
         root,
         llm_manifest,
+        records=records,
     )
     for category in source_population_mismatches:
         findings.append(f"brain category source population mismatch: {category}")
@@ -651,8 +670,11 @@ def _read_llm_compile_manifest(root: Path) -> dict[str, Any]:
 def _category_record_type_distribution(
     root: Path,
     llm_manifest: dict[str, Any],
+    *,
+    records: list[BrainRecordEnvelope] | None = None,
 ) -> dict[str, dict[str, int]]:
-    records = BrainRecordStore(root).list_records()
+    if records is None:
+        records = BrainRecordStore(root).list_records()
     categories = llm_manifest.get("categories")
     if not isinstance(categories, list):
         return _fallback_category_record_type_distribution(records)
@@ -698,11 +720,15 @@ def _record_type_counts(records: list[BrainRecordEnvelope]) -> dict[str, int]:
 def _category_source_population_mismatches(
     root: Path,
     llm_manifest: dict[str, Any],
+    *,
+    records: list[BrainRecordEnvelope] | None = None,
 ) -> list[str]:
     categories = _dict_list(llm_manifest.get("categories"))
     if not categories:
         return []
-    records = BrainRecordStore(root).list_records()
+    if records is None:
+        records = BrainRecordStore(root).list_records()
+    records_by_id = {record.record_id: record for record in records}
     expected_by_category = {
         _brain_category(file_name): [
             record.record_id for record in _records_for_category(records, _brain_category(file_name))
@@ -724,7 +750,11 @@ def _category_source_population_mismatches(
     mismatches: list[str] = []
     for category_name, expected_ids in sorted(expected_by_category.items()):
         observed_ids = observed_by_category.get(category_name)
-        expected_records = [record for record in records if record.record_id in set(expected_ids)]
+        expected_records = [
+            records_by_id[record_id]
+            for record_id in expected_ids
+            if record_id in records_by_id
+        ]
         expected_reasoning = sorted(
             record.record_id for record in expected_records if record_routing_disposition(record).value == "REASONING"
         )
@@ -782,6 +812,7 @@ def _audit_llm_compile_manifest(
     root: Path,
     *,
     current_manifest: dict[str, Any],
+    records: list[BrainRecordEnvelope] | None = None,
 ) -> dict[str, Any]:
     manifest = _read_llm_compile_manifest(root)
     findings: list[str] = []
@@ -792,7 +823,7 @@ def _audit_llm_compile_manifest(
     shard_count_mismatches: list[str] = []
     compiled_claim_count_mismatches: list[str] = []
     shard_record_ids: set[str] = set()
-    all_records = BrainRecordStore(root).list_records()
+    all_records = records if records is not None else BrainRecordStore(root).list_records()
     cutoff_raw = current_manifest.get("brain_record_cutoff_at")
     try:
         cutoff = parse_datetime(str(cutoff_raw)) if cutoff_raw is not None else None
@@ -963,7 +994,12 @@ def _compiled_claim_ids(root: Path) -> tuple[bool, set[str]]:
     return True, claim_ids
 
 
-def _audit_compiled_claims(root: Path, accepted_ids: set[str]) -> dict[str, Any]:
+def _audit_compiled_claims(
+    root: Path,
+    accepted_ids: set[str],
+    *,
+    records: list[BrainRecordEnvelope] | None = None,
+) -> dict[str, Any]:
     path = root / "brain" / "current" / "compiled_claims.jsonl"
     invalid_lines: list[str] = []
     without_supporting_records: list[str] = []
@@ -989,7 +1025,8 @@ def _audit_compiled_claims(root: Path, accepted_ids: set[str]) -> dict[str, Any]
             "validated_compiled_claims_without_contradictions": (validated_without_contradictions),
             "validated_compiled_claims_with_single_episode": validated_single_episode,
         }
-    records = BrainRecordStore(root).list_records()
+    if records is None:
+        records = BrainRecordStore(root).list_records()
     records_by_id = {record.record_id: record for record in records}
     record_ids = set(records_by_id)
     known_episode_ids = set(accepted_ids)
@@ -1103,12 +1140,14 @@ def _audit_deterministic_brain_state(
     current_manifest: dict[str, Any],
     accepted: list[ResearchEpisode],
     source_hashes: dict[str, str],
+    records: list[BrainRecordEnvelope] | None = None,
 ) -> dict[str, Any]:
     findings: list[str] = []
     head_version = current_brain_version(root)
     manifest_version = _string_value(current_manifest.get("brain_version"))
     build_mode = _brain_build_mode(current_manifest)
-    records = BrainRecordStore(root).list_records()
+    if records is None:
+        records = BrainRecordStore(root).list_records()
     cutoff_raw = current_manifest.get("brain_record_cutoff_at")
     try:
         cutoff = parse_datetime(str(cutoff_raw)) if cutoff_raw is not None else None
@@ -1206,8 +1245,10 @@ def _audit_record_coverage(
     root: Path,
     *,
     current_manifest: dict[str, Any] | None = None,
+    records: list[BrainRecordEnvelope] | None = None,
 ) -> dict[str, Any]:
-    records = BrainRecordStore(root).list_records()
+    if records is None:
+        records = BrainRecordStore(root).list_records()
     expected_brain_version = (
         current_manifest.get("brain_version")
         if isinstance(current_manifest, dict) and isinstance(current_manifest.get("brain_version"), str)

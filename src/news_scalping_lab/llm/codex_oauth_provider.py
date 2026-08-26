@@ -166,6 +166,8 @@ class CodexOAuthProvider:
                 arguments,
                 input=prompt,
                 text=True,
+                encoding="utf-8",
+                errors="strict",
                 capture_output=True,
                 cwd=temp_root,
                 check=False,

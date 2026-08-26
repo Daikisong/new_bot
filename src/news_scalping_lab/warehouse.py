@@ -178,7 +178,8 @@ class WarehouseStore:
             record for record in records if record.record_type == "company_memory_delta"
         ]
         company_delta_result = CompanyMemoryStore(self.root).apply_record_delta_records(
-            company_delta_records
+            company_delta_records,
+            identity_records=records,
         )
         if company_delta_result.skipped_invalid_record_ids:
             invalid_ids = ", ".join(company_delta_result.skipped_invalid_record_ids)

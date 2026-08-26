@@ -248,6 +248,62 @@ def test_company_memory_delta_records_apply_as_temporal_memory(tmp_path) -> None
     )
 
 
+def test_company_memory_delta_resolves_name_from_same_provenance_record(
+    tmp_path: Path,
+) -> None:
+    available_from = datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST)
+    missing_name = _company_delta_record(
+        "BRAIN-COMPANY-MISSING-NAME",
+        available_from=available_from,
+        known_at="2030-01-10T08:30:00+09:00",
+        ticker="DELTA",
+        company_name="",
+    )
+    supporting_record = _company_delta_record(
+        "BRAIN-COMPANY-IDENTITY",
+        available_from=available_from,
+        known_at="2030-01-10T08:00:00+09:00",
+        ticker="DELTA",
+        company_name="Delta Memory Co",
+    )
+
+    result = CompanyMemoryStore(tmp_path).apply_record_delta_records(
+        [missing_name],
+        identity_records=[missing_name, supporting_record],
+    )
+
+    assert result.skipped_invalid_record_ids == []
+    assert result.written_count == 1
+    assert read_json(result.written_paths[0])["company_name"] == "Delta Memory Co"
+
+
+def test_company_memory_delta_does_not_use_future_identity_record(
+    tmp_path: Path,
+) -> None:
+    missing_name = _company_delta_record(
+        "BRAIN-COMPANY-MISSING-NAME",
+        available_from=datetime(2030, 1, 10, 8, 0, 0, tzinfo=KST),
+        known_at="2030-01-10T08:30:00+09:00",
+        ticker="DELTA",
+        company_name="",
+    )
+    future_record = _company_delta_record(
+        "BRAIN-COMPANY-FUTURE-IDENTITY",
+        available_from=datetime(2030, 1, 10, 9, 0, 0, tzinfo=KST),
+        known_at="2030-01-10T09:00:00+09:00",
+        ticker="DELTA",
+        company_name="Future Delta Co",
+    )
+
+    result = CompanyMemoryStore(tmp_path).apply_record_delta_records(
+        [missing_name],
+        identity_records=[missing_name, future_record],
+    )
+
+    assert result.written_count == 0
+    assert result.skipped_invalid_record_ids == ["BRAIN-COMPANY-MISSING-NAME"]
+
+
 def test_active_release_record_delta_application_is_exact_noop(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

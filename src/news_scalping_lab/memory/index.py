@@ -270,6 +270,24 @@ class ProductionMemoryIndex:
             embedding_method=embedding_method,
         )
         self.snapshots_root.mkdir(parents=True, exist_ok=True)
+        reusable = self._reusable_snapshot(
+            cutoff=cutoff,
+            cutoff_identity=cutoff_identity,
+            source_generation_sha256=source_generation_sha256,
+            embedding_method=embedding_method,
+        )
+        if reusable is not None:
+            if self._record_store_generation_sha256() != source_generation_sha256:
+                raise ValueError("record store changed while memory snapshot was verified")
+            if not stage_only:
+                if self._should_activate(
+                    as_of=as_of,
+                    promote_current=promote_current,
+                ):
+                    self.activate(reusable, requested_cutoff=cutoff)
+                else:
+                    self._register_snapshot(reusable, requested_cutoff=cutoff)
+            return reusable
         build_dir = Path(
             tempfile.mkdtemp(prefix=".memory-index-", dir=self.snapshots_root)
         )
@@ -1459,6 +1477,34 @@ class ProductionMemoryIndex:
         if inspection.get("status") != "current_as_of":
             raise ValueError("existing memory snapshot conflicts with current source records")
         return manifest
+
+    def _reusable_snapshot(
+        self,
+        *,
+        cutoff: datetime,
+        cutoff_identity: str,
+        source_generation_sha256: str,
+        embedding_method: str,
+    ) -> MemoryCellSnapshotManifest | None:
+        candidates = [
+            manifest
+            for manifest in self.list_snapshots()
+            if as_kst(manifest.as_of_cutoff) == cutoff
+            and manifest.cutoff_identity == cutoff_identity
+            and manifest.source_generation_sha256 == source_generation_sha256
+            and manifest.embedding_model == embedding_method
+            and _manifest_versions_current(manifest)
+            and (not self.production or manifest.production_ready)
+        ]
+        for manifest in sorted(candidates, key=lambda item: item.snapshot_id):
+            inspection = inspect_memory_snapshot(self.root, manifest.snapshot_id)
+            if inspection.get("status") != "current_as_of":
+                raise ValueError(
+                    "matching reusable memory snapshot is invalid: "
+                    + canonical_json(inspection.get("errors", []))
+                )
+            return manifest
+        return None
 
     def _latest_compatible_snapshot(
         self,

@@ -162,6 +162,91 @@ def test_eligible_negative_control_is_supported_negative_not_positive() -> None:
     assert claim.near_miss_count == 0
 
 
+def test_large_brain_shard_uses_full_coverage_groups_and_bounded_representatives() -> None:
+    records = [
+        _record(
+            f"BRAIN-GROUPED-{index:05d}",
+            record_type="supervised_direct_event_case",
+            training_target="direct_event_response",
+            response_class="positive_high10",
+            payload_extra={
+                "event_id": f"EVENT-{index:05d}",
+                "sample_weight": float(index % 7) / 10.0,
+            },
+        )
+        for index in range(1_000)
+    ]
+
+    prompt = json.loads(
+        compiler_module._brain_record_shard_prompt(
+            shard_index=1,
+            records=records,
+            brain_version="brain-grouped",
+            provider_name="codex-oauth",
+            model="gpt-5.4",
+        )
+    )
+
+    assert prompt["map_reduce_version"] == compiler_module.LLM_FULL_MAP_REDUCE_VERSION
+    assert prompt["source_record_count"] == len(records)
+    assert prompt["source_record_ids_sha256"] == sha256_text(
+        canonical_json(sorted(record.record_id for record in records))
+    )
+    assert sum(group["record_count"] for group in prompt["evidence_groups"]) == len(records)
+    assert prompt["representative_record_count"] <= (
+        compiler_module.LLM_FULL_SHARD_REPRESENTATIVE_LIMIT
+    )
+    assert prompt["representative_record_count"] < len(records)
+    representative_ids = {
+        record["record_id"]
+        for lane in ("reasoning_records", "audit_context_records")
+        for record in prompt[lane]
+    }
+    assert len(representative_ids) == prompt["representative_record_count"]
+    assert all(
+        set(group["representative_record_ids"]) <= representative_ids
+        for group in prompt["evidence_groups"]
+    )
+
+
+def test_llm_full_production_population_uses_bounded_shard_count() -> None:
+    records = [None] * 823_279
+
+    shards = compiler_module._record_shards(
+        records,
+        compiler_module.LLM_FULL_RECORD_SHARD_SIZE,
+    )
+
+    assert compiler_module.LLM_FULL_RECORD_SHARD_SIZE == 20_000
+    assert len(shards) == 42
+    assert sum(len(shard) for shard in shards) == len(records)
+
+
+def test_compact_shard_summaries_preserve_hashes_not_full_id_lists() -> None:
+    record_ids = [f"RECORD-{index:05d}" for index in range(100)]
+    summary = "x" * (compiler_module.LLM_FULL_SHARD_SUMMARY_MAX_CHARS + 100)
+    compact = compiler_module._compact_shard_summaries(
+        [
+            {
+                "shard_index": 1,
+                "record_ids": record_ids,
+                "record_ids_sha256": sha256_text(canonical_json(record_ids)),
+                "record_count": len(record_ids),
+                "summary": summary,
+            }
+        ]
+    )[0]
+
+    assert "record_ids" not in compact
+    assert compact["record_ids_sha256"] == sha256_text(canonical_json(record_ids))
+    assert compact["representative_record_ids"] == record_ids[
+        : compiler_module.LLM_FULL_SHARD_SUMMARY_RECORD_ID_LIMIT
+    ]
+    assert compact["summary_sha256"] == sha256_text(summary)
+    assert compact["summary_truncated"] is True
+    assert compact["summary"].endswith("...[truncated]")
+
+
 def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     tmp_path: Path,
     monkeypatch,
@@ -267,6 +352,7 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     ]
     compiled_claims_by_record = {claim["supporting_record_ids"][0]: claim for claim in compiled_claims}
     assert compile_manifest["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION
+    assert compile_manifest["map_reduce_version"] == compiler_module.LLM_FULL_MAP_REDUCE_VERSION
     assert brain_manifest["catalog_only"] is False
     assert brain_manifest["catalog_mode_reason"] is None
     assert brain_manifest["deprecated_mode_alias"] is False

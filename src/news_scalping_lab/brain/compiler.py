@@ -39,7 +39,6 @@ from news_scalping_lab.policies import EvidencePolicy
 from news_scalping_lab.records.hashing import (
     brain_record_envelope_hashes,
     brain_record_envelope_sha256,
-    brain_record_routing_root_sha256,
 )
 from news_scalping_lab.records.models import BrainRecordEnvelope, CompiledBrainClaim
 from news_scalping_lab.records.routing import (
@@ -119,7 +118,33 @@ EMPTY_BRAIN_CREATED_AT = datetime(1970, 1, 1, tzinfo=KST)
 SHARD_BRAIN_EPISODE_COUNT = 10
 CATALOG_COMPILER_VERSION = "nslab.brain.catalog.compiler.v5"
 LLM_FULL_COMPILER_VERSION = "nslab.brain.llm_full.compiler.v6"
-LLM_FULL_RECORD_SHARD_SIZE = 50
+LLM_FULL_MAP_REDUCE_VERSION = "nslab.brain.llm_full.map_reduce.v4"
+LLM_FULL_RECORD_SHARD_SIZE = 20_000
+LLM_FULL_DIRECT_RECORD_LIMIT = 200
+LLM_FULL_SHARD_REPRESENTATIVE_LIMIT = 64
+LLM_FULL_GROUP_REPRESENTATIVE_LIMIT = 3
+LLM_FULL_SHARD_SUMMARY_MAX_CHARS = 4_096
+LLM_FULL_SHARD_SUMMARY_RECORD_ID_LIMIT = 20
+LLM_FULL_PROMPT_MAX_CHARS = 1_000_000
+LLM_EVIDENCE_GROUP_SIGNATURE_FIELDS = (
+    "record_type",
+    "training_target",
+    "training_eligible",
+    "eligibility_reason",
+    "evidence_polarity",
+    "label_quality",
+    "routing_disposition",
+    "polarity_classifier_version",
+    "threshold_source",
+    "threshold_role",
+    "memory_lanes",
+    "positive_support_eligible",
+    "evidence_phase",
+    "status",
+    "confidence_label",
+    "routing_features",
+    "training_exclusion_reason",
+)
 LLM_PROMPT_MAX_PAYLOAD_FIELDS = 32
 LLM_PROMPT_MAX_LIST_ITEMS = 12
 LLM_PROMPT_MAX_STRING_LENGTH = 800
@@ -470,11 +495,8 @@ class BrainCompiler:
             }
         )
         source_hashes = {
-            **{
-                episode.episode_id: accepted_hashes[episode.episode_id]
-                for episode in accepted_episodes
-            },
-            **{f"record:{record.record_id}": brain_record_envelope_sha256(record) for record in records},
+            episode.episode_id: accepted_hashes[episode.episode_id]
+            for episode in accepted_episodes
         }
         production_index = ProductionMemoryIndex(
             self.root,
@@ -496,6 +518,14 @@ class BrainCompiler:
             stage_only=True,
             cutoff_mode="live",
         )
+        record_hashes = _record_hashes_from_memory_snapshot(
+            self.root,
+            memory_snapshot,
+            records,
+        )
+        source_hashes.update(
+            {f"record:{record_id}": digest for record_id, digest in record_hashes.items()}
+        )
         created_at = max(record.available_from for record in records)
         claims = self._claims_from_records(records)
         compiled_claims = _compiled_claims_from_records(records)
@@ -504,7 +534,7 @@ class BrainCompiler:
             source_hashes=source_hashes,
             model=settings.llm.model,
             provider=settings.llm_provider,
-            routing_metadata_sha256=brain_record_routing_root_sha256(records),
+            routing_metadata_sha256=memory_snapshot.routing_metadata_sha256,
             production_memory_snapshot_id=memory_snapshot.snapshot_id,
         )
         _category_index, category_index_path = build_category_brain_index(
@@ -588,6 +618,7 @@ class BrainCompiler:
                 root=self.root,
                 provider=provider,
                 records=records,
+                record_hashes=record_hashes,
                 brain_version=version,
                 provider_name=settings.llm_provider,
                 model=settings.llm.model,
@@ -2142,11 +2173,56 @@ def _compiled_claim_category(record: BrainRecordEnvelope) -> str:
     return mapping.get(record.record_type, "world_model")
 
 
+def _record_hashes_from_memory_snapshot(
+    root: Path,
+    manifest: MemoryCellSnapshotManifest,
+    records: list[BrainRecordEnvelope],
+) -> dict[str, str]:
+    if manifest.record_hash_kind != "canonical_full_envelope_sha256":
+        raise ValueError("production memory snapshot uses an unsupported record hash kind")
+    expected_ids = {record.record_id for record in records}
+    if manifest.source_record_hashes.item_count != len(expected_ids):
+        raise ValueError("production memory snapshot record hash count mismatch")
+    root = root.resolve()
+    hash_path = (root / manifest.source_record_hashes.artifact_path).resolve()
+    try:
+        hash_path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("production memory snapshot record hash path escapes the project") from exc
+    hashes: dict[str, str] = {}
+    try:
+        with hash_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                if not isinstance(row, dict):
+                    raise ValueError("production memory snapshot record hash row is invalid")
+                record_id = row.get("record_id")
+                digest = row.get("sha256")
+                if (
+                    not isinstance(record_id, str)
+                    or record_id not in expected_ids
+                    or record_id in hashes
+                    or not isinstance(digest, str)
+                    or len(digest) != 64
+                    or any(character not in "0123456789abcdef" for character in digest)
+                ):
+                    raise ValueError("production memory snapshot record hash row is invalid")
+                hashes[record_id] = digest
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("production memory snapshot record hash ledger is unreadable") from exc
+    if hashes.keys() != expected_ids:
+        raise ValueError("production memory snapshot record hash population mismatch")
+    return hashes
+
+
 async def _compile_llm_category_outputs(
     *,
     root: Path,
     provider: LLMProvider,
     records: list[BrainRecordEnvelope],
+    record_hashes: dict[str, str],
     brain_version: str,
     provider_name: str,
     model: str,
@@ -2155,25 +2231,34 @@ async def _compile_llm_category_outputs(
     cache_dir = root / "brain" / "llm_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
     sorted_records = sorted(records, key=lambda record: record.record_id)
-    shard_summaries: list[dict[str, Any]] = []
-    for shard_index, shard in enumerate(
-        _record_shards(sorted_records, LLM_FULL_RECORD_SHARD_SIZE),
-        start=1,
-    ):
-        prompt = _brain_record_shard_prompt(
+    record_shards = _record_shards(sorted_records, LLM_FULL_RECORD_SHARD_SIZE)
+    shard_prompts = [
+        _brain_record_shard_prompt(
             shard_index=shard_index,
             records=shard,
             brain_version=brain_version,
             provider_name=provider_name,
             model=model,
         )
+        for shard_index, shard in enumerate(record_shards, start=1)
+    ]
+    for shard_index, prompt in enumerate(shard_prompts, start=1):
+        _validate_llm_full_prompt(
+            prompt,
+            purpose=f"brain_compile:shard:{shard_index:04d}",
+        )
+    shard_summaries: list[dict[str, Any]] = []
+    for shard_index, (shard, prompt) in enumerate(
+        zip(record_shards, shard_prompts, strict=True),
+        start=1,
+    ):
         output, cache_key, cache_hit, prompt_sha256 = await _cached_generate_text(
             provider=provider,
             cache_dir=cache_dir,
             purpose=f"brain_compile:shard:{shard_index:04d}",
             prompt=prompt,
             record_ids=[record.record_id for record in shard],
-            record_hashes={record.record_id: brain_record_envelope_sha256(record) for record in shard},
+            record_hashes={record.record_id: record_hashes[record.record_id] for record in shard},
             provider_name=provider_name,
             model=model,
         )
@@ -2182,6 +2267,9 @@ async def _compile_llm_category_outputs(
                 "shard_index": shard_index,
                 "cache_key": cache_key,
                 "record_ids": [record.record_id for record in shard],
+                "record_ids_sha256": sha256_text(
+                    canonical_json(sorted(record.record_id for record in shard))
+                ),
                 "record_count": len(shard),
                 "cache_hit": cache_hit,
                 "prompt_sha256": prompt_sha256,
@@ -2218,7 +2306,7 @@ async def _compile_llm_category_outputs(
             purpose=f"brain_compile:synthesis:{category}",
             prompt=prompt,
             record_ids=[record.record_id for record in category_records],
-            record_hashes={record.record_id: brain_record_envelope_sha256(record) for record in category_records},
+            record_hashes={record.record_id: record_hashes[record.record_id] for record in category_records},
             provider_name=provider_name,
             model=model,
         )
@@ -2242,7 +2330,7 @@ async def _compile_llm_category_outputs(
             purpose=f"brain_compile:review:{category}",
             prompt=review_prompt,
             record_ids=[record.record_id for record in category_records],
-            record_hashes={record.record_id: brain_record_envelope_sha256(record) for record in category_records},
+            record_hashes={record.record_id: record_hashes[record.record_id] for record in category_records},
             provider_name=provider_name,
             model=model,
         )
@@ -2298,6 +2386,7 @@ async def _compile_llm_category_outputs(
     manifest = {
         "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
         "compiler_version": LLM_FULL_COMPILER_VERSION,
+        "map_reduce_version": LLM_FULL_MAP_REDUCE_VERSION,
         "brain_version": brain_version,
         "provider": provider_name,
         "model": model,
@@ -2398,9 +2487,11 @@ async def _cached_generate_text(
     provider_name: str,
     model: str,
 ) -> tuple[str, str, bool, str]:
+    _validate_llm_full_prompt(prompt, purpose=purpose)
     prompt_sha = sha256_text(prompt)
     cache_payload = {
         "compiler_version": LLM_FULL_COMPILER_VERSION,
+        "map_reduce_version": LLM_FULL_MAP_REDUCE_VERSION,
         "purpose": purpose,
         "prompt_sha256": prompt_sha,
         "provider": provider_name,
@@ -2429,6 +2520,14 @@ async def _cached_generate_text(
     return output, cache_key, False, prompt_sha
 
 
+def _validate_llm_full_prompt(prompt: str, *, purpose: str) -> None:
+    if len(prompt) > LLM_FULL_PROMPT_MAX_CHARS:
+        raise ValueError(
+            f"llm-full prompt exceeds local limit for {purpose}: "
+            f"{len(prompt)} > {LLM_FULL_PROMPT_MAX_CHARS}"
+        )
+
+
 def _brain_record_shard_prompt(
     *,
     shard_index: int,
@@ -2438,10 +2537,18 @@ def _brain_record_shard_prompt(
     model: str,
 ) -> str:
     reasoning_records, non_reasoning_records = _split_routing_records(records)
+    direct_records = len(records) <= LLM_FULL_DIRECT_RECORD_LIMIT
+    evidence_groups: list[dict[str, Any]] = []
+    representative_records = records
+    if not direct_records:
+        evidence_groups, representative_records = _llm_evidence_groups(records)
+    representative_reasoning, representative_non_reasoning = _split_routing_records(
+        representative_records
+    )
     return json.dumps(
         {
             "instruction": (
-                "Summarize this record shard for a research brain map pass. "
+                "Summarize this fully-accounted record shard for a research brain map pass. "
                 "Extract reusable mechanisms, success/failure boundaries, near "
                 "misses, contradictions, and unresolved research questions. Cite "
                 "record IDs and avoid ticker, company, theme, region, or "
@@ -2452,15 +2559,36 @@ def _brain_record_shard_prompt(
                 "Candidate-error records are correction evidence only. Retain reasoning-eligible negative and "
                 "unexplained records in their explicit lanes. Ineligible, ambiguous, "
                 "or quarantined records are audit context only and must not be relabeled "
-                "as near misses or controls."
+                "as near misses or controls. Evidence groups account for every source "
+                "record through deterministic counts and hashes; representative records "
+                "show payload-diverse examples but are not the entire population. Do not "
+                "infer an unobserved mechanism from a count or hash alone. Return at most "
+                "700 words."
             ),
             "compiler_version": LLM_FULL_COMPILER_VERSION,
+            "map_reduce_version": LLM_FULL_MAP_REDUCE_VERSION,
             "brain_version": brain_version,
             "shard_index": shard_index,
             "provider": provider_name,
             "model": model,
-            "reasoning_records": [_compact_record_for_prompt(record) for record in reasoning_records],
-            "audit_context_records": [_compact_record_for_prompt(record) for record in non_reasoning_records],
+            "source_record_count": len(records),
+            "source_record_ids_sha256": sha256_text(
+                canonical_json(sorted(record.record_id for record in records))
+            ),
+            "reasoning_record_count": len(reasoning_records),
+            "audit_context_record_count": len(non_reasoning_records),
+            "evidence_group_count": len(evidence_groups),
+            "evidence_group_signature_fields": list(
+                LLM_EVIDENCE_GROUP_SIGNATURE_FIELDS
+            ),
+            "evidence_groups": evidence_groups,
+            "reasoning_records": [
+                _compact_record_for_prompt(record) for record in representative_reasoning
+            ],
+            "audit_context_records": [
+                _compact_record_for_prompt(record) for record in representative_non_reasoning
+            ],
+            "representative_record_count": len(representative_records),
         },
         ensure_ascii=False,
         sort_keys=True,
@@ -2675,12 +2803,115 @@ def _empty_prompt_value(value: Any) -> bool:
 
 
 def _compact_shard_summaries(shard_summaries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {
-            "shard_index": shard["shard_index"],
-            "record_ids": shard["record_ids"],
-            "record_count": shard["record_count"],
-            "summary": shard["summary"],
+    compact: list[dict[str, Any]] = []
+    for shard in shard_summaries:
+        summary = str(shard["summary"])
+        truncated = len(summary) > LLM_FULL_SHARD_SUMMARY_MAX_CHARS
+        compact.append(
+            {
+                "shard_index": shard["shard_index"],
+                "record_count": shard["record_count"],
+                "record_ids_sha256": shard["record_ids_sha256"],
+                "representative_record_ids": shard["record_ids"][
+                    :LLM_FULL_SHARD_SUMMARY_RECORD_ID_LIMIT
+                ],
+                "summary_sha256": sha256_text(summary),
+                "summary_truncated": truncated,
+                "summary": (
+                    summary[:LLM_FULL_SHARD_SUMMARY_MAX_CHARS] + "...[truncated]"
+                    if truncated
+                    else summary
+                ),
+            }
+        )
+    return compact
+
+
+def _llm_evidence_groups(
+    records: list[BrainRecordEnvelope],
+) -> tuple[list[dict[str, Any]], list[BrainRecordEnvelope]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for record in records:
+        routing = record_routing_metadata(record)
+        signature: dict[str, Any] = {
+            "record_type": record.record_type,
+            "training_target": record.training_target,
+            "training_eligible": record.training_eligible,
+            "eligibility_reason": record.eligibility_reason,
+            "evidence_polarity": routing.evidence_polarity,
+            "label_quality": routing.label_quality,
+            "routing_disposition": routing.routing_disposition,
+            "polarity_classifier_version": routing.polarity_classifier_version,
+            "threshold_source": routing.threshold_source,
+            "threshold_role": routing.threshold_role,
+            "memory_lanes": routing.memory_lanes,
+            "positive_support_eligible": record_is_positive_support(record),
+            "evidence_phase": record.evidence_phase,
+            "status": record.status,
+            "confidence_label": record.confidence_label,
         }
-        for shard in shard_summaries
-    ]
+        routing_features = _record_routing_features(record)
+        if routing_features:
+            signature["routing_features"] = routing_features
+        training_exclusion_reason = record.payload.get("training_exclusion_reason")
+        if not _empty_prompt_value(training_exclusion_reason):
+            signature["training_exclusion_reason"] = training_exclusion_reason
+        group_id = stable_id(
+            "LLMEVID",
+            canonical_json(signature),
+            length=20,
+        )
+        payload_sha256 = record.normalized_payload_sha256
+        entry = grouped.setdefault(
+            group_id,
+            {
+                "group_id": group_id,
+                "signature": signature,
+                "records": [],
+                "payload_hashes": set(),
+            },
+        )
+        entry["records"].append((payload_sha256, record.record_id, record))
+        entry["payload_hashes"].add(payload_sha256)
+
+    ordered_groups = sorted(
+        grouped.values(),
+        key=lambda entry: (-len(entry["records"]), str(entry["group_id"])),
+    )
+    selected_by_group: dict[str, list[BrainRecordEnvelope]] = {
+        str(entry["group_id"]): [] for entry in ordered_groups
+    }
+    for representative_index in range(LLM_FULL_GROUP_REPRESENTATIVE_LIMIT):
+        for entry in ordered_groups:
+            if sum(len(values) for values in selected_by_group.values()) >= (
+                LLM_FULL_SHARD_REPRESENTATIVE_LIMIT
+            ):
+                break
+            candidates = sorted(entry["records"], key=lambda item: (item[0], item[1]))
+            if representative_index < len(candidates):
+                selected_by_group[str(entry["group_id"])].append(candidates[representative_index][2])
+
+    group_rows: list[dict[str, Any]] = []
+    representatives: list[BrainRecordEnvelope] = []
+    for entry in ordered_groups:
+        group_id = str(entry["group_id"])
+        selected = selected_by_group[group_id]
+        representatives.extend(selected)
+        record_ids = sorted(str(item[1]) for item in entry["records"])
+        payload_hashes = sorted(str(value) for value in entry["payload_hashes"])
+        group_rows.append(
+            {
+                "group_id": group_id,
+                "signature_values": [
+                    entry["signature"].get(field)
+                    for field in LLM_EVIDENCE_GROUP_SIGNATURE_FIELDS
+                ],
+                "record_count": len(record_ids),
+                "record_ids_sha256": sha256_text(canonical_json(record_ids)),
+                "payload_variant_count": len(payload_hashes),
+                "payload_variants_sha256": sha256_text(canonical_json(payload_hashes)),
+                "representative_record_ids": [record.record_id for record in selected],
+            }
+        )
+    representatives.sort(key=lambda record: record.record_id)
+    return group_rows, representatives
