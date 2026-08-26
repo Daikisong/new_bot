@@ -11,6 +11,7 @@ import typer
 from pydantic import BaseModel, ValidationError
 from typer.testing import CliRunner
 
+import news_scalping_lab.brain.audit as brain_audit_module
 from news_scalping_lab.audits.coverage import audit_coverage
 from news_scalping_lab.audits.provenance import audit_provenance
 from news_scalping_lab.brain.audit import audit_brain
@@ -1633,6 +1634,55 @@ def _compiled_claim_test_record(
         source_line=1,
         payload=payload,
     )
+
+
+def test_category_source_population_audit_does_not_rebuild_id_set_per_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records = [
+        _compiled_claim_test_record(
+            f"BRAIN-AUDIT-SCALE-{index:04d}",
+            "EP-audit-scale",
+        )
+        for index in range(100)
+    ]
+    monkeypatch.setattr(
+        brain_audit_module.BrainRecordStore,
+        "list_records",
+        lambda self: records,
+    )
+    set_call_count = 0
+    builtin_set = set
+
+    def counted_set(*args: object) -> set[object]:
+        nonlocal set_call_count
+        set_call_count += 1
+        return builtin_set(*args)
+
+    monkeypatch.setattr(brain_audit_module, "set", counted_set, raising=False)
+
+    brain_audit_module._category_source_population_mismatches(
+        tmp_path,
+        {"categories": [{"category": "world_model"}]},
+    )
+
+    assert set_call_count <= len(brain_audit_module.BRAIN_FILES) * 2
+
+
+def test_brain_diversity_audit_reuses_preloaded_records(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        brain_audit_module.BrainRecordStore,
+        "list_records",
+        lambda self: pytest.fail("preloaded records were read again"),
+    )
+
+    result = brain_audit_module._audit_brain_diversity(tmp_path, records=[])
+
+    assert result["brain_category_source_population_mismatches"] == []
 
 
 def test_catalog_brain_compile_report_records_category_source_type_distribution(

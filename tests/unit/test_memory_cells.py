@@ -150,6 +150,8 @@ def test_unsupported_reasoning_record_blocks_production_readiness(
     )
     payload = dict(record.payload)
     payload.pop("event_id")
+    payload.pop("ticker")
+    payload.pop("company_name")
     digest = sha256_text(canonical_json(payload))
     record = record.model_copy(
         update={
@@ -244,9 +246,9 @@ def test_fact_id_is_not_promoted_to_an_independent_event_unit() -> None:
         }
     )
 
-    assert record_independent_unit_id(record) == (
-        f"UNSUPPORTED_RECORD:{record.record_id}"
-    )
+    unit_id = record_independent_unit_id(record)
+    assert unit_id.startswith("ISSUER_DAY:")
+    assert "FACT-1" not in unit_id
 
 
 def test_v1_snapshot_manifest_is_reported_as_legacy_stale(
@@ -318,6 +320,44 @@ def test_memory_document_ignores_identity_routing_and_outcome_but_keeps_structur
     assert record_memory_document(base) != record_memory_document(different)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("error_type", "CANDIDATE_GENERATION_MISS"),
+        ("discovery_mode", "POSTMORTEM_SOURCE_BACKED_NOT_BLIND_HIT"),
+    ],
+)
+def test_memory_document_keeps_generic_error_and_discovery_structure(
+    field: str,
+    value: str,
+) -> None:
+    record = _record(
+        f"REC-{field.upper()}",
+        available_from=datetime(2030, 1, 10, tzinfo=KST),
+        ticker="000001",
+        response_class="POSITIVE",
+        high_return_pct=20.0,
+        company_name="excluded issuer identity",
+    )
+    payload = {
+        "ticker": "000001",
+        "company_name": "excluded issuer identity",
+        "high_return_pct": 20.0,
+        "D_outcome": {"description": "excluded outcome description"},
+        field: value,
+    }
+    record = record.model_copy(update={"payload": payload})
+
+    document = record_memory_document(record)
+
+    assert "unavailable_in_record_payload" not in document
+    assert field in document
+    assert value in document
+    assert "000001" not in document
+    assert "excluded issuer identity" not in document
+    assert "excluded outcome description" not in document
+
+
 def test_actual_reasoning_documents_resolve_structural_evidence() -> None:
     records = BrainRecordStore(Path.cwd()).list_records()
     documents = build_record_memory_documents(Path.cwd(), records)
@@ -352,6 +392,7 @@ def test_fallback_evidence_rejects_postmortem_and_cutoff_after_rows(
         "high_return_pct": 12.0,
         "label_quality": "verified",
         "fact_id": "FACT-BLIND",
+        "error_type": "CANDIDATE_GENERATION_MISS",
         "postmortem_fact_id": "FACT-POST",
         "future_fact_id": "FACT-FUTURE",
     }
@@ -411,6 +452,7 @@ def test_fallback_evidence_rejects_postmortem_and_cutoff_after_rows(
 
     document = RecordMemoryDocumentResolver(tmp_path).document(record)
 
+    assert "CANDIDATE_GENERATION_MISS" in document
     assert "cutoff safe supply mechanism" in document
     assert "postmortem outcome leak" not in document
     assert "future cutoff leak" not in document
@@ -588,6 +630,33 @@ def test_independent_unit_matches_record_semantics() -> None:
             },
         }
     )
+    pair_without_theme = base.model_copy(
+        update={
+            "record_type": "blind_leader_preference_pair",
+            "payload": {**base.payload, "blind_pair_id": "PAIR-2"},
+        }
+    )
+    beneficiary_without_theme = base.model_copy(
+        update={"record_type": "beneficiary_discovery_case"}
+    )
+    negative_control_without_issuer = base.model_copy(
+        update={
+            "record_type": "negative_control_case",
+            "payload": {"body_table_audit_id": "BTA-1"},
+        }
+    )
+    counterexample_without_issuer = base.model_copy(
+        update={
+            "record_type": "counterexample",
+            "payload": {"candidate_screening_id": "CS-1"},
+        }
+    )
+    source_bound_negative_control = base.model_copy(
+        update={
+            "record_type": "negative_control_case",
+            "payload": {"negative_control_reason": "market-state-only control"},
+        }
+    )
 
     assert record_independent_unit_id(direct_one).startswith("EVENT_ISSUER_DAY:")
     assert record_independent_unit_id(direct_one) != record_independent_unit_id(
@@ -597,6 +666,19 @@ def test_independent_unit_matches_record_semantics() -> None:
     assert record_independent_unit_id(theme).startswith("THEME_DAY:")
     assert record_independent_unit_id(newsless).startswith("TICKER_DAY:")
     assert record_independent_unit_id(pair).startswith("THEME_DAY_PAIR:")
+    assert record_independent_unit_id(pair_without_theme).startswith("PAIR_DAY:")
+    assert record_independent_unit_id(beneficiary_without_theme).startswith(
+        "ISSUER_DAY:"
+    )
+    assert record_independent_unit_id(negative_control_without_issuer).startswith(
+        "CASE_DAY:"
+    )
+    assert record_independent_unit_id(counterexample_without_issuer).startswith(
+        "CASE_DAY:"
+    )
+    control_unit = record_independent_unit_id(source_bound_negative_control)
+    assert control_unit.startswith("CONTROL_SOURCE_DAY:")
+    assert source_bound_negative_control.provenance_source_ids[0] not in control_unit
 
 
 def test_build_memory_cells_assigns_one_primary_and_bounded_secondary() -> None:
@@ -1229,6 +1311,69 @@ def test_streaming_build_is_batch_size_and_noop_stable(
     assert second.cell_entries.sha256 == first.cell_entries.sha256
     assert second.memberships.sha256 == first.memberships.sha256
     assert repeated.snapshot_id == second.snapshot_id
+
+
+def test_stage_only_identical_snapshot_is_reused_without_rebuilding(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cutoff = datetime(2030, 1, 10, 12, 0, tzinfo=KST)
+    records = [
+        _record(
+            "REC-STAGED-REUSE",
+            available_from=cutoff,
+            ticker="000001",
+            response_class="POSITIVE",
+            high_return_pct=12.0,
+        )
+    ]
+    monkeypatch.setattr(BrainRecordStore, "list_records", lambda self: list(records))
+    index = ProductionMemoryIndex(
+        tmp_path,
+        embedding_provider=_RealLikeEmbeddingProvider(),
+        production=True,
+    )
+    first = index.build(as_of=cutoff, stage_only=True)
+
+    monkeypatch.setattr(
+        index,
+        "_build_streaming_database",
+        lambda *args, **kwargs: pytest.fail("identical snapshot was rebuilt"),
+    )
+
+    repeated = index.build(as_of=cutoff, stage_only=True)
+
+    assert repeated == first
+    assert not index.as_of_registry_path.exists()
+    assert not index.current_pointer_path.exists()
+
+
+def test_stage_only_reuse_fails_closed_for_a_corrupt_matching_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cutoff = datetime(2030, 1, 10, 12, 0, tzinfo=KST)
+    records = [
+        _record(
+            "REC-STAGED-CORRUPT",
+            available_from=cutoff,
+            ticker="000001",
+            response_class="POSITIVE",
+            high_return_pct=12.0,
+        )
+    ]
+    monkeypatch.setattr(BrainRecordStore, "list_records", lambda self: list(records))
+    index = ProductionMemoryIndex(
+        tmp_path,
+        embedding_provider=_RealLikeEmbeddingProvider(),
+        production=True,
+    )
+    first = index.build(as_of=cutoff, stage_only=True)
+    database_path = tmp_path / first.database.artifact_path
+    database_path.write_bytes(database_path.read_bytes() + b"corrupt")
+
+    with pytest.raises(ValueError, match="matching reusable memory snapshot is invalid"):
+        index.build(as_of=cutoff, stage_only=True)
 
 
 def test_historical_cutoff_detects_late_backfill(

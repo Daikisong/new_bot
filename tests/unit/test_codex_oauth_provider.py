@@ -29,10 +29,12 @@ class _StructuredResult(BaseModel):
 class _FakeCodexRunner:
     def __init__(self, *, structured_payload: str = '{"status":"ok"}') -> None:
         self.calls: list[list[str]] = []
+        self.call_kwargs: list[dict[str, Any]] = []
         self.structured_payload = structured_payload
 
     def __call__(self, args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         self.calls.append(list(args))
+        self.call_kwargs.append(dict(kwargs))
         if "--version" in args:
             return subprocess.CompletedProcess(args, 0, "codex-cli 0.147.0\n", "")
         if args[-2:] == ["login", "status"]:
@@ -70,6 +72,25 @@ def test_codex_oauth_provider_uses_supported_cli_or_sdk_interface() -> None:
     assert "--json" in execution
     assert "--ephemeral" in execution
     assert "--ignore-user-config" in execution
+
+
+def test_codex_oauth_provider_sends_non_ascii_prompt_as_utf8() -> None:
+    runner = _FakeCodexRunner(structured_payload="완료")
+    provider = CodexOAuthProvider(runner=runner)
+
+    output = asyncio.run(
+        provider.generate_text(
+            prompt="한글 연구자료를 요약해줘",
+            purpose="utf8",
+        )
+    )
+
+    assert output == "완료"
+    execution_kwargs = runner.call_kwargs[-1]
+    assert execution_kwargs["input"] == "한글 연구자료를 요약해줘"
+    assert execution_kwargs["text"] is True
+    assert execution_kwargs["encoding"] == "utf-8"
+    assert execution_kwargs["errors"] == "strict"
 
 
 def test_codex_oauth_provider_never_reads_credential_files() -> None:
