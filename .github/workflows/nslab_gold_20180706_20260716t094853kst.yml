@@ -1,0 +1,90 @@
+name: NSLAB Gold 20180706 20260716T094853KST A3
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/nslab_gold_20180706_20260716t094853kst.yml
+
+permissions:
+  contents: read
+  models: read
+
+jobs:
+  run-gold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - name: Checkout current main inputs
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20180706.csv
+            docs/example2.md
+            temp/nslab_runner_20220826_20260715t130039.py
+
+      - name: Build date-specific runner from repository template
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp temp/nslab_runner_20220826_20260715t130039.py /tmp/nslab_runner_20180706.py
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/nslab_runner_20180706.py')
+          text = p.read_text(encoding='utf-8')
+          replacements = [
+              ('20260715T130039KST', '20260716T094853KST'),
+              ('20260715t130039', '20260716t094853'),
+              ('2022/08', '2018/07'),
+              ('2022-08-26', '2018-07-06'),
+              ('20220826', '20180706'),
+              ('2022-08-25', '2018-07-05'),
+              ('20220825', '20180705'),
+              ('2022-08-29', '2018-07-09'),
+              ('20220829', '20180709'),
+          ]
+          for old, new in replacements:
+              text = text.replace(old, new)
+
+          sparse_old = 'run(["git", "-C", str(STOCK), "sparse-checkout", "set", *p_paths])'
+          sparse_new = 'run(["git", "-C", str(STOCK), "sparse-checkout", "set", "--no-cone", *p_paths])'
+          if sparse_old not in text:
+              raise RuntimeError('sparse-checkout patch target missing')
+          text = text.replace(sparse_old, sparse_new, 1)
+
+          receipt_old = '        "news_file": news_name,\n        "news_sha256": news_sha,'
+          receipt_new = '        "news_file": news_name,\n        "example_file": example_name,\n        "news_sha256": news_sha,'
+          if receipt_old not in text:
+              raise RuntimeError('example_file receipt patch target missing')
+          text = text.replace(receipt_old, receipt_new, 1)
+
+          p.write_text(text, encoding='utf-8')
+          compile(text, str(p), 'exec')
+          PY
+
+      - name: Execute locked gold phase machine
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python /tmp/nslab_runner_20180706.py 2>&1 | tee nslab_20180706_action.log
+
+      - name: Upload complete run artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-gold-20180706-20260716t094853kst-a3
+          if-no-files-found: warn
+          retention-days: 1
+          compression-level: 0
+          path: |
+            final_artifact_20180706_20260716t094853/
+            work_20180706_20260716t094853/
+            stock_web_20180706_20260716t094853/atlas/research_daily/
+            nslab_20180706_action.log
