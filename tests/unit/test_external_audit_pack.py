@@ -6,6 +6,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
+import duckdb
 import pytest
 
 import news_scalping_lab.audits.external_pack as external_pack
@@ -27,9 +28,11 @@ from news_scalping_lab.audits.external_pack import (
     deterministic_stratified_sample,
     export_audit_core,
     find_audit_target,
+    iter_raw_zstd_jsonl,
     scan_artifact_population,
     scan_compiled_claims,
     scan_pack_secrets,
+    scan_record_population,
     semantic_coverage_outcome,
 )
 from news_scalping_lab.audits.external_pack_standalone import verify
@@ -482,6 +485,77 @@ def test_record_population_parity_823279_fixture_independent(tmp_path: Path) -> 
     _target_fixture(tmp_path, source_count=3)
     assert _target(tmp_path).project_root.name == "project"
     assert _profile()["expected_source_record_count"] == 3
+
+
+def test_record_population_external_sort_handles_mixed_case_ids(tmp_path: Path) -> None:
+    _target_fixture(tmp_path)
+    target = _target(tmp_path)
+    records_dir = target.project_root / "memory/records"
+    records_dir.mkdir(parents=True)
+    rows = [
+        {
+            "record_id": "nslab-A",
+            "record_type": "test",
+            "episode_id": "EP-a",
+            "trade_date": "2030-01-01",
+            "available_from": "2030-01-02T00:00:00+00:00",
+            "training_target": "test",
+            "evidence_phase": "POSTMORTEM",
+            "training_eligible": True,
+            "status": "supported",
+            "confidence_label": "high",
+            "typed_payload_status": "KNOWN_TYPED_PAYLOAD",
+            "payload": {"value": "a"},
+        },
+        {
+            "record_id": "NSLAB-B",
+            "record_type": "test",
+            "episode_id": "EP-b",
+            "trade_date": "2030-01-02",
+            "available_from": "2030-01-03T00:00:00+00:00",
+            "training_target": "test",
+            "evidence_phase": "POSTMORTEM",
+            "training_eligible": False,
+            "status": "tentative",
+            "confidence_label": "low",
+            "typed_payload_status": "KNOWN_TYPED_PAYLOAD",
+            "payload": {"value": "b"},
+        },
+    ]
+    (records_dir / "a.jsonl").write_text(canonical_json(rows[0]) + "\n", encoding="utf-8")
+    (records_dir / "b.jsonl").write_text(canonical_json(rows[1]) + "\n", encoding="utf-8")
+    database = target.project_root / "memory/test.duckdb"
+    connection = duckdb.connect(str(database))
+    connection.execute(
+        "CREATE TABLE records(record_id VARCHAR, evidence_polarity VARCHAR, label_quality VARCHAR, "
+        "routing_disposition VARCHAR, source_sha256 VARCHAR, routing_json VARCHAR)"
+    )
+    for row in reversed(rows):
+        connection.execute(
+            "INSERT INTO records VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                row["record_id"],
+                "POSITIVE",
+                "verified",
+                "REASONING",
+                sha256_text(canonical_json(row)),
+                canonical_json({"routing_disposition": "REASONING"}),
+            ],
+        )
+    connection.close()
+    write_json(
+        target.memory_manifest_path,
+        {
+            "snapshot_id": "MEMIDX-test",
+            "record_count": 2,
+            "database": {"artifact_path": "memory/test.duckdb"},
+        },
+    )
+    summary, states = scan_record_population(target, tmp_path / "mixed-records.zst")
+    ledger_ids = [row["record_id"] for row in iter_raw_zstd_jsonl(tmp_path / "mixed-records.zst")]
+    assert ledger_ids == ["NSLAB-B", "nslab-A"]
+    assert summary["record_count"] == 2
+    assert set(states) == {"NSLAB-B", "nslab-A"}
 
 
 def test_brain_identity_requires_gpt_5_6_sol_xhigh(tmp_path: Path) -> None:

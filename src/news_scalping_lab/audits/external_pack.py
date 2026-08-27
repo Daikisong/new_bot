@@ -569,11 +569,29 @@ def scan_record_population(
         raise ExternalAuditError("MEMORY_MANIFEST_INVALID", target.memory_manifest_path.as_posix())
     database_path = _memory_database_path(target, memory_manifest)
     connection = duckdb.connect(str(database_path), read_only=True)
-    cursor = connection.execute(
-        "SELECT record_id, evidence_polarity, label_quality, routing_disposition, "
-        "source_sha256, routing_json FROM records ORDER BY record_id"
-    )
-    database_rows = _iter_duckdb_rows(cursor)
+    memory_rows: dict[str, tuple[str, str, str, str, Any]] = {}
+    try:
+        cursor = connection.execute(
+            "SELECT record_id, evidence_polarity, label_quality, routing_disposition, "
+            "source_sha256, routing_json FROM records"
+        )
+        for db_row in _iter_duckdb_rows(cursor):
+            db_record_id = str(db_row[0])
+            if db_record_id in memory_rows:
+                raise ExternalAuditError("MEMORY_DUPLICATE_RECORD_ID", db_record_id)
+            try:
+                routing_metadata = json.loads(str(db_row[5]))
+            except json.JSONDecodeError as exc:
+                raise ExternalAuditError("MEMORY_ROUTING_JSON_INVALID", db_record_id) from exc
+            memory_rows[db_record_id] = (
+                str(db_row[1]),
+                str(db_row[2]),
+                str(db_row[3]),
+                str(db_row[4]),
+                routing_metadata,
+            )
+    finally:
+        connection.close()
 
     record_count = 0
     record_ids: set[str] = set()
@@ -601,13 +619,25 @@ def scan_record_population(
     brain_manifest = read_json(target.brain_manifest_path)
     brain_cutoff_raw = brain_manifest.get("brain_record_cutoff_at") if isinstance(brain_manifest, dict) else None
     brain_cutoff = parse_datetime(brain_cutoff_raw) if isinstance(brain_cutoff_raw, str) else None
-    population_digests: list[str] = []
-    sorted_ids_hasher = hashlib.sha256()
-    eligible_hasher = hashlib.sha256()
     source_hash_mismatch_count = 0
-    last_record_id = ""
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    chunk_rows: list[dict[str, Any]] = []
+    chunk_paths: list[Path] = []
 
-    with RawZstdWriter(ledger_path) as writer:
+    with tempfile.TemporaryDirectory(prefix="record-ledger-sort-", dir=ledger_path.parent) as temporary:
+        temporary_root = Path(temporary)
+
+        def flush_chunk() -> None:
+            if not chunk_rows:
+                return
+            chunk_rows.sort(key=lambda item: str(item["record_id"]))
+            chunk_path = temporary_root / f"chunk-{len(chunk_paths):05d}.jsonl"
+            with chunk_path.open("w", encoding="utf-8", newline="\n") as chunk_handle:
+                for item in chunk_rows:
+                    chunk_handle.write(canonical_json(item) + "\n")
+            chunk_paths.append(chunk_path)
+            chunk_rows.clear()
+
         for record_file in sorted((target.project_root / "memory" / "records").glob("*.jsonl")):
             with record_file.open("r", encoding="utf-8") as handle:
                 for line_number, line in enumerate(handle, start=1):
@@ -629,29 +659,13 @@ def scan_record_population(
                     episode_id = row.get("episode_id")
                     if not isinstance(record_id, str) or not isinstance(episode_id, str):
                         raise ExternalAuditError("RECORD_ID_INVALID", f"{record_file.name}:{line_number}")
-                    if record_id <= last_record_id:
-                        raise ExternalAuditError("RECORD_ORDER_INVALID", record_id)
-                    last_record_id = record_id
                     if record_id in record_ids:
                         duplicate_ids.append(record_id)
                     record_ids.add(record_id)
-                    try:
-                        db_row = next(database_rows)
-                    except StopIteration as exc:
-                        raise ExternalAuditError("MEMORY_RECORD_POPULATION_SHORT", record_id) from exc
-                    if str(db_row[0]) != record_id:
-                        raise ExternalAuditError(
-                            "MEMORY_RECORD_ORDER_MISMATCH",
-                            f"record={record_id} memory={db_row[0]}",
-                        )
-                    polarity = str(db_row[1])
-                    label_quality = str(db_row[2])
-                    disposition = str(db_row[3])
-                    memory_source_hash = str(db_row[4])
-                    try:
-                        routing_metadata = json.loads(str(db_row[5]))
-                    except json.JSONDecodeError as exc:
-                        raise ExternalAuditError("MEMORY_ROUTING_JSON_INVALID", record_id) from exc
+                    memory_row = memory_rows.pop(record_id, None)
+                    if memory_row is None:
+                        raise ExternalAuditError("MEMORY_RECORD_MISSING", record_id)
+                    polarity, label_quality, disposition, memory_source_hash, routing_metadata = memory_row
                     routing_metadata_by_id[record_id] = routing_metadata
                     envelope_sha256 = sha256_text(canonical_json(row))
                     if envelope_sha256 != memory_source_hash:
@@ -698,11 +712,9 @@ def scan_record_population(
                         "training_eligible": eligible,
                         "training_target": str(row.get("training_target") or "UNKNOWN"),
                     }
-                    writer.write((canonical_json(ledger_row) + "\n").encode("utf-8"))
-                    population_digests.append(_canonical_row_digest(ledger_row))
-                    sorted_ids_hasher.update((record_id + "\n").encode("utf-8"))
-                    if eligible:
-                        eligible_hasher.update((record_id + "\0" + envelope_sha256 + "\n").encode("utf-8"))
+                    chunk_rows.append(ledger_row)
+                    if len(chunk_rows) >= 50_000:
+                        flush_chunk()
                     record_count += 1
                     episode_counts[episode_id] += 1
                     training_eligible["true" if eligible else "false"] += 1
@@ -721,14 +733,40 @@ def scan_record_population(
                     available_max = available_from if available_max is None else max(available_max, available_from)
                     if brain_cutoff is not None and parse_datetime(available_from) > brain_cutoff:
                         future_available_count += 1
-    try:
-        extra_memory_row = next(database_rows)
-    except StopIteration:
-        extra_memory_row = None
-    finally:
-        connection.close()
-    if extra_memory_row is not None:
-        raise ExternalAuditError("MEMORY_RECORD_POPULATION_LONG", str(extra_memory_row[0]))
+        flush_chunk()
+        if memory_rows:
+            first_extra = min(memory_rows)
+            raise ExternalAuditError("MEMORY_RECORD_POPULATION_LONG", first_extra)
+
+        def iter_chunk(path: Path) -> Iterator[dict[str, Any]]:
+            with path.open("r", encoding="utf-8") as chunk_handle:
+                for chunk_line in chunk_handle:
+                    value = json.loads(chunk_line)
+                    if not isinstance(value, dict):
+                        raise ExternalAuditError("RECORD_LEDGER_CHUNK_INVALID", path.name)
+                    yield value
+
+        population_digests: list[str] = []
+        sorted_ids_hasher = hashlib.sha256()
+        eligible_hasher = hashlib.sha256()
+        last_merged_id = ""
+        merged_rows = heapq.merge(
+            *(iter_chunk(path) for path in chunk_paths),
+            key=lambda item: str(item["record_id"]),
+        )
+        with RawZstdWriter(ledger_path) as writer:
+            for ledger_row in merged_rows:
+                record_id = str(ledger_row["record_id"])
+                if record_id <= last_merged_id:
+                    raise ExternalAuditError("RECORD_LEDGER_ORDER_INVALID", record_id)
+                last_merged_id = record_id
+                writer.write((canonical_json(ledger_row) + "\n").encode("utf-8"))
+                population_digests.append(_canonical_row_digest(ledger_row))
+                sorted_ids_hasher.update((record_id + "\n").encode("utf-8"))
+                if ledger_row.get("training_eligible") is True:
+                    eligible_hasher.update(
+                        (record_id + "\0" + str(ledger_row["envelope_sha256"]) + "\n").encode("utf-8")
+                    )
 
     record_corpus_sha256 = sha256_text(canonical_json(envelope_hashes))
     episode_count_root = sha256_text(canonical_json(dict(sorted(episode_counts.items()))))
