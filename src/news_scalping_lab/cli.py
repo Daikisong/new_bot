@@ -17,6 +17,11 @@ import typer
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from news_scalping_lab.audits.coverage import audit_coverage
+from news_scalping_lab.audits.external_pack import (
+    export_audit_core,
+    export_audit_sample,
+    verify_audit_pack,
+)
 from news_scalping_lab.audits.hardcoding import audit_hardcoding
 from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
@@ -9143,6 +9148,68 @@ def production_bootstrap_local(
             embedding_provider=embedding_provider,
             stock_web_path=stock_web_path,
             rotate_secrets=rotate_secrets,
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(result)
+
+
+@production_app.command("export-audit-core")
+def production_export_audit_core(
+    brain_version: Annotated[str, typer.Option("--brain-version")],
+    output: Annotated[Path, typer.Option("--output")],
+    deep_verify: Annotated[
+        bool,
+        typer.Option("--deep-verify/--no-deep-verify"),
+    ] = True,
+) -> None:
+    settings = load_settings(resolve_production=False)
+    try:
+        result = export_audit_core(
+            settings.project_root,
+            brain_version,
+            output,
+            run_deep_verifier=deep_verify,
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(result)
+
+
+@production_app.command("verify-audit-pack")
+def production_verify_audit_pack(
+    pack: Annotated[Path, typer.Option("--pack")],
+    ledgers: Annotated[Path, typer.Option("--ledgers")],
+    deep: Annotated[bool, typer.Option("--deep/--no-deep")] = False,
+) -> None:
+    settings = load_settings(resolve_production=False)
+    try:
+        result = verify_audit_pack(
+            pack,
+            ledgers,
+            repo_root=settings.project_root if deep else None,
+            deep=deep,
+        )
+    except (OSError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(result)
+    if result.get("passed") is not True:
+        raise typer.Exit(code=1)
+
+
+@production_app.command("export-audit-sample")
+def production_export_audit_sample(
+    core_manifest: Annotated[Path, typer.Option("--core-manifest")],
+    seed: Annotated[str, typer.Option("--seed")],
+    output: Annotated[Path, typer.Option("--output")],
+) -> None:
+    settings = load_settings(resolve_production=False)
+    try:
+        result = export_audit_sample(
+            settings.project_root,
+            core_manifest,
+            seed,
+            output,
         )
     except (OSError, ValueError) as exc:
         _exit_with_error(exc)

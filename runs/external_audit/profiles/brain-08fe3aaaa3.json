@@ -1,0 +1,22 @@
+{
+  "brain_version": "brain-08fe3aaaa3",
+  "compile_manifest_schema": "nslab.llm_full_brain_compile_manifest.v2",
+  "compiler_version": "nslab.brain.llm_full.compiler.v7",
+  "expected_compiled_claim_count": 256783,
+  "expected_live_oauth_call_count": 60,
+  "expected_memory_snapshot_id": "MEMIDX-1e64a1b6e6ba7b07b799",
+  "expected_model": "gpt-5.6-sol",
+  "expected_provider": "codex-oauth",
+  "expected_reasoning_effort": "xhigh",
+  "expected_source_record_count": 823279,
+  "expected_stage_size_gib_reported": 78.986,
+  "expected_tree": "1b387f131add63eb357a479da54e67e4a2058453",
+  "map_reduce_version": "nslab.brain.llm_full.map_reduce.v5",
+  "merged_pr": 122,
+  "old_artifact_deleted_gib_reported": 5.041,
+  "production_release_expected_active": false,
+  "pytest_count_reported": 1651,
+  "repository": "Daikisong/new_bot",
+  "schema_version": "nslab.external_audit_target_profile.v1",
+  "staging_build_commit": "0eea166b268ac80dd645e55bf32b142e8be0b443"
+}

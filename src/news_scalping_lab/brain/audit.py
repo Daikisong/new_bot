@@ -48,7 +48,12 @@ from news_scalping_lab.utils import (
 LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION = "nslab.llm_full_brain_compile_manifest.v2"
 
 
-def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
+def audit_brain(
+    root: Path,
+    *,
+    deep: bool = False,
+    write_report: bool = True,
+) -> dict[str, object]:
     store = ResearchStore(root)
     accepted, accepted_store_findings = _read_accepted_episodes_for_audit(store)
     coverage_path = root / "brain" / "current" / "coverage_manifest.json"
@@ -222,8 +227,9 @@ def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
         "last_full_rebuild": (brain_manifest or coverage_manifest).get("last_full_rebuild_at")
         or (brain_manifest or coverage_manifest).get("created_at"),
     }
-    _write_latest_brain_audit_summary(root, result, deep=deep)
-    _write_latest_record_coverage_audit_summary(root, result)
+    if write_report:
+        _write_latest_brain_audit_summary(root, result, deep=deep)
+        _write_latest_record_coverage_audit_summary(root, result)
     return result
 
 
