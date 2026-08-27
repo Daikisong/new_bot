@@ -13,6 +13,7 @@ import news_scalping_lab.audits.external_pack as external_pack
 from news_scalping_lab.audits.external_pack import (
     ARTIFACT_LEDGER_SCHEMA,
     AUDIT_CORE_SCHEMA,
+    AUDIT_SAMPLE_SCHEMA,
     CLAIM_LEDGER_SCHEMA,
     RECORD_LEDGER_SCHEMA,
     ExternalAuditError,
@@ -789,6 +790,10 @@ def test_sample_selection_is_seed_deterministic() -> None:
         _sample_rows(), seed="one", count=12, id_field="record_id", stratum_fields=("year", "kind")
     )
     assert first == second
+
+
+def test_sample_manifest_uses_v2_for_expanded_selection_contract() -> None:
+    assert AUDIT_SAMPLE_SCHEMA == "nslab.external_audit_sample_manifest.v2"
 
 
 def test_different_seed_changes_sample() -> None:

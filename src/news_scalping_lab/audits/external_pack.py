@@ -55,6 +55,7 @@ from news_scalping_lab.utils import (
 
 AUDIT_PROFILE_SCHEMA = "nslab.external_audit_target_profile.v1"
 AUDIT_CORE_SCHEMA = "nslab.external_audit_core_manifest.v1"
+AUDIT_SAMPLE_SCHEMA = "nslab.external_audit_sample_manifest.v2"
 ARTIFACT_LEDGER_SCHEMA = "nslab.external_audit_artifact_ledger.v1"
 RECORD_LEDGER_SCHEMA = "nslab.external_audit_record_ledger.v1"
 CLAIM_LEDGER_SCHEMA = "nslab.external_audit_claim_ledger.v1"
@@ -3817,7 +3818,7 @@ def export_audit_sample(
     )
     sample_tool_commit = _git_output(repo_root, "rev-parse", "HEAD")
     sample_manifest = {
-        "schema_version": "nslab.external_audit_sample_manifest.v1",
+        "schema_version": AUDIT_SAMPLE_SCHEMA,
         "sample_id": sample_id,
         "brain_version": brain_version,
         "core_manifest_sha256": declared_hash,
