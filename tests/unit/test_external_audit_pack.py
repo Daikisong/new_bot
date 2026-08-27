@@ -13,6 +13,7 @@ import news_scalping_lab.audits.external_pack as external_pack
 from news_scalping_lab.audits.external_pack import (
     ARTIFACT_LEDGER_SCHEMA,
     AUDIT_CORE_SCHEMA,
+    AUDIT_SAMPLE_SCHEMA,
     CLAIM_LEDGER_SCHEMA,
     RECORD_LEDGER_SCHEMA,
     ExternalAuditError,
@@ -791,6 +792,10 @@ def test_sample_selection_is_seed_deterministic() -> None:
     assert first == second
 
 
+def test_sample_manifest_uses_v2_for_expanded_selection_contract() -> None:
+    assert AUDIT_SAMPLE_SCHEMA == "nslab.external_audit_sample_manifest.v2"
+
+
 def test_different_seed_changes_sample() -> None:
     first = deterministic_stratified_sample(
         _sample_rows(), seed="one", count=12, id_field="record_id", stratum_fields=("year", "kind")
@@ -806,6 +811,68 @@ def test_sample_is_stratified() -> None:
         _sample_rows(), seed="one", count=12, id_field="record_id", stratum_fields=("year", "kind")
     )
     assert len({(row["year"], row["kind"]) for row in selected}) == 6
+
+
+def test_sample_episode_paths_include_nested_bundle_envelopes(tmp_path: Path) -> None:
+    episode_root = tmp_path / "research" / "episodes"
+    write_json(episode_root / "legacy.json", {"episode_id": "legacy"})
+    write_json(
+        episode_root / "nested" / "bundle_envelope.json",
+        {"episode_id": "nested"},
+    )
+    write_json(
+        episode_root / "nested" / "validation_report.json",
+        {"episode_id": "not-a-bundle-envelope"},
+    )
+
+    paths = external_pack._episode_sample_paths(tmp_path)
+
+    assert [path.relative_to(episode_root).as_posix() for path in paths] == [
+        "legacy.json",
+        "nested/bundle_envelope.json",
+    ]
+
+
+def test_sample_retrieval_paths_exclude_llm_build_traces(tmp_path: Path) -> None:
+    expected = tmp_path / "runs" / "daily" / "adaptive_retrieval_trace.json"
+    write_json(expected, {"schema_version": "nslab.adaptive_retrieval_trace.v4"})
+    write_json(
+        tmp_path / "runs" / "traces" / "llm.json",
+        {"schema_version": "nslab.llm_trace.v1"},
+    )
+
+    assert external_pack._retrieval_trace_sample_paths(tmp_path) == [expected]
+
+
+def test_sample_selection_metadata_exposes_all_roles_and_strata() -> None:
+    candidates = [
+        {
+            "record_id": "R-1",
+            "payload_exposed": True,
+            "rare_payload": False,
+            "status": "OPEN",
+        },
+        {
+            "record_id": "R-2",
+            "payload_exposed": False,
+            "rare_payload": True,
+            "status": "open",
+        },
+    ]
+    selected = external_pack._sample_selection_metadata(
+        candidates,
+        [candidates[0]],
+        [{"record_id": "R-2", "rare": True}],
+    )
+
+    assert [row["record_id"] for row in selected] == ["R-1", "R-2"]
+    assert selected[0]["selection_roles"] == ["PRIMARY_STRATIFIED"]
+    assert selected[1]["selection_roles"] == ["RARE_REASONING"]
+    assert external_pack._sample_strata_counts(selected)["payload_exposed"] == {
+        "false": 1,
+        "true": 1,
+    }
+    assert external_pack._sample_strata_counts(selected)["status"] == {"open": 2}
 
 
 def test_release_state_reports_staging_only(tmp_path: Path) -> None:

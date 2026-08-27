@@ -55,6 +55,7 @@ from news_scalping_lab.utils import (
 
 AUDIT_PROFILE_SCHEMA = "nslab.external_audit_target_profile.v1"
 AUDIT_CORE_SCHEMA = "nslab.external_audit_core_manifest.v1"
+AUDIT_SAMPLE_SCHEMA = "nslab.external_audit_sample_manifest.v2"
 ARTIFACT_LEDGER_SCHEMA = "nslab.external_audit_artifact_ledger.v1"
 RECORD_LEDGER_SCHEMA = "nslab.external_audit_record_ledger.v1"
 CLAIM_LEDGER_SCHEMA = "nslab.external_audit_claim_ledger.v1"
@@ -3627,6 +3628,82 @@ def _sample_jsonl(
     return [_redact_sample_value(raw_by_id[str(row["sample_id"])]) for row in chosen]
 
 
+_SAMPLE_RECORD_STRATUM_FIELDS = (
+    "year",
+    "record_type",
+    "training_eligible",
+    "routing_disposition",
+    "evidence_polarity",
+    "label_quality",
+    "confidence",
+    "evidence_phase",
+    "status",
+    "payload_exposed",
+    "claim_referenced",
+    "rare_payload",
+    "evidence_group_size",
+)
+
+
+def _episode_sample_paths(project_root: Path) -> list[Path]:
+    """Return legacy episodes and current nested bundle envelopes deterministically."""
+    episode_root = project_root / "research" / "episodes"
+    candidates = [
+        *episode_root.glob("*.json"),
+        *episode_root.glob("*/bundle_envelope.json"),
+    ]
+    return sorted(candidates, key=lambda path: path.relative_to(episode_root).as_posix())
+
+
+def _retrieval_trace_sample_paths(project_root: Path) -> list[Path]:
+    """Exclude LLM build traces from the adaptive retrieval trace sample."""
+    candidates: list[Path] = []
+    for path in project_root.rglob("adaptive_retrieval_trace.json"):
+        raw = read_json(path)
+        if isinstance(raw, dict) and str(raw.get("schema_version", "")).startswith(
+            "nslab.adaptive_retrieval_trace."
+        ):
+            candidates.append(path)
+    return sorted(candidates, key=lambda path: path.relative_to(project_root).as_posix())
+
+
+def _sample_selection_metadata(
+    candidates: list[dict[str, Any]],
+    primary: list[dict[str, Any]],
+    rare: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    by_id = {str(row["record_id"]): row for row in candidates}
+    primary_ids = {str(row["record_id"]) for row in primary}
+    rare_ids = {str(row["record_id"]) for row in rare}
+    selected: list[dict[str, Any]] = []
+    for record_id in sorted(primary_ids | rare_ids):
+        metadata = dict(by_id[record_id])
+        metadata["selection_roles"] = [
+            role
+            for role, included in (
+                ("PRIMARY_STRATIFIED", record_id in primary_ids),
+                ("RARE_REASONING", record_id in rare_ids),
+            )
+            if included
+        ]
+        selected.append(metadata)
+    return selected
+
+
+def _sample_strata_counts(rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    def label(value: Any) -> str:
+        if isinstance(value, bool):
+            return str(value).lower()
+        if value is None or value == "":
+            return "unknown"
+        return str(value).casefold()
+
+    return {
+        field: dict(sorted(Counter(label(row.get(field)) for row in rows).items()))
+        for field in _SAMPLE_RECORD_STRATUM_FIELDS
+    }
+
+
 def export_audit_sample(
     repo_root: Path,
     core_manifest_path: Path,
@@ -3674,21 +3751,7 @@ def export_audit_sample(
         seed=selection_key,
         count=768,
         id_field="record_id",
-        stratum_fields=(
-            "year",
-            "record_type",
-            "training_eligible",
-            "routing_disposition",
-            "evidence_polarity",
-            "label_quality",
-            "confidence",
-            "evidence_phase",
-            "status",
-            "payload_exposed",
-            "claim_referenced",
-            "rare_payload",
-            "evidence_group_size",
-        ),
+        stratum_fields=_SAMPLE_RECORD_STRATUM_FIELDS,
     )
     rare_rows = [{"record_id": record_id, "rare": True} for record_id in rare_ids]
     chosen_rare = deterministic_stratified_sample(
@@ -3699,10 +3762,12 @@ def export_audit_sample(
         stratum_fields=("rare",),
     )
     selected_ids = {str(row["record_id"]) for row in [*chosen, *chosen_rare]}
+    selection_metadata = _sample_selection_metadata(candidates, chosen, chosen_rare)
     records = _selected_raw_records(target, selected_ids)
     claims = _sample_claims(target, seed=selection_key + "claims", count=192)
+    episode_paths = _episode_sample_paths(target.project_root)
     episodes = _sample_json_files(
-        sorted((target.project_root / "research" / "episodes").glob("*.json")),
+        episode_paths,
         seed=selection_key + "episodes",
         count=32,
         id_key="episode_id",
@@ -3722,8 +3787,9 @@ def export_audit_sample(
         id_key="cell_id",
         stratum_key="reasoning_member_count",
     )
+    retrieval_trace_paths = _retrieval_trace_sample_paths(target.project_root)
     traces = _sample_json_files(
-        sorted((target.project_root / "runs" / "traces").glob("*.json")),
+        retrieval_trace_paths,
         seed=selection_key + "traces",
         count=96,
         id_key="trace_id",
@@ -3736,6 +3802,7 @@ def export_audit_sample(
     )
     sample_payloads = {
         "records.json": records,
+        "record_selection_metadata.json": selection_metadata,
         "compiled_claims.json": claims,
         "episodes.json": episodes,
         "memory_cells.json": cells,
@@ -3744,12 +3811,19 @@ def export_audit_sample(
     }
     for name, payload in sample_payloads.items():
         write_json(sample_root / "samples" / name, payload)
-    selected_metadata = {str(row["record_id"]): row for row in chosen}
+    primary_record_ids = sorted(str(row["record_id"]) for row in chosen)
+    rare_record_ids = sorted(str(row["record_id"]) for row in chosen_rare)
+    selection_role_counts = Counter(
+        role for row in selection_metadata for role in row["selection_roles"]
+    )
+    sample_tool_commit = _git_output(repo_root, "rev-parse", "HEAD")
     sample_manifest = {
-        "schema_version": "nslab.external_audit_sample_manifest.v1",
+        "schema_version": AUDIT_SAMPLE_SCHEMA,
         "sample_id": sample_id,
         "brain_version": brain_version,
         "core_manifest_sha256": declared_hash,
+        "core_audit_tool_commit": core.get("audit_tool_commit"),
+        "sample_tool_commit": sample_tool_commit,
         "external_seed_sha256": sha256_text(external_seed),
         "selection_key_sha256": selection_key,
         "selection_algorithm": "sha256_stratified_round_robin.v1",
@@ -3757,12 +3831,20 @@ def export_audit_sample(
         "primary_record_count": len(chosen),
         "rare_record_count": len(chosen_rare),
         "episode_count": len(episodes),
+        "episode_source_status": "PRESENT" if episode_paths else "NOT_IN_ARTIFACT",
         "claim_count": len(claims),
         "memory_cell_count": len(cells),
         "retrieval_trace_count": len(traces),
+        "retrieval_trace_status": (
+            "PRESENT" if retrieval_trace_paths else "NOT_IN_ARTIFACT"
+        ),
         "company_memory_count": len(company_memories),
-        "selected_record_ids": sorted(selected_metadata),
-        "selected_record_metadata_root": sha256_text(canonical_json(selected_metadata)),
+        "selected_record_ids": sorted(selected_ids),
+        "selected_primary_record_ids": primary_record_ids,
+        "selected_rare_record_ids": rare_record_ids,
+        "selected_record_metadata_root": sha256_text(canonical_json(selection_metadata)),
+        "record_strata_counts": _sample_strata_counts(selection_metadata),
+        "selection_role_counts": dict(sorted(selection_role_counts.items())),
         "redaction_policy": "credentials_and_absolute_user_paths_only.v1",
     }
     write_json(sample_root / "sample_manifest.json", sample_manifest)
@@ -3783,6 +3865,7 @@ def export_audit_sample(
         "size_bytes": pack["size_bytes"],
         "sha256": pack["sha256"],
         "selection_key_sha256": selection_key,
+        "sample_tool_commit": sample_tool_commit,
         "counts": {
             "records": len(records),
             "episodes": len(episodes),
@@ -3791,6 +3874,10 @@ def export_audit_sample(
             "retrieval_traces": len(traces),
             "company_memories": len(company_memories),
         },
+        "episode_source_status": "PRESENT" if episode_paths else "NOT_IN_ARTIFACT",
+        "retrieval_trace_status": (
+            "PRESENT" if retrieval_trace_paths else "NOT_IN_ARTIFACT"
+        ),
         "read_only_parity": True,
         "secret_finding_count": 0,
     }

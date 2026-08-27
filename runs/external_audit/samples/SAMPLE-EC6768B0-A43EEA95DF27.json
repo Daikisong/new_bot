@@ -1,0 +1,69 @@
+{
+  "audit_id": "AUDIT-20260827T125545Z-1399DA0329",
+  "brain_version": "brain-08fe3aaaa3",
+  "claim_count": 192,
+  "company_memory_count": 96,
+  "core_audit_tool_commit": "2ec7b1b9e1459a1431b34ac0690103c893198af9",
+  "core_manifest_sha256": "0750a35defc2890d742b3e099b5afc380d25c0ecaac879025fbc9e2c7146fd4f",
+  "created_at": "2026-08-27T19:10:45.1731104Z",
+  "episode_count": 32,
+  "episode_source_status": "PRESENT",
+  "episodes_sha256": "c7d75a062fefdcbe52a8e4a739542f386f4027bf5e836b7b1c7d9d75af965c6e",
+  "external_seed_sha256": "ec6768b04f4942ac9da13196ab431bb03d18f2bac8e6d9d7d1126ab1579d8b60",
+  "memory_cell_count": 96,
+  "pack_files_sha256": "c8fccfa7100ecf106c5dcc5edc7bb18e1eb7ac0189be0f194d91ba21eef1a88d",
+  "primary_record_count": 768,
+  "rare_record_count": 128,
+  "read_only_parity": true,
+  "record_count": 896,
+  "records_sha256": "649a8967f8601b28d31d11094b4b7c346d31fda2a48a92aa553a78997ea5ce1e",
+  "retrieval_trace_count": 0,
+  "retrieval_trace_status": "NOT_IN_ARTIFACT",
+  "sample_id": "SAMPLE-EC6768B0-A43EEA95DF27",
+  "sample_manifest_sha256": "5c5777b0000fb2c94c55ef3a6768b820fbc33d250f700e5667d98d9092a6b325",
+  "sample_pack_file_name": "nslab_brain-08fe3aaaa3_audit_sample_ec6768b0.zip",
+  "sample_pack_sha256": "b331fb4c7ddbcadece875141f559f83941a0a49fe2774928a1db5b2c49d30afc",
+  "sample_pack_size_bytes": 657928,
+  "sample_tool_commit": "72b48d4efd7d434fadf8b5bef9c863436b5145d0",
+  "schema_version": "nslab.external_audit_sample_commitment.v1",
+  "secret_finding_count": 0,
+  "selected_record_metadata_root": "209c0b284fe4c20493e0bb55271d3c92c828e4fde52ddd4dfc3b3087b7a05968",
+  "selection_key_sha256": "a43eea95df27ff35aa898860fd8d6ae48fdff0b6355a7a51757f6ae736bd10d6",
+  "selection_metadata_sha256": "38ad393fce733891f93d7a71859e10dbb06abfb779978bb4c6ea6178c61869ba",
+  "strata_summary": {
+    "claim_referenced": {
+      "false": 712,
+      "true": 184
+    },
+    "evidence_group_size": {
+      "large": 69,
+      "small": 827
+    },
+    "evidence_polarity": {
+      "context": 119,
+      "near_miss": 79,
+      "negative": 320,
+      "positive": 168,
+      "unexplained": 36,
+      "unknown": 174
+    },
+    "payload_exposed": {
+      "false": 796,
+      "true": 100
+    },
+    "rare_payload": {
+      "false": 723,
+      "true": 173
+    },
+    "routing_disposition": {
+      "audit": 656,
+      "context": 30,
+      "quarantined": 26,
+      "reasoning": 184
+    },
+    "training_eligible": {
+      "false": 323,
+      "true": 573
+    }
+  }
+}
