@@ -89,7 +89,7 @@ class Settings(BaseModel):
     stock_web_cache_enabled: bool = False
     codex_command: str = "codex"
     codex_model: str | None = None
-    codex_reasoning_effort: str = "high"
+    codex_reasoning_effort: str = "xhigh"
     local_embedding_model: str = (
         "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     )
@@ -182,7 +182,7 @@ DEFAULT_CONFIG_FILES: dict[str, dict[str, Any]] = {
         "stock_web_cache_enabled": False,
         "codex_command": "codex",
         "codex_model": None,
-        "codex_reasoning_effort": "high",
+        "codex_reasoning_effort": "xhigh",
         "local_embedding_model": (
             "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
         ),
@@ -245,8 +245,8 @@ DEFAULT_CONFIG_FILES: dict[str, dict[str, Any]] = {
         },
         "codex-oauth": {
             "provider": "codex-oauth",
-            "model": "gpt-5.4",
-            "reasoning_effort": "high",
+            "model": "gpt-5.6-sol",
+            "reasoning_effort": "xhigh",
             "max_output_tokens": 8192,
             "max_retries": 1,
         },

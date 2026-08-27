@@ -1413,7 +1413,7 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
         "BRAIN-SHARD-MISSING",
     ]
     assert audit["llm_compile_manifest_schema_version"] == "bad.llm_full_brain_compile_manifest.v1"
-    assert audit["llm_compile_expected_manifest_schema_version"] == "nslab.llm_full_brain_compile_manifest.v1"
+    assert audit["llm_compile_expected_manifest_schema_version"] == "nslab.llm_full_brain_compile_manifest.v2"
     assert audit["llm_compile_compiler_version"] is None
     assert audit["llm_compile_expected_compiler_version"] == LLM_FULL_COMPILER_VERSION
     assert audit["llm_compile_category_count_mismatches"] == ["world_model"]
@@ -1433,7 +1433,7 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
     assert (
         "llm compile manifest schema_version is "
         "bad.llm_full_brain_compile_manifest.v1, not "
-        "nslab.llm_full_brain_compile_manifest.v1" in audit["llm_compile_findings"]
+        "nslab.llm_full_brain_compile_manifest.v2" in audit["llm_compile_findings"]
     )
     assert (
         "llm compile manifest compiler_version is missing, not "
@@ -1448,7 +1448,7 @@ def test_brain_audit_validates_compiled_claim_and_llm_manifest_record_refs(
     assert latest_audit["deep"] is False
     assert latest_audit["llm_compile_manifest_present"] is True
     assert latest_audit["llm_compile_manifest_schema_version"] == "bad.llm_full_brain_compile_manifest.v1"
-    assert latest_audit["llm_compile_expected_manifest_schema_version"] == "nslab.llm_full_brain_compile_manifest.v1"
+    assert latest_audit["llm_compile_expected_manifest_schema_version"] == "nslab.llm_full_brain_compile_manifest.v2"
     assert "categories: expected 9, got 2" in latest_audit["llm_compile_category_schema_mismatches"]
     assert latest_audit["compiled_claim_file_present"] is True
     assert any(
@@ -1530,7 +1530,7 @@ def test_brain_diversity_audit_rejects_empty_category_complete_claim(
     write_json(
         tmp_path / "brain" / "current" / "llm_compile_manifest.json",
         {
-            "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
+            "schema_version": "nslab.llm_full_brain_compile_manifest.v2",
             "source_record_count": 0,
             "compiled_claim_count": 0,
             "record_shards": [],
@@ -1578,7 +1578,7 @@ def test_brain_audit_rejects_llm_full_without_compile_manifest(tmp_path: Path) -
     assert audit["brain_build_mode"] == "llm-full"
     assert audit["llm_compile_manifest_present"] is False
     assert audit["llm_compile_manifest_schema_version"] is None
-    assert audit["llm_compile_expected_manifest_schema_version"] == "nslab.llm_full_brain_compile_manifest.v1"
+    assert audit["llm_compile_expected_manifest_schema_version"] == "nslab.llm_full_brain_compile_manifest.v2"
     assert "llm-full compile manifest is missing" in audit["llm_compile_findings"]
     latest_audit = read_json(tmp_path / "diagnostics" / "brain_compile_report.json")["latest_brain_audit"]
     assert any(

@@ -117,8 +117,8 @@ CATEGORY_RECORD_TYPE_ROUTES = {
 EMPTY_BRAIN_CREATED_AT = datetime(1970, 1, 1, tzinfo=KST)
 SHARD_BRAIN_EPISODE_COUNT = 10
 CATALOG_COMPILER_VERSION = "nslab.brain.catalog.compiler.v5"
-LLM_FULL_COMPILER_VERSION = "nslab.brain.llm_full.compiler.v6"
-LLM_FULL_MAP_REDUCE_VERSION = "nslab.brain.llm_full.map_reduce.v4"
+LLM_FULL_COMPILER_VERSION = "nslab.brain.llm_full.compiler.v7"
+LLM_FULL_MAP_REDUCE_VERSION = "nslab.brain.llm_full.map_reduce.v5"
 LLM_FULL_RECORD_SHARD_SIZE = 20_000
 LLM_FULL_DIRECT_RECORD_LIMIT = 200
 LLM_FULL_SHARD_REPRESENTATIVE_LIMIT = 64
@@ -284,6 +284,7 @@ def _previous_agent_identity(
     *,
     llm_provider: str,
     llm_model: str,
+    reasoning_effort: str | None,
 ) -> dict[str, Any]:
     path = root / "brain" / "current" / "brain_manifest.json"
     try:
@@ -294,6 +295,7 @@ def _previous_agent_identity(
         manifest.build_mode != "llm-full"
         or manifest.llm_provider != llm_provider
         or manifest.llm_model != llm_model
+        or manifest.reasoning_effort != reasoning_effort
         or manifest.live_agent_call_count < 1
         or manifest.oauth_health_check_status != "PASS"
     ):
@@ -534,6 +536,7 @@ class BrainCompiler:
             source_hashes=source_hashes,
             model=settings.llm.model,
             provider=settings.llm_provider,
+            reasoning_effort=settings.llm.reasoning_effort,
             routing_metadata_sha256=memory_snapshot.routing_metadata_sha256,
             production_memory_snapshot_id=memory_snapshot.snapshot_id,
         )
@@ -622,6 +625,7 @@ class BrainCompiler:
                 brain_version=version,
                 provider_name=settings.llm_provider,
                 model=settings.llm.model,
+                reasoning_effort=settings.llm.reasoning_effort,
                 compiled_claims=compiled_claims,
             )
         )
@@ -632,6 +636,7 @@ class BrainCompiler:
                 self.root,
                 llm_provider=settings.llm_provider,
                 llm_model=settings.llm.model,
+                reasoning_effort=settings.llm.reasoning_effort,
             )
             if previous_identity:
                 agent_identity = previous_identity
@@ -1380,6 +1385,7 @@ def expected_llm_full_brain_version(
     source_hashes: dict[str, str],
     model: str,
     provider: str,
+    reasoning_effort: str | None,
     routing_metadata_sha256: str,
     production_memory_snapshot_id: str,
 ) -> str:
@@ -1387,7 +1393,7 @@ def expected_llm_full_brain_version(
         "brain",
         canonical_json(
             {
-                "schema": "nslab.brain.llm_full.v2",
+                "schema": "nslab.brain.llm_full.v3",
                 "compiler_version": LLM_FULL_COMPILER_VERSION,
                 "category_brain_index_version": CATEGORY_BRAIN_INDEX_VERSION,
                 "polarity_classifier_version": POLARITY_CLASSIFIER_VERSION,
@@ -1397,6 +1403,7 @@ def expected_llm_full_brain_version(
                 "source_hashes": source_hashes,
                 "model": model,
                 "provider": provider,
+                "reasoning_effort": reasoning_effort,
             }
         ),
         length=10,
@@ -2226,6 +2233,7 @@ async def _compile_llm_category_outputs(
     brain_version: str,
     provider_name: str,
     model: str,
+    reasoning_effort: str | None,
     compiled_claims: list[CompiledBrainClaim],
 ) -> LLMFullCompileResult:
     cache_dir = root / "brain" / "llm_cache"
@@ -2239,6 +2247,7 @@ async def _compile_llm_category_outputs(
             brain_version=brain_version,
             provider_name=provider_name,
             model=model,
+            reasoning_effort=reasoning_effort,
         )
         for shard_index, shard in enumerate(record_shards, start=1)
     ]
@@ -2261,6 +2270,7 @@ async def _compile_llm_category_outputs(
             record_hashes={record.record_id: record_hashes[record.record_id] for record in shard},
             provider_name=provider_name,
             model=model,
+            reasoning_effort=reasoning_effort,
         )
         shard_summaries.append(
             {
@@ -2294,6 +2304,7 @@ async def _compile_llm_category_outputs(
             brain_version=brain_version,
             provider_name=provider_name,
             model=model,
+            reasoning_effort=reasoning_effort,
         )
         (
             synthesis,
@@ -2309,6 +2320,7 @@ async def _compile_llm_category_outputs(
             record_hashes={record.record_id: record_hashes[record.record_id] for record in category_records},
             provider_name=provider_name,
             model=model,
+            reasoning_effort=reasoning_effort,
         )
         review_prompt = _brain_category_review_prompt(
             category=category,
@@ -2318,6 +2330,7 @@ async def _compile_llm_category_outputs(
             brain_version=brain_version,
             provider_name=provider_name,
             model=model,
+            reasoning_effort=reasoning_effort,
         )
         (
             review,
@@ -2333,6 +2346,7 @@ async def _compile_llm_category_outputs(
             record_hashes={record.record_id: record_hashes[record.record_id] for record in category_records},
             provider_name=provider_name,
             model=model,
+            reasoning_effort=reasoning_effort,
         )
         outputs[file_name] = (
             f"# {file_name.removesuffix('.md').replace('_', ' ').title()}\n\n"
@@ -2340,6 +2354,7 @@ async def _compile_llm_category_outputs(
             f"Build mode: `llm-full`\n"
             f"Provider: `{provider_name}`\n"
             f"Model: `{model}`\n"
+            f"Reasoning effort: `{reasoning_effort or 'default'}`\n"
             f"Category: `{category}`\n"
             f"Source record count: {len(category_records)}\n\n"
             "## Category Synthesis\n\n"
@@ -2384,12 +2399,13 @@ async def _compile_llm_category_outputs(
     llm_generation_count = len(shard_summaries) + len(categories) * 2
     llm_live_call_count = llm_generation_count - llm_cache_hit_count
     manifest = {
-        "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
+        "schema_version": "nslab.llm_full_brain_compile_manifest.v2",
         "compiler_version": LLM_FULL_COMPILER_VERSION,
         "map_reduce_version": LLM_FULL_MAP_REDUCE_VERSION,
         "brain_version": brain_version,
         "provider": provider_name,
         "model": model,
+        "reasoning_effort": reasoning_effort,
         "source_record_count": len(sorted_records),
         "compiled_claim_count": len(compiled_claims),
         "llm_generation_count": llm_generation_count,
@@ -2410,6 +2426,7 @@ async def _compile_llm_category_outputs(
         "brain_version": brain_version,
         "provider": provider_name,
         "model": model,
+        "reasoning_effort": reasoning_effort,
         "llm_generation_count": llm_generation_count,
         "llm_live_call_count": llm_live_call_count,
         "llm_cache_hit_count": llm_cache_hit_count,
@@ -2486,6 +2503,7 @@ async def _cached_generate_text(
     record_hashes: dict[str, str],
     provider_name: str,
     model: str,
+    reasoning_effort: str | None,
 ) -> tuple[str, str, bool, str]:
     _validate_llm_full_prompt(prompt, purpose=purpose)
     prompt_sha = sha256_text(prompt)
@@ -2496,6 +2514,7 @@ async def _cached_generate_text(
         "prompt_sha256": prompt_sha,
         "provider": provider_name,
         "model": model,
+        "reasoning_effort": reasoning_effort,
         "record_ids": record_ids,
         "record_hashes": record_hashes,
     }
@@ -2535,6 +2554,7 @@ def _brain_record_shard_prompt(
     brain_version: str,
     provider_name: str,
     model: str,
+    reasoning_effort: str | None = None,
 ) -> str:
     reasoning_records, non_reasoning_records = _split_routing_records(records)
     direct_records = len(records) <= LLM_FULL_DIRECT_RECORD_LIMIT
@@ -2571,6 +2591,7 @@ def _brain_record_shard_prompt(
             "shard_index": shard_index,
             "provider": provider_name,
             "model": model,
+            "reasoning_effort": reasoning_effort,
             "source_record_count": len(records),
             "source_record_ids_sha256": sha256_text(
                 canonical_json(sorted(record.record_id for record in records))
@@ -2603,6 +2624,7 @@ def _brain_category_prompt(
     brain_version: str,
     provider_name: str,
     model: str,
+    reasoning_effort: str | None = None,
 ) -> str:
     reasoning_records, non_reasoning_records = _split_routing_records(records)
     return json.dumps(
@@ -2626,6 +2648,7 @@ def _brain_category_prompt(
             "category_guidance": _category_guidance(category),
             "provider": provider_name,
             "model": model,
+            "reasoning_effort": reasoning_effort,
             "record_shard_summaries": _compact_shard_summaries(shard_summaries),
             "reasoning_records": [_compact_record_for_prompt(record) for record in reasoning_records[:200]],
             "audit_context_records": [_compact_record_for_prompt(record) for record in non_reasoning_records[:200]],
@@ -2644,6 +2667,7 @@ def _brain_category_review_prompt(
     brain_version: str,
     provider_name: str,
     model: str,
+    reasoning_effort: str | None = None,
 ) -> str:
     return json.dumps(
         {
@@ -2661,6 +2685,7 @@ def _brain_category_review_prompt(
             "category_guidance": _category_guidance(category),
             "provider": provider_name,
             "model": model,
+            "reasoning_effort": reasoning_effort,
             "record_shard_summaries": _compact_shard_summaries(shard_summaries),
             "reasoning_records": [
                 _compact_record_for_prompt(record) for record in _split_routing_records(records)[0][:200]

@@ -8081,12 +8081,12 @@ def test_production_readiness_rejects_llm_full_invalid_manifest_schema_version(
     )
     assert (
         production["llm_full_brain"]["expected_compile_manifest_schema_version"]
-        == "nslab.llm_full_brain_compile_manifest.v1"
+        == "nslab.llm_full_brain_compile_manifest.v2"
     )
     assert (
         "brain: llm-full compile manifest schema_version is "
         "bad.llm_full_brain_compile_manifest.v1, not "
-        "nslab.llm_full_brain_compile_manifest.v1"
+        "nslab.llm_full_brain_compile_manifest.v2"
         in production["findings"]
     )
 
@@ -11692,10 +11692,11 @@ def _llm_compile_manifest_fixture(**overrides: object) -> dict[str, object]:
             }
         )
     manifest: dict[str, object] = {
-        "schema_version": "nslab.llm_full_brain_compile_manifest.v1",
+        "schema_version": "nslab.llm_full_brain_compile_manifest.v2",
         "brain_version": "brain-production",
         "provider": "openai",
         "model": "gpt-production",
+        "reasoning_effort": "low",
         "source_record_count": 1,
         "compiled_claim_count": 1,
         "record_shard_count": 1,

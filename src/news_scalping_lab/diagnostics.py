@@ -106,7 +106,7 @@ PRODUCTION_WEB_PROVIDER_ALIASES = {"brave", "brave-search", "brave-news"}
 PRODUCTION_PRICE_PROVIDER_ALIASES = {"stock-web", "stock_web", "stockweb"}
 REQUIRED_TRAINING_EXPORT_KINDS = ("evals", "preference", "sft")
 BRAIN_COMPILE_DIAGNOSTICS_SCHEMA_VERSION = "nslab.brain_compile_diagnostics.v1"
-LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION = "nslab.llm_full_brain_compile_manifest.v1"
+LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION = "nslab.llm_full_brain_compile_manifest.v2"
 LLM_FULL_COMPILE_RUN_SCHEMA_VERSION = "nslab.llm_full_brain_compile_run.v1"
 REAL_BUNDLE_ENV_KEY = "NSLAB_REAL_BUNDLE_PATH"
 REAL_BUNDLE_SEARCH_DIRS = (
@@ -6380,6 +6380,9 @@ def _llm_full_brain_status(
         "expected_compile_run_schema_version": LLM_FULL_COMPILE_RUN_SCHEMA_VERSION,
         "provider": compile_manifest.get("provider") if isinstance(compile_manifest, dict) else None,
         "model": compile_manifest.get("model") if isinstance(compile_manifest, dict) else None,
+        "reasoning_effort": compile_manifest.get("reasoning_effort")
+        if isinstance(compile_manifest, dict)
+        else None,
         "compile_manifest_schema_version": compile_manifest.get("schema_version")
         if isinstance(compile_manifest, dict)
         else None,
@@ -6387,6 +6390,7 @@ def _llm_full_brain_status(
         "compiler_version": compile_manifest.get("compiler_version") if isinstance(compile_manifest, dict) else None,
         "expected_compiler_version": LLM_FULL_COMPILER_VERSION,
         "configured_model": settings.llm.model,
+        "configured_reasoning_effort": settings.llm.reasoning_effort,
         "brain_version": compile_manifest.get("brain_version") if isinstance(compile_manifest, dict) else None,
         "source_record_count": _int_from_mapping(compile_manifest, "source_record_count"),
         "compiled_claim_count": _int_from_mapping(compile_manifest, "compiled_claim_count"),
@@ -6456,6 +6460,13 @@ def _llm_full_brain_status(
             findings.append("llm-full compile model is missing or mock")
         elif settings.llm.model and model.strip() != settings.llm.model.strip():
             findings.append("llm-full compile model does not match configured model")
+        reasoning_effort = status["reasoning_effort"]
+        if not isinstance(reasoning_effort, str) or not reasoning_effort:
+            findings.append("llm-full compile reasoning_effort is missing")
+        elif reasoning_effort != settings.llm.reasoning_effort:
+            findings.append(
+                "llm-full compile reasoning_effort does not match configured reasoning_effort"
+            )
         compiler_version = status["compiler_version"]
         if compiler_version != LLM_FULL_COMPILER_VERSION:
             observed_version = compiler_version if isinstance(compiler_version, str) and compiler_version else "missing"

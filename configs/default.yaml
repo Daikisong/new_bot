@@ -17,7 +17,7 @@ stock_web_cache_path: data/cache/stock-web
 stock_web_cache_enabled: false
 codex_command: codex
 codex_model: null
-codex_reasoning_effort: high
+codex_reasoning_effort: xhigh
 local_embedding_model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 local_embedding_revision: e8f8c211226b894fcb81acc59f3b34ba3efd5f42
 local_embedding_cache_path: data/cache/local-embedding

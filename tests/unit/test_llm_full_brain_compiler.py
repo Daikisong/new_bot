@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import date, datetime
 from pathlib import Path
@@ -183,11 +184,14 @@ def test_large_brain_shard_uses_full_coverage_groups_and_bounded_representatives
             records=records,
             brain_version="brain-grouped",
             provider_name="codex-oauth",
-            model="gpt-5.4",
+            model="gpt-5.6-sol",
+            reasoning_effort="xhigh",
         )
     )
 
     assert prompt["map_reduce_version"] == compiler_module.LLM_FULL_MAP_REDUCE_VERSION
+    assert prompt["model"] == "gpt-5.6-sol"
+    assert prompt["reasoning_effort"] == "xhigh"
     assert prompt["source_record_count"] == len(records)
     assert prompt["source_record_ids_sha256"] == sha256_text(
         canonical_json(sorted(record.record_id for record in records))
@@ -245,6 +249,36 @@ def test_compact_shard_summaries_preserve_hashes_not_full_id_lists() -> None:
     assert compact["summary_sha256"] == sha256_text(summary)
     assert compact["summary_truncated"] is True
     assert compact["summary"].endswith("...[truncated]")
+
+
+def test_llm_brain_cache_identity_includes_reasoning_effort(tmp_path: Path) -> None:
+    provider = RecordingBrainLLM()
+    common = {
+        "provider": provider,
+        "cache_dir": tmp_path,
+        "purpose": "brain_compile:reasoning-cache-test",
+        "prompt": "same prompt",
+        "record_ids": [],
+        "record_hashes": {},
+        "provider_name": "codex-oauth",
+        "model": "gpt-5.6-sol",
+    }
+
+    high = asyncio.run(
+        compiler_module._cached_generate_text(
+            **common,
+            reasoning_effort="high",
+        )
+    )
+    xhigh = asyncio.run(
+        compiler_module._cached_generate_text(
+            **common,
+            reasoning_effort="xhigh",
+        )
+    )
+
+    assert high[1] != xhigh[1]
+    assert len(provider.calls) == 2
 
 
 def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
@@ -353,6 +387,11 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     compiled_claims_by_record = {claim["supporting_record_ids"][0]: claim for claim in compiled_claims}
     assert compile_manifest["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION
     assert compile_manifest["map_reduce_version"] == compiler_module.LLM_FULL_MAP_REDUCE_VERSION
+    assert compile_manifest["schema_version"] == (
+        "nslab.llm_full_brain_compile_manifest.v2"
+    )
+    assert compile_manifest["reasoning_effort"] == "low"
+    assert compile_report["llm_compile_run"]["reasoning_effort"] == "low"
     assert brain_manifest["catalog_only"] is False
     assert brain_manifest["catalog_mode_reason"] is None
     assert brain_manifest["deprecated_mode_alias"] is False
