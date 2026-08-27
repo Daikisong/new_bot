@@ -3694,8 +3694,8 @@ def _sample_strata_counts(rows: list[dict[str, Any]]) -> dict[str, dict[str, int
         if isinstance(value, bool):
             return str(value).lower()
         if value is None or value == "":
-            return "UNKNOWN"
-        return str(value)
+            return "unknown"
+        return str(value).casefold()
 
     return {
         field: dict(sorted(Counter(label(row.get(field)) for row in rows).items()))

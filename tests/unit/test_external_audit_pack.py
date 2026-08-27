@@ -841,8 +841,18 @@ def test_sample_retrieval_paths_exclude_llm_build_traces(tmp_path: Path) -> None
 
 def test_sample_selection_metadata_exposes_all_roles_and_strata() -> None:
     candidates = [
-        {"record_id": "R-1", "payload_exposed": True, "rare_payload": False},
-        {"record_id": "R-2", "payload_exposed": False, "rare_payload": True},
+        {
+            "record_id": "R-1",
+            "payload_exposed": True,
+            "rare_payload": False,
+            "status": "OPEN",
+        },
+        {
+            "record_id": "R-2",
+            "payload_exposed": False,
+            "rare_payload": True,
+            "status": "open",
+        },
     ]
     selected = external_pack._sample_selection_metadata(
         candidates,
@@ -857,6 +867,7 @@ def test_sample_selection_metadata_exposes_all_roles_and_strata() -> None:
         "false": 1,
         "true": 1,
     }
+    assert external_pack._sample_strata_counts(selected)["status"] == {"open": 2}
 
 
 def test_release_state_reports_staging_only(tmp_path: Path) -> None:
