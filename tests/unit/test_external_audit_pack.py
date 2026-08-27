@@ -808,6 +808,57 @@ def test_sample_is_stratified() -> None:
     assert len({(row["year"], row["kind"]) for row in selected}) == 6
 
 
+def test_sample_episode_paths_include_nested_bundle_envelopes(tmp_path: Path) -> None:
+    episode_root = tmp_path / "research" / "episodes"
+    write_json(episode_root / "legacy.json", {"episode_id": "legacy"})
+    write_json(
+        episode_root / "nested" / "bundle_envelope.json",
+        {"episode_id": "nested"},
+    )
+    write_json(
+        episode_root / "nested" / "validation_report.json",
+        {"episode_id": "not-a-bundle-envelope"},
+    )
+
+    paths = external_pack._episode_sample_paths(tmp_path)
+
+    assert [path.relative_to(episode_root).as_posix() for path in paths] == [
+        "legacy.json",
+        "nested/bundle_envelope.json",
+    ]
+
+
+def test_sample_retrieval_paths_exclude_llm_build_traces(tmp_path: Path) -> None:
+    expected = tmp_path / "runs" / "daily" / "adaptive_retrieval_trace.json"
+    write_json(expected, {"schema_version": "nslab.adaptive_retrieval_trace.v4"})
+    write_json(
+        tmp_path / "runs" / "traces" / "llm.json",
+        {"schema_version": "nslab.llm_trace.v1"},
+    )
+
+    assert external_pack._retrieval_trace_sample_paths(tmp_path) == [expected]
+
+
+def test_sample_selection_metadata_exposes_all_roles_and_strata() -> None:
+    candidates = [
+        {"record_id": "R-1", "payload_exposed": True, "rare_payload": False},
+        {"record_id": "R-2", "payload_exposed": False, "rare_payload": True},
+    ]
+    selected = external_pack._sample_selection_metadata(
+        candidates,
+        [candidates[0]],
+        [{"record_id": "R-2", "rare": True}],
+    )
+
+    assert [row["record_id"] for row in selected] == ["R-1", "R-2"]
+    assert selected[0]["selection_roles"] == ["PRIMARY_STRATIFIED"]
+    assert selected[1]["selection_roles"] == ["RARE_REASONING"]
+    assert external_pack._sample_strata_counts(selected)["payload_exposed"] == {
+        "false": 1,
+        "true": 1,
+    }
+
+
 def test_release_state_reports_staging_only(tmp_path: Path) -> None:
     result = audit_release_state(tmp_path, _profile())
     assert result["production_activation"] == "NOT_PRODUCTION_ACTIVATED"
