@@ -45,7 +45,7 @@ from news_scalping_lab.utils import (
     sha256_text,
 )
 
-LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION = "nslab.llm_full_brain_compile_manifest.v1"
+LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION = "nslab.llm_full_brain_compile_manifest.v2"
 
 
 def audit_brain(root: Path, *, deep: bool = False) -> dict[str, object]:
@@ -823,6 +823,7 @@ def _audit_llm_compile_manifest(
     shard_count_mismatches: list[str] = []
     compiled_claim_count_mismatches: list[str] = []
     shard_record_ids: set[str] = set()
+    expected_reasoning_effort = _string_value(current_manifest.get("reasoning_effort"))
     all_records = records if records is not None else BrainRecordStore(root).list_records()
     cutoff_raw = current_manifest.get("brain_record_cutoff_at")
     try:
@@ -849,6 +850,8 @@ def _audit_llm_compile_manifest(
             "llm_compile_expected_manifest_schema_version": (LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION),
             "llm_compile_compiler_version": None,
             "llm_compile_expected_compiler_version": LLM_FULL_COMPILER_VERSION,
+            "llm_compile_reasoning_effort": None,
+            "llm_compile_expected_reasoning_effort": expected_reasoning_effort,
             "llm_compile_findings": findings,
             "llm_compile_unknown_record_ids": unknown_record_ids,
             "llm_compile_unknown_compiled_claim_ids": unknown_compiled_claim_ids,
@@ -867,6 +870,11 @@ def _audit_llm_compile_manifest(
     if compiler_version != LLM_FULL_COMPILER_VERSION:
         observed_version = compiler_version or "missing"
         findings.append(f"llm compile manifest compiler_version is {observed_version}, not {LLM_FULL_COMPILER_VERSION}")
+    reasoning_effort = _string_value(manifest.get("reasoning_effort"))
+    if reasoning_effort != expected_reasoning_effort:
+        findings.append(
+            "llm compile manifest reasoning_effort does not match current brain manifest"
+        )
     compiled_claim_file_present, compiled_claim_ids = _compiled_claim_ids(root)
     source_count = _int_value(manifest.get("source_record_count"))
     if source_count is None or source_count != len(record_ids):
@@ -931,6 +939,8 @@ def _audit_llm_compile_manifest(
         "llm_compile_expected_manifest_schema_version": (LLM_FULL_COMPILE_MANIFEST_SCHEMA_VERSION),
         "llm_compile_compiler_version": compiler_version,
         "llm_compile_expected_compiler_version": LLM_FULL_COMPILER_VERSION,
+        "llm_compile_reasoning_effort": reasoning_effort,
+        "llm_compile_expected_reasoning_effort": expected_reasoning_effort,
         "llm_compile_findings": findings,
         "llm_compile_unknown_record_ids": unknown_record_ids,
         "llm_compile_unknown_compiled_claim_ids": unknown_compiled_claim_ids,
@@ -1191,6 +1201,9 @@ def _audit_deterministic_brain_state(
                 source_hashes=expected_source_hashes,
                 model=model,
                 provider=provider,
+                reasoning_effort=_string_value(
+                    current_manifest.get("reasoning_effort")
+                ),
                 routing_metadata_sha256=brain_record_routing_root_sha256(records),
                 production_memory_snapshot_id=(
                     _string_value(

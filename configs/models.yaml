@@ -12,7 +12,7 @@ openai:
   max_retries: 2
 codex-oauth:
   provider: codex-oauth
-  model: gpt-5.4
-  reasoning_effort: high
+  model: gpt-5.6-sol
+  reasoning_effort: xhigh
   max_output_tokens: 8192
   max_retries: 1
