@@ -543,10 +543,15 @@ def _trace_stats(root: Path, manifest: Any) -> dict[str, Any]:
     context = DailyMemoryContext.model_validate(read_json(root / artifact))
     base["memory_snapshot_id"] = context.memory_snapshot_id
     base["adaptive_trace_count"] = len(context.adaptive_retrieval_traces)
-    base["runtime_trace_count"] = len(context.runtime_retrieval_traces)
+    trace_paths = _runtime_trace_paths(
+        root,
+        manifest=manifest,
+        context=context,
+    )
+    base["runtime_trace_count"] = len(trace_paths)
     lanes: Counter[str] = Counter()
-    for reference in context.runtime_retrieval_traces:
-        trace = RuntimeRetrievalTrace.model_validate(read_json(root / reference.artifact_path))
+    for trace_path in trace_paths:
+        trace = RuntimeRetrievalTrace.model_validate(read_json(trace_path))
         base["offline_unexposed_recovered_count"] += trace.offline_unexposed_recovered_count
         base["offline_unexposed_llm_exposed_count"] += trace.offline_unexposed_llm_exposed_count
         base["offline_unexposed_final_cited_count"] += trace.offline_unexposed_final_cited_count
@@ -567,8 +572,83 @@ def _trace_stats(root: Path, manifest: Any) -> dict[str, Any]:
     base["lane_selected_counts"] = dict(sorted(lanes.items()))
     summary = manifest.daily_memory_context_summary
     if isinstance(summary, dict):
-        base["final_cited_record_count"] = int(summary.get("runtime_final_cited_record_count") or 0)
+        expected_final_cited = summary.get("runtime_final_cited_record_count")
+        if (
+            isinstance(expected_final_cited, int)
+            and expected_final_cited != base["final_cited_record_count"]
+        ):
+            raise ValueError("runtime final trace citation count differs from context summary")
     return base
+
+
+def _runtime_trace_paths(
+    root: Path,
+    *,
+    manifest: Any,
+    context: DailyMemoryContext,
+) -> list[Path]:
+    """Prefer the post-synthesis traces committed by the final trace manifest."""
+
+    summary = manifest.daily_memory_context_summary
+    if not isinstance(summary, dict):
+        return [root / reference.artifact_path for reference in context.runtime_retrieval_traces]
+    manifest_ref = summary.get("runtime_retrieval_final_manifest_artifact")
+    manifest_sha256 = summary.get("runtime_retrieval_final_manifest_sha256")
+    if manifest_ref is None and manifest_sha256 is None:
+        return [root / reference.artifact_path for reference in context.runtime_retrieval_traces]
+    if not isinstance(manifest_ref, str) or not isinstance(manifest_sha256, str):
+        raise ValueError("runtime final trace manifest reference is incomplete")
+    root = root.resolve()
+    final_manifest_path = (root / manifest_ref).resolve()
+    try:
+        final_manifest_path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("runtime final trace manifest escapes the project root") from exc
+    if (
+        not final_manifest_path.is_file()
+        or file_sha256(final_manifest_path) != manifest_sha256
+    ):
+        raise ValueError("runtime final trace manifest hash mismatch")
+    payload = read_json(final_manifest_path)
+    traces = payload.get("traces") if isinstance(payload, dict) else None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version")
+        != "nslab.runtime_retrieval_final_manifest.v1"
+        or payload.get("run_id") != context.run_id
+        or not isinstance(traces, list)
+        or payload.get("trace_count") != len(traces)
+    ):
+        raise ValueError("runtime final trace manifest is invalid")
+    paths: list[Path] = []
+    cluster_ids: list[str] = []
+    for row in traces:
+        if not isinstance(row, dict):
+            raise ValueError("runtime final trace reference is invalid")
+        artifact_path = row.get("artifact_path")
+        artifact_sha256 = row.get("sha256")
+        cluster_id = row.get("cluster_id")
+        if (
+            not isinstance(artifact_path, str)
+            or not artifact_path
+            or not isinstance(artifact_sha256, str)
+            or not artifact_sha256
+            or not isinstance(cluster_id, str)
+            or not cluster_id
+        ):
+            raise ValueError("runtime final trace reference is incomplete")
+        path = (root / artifact_path).resolve()
+        try:
+            path.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("runtime final trace escapes the project root") from exc
+        if not path.is_file() or file_sha256(path) != artifact_sha256:
+            raise ValueError("runtime final trace hash mismatch")
+        paths.append(path)
+        cluster_ids.append(cluster_id)
+    if cluster_ids != context.runtime_retrieval_cluster_ids:
+        raise ValueError("runtime final trace cluster coverage mismatch")
+    return paths
 
 
 def _prediction_metrics(prediction: BlindPrediction, truth_path: Path) -> dict[str, Any]:

@@ -63,6 +63,16 @@ from news_scalping_lab.utils import (
 
 DAILY_MEMORY_CONTEXT_VERSION = "daily_population_context.v2"
 DAILY_MEMORY_CONTEXT_ROOT = Path("runs/checkpoints/daily_memory_context")
+DAILY_MEMORY_CONTEXT_INITIAL_FILENAME = "daily_memory_context.json"
+DAILY_MEMORY_CONTEXT_RUNTIME_EVIDENCE_FILENAME = (
+    "daily_memory_context.runtime_evidence.json"
+)
+DAILY_MEMORY_CONTEXT_FINAL_FILENAME = "daily_memory_context.final.json"
+DAILY_MEMORY_COMPACT_INITIAL_FILENAME = "compact_final_context.json"
+DAILY_MEMORY_COMPACT_RUNTIME_EVIDENCE_FILENAME = (
+    "compact_runtime_evidence_context.json"
+)
+DAILY_MEMORY_COMPACT_FINAL_FILENAME = "compact_final_beneficiary_context.json"
 DAILY_MEMORY_CONTEXT_MAX_BYTES = 48_000
 DAILY_CATEGORY_GUIDANCE_MAX_COUNT = 24
 DAILY_POPULATION_PURPOSE_UNITS: dict[
@@ -350,8 +360,8 @@ def build_daily_memory_context(
         raise ValueError(
             f"daily memory compact context exceeds byte budget: {len(compact_bytes)} > {DAILY_MEMORY_CONTEXT_MAX_BYTES}"
         )
-    compact_path = output_dir / "compact_final_context.json"
-    context_path = output_dir / "daily_memory_context.json"
+    compact_path = output_dir / DAILY_MEMORY_COMPACT_INITIAL_FILENAME
+    context_path = output_dir / DAILY_MEMORY_CONTEXT_INITIAL_FILENAME
     _write_immutable_bytes(compact_path, compact_bytes)
     context = DailyMemoryContext(
         run_id=run_id,
@@ -413,7 +423,12 @@ def inspect_daily_memory_context(
     index_path = root / context.category_brain_index_manifest.artifact_path
     if memory_index is None:
         errors.append("daily_memory_context_memory_index_required")
-    expected_path = (root / DAILY_MEMORY_CONTEXT_ROOT / context.run_id / "daily_memory_context.json").resolve()
+    expected_path = (
+        root
+        / DAILY_MEMORY_CONTEXT_ROOT
+        / context.run_id
+        / _daily_memory_context_stage_filename(context)
+    ).resolve()
     if resolved != expected_path:
         errors.append("daily_memory_context_path_mismatch")
     references = [
@@ -943,6 +958,10 @@ def attach_runtime_evidence_to_daily_context(
     root = root.resolve()
     resolved_context_path = context_path.resolve()
     context = DailyMemoryContext.model_validate(read_json(resolved_context_path))
+    output_dir = root / DAILY_MEMORY_CONTEXT_ROOT / context.run_id
+    runtime_context_path = (
+        output_dir / DAILY_MEMORY_CONTEXT_RUNTIME_EVIDENCE_FILENAME
+    )
     result_by_cluster = {result.trace.cluster_id: result for result in evidence_results}
     if set(result_by_cluster) != set(context.runtime_retrieval_cluster_ids):
         raise ValueError("runtime evidence does not cover every memory-enabled cluster")
@@ -966,12 +985,20 @@ def attach_runtime_evidence_to_daily_context(
         )
         for cluster_id in context.runtime_retrieval_cluster_ids
     ]
+    if context.runtime_evidence_traces:
+        if (
+            resolved_context_path == runtime_context_path.resolve()
+            and context.runtime_evidence_traces == evidence_trace_refs
+            and context.runtime_evidence_memos == memo_refs
+        ):
+            return context, resolved_context_path
+        raise ValueError("runtime evidence is already attached with different inputs")
     traces = [result_by_cluster[cluster_id].trace for cluster_id in context.runtime_retrieval_cluster_ids]
     memos = [
         memo for cluster_id in context.runtime_retrieval_cluster_ids for memo in result_by_cluster[cluster_id].memos
     ]
-    compact_path = root / context.compact_final_context.artifact_path
-    compact = read_json(compact_path)
+    source_compact_path = root / context.compact_final_context.artifact_path
+    compact = read_json(source_compact_path)
     if not isinstance(compact, dict):
         raise ValueError("daily memory compact context is invalid")
     compact = runtime_evidence_compact_payload(
@@ -994,7 +1021,8 @@ def attach_runtime_evidence_to_daily_context(
             "runtime evidence compact context exceeds byte budget: "
             f"{len(compact_bytes)} > {DAILY_MEMORY_CONTEXT_MAX_BYTES}"
         )
-    _replace_bytes(compact_path, compact_bytes)
+    compact_path = output_dir / DAILY_MEMORY_COMPACT_RUNTIME_EVIDENCE_FILENAME
+    _write_immutable_bytes(compact_path, compact_bytes)
     updated = context.model_copy(
         update={
             "runtime_evidence_traces": evidence_trace_refs,
@@ -1006,11 +1034,11 @@ def attach_runtime_evidence_to_daily_context(
             "estimated_token_count": len(compact_bytes),
         }
     )
-    _replace_bytes(
-        resolved_context_path,
-        canonical_json(updated.model_dump(mode="json")).encode("utf-8"),
+    _write_immutable_json(
+        runtime_context_path,
+        updated.model_dump(mode="json"),
     )
-    return updated, resolved_context_path
+    return updated, runtime_context_path
 
 
 def bind_final_beneficiary_graph_to_daily_context(
@@ -1024,11 +1052,21 @@ def bind_final_beneficiary_graph_to_daily_context(
     root = root.resolve()
     resolved_context_path = context_path.resolve()
     context = DailyMemoryContext.model_validate(read_json(resolved_context_path))
+    output_dir = root / DAILY_MEMORY_CONTEXT_ROOT / context.run_id
+    final_context_path = output_dir / DAILY_MEMORY_CONTEXT_FINAL_FILENAME
     graph = BeneficiaryGraphArtifact.model_validate(read_json(beneficiary_graph_path))
+    graph_reference = _artifact_reference(root, beneficiary_graph_path)
+    if context.final_beneficiary_graph is not None:
+        if (
+            resolved_context_path == final_context_path.resolve()
+            and context.final_beneficiary_graph == graph_reference
+        ):
+            return context, resolved_context_path
+        raise ValueError("final beneficiary graph is already bound with different inputs")
     if graph.run_id != context.run_id or as_kst(graph.cutoff_at) != as_kst(context.cutoff_at):
         raise ValueError("final beneficiary graph differs from the daily context")
-    compact_path = root / context.compact_final_context.artifact_path
-    compact = read_json(compact_path)
+    source_compact_path = root / context.compact_final_context.artifact_path
+    compact = read_json(source_compact_path)
     if not isinstance(compact, dict):
         raise ValueError("daily memory compact context is invalid")
     graph_rows = _compact_beneficiary_graph_paths(graph)
@@ -1055,22 +1093,20 @@ def bind_final_beneficiary_graph_to_daily_context(
     compact_bytes = canonical_json(compact).encode("utf-8")
     if len(compact_bytes) > DAILY_MEMORY_CONTEXT_MAX_BYTES:
         raise ValueError("final daily memory compact context exceeds byte budget")
-    _replace_bytes(compact_path, compact_bytes)
+    compact_path = output_dir / DAILY_MEMORY_COMPACT_FINAL_FILENAME
+    _write_immutable_bytes(compact_path, compact_bytes)
     updated = context.model_copy(
         update={
-            "final_beneficiary_graph": _artifact_reference(
-                root,
-                beneficiary_graph_path,
-            ),
+            "final_beneficiary_graph": graph_reference,
             "compact_final_context": _artifact_reference(root, compact_path),
             "estimated_token_count": len(compact_bytes),
         }
     )
-    _replace_bytes(
-        resolved_context_path,
-        canonical_json(updated.model_dump(mode="json")).encode("utf-8"),
+    _write_immutable_json(
+        final_context_path,
+        updated.model_dump(mode="json"),
     )
-    return updated, resolved_context_path
+    return updated, final_context_path
 
 
 def runtime_evidence_record_roles(
@@ -2006,8 +2042,9 @@ def _write_immutable_json(path: Path, payload: dict[str, Any]) -> None:
     _write_immutable_bytes(path, encoded)
 
 
-def _replace_bytes(path: Path, payload: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_bytes(payload)
-    os.replace(temporary, path)
+def _daily_memory_context_stage_filename(context: DailyMemoryContext) -> str:
+    if context.final_beneficiary_graph is not None:
+        return DAILY_MEMORY_CONTEXT_FINAL_FILENAME
+    if context.runtime_evidence_traces:
+        return DAILY_MEMORY_CONTEXT_RUNTIME_EVIDENCE_FILENAME
+    return DAILY_MEMORY_CONTEXT_INITIAL_FILENAME

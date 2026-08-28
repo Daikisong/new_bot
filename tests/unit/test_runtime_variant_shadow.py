@@ -4,6 +4,7 @@ import csv
 import json
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -16,6 +17,7 @@ from news_scalping_lab.evaluation.runtime_variant_shadow import (
     _recall_at,
     _runtime_counter_delta,
     _runtime_counter_snapshot,
+    _runtime_trace_paths,
 )
 from news_scalping_lab.utils import file_sha256, parse_datetime, write_json
 
@@ -244,3 +246,55 @@ def test_runtime_counter_delta_separates_live_and_checkpoint_calls(
     assert observed["embedding_text_count"] == 7
     assert observed["pre_llm_latency_seconds"] == 2.0
     assert observed["pre_llm_latency_status"] == "MEASURED_TO_FIRST_LLM_TRACE"
+
+
+def test_runtime_trace_paths_prefer_finalized_trace_manifest(
+    tmp_path: Path,
+) -> None:
+    initial_path = tmp_path / "runs" / "initial-trace.json"
+    final_path = tmp_path / "runs" / "final-trace.json"
+    write_json(initial_path, {"stage": "initial"})
+    write_json(final_path, {"stage": "final", "final_candidate_ids": ["candidate:1:000001"]})
+    final_manifest_path = tmp_path / "runs" / "runtime_retrieval_final_manifest.json"
+    write_json(
+        final_manifest_path,
+        {
+            "schema_version": "nslab.runtime_retrieval_final_manifest.v1",
+            "run_id": "RUN-FINAL-TRACE",
+            "trace_count": 1,
+            "traces": [
+                {
+                    "cluster_id": "CLUSTER-FINAL-TRACE",
+                    "artifact_path": final_path.relative_to(tmp_path).as_posix(),
+                    "sha256": file_sha256(final_path),
+                }
+            ],
+        },
+    )
+    context = SimpleNamespace(
+        run_id="RUN-FINAL-TRACE",
+        runtime_retrieval_cluster_ids=["CLUSTER-FINAL-TRACE"],
+        runtime_retrieval_traces=[
+            SimpleNamespace(
+                artifact_path=initial_path.relative_to(tmp_path).as_posix()
+            )
+        ],
+    )
+    manifest = SimpleNamespace(
+        daily_memory_context_summary={
+            "runtime_retrieval_final_manifest_artifact": (
+                final_manifest_path.relative_to(tmp_path).as_posix()
+            ),
+            "runtime_retrieval_final_manifest_sha256": file_sha256(
+                final_manifest_path
+            ),
+        }
+    )
+
+    observed = _runtime_trace_paths(
+        tmp_path,
+        manifest=manifest,
+        context=context,
+    )
+
+    assert observed == [final_path.resolve()]
