@@ -1,0 +1,182 @@
+name: NSLAB Gold 20180706 20260716T111723KST
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/nslab_gold_20180706_20260716t111723kst.yml'
+
+permissions:
+  contents: read
+  actions: read
+  models: read
+
+concurrency:
+  group: nslab-gold-20180706-20260716T111723KST
+  cancel-in-progress: false
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - name: Checkout current main inputs only
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            docs/research_prompt.md
+            docs/csv/news_20180706.csv
+            docs/example2.md
+            temp/nslab_runner_20220826_20260715t130039.py
+
+      - name: Materialize locked date-specific runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp temp/nslab_runner_20220826_20260715t130039.py /tmp/nslab_runner_20180706.py
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('/tmp/nslab_runner_20180706.py')
+          text = p.read_text(encoding='utf-8')
+          replacements = [
+              ('20260715T130039KST', '20260716T111723KST'),
+              ('20260715t130039', '20260716t111723'),
+              ('2022/08', '2018/07'),
+              ('2022-08-26', '2018-07-06'),
+              ('20220826', '20180706'),
+              ('2022-08-25', '2018-07-05'),
+              ('20220825', '20180705'),
+              ('2022-08-29', '2018-07-09'),
+              ('20220829', '20180709'),
+          ]
+          for old, new in replacements:
+              text = text.replace(old, new)
+
+          sparse_old = 'run(["git", "-C", str(STOCK), "sparse-checkout", "set", *p_paths])'
+          sparse_new = 'run(["git", "-C", str(STOCK), "sparse-checkout", "set", "--no-cone", *p_paths])'
+          if sparse_old not in text:
+              raise RuntimeError('stock-web sparse-checkout patch target missing')
+          text = text.replace(sparse_old, sparse_new, 1)
+
+          receipt_old = '''        "news_file": news_name,
+        "news_sha256": news_sha,
+        "news_byte_size": len(news_raw),'''
+          receipt_new = '''        "news_file": news_name,
+        "news_sha256": news_sha,
+        "news_byte_size": len(news_raw),
+        "example_file": example_name,
+        "example_sha256": example_sha,
+        "example_byte_size": len(example_raw),'''
+          if receipt_old not in text:
+              raise RuntimeError('example receipt insertion target missing')
+          text = text.replace(receipt_old, receipt_new, 1)
+
+          reparse_old = '''    blocks = common.parse_markdown_blocks(text)
+    brain = common.parse_block(blocks["brain_delta.jsonl"], "brain_delta.jsonl")
+    manifest = common.parse_block(blocks["bundle_manifest.json"], "bundle_manifest.json")
+    validation = common.parse_block(blocks["validation_report.json"], "validation_report.json")
+    contract = common.parse_block(blocks["direct_ingest_contract.json"], "direct_ingest_contract.json")'''
+          reparse_new = '''    blocks, block_counts = common.parse_markdown_blocks(text)
+    assert all(count == 1 for count in block_counts.values())
+    brain = common.parse_block("brain_delta.jsonl", blocks["brain_delta.jsonl"])
+    manifest = common.parse_block("bundle_manifest.json", blocks["bundle_manifest.json"])
+    validation = common.parse_block("validation_report.json", blocks["validation_report.json"])
+    contract = common.parse_block("direct_ingest_contract.json", blocks["direct_ingest_contract.json"])'''
+          if reparse_old not in text:
+              raise RuntimeError('independent final reparse patch target missing')
+          text = text.replace(reparse_old, reparse_new, 1)
+
+          forbidden = [
+              'news_20220826.csv',
+              'access/2022/08/20220826.json',
+              'snapshots/2022/08/20220825.csv',
+              'snapshots/2022/08/20220826.csv',
+              '20220826_nslab_episode_bundle.md',
+              '20260715T130039KST',
+              '20260715t130039',
+          ]
+          present = [item for item in forbidden if item in text]
+          if present:
+              raise RuntimeError(f'stale selected-date route survived: {present}')
+
+          required = [
+              'news_20180706.csv',
+              'access/2018/07/20180706.json',
+              'snapshots/2018/07/20180705.csv',
+              'snapshots/2018/07/20180706.csv',
+              '20180706_nslab_episode_bundle.md',
+              '2018-07-06T08:59:59+09:00',
+              '2018-07-05T15:30:00+09:00',
+              '2018-07-09T00:00:00+09:00',
+              'b5ba21ce1f6e3a91dacf19e33e16d5db9dface141e90a67e78c8588ba1553029',
+          ]
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise RuntimeError(f'new selected-date route missing: {missing}')
+
+          p.write_text(text, encoding='utf-8')
+          compile(text, str(p), 'exec')
+          PY
+          python -m py_compile /tmp/nslab_runner_20180706.py
+
+      - name: Run full BLIND seal, post-seal outcome, postmortem, and final reparse
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python /tmp/nslab_runner_20180706.py 2>&1 | tee nslab_20180706_action.log
+
+      - name: Independently verify final ACCEPT_FULL Markdown
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          root='final_artifact_20180706_20260716t111723'
+          test -s "$root/20180706_nslab_episode_bundle.md"
+          test -s "$root/independent_final_validation_receipt.json"
+          test -s "$root/final_reparse_receipt.json"
+          python - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path('final_artifact_20180706_20260716t111723')
+          final = root / '20180706_nslab_episode_bundle.md'
+          receipt = json.loads((root / 'independent_final_validation_receipt.json').read_text(encoding='utf-8'))
+          reparse = json.loads((root / 'final_reparse_receipt.json').read_text(encoding='utf-8'))
+          acquisition = json.loads((root / 'acquisition_receipt.json').read_text(encoding='utf-8'))
+          assert receipt['status'] == 'ACCEPT_FULL'
+          assert reparse['status'] == 'ACCEPT_FULL'
+          assert receipt['csv_row_count'] == acquisition['csv_row_count'] > 0
+          assert receipt['outcome_ledger_count'] == acquisition['outcome_snapshot_row_count_expected'] > 0
+          assert receipt['brain_delta_record_count'] > 0
+          assert receipt['brain_delta_payload_missing_count'] == 0
+          assert receipt['brain_delta_manifest_payload_count_mismatch_count'] == 0
+          assert receipt['brain_delta_declared_without_payload_count'] == 0
+          text = final.read_text(encoding='utf-8')
+          assert text.startswith('---\n')
+          for name in ('source_ledger.jsonl', 'row_disposition.jsonl', 'material_review.jsonl', 'candidate_screening.jsonl', 'blind_seal_receipt.json', 'outcome_ledger.jsonl', 'outcome_leader_census.jsonl', 'outcome_to_news_audit.jsonl', 'brain_delta.jsonl', 'validation_report.json', 'direct_ingest_contract.json', 'bundle_manifest.json'):
+              assert text.count(f'<!-- NSLAB:BEGIN {name} -->') == 1, name
+              assert text.count(f'<!-- NSLAB:END {name} -->') == 1, name
+          print(json.dumps(receipt, ensure_ascii=False, sort_keys=True))
+          PY
+
+      - name: Upload complete current-run artifact and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nslab-final-20180706-20260716T111723KST
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: warn
+          path: |
+            final_artifact_20180706_20260716t111723/
+            work_20180706_20260716t111723/
+            stock_web_20180706_20260716t111723/atlas/research_daily/
+            nslab_20180706_action.log
