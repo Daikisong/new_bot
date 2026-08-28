@@ -1,0 +1,24 @@
+{
+  "schema_version": "nslab.final_rebuild_decision.v1",
+  "decision": "HOLD",
+  "full_brain_rebuild_performed": false,
+  "production_activation_performed": false,
+  "reimport_performed": false,
+  "reembedding_performed": false,
+  "baseline_brain_version": "brain-08fe3aaaa3",
+  "baseline_memory_snapshot_id": "MEMIDX-1e64a1b6e6ba7b07b799",
+  "evaluation_brain_version": "brain-b0e59ca379",
+  "evaluation_memory_snapshot_id": "MEMIDX-4409624afdffd1d01018",
+  "new_full_brain_version": null,
+  "new_full_brain_root": null,
+  "runtime_gate": "HOLD",
+  "compiler_gate": "NOT_RUN",
+  "holdout_gate": "NOT_RUN",
+  "reasons": [
+    "No completed paired V0/V1 calibration result exists.",
+    "The live shared pre-retrieval stage exceeded the daily latency budget by 64.425x.",
+    "Known-relevant retrieval labels required for promotion are unavailable.",
+    "Compiler v8 and V2 were correctly not started after the runtime gate held."
+  ],
+  "production_activation_status": "NOT_PRODUCTION_ACTIVATED"
+}

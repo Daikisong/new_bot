@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from copy import deepcopy
 from datetime import date, datetime, timedelta
@@ -51,7 +52,10 @@ from news_scalping_lab.contracts.models import (
     PathType,
     Provenance,
 )
+from news_scalping_lab.contracts.runtime_retrieval import RuntimeRetrievalTrace
+from news_scalping_lab.evaluation.runtime_variant_shadow import _trace_stats
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
+from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.memory.adaptive_retrieval import AdaptiveRetriever
 from news_scalping_lab.memory.beneficiary import (
     build_beneficiary_graph,
@@ -61,6 +65,8 @@ from news_scalping_lab.memory.daily_context import (
     DAILY_MEMORY_CONTEXT_MAX_BYTES,
     _population_summaries,
     _representative_rows,
+    attach_runtime_evidence_to_daily_context,
+    bind_final_beneficiary_graph_to_daily_context,
     build_daily_memory_context,
     category_guidance_from_claims,
     compact_daily_memory_payload,
@@ -69,6 +75,11 @@ from news_scalping_lab.memory.daily_context import (
     inspect_daily_memory_context,
 )
 from news_scalping_lab.memory.index import ProductionMemoryIndex
+from news_scalping_lab.memory.runtime_v4 import (
+    RuntimeRetrievalBuildResult,
+    build_runtime_evidence_memos,
+    finalize_runtime_retrieval_trace,
+)
 from news_scalping_lab.phase7_transport import (
     build_phase7_transport_attestation,
     verify_phase7_transport_attestation,
@@ -351,6 +362,7 @@ def _build_daily_fixture(
     *,
     candidate_path_type: PathType = PathType.SINGLE_EVENT,
     empty_cell_search: bool = False,
+    retrieval_graph_has_candidate: bool = True,
 ) -> tuple[ProductionMemoryIndex, Candidate, Path, Path, dict[str, object]]:
     record = _record()
     monkeypatch.setattr(BrainRecordStore, "list_records", lambda self: [record])
@@ -373,7 +385,7 @@ def _build_daily_fixture(
         run_id=RUN_ID,
         cutoff_at=CUTOFF,
         event_cluster_manifest_path=event_manifest_path,
-        candidates=[candidate],
+        candidates=[candidate] if retrieval_graph_has_candidate else [],
         company_memory_context=[],
     )
     if empty_cell_search:
@@ -391,7 +403,7 @@ def _build_daily_fixture(
         memory_coverage_manifest_path=coverage_path,
         beneficiary_graph_path=graph_path,
     )
-    assert graph.path_count == 1
+    assert graph.path_count == (1 if retrieval_graph_has_candidate else 0)
     return index, candidate, graph_path, context_path, context.model_dump(mode="json")
 
 
@@ -521,6 +533,374 @@ def test_daily_memory_context_is_compact_reproducible_and_tamper_evident(
     )
     assert tampered["passed"] is False
     assert "daily_memory_context_artifact_hash_mismatch" in tampered["errors"]
+
+
+def test_daily_analysis_creates_adaptive_trace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _index, _candidate, _graph_path, _context_path, context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+
+    assert context["adaptive_retrieval_traces"]
+    assert context["runtime_retrieval_traces"]
+
+
+def test_every_memory_enabled_material_cluster_has_trace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _index, _candidate, _graph_path, _context_path, context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    traces = [
+        RuntimeRetrievalTrace.model_validate(
+            read_json(tmp_path / reference["artifact_path"])
+        )
+        for reference in context["runtime_retrieval_traces"]
+    ]
+
+    assert {trace.cluster_id for trace in traces} == set(
+        context["material_event_cluster_ids"]
+    )
+
+
+def test_trace_precedes_final_synthesis(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _index, candidate, graph_path, context_path, context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    _manifest, final_context = _final_context(
+        tmp_path,
+        candidate=candidate,
+        graph_path=graph_path,
+        daily_path=context_path,
+        daily=context,
+    )
+    daily_payload = final_context["payload"]["daily_memory_context"]
+
+    assert daily_payload["runtime_retrieval_traces"] == context[
+        "runtime_retrieval_traces"
+    ]
+
+
+def test_retrieval_first_memory_enters_candidate_generation_projection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _index, _candidate, _graph_path, context_path, _context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    manifest = SimpleNamespace(
+        daily_memory_context_artifact=context_path.relative_to(tmp_path).as_posix(),
+        daily_memory_context_sha256=file_sha256(context_path),
+    )
+
+    v4 = DailyAnalyzer(Settings(project_root=tmp_path))
+    legacy = DailyAnalyzer(
+        Settings(project_root=tmp_path),
+        runtime_retrieval_variant="legacy",
+    )
+    projection = v4._candidate_generation_memory_context(manifest)
+
+    assert projection["policy"] == (
+        "OPEN_WORLD_FIRST_THEN_RETRIEVAL_BEFORE_CANDIDATES"
+    )
+    assert projection["memory_used_as_candidate_gate"] is False
+    assert projection["runtime_retrieval_cluster_ids"] == [CLUSTER_ID]
+    assert projection["compact_context"]["memory_snapshot_id"]
+    assert legacy._candidate_generation_memory_context(manifest) == {}
+
+
+def test_trace_uses_expected_memory_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _index, _candidate, _graph_path, _context_path, context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    traces = [
+        RuntimeRetrievalTrace.model_validate(
+            read_json(tmp_path / reference["artifact_path"])
+        )
+        for reference in context["runtime_retrieval_traces"]
+    ]
+
+    assert {trace.memory_snapshot_id for trace in traces} == {
+        context["memory_snapshot_id"]
+    }
+
+
+def test_final_graph_binding_preserves_retrieval_graph_trace_chain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index, candidate, retrieval_graph_path, context_path, _context = (
+        _build_daily_fixture(
+            tmp_path,
+            monkeypatch,
+            retrieval_graph_has_candidate=False,
+        )
+    )
+    retrieval_context = DailyMemoryContext.model_validate(read_json(context_path))
+    initial_context_bytes = context_path.read_bytes()
+    initial_compact_path = (
+        tmp_path / retrieval_context.compact_final_context.artifact_path
+    )
+    initial_compact_bytes = initial_compact_path.read_bytes()
+    _graph, final_graph_path = build_beneficiary_graph(
+        tmp_path,
+        run_id=RUN_ID,
+        cutoff_at=CUTOFF,
+        event_cluster_manifest_path=(
+            tmp_path / retrieval_context.event_cluster_manifest.artifact_path
+        ),
+        candidates=[candidate],
+        company_memory_context=[],
+    )
+
+    updated, updated_path = bind_final_beneficiary_graph_to_daily_context(
+        tmp_path,
+        context_path=context_path,
+        beneficiary_graph_path=final_graph_path,
+    )
+
+    assert updated_path != context_path
+    assert updated_path.name == "daily_memory_context.final.json"
+    assert context_path.read_bytes() == initial_context_bytes
+    assert initial_compact_path.read_bytes() == initial_compact_bytes
+    assert updated.beneficiary_graph.artifact_path == retrieval_graph_path.relative_to(
+        tmp_path
+    ).as_posix()
+    assert updated.final_beneficiary_graph is not None
+    assert updated.final_beneficiary_graph.artifact_path == final_graph_path.relative_to(
+        tmp_path
+    ).as_posix()
+    inspection = inspect_daily_memory_context(
+        tmp_path,
+        updated_path,
+        memory_index=index,
+    )
+    assert inspection["passed"] is True, inspection["errors"]
+    manifest, final_context = _final_context(
+        tmp_path,
+        candidate=candidate,
+        graph_path=final_graph_path,
+        daily_path=updated_path,
+        daily=updated.model_dump(mode="json"),
+    )
+    assert final_synthesis_phase7_artifacts_compatible(
+        tmp_path,
+        manifest,
+        final_context,
+    ) is True
+
+
+def test_runtime_evidence_and_final_graph_stages_resume_without_rewrite(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index, candidate, _retrieval_graph_path, context_path, _context = (
+        _build_daily_fixture(
+            tmp_path,
+            monkeypatch,
+            retrieval_graph_has_candidate=False,
+        )
+    )
+    initial = DailyMemoryContext.model_validate(read_json(context_path))
+    initial_context_bytes = context_path.read_bytes()
+    initial_compact_path = tmp_path / initial.compact_final_context.artifact_path
+    initial_compact_bytes = initial_compact_path.read_bytes()
+    trace_reference = initial.runtime_retrieval_traces[0]
+    trace_path = tmp_path / trace_reference.artifact_path
+    trace = RuntimeRetrievalTrace.model_validate(read_json(trace_path))
+    selected_record_ids = tuple(
+        row.record_id for row in trace.rows if "LANE_SELECTED" in row.stages
+    )
+    retrieval = RuntimeRetrievalBuildResult(
+        trace=trace,
+        trace_path=trace_path,
+        selected_record_ids=selected_record_ids,
+    )
+    source_record = _record()
+    monkeypatch.setattr(
+        "news_scalping_lab.memory.runtime_v4._load_records_by_ids",
+        lambda _root, record_ids: dict.fromkeys(record_ids, source_record),
+    )
+    evidence = asyncio.run(
+        build_runtime_evidence_memos(
+            tmp_path,
+            retrieval=retrieval,
+            memory_index=index,
+            llm=DeterministicMockLLMProvider(),
+        )
+    )
+
+    evidence_context, evidence_path = attach_runtime_evidence_to_daily_context(
+        tmp_path,
+        context_path=context_path,
+        evidence_results=[evidence],
+    )
+    evidence_context_bytes = evidence_path.read_bytes()
+    evidence_compact_path = (
+        tmp_path / evidence_context.compact_final_context.artifact_path
+    )
+    evidence_compact_bytes = evidence_compact_path.read_bytes()
+    repeated_evidence, repeated_evidence_path = (
+        attach_runtime_evidence_to_daily_context(
+            tmp_path,
+            context_path=context_path,
+            evidence_results=[evidence],
+        )
+    )
+
+    assert evidence_path.name == "daily_memory_context.runtime_evidence.json"
+    assert repeated_evidence_path == evidence_path
+    assert repeated_evidence == evidence_context
+    assert evidence_path.read_bytes() == evidence_context_bytes
+    assert context_path.read_bytes() == initial_context_bytes
+    assert initial_compact_path.read_bytes() == initial_compact_bytes
+
+    _graph, final_graph_path = build_beneficiary_graph(
+        tmp_path,
+        run_id=RUN_ID,
+        cutoff_at=CUTOFF,
+        event_cluster_manifest_path=(
+            tmp_path / evidence_context.event_cluster_manifest.artifact_path
+        ),
+        candidates=[candidate],
+        company_memory_context=[],
+    )
+    final_context, final_path = bind_final_beneficiary_graph_to_daily_context(
+        tmp_path,
+        context_path=evidence_path,
+        beneficiary_graph_path=final_graph_path,
+    )
+    final_context_bytes = final_path.read_bytes()
+    repeated_final, repeated_final_path = (
+        bind_final_beneficiary_graph_to_daily_context(
+            tmp_path,
+            context_path=evidence_path,
+            beneficiary_graph_path=final_graph_path,
+        )
+    )
+
+    assert final_path.name == "daily_memory_context.final.json"
+    assert repeated_final_path == final_path
+    assert repeated_final == final_context
+    assert final_path.read_bytes() == final_context_bytes
+    assert evidence_path.read_bytes() == evidence_context_bytes
+    assert evidence_compact_path.read_bytes() == evidence_compact_bytes
+    assert context_path.read_bytes() == initial_context_bytes
+    assert initial_compact_path.read_bytes() == initial_compact_bytes
+    inspection = inspect_daily_memory_context(
+        tmp_path,
+        final_path,
+        memory_index=index,
+    )
+    assert inspection["passed"] is True, inspection["errors"]
+
+    cited_candidate = candidate.model_copy(
+        update={"memory_record_ids": ["REC-1"]}
+    )
+    prediction = BlindPrediction(
+        prediction_id="PRED-FINAL-TRACE",
+        trade_date=TRADE_DATE,
+        cutoff_at=CUTOFF,
+        created_at=CUTOFF,
+        blind_analysis=BlindAnalysis(summary="current evidence"),
+        candidates=[cited_candidate],
+    )
+    finalized_trace, finalized_trace_path = finalize_runtime_retrieval_trace(
+        tmp_path,
+        evidence=evidence,
+        prediction=prediction,
+    )
+    final_manifest_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "runtime_retrieval_v4"
+        / RUN_ID
+        / "runtime_retrieval_final_manifest.json"
+    )
+    write_json(
+        final_manifest_path,
+        {
+            "schema_version": "nslab.runtime_retrieval_final_manifest.v1",
+            "run_id": RUN_ID,
+            "prediction_id": prediction.prediction_id,
+            "trace_count": 1,
+            "selected_record_count": 1,
+            "final_cited_record_count": 1,
+            "final_citation_rate": 1.0,
+            "traces": [
+                {
+                    "cluster_id": finalized_trace.cluster_id,
+                    "artifact_path": finalized_trace_path.relative_to(
+                        tmp_path
+                    ).as_posix(),
+                    "sha256": file_sha256(finalized_trace_path),
+                    "selected_record_count": 1,
+                    "final_cited_record_count": 1,
+                }
+            ],
+            "blind_web_call_count": 0,
+            "online_full_scan_count": 0,
+        },
+    )
+    shadow_manifest = SimpleNamespace(
+        daily_memory_context_artifact=final_path.relative_to(tmp_path).as_posix(),
+        daily_memory_context_summary={
+            "runtime_retrieval_final_manifest_artifact": (
+                final_manifest_path.relative_to(tmp_path).as_posix()
+            ),
+            "runtime_retrieval_final_manifest_sha256": file_sha256(
+                final_manifest_path
+            ),
+            "runtime_final_cited_record_count": 1,
+        },
+        cutoff_at=CUTOFF,
+        trade_date=TRADE_DATE,
+    )
+
+    trace_stats = _trace_stats(tmp_path, shadow_manifest)
+
+    assert trace_stats["final_cited_record_count"] == 1
+    assert trace_stats["runtime_final_candidate_ids"] == {
+        "candidate:1:TEST-001"
+    }
+
+
+def test_trace_contains_no_future_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _index, _candidate, _graph_path, _context_path, context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    traces = [
+        RuntimeRetrievalTrace.model_validate(
+            read_json(tmp_path / reference["artifact_path"])
+        )
+        for reference in context["runtime_retrieval_traces"]
+    ]
+
+    assert all(
+        row.available_from <= trace.cutoff_at
+        and row.source_trade_date <= trace.cutoff_at.date()
+        for trace in traces
+        for row in trace.rows
+    )
 
 
 def test_daily_memory_context_rejects_selected_claim_payload_rewrite(

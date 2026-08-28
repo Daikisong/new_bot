@@ -9,8 +9,9 @@ import os
 import shutil
 import struct
 import tempfile
+import threading
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -90,11 +91,14 @@ MEMORY_SOURCE_HASH_FILE = "source_record_hashes.jsonl"
 MEMORY_FUTURE_HASH_FILE = "excluded_future_record_hashes.jsonl"
 MEMORY_ROUTING_FILE = "routing_metadata.jsonl"
 MEMORY_EMBEDDING_HASH_FILE = "embedding_hashes.jsonl"
+MEMORY_AVAILABILITY_PROJECTION_FILE = "availability_projection.jsonl"
 MEMORY_MANIFEST_FILE = "manifest.json"
+REPLAY_AVAILABILITY_PROJECTION_VERSION = "nslab.replay_availability_projection.v1"
 MEMORY_INDEX_EMBEDDING_BATCH_SIZE = 128
 MEMORY_INDEX_QUERY_CANDIDATE_MULTIPLIER = 4
 MEMORY_INDEX_STREAMING_AUDIT_THRESHOLD = 10_000
 _ORIGINAL_LIST_RECORDS = BrainRecordStore.list_records
+_PROCESS_VERIFIED_DATABASE_FILES: dict[str, tuple[int, int, int]] = {}
 
 
 @dataclass(frozen=True)
@@ -105,6 +109,24 @@ class MemoryCellCandidate:
     fts_score: float | None
     primary_member_count: int
     independent_unit_count: int
+
+
+@dataclass(frozen=True)
+class ReplayAvailabilityOverride:
+    """Evaluation-only availability derived without changing source records."""
+
+    episode_id: str
+    source_trade_date: date
+    replay_available_from: datetime
+    derivation: str
+
+    def __post_init__(self) -> None:
+        if (
+            not self.episode_id.strip()
+            or not self.derivation.strip()
+            or as_kst(self.replay_available_from).date() <= self.source_trade_date
+        ):
+            raise ValueError("replay availability override is invalid")
 
 
 @dataclass(frozen=True)
@@ -163,9 +185,7 @@ class PopulationCellMember:
             "INVALID_CONFLICT",
         }:
             raise ValueError("unsupported sample weight population status")
-        if (self.sample_weight > 0.0) is not (
-            self.sample_weight_status in {"VALID", "DEFAULT"}
-        ):
+        if (self.sample_weight > 0.0) is not (self.sample_weight_status in {"VALID", "DEFAULT"}):
             raise ValueError("sample weight value conflicts with population status")
         observed = any(
             status == "VALID"
@@ -236,11 +256,10 @@ class ProductionMemoryIndex:
         self.snapshots_root = self.index_root / MEMORY_SNAPSHOT_DIR
         self.current_pointer_path = self.index_root / MEMORY_CURRENT_POINTER
         self.as_of_registry_path = self.index_root / MEMORY_AS_OF_REGISTRY
-        self._verified_database_files: dict[str, tuple[int, int, int]] = {}
+        self._verified_database_files = _PROCESS_VERIFIED_DATABASE_FILES
+        self._runtime_connection_state = threading.local()
         if production and not _is_production_embedding_provider(embedding_provider):
-            raise ValueError(
-                "production memory index requires an attested real embedding provider"
-            )
+            raise ValueError("production memory index requires an attested real embedding provider")
 
     def build(
         self,
@@ -249,25 +268,50 @@ class ProductionMemoryIndex:
         promote_current: bool | None = None,
         stage_only: bool = False,
         cutoff_mode: Literal["live", "explicit"] | None = None,
+        reuse_embeddings_from_snapshot_id: str | None = None,
+        replay_availability_by_episode: Mapping[str, ReplayAvailabilityOverride] | None = None,
     ) -> MemoryCellSnapshotManifest:
         if stage_only and promote_current:
             raise ValueError("a staged memory snapshot cannot be promoted during build")
         cutoff = as_kst(as_of or now_kst())
         source_generation_sha256 = self._record_store_generation_sha256()
-        resolved_cutoff_mode = cutoff_mode or (
-            "explicit" if as_of is not None else "live"
-        )
+        resolved_cutoff_mode = cutoff_mode or ("explicit" if as_of is not None else "live")
         if resolved_cutoff_mode not in {"live", "explicit"}:
             raise ValueError("cutoff_mode must be live or explicit")
-        cutoff_identity = (
-            "live_partition"
-            if resolved_cutoff_mode == "live"
-            else f"explicit:{cutoff.isoformat()}"
+        if reuse_embeddings_from_snapshot_id is not None and (
+            not stage_only or as_of is None or resolved_cutoff_mode != "explicit"
+        ):
+            raise ValueError("future snapshot embedding reuse is allowed only for a staged explicit as-of build")
+        if replay_availability_by_episode is not None and (
+            not stage_only
+            or as_of is None
+            or resolved_cutoff_mode != "explicit"
+            or reuse_embeddings_from_snapshot_id is None
+        ):
+            raise ValueError("replay availability is allowed only for a staged explicit reuse build")
+        availability_projection_bytes = (
+            _availability_projection_bytes(replay_availability_by_episode)
+            if replay_availability_by_episode is not None
+            else None
         )
+        availability_projection_sha256 = (
+            hashlib.sha256(availability_projection_bytes).hexdigest()
+            if availability_projection_bytes is not None
+            else None
+        )
+        cutoff_identity = "live_partition" if resolved_cutoff_mode == "live" else f"explicit:{cutoff.isoformat()}"
         embedding_method = self.embedding_provider.embedding_method
-        parent = self._latest_compatible_snapshot(
-            max_available_from=cutoff,
-            embedding_method=embedding_method,
+        parent = (
+            self._embedding_reuse_parent(
+                reuse_embeddings_from_snapshot_id,
+                embedding_method=embedding_method,
+                source_generation_sha256=source_generation_sha256,
+            )
+            if reuse_embeddings_from_snapshot_id is not None
+            else self._latest_compatible_snapshot(
+                max_available_from=cutoff,
+                embedding_method=embedding_method,
+            )
         )
         self.snapshots_root.mkdir(parents=True, exist_ok=True)
         reusable = self._reusable_snapshot(
@@ -275,6 +319,7 @@ class ProductionMemoryIndex:
             cutoff_identity=cutoff_identity,
             source_generation_sha256=source_generation_sha256,
             embedding_method=embedding_method,
+            availability_projection_sha256=availability_projection_sha256,
         )
         if reusable is not None:
             if self._record_store_generation_sha256() != source_generation_sha256:
@@ -288,14 +333,14 @@ class ProductionMemoryIndex:
                 else:
                     self._register_snapshot(reusable, requested_cutoff=cutoff)
             return reusable
-        build_dir = Path(
-            tempfile.mkdtemp(prefix=".memory-index-", dir=self.snapshots_root)
-        )
+        build_dir = Path(tempfile.mkdtemp(prefix=".memory-index-", dir=self.snapshots_root))
         try:
             state = self._build_streaming_database(
                 build_dir,
                 cutoff=cutoff,
                 parent=parent,
+                replay_availability_by_episode=replay_availability_by_episode,
+                availability_projection_bytes=availability_projection_bytes,
             )
             database_path = build_dir / MEMORY_DATABASE_FILE
             source_hash_path = build_dir / MEMORY_SOURCE_HASH_FILE
@@ -304,6 +349,9 @@ class ProductionMemoryIndex:
             embedding_hash_path = build_dir / MEMORY_EMBEDDING_HASH_FILE
             cell_path = build_dir / MEMORY_CELL_FILE
             membership_path = build_dir / MEMORY_MEMBERSHIP_FILE
+            availability_projection_path = (
+                build_dir / MEMORY_AVAILABILITY_PROJECTION_FILE if availability_projection_bytes is not None else None
+            )
             corpus_manifest_sha256 = file_sha256(source_hash_path)
             routing_metadata_sha256 = _routing_root_from_database(database_path)
             snapshot_identity: dict[str, object] = {
@@ -313,9 +361,7 @@ class ProductionMemoryIndex:
                 "cutoff_identity": cutoff_identity,
                 "max_available_from": state.max_available_from.isoformat(),
                 "next_available_from": (
-                    state.next_available_from.isoformat()
-                    if state.next_available_from is not None
-                    else None
+                    state.next_available_from.isoformat() if state.next_available_from is not None else None
                 ),
                 "embedding_method": embedding_method,
                 "embedding_dimensions": state.dimensions,
@@ -324,18 +370,23 @@ class ProductionMemoryIndex:
                 "cell_schema_version": MEMORY_CELL_SCHEMA_VERSION,
                 "polarity_classifier_version": POLARITY_CLASSIFIER_VERSION,
                 "population_projection_version": POPULATION_STATISTICS_VERSION,
-                "unsupported_reasoning_record_count": (
-                    state.unsupported_reasoning_record_count
-                ),
-                "unsupported_reasoning_record_ids_sha256": (
-                    state.unsupported_reasoning_record_ids_sha256
-                ),
+                "unsupported_reasoning_record_count": (state.unsupported_reasoning_record_count),
+                "unsupported_reasoning_record_ids_sha256": (state.unsupported_reasoning_record_ids_sha256),
                 "routing_metadata_sha256": routing_metadata_sha256,
                 "future_hashes_sha256": file_sha256(future_hash_path),
                 "cells_sha256": file_sha256(cell_path),
                 "memberships_sha256": file_sha256(membership_path),
                 "embedding_hashes_sha256": file_sha256(embedding_hash_path),
             }
+            if availability_projection_path is not None:
+                snapshot_identity.update(
+                    {
+                        "availability_mode": "replay_available_from",
+                        "availability_projection_version": (REPLAY_AVAILABILITY_PROJECTION_VERSION),
+                        "availability_projection_sha256": file_sha256(availability_projection_path),
+                        "evaluation_only": True,
+                    }
+                )
             snapshot_id = _snapshot_id(snapshot_identity)
             final_dir = self.snapshots_root / snapshot_id
             final_relative = relative_to_root(final_dir, self.root)
@@ -363,6 +414,22 @@ class ProductionMemoryIndex:
                 polarity_classifier_version=POLARITY_CLASSIFIER_VERSION,
                 population_projection_version=POPULATION_STATISTICS_VERSION,
                 routing_metadata_sha256=routing_metadata_sha256,
+                availability_mode=(
+                    "replay_available_from" if availability_projection_path is not None else "source_available_from"
+                ),
+                availability_projection_version=(
+                    REPLAY_AVAILABILITY_PROJECTION_VERSION if availability_projection_path is not None else None
+                ),
+                availability_projection=(
+                    ArtifactReference(
+                        artifact_path=(f"{final_relative}/{MEMORY_AVAILABILITY_PROJECTION_FILE}"),
+                        sha256=file_sha256(availability_projection_path),
+                        item_count=len(replay_availability_by_episode or {}),
+                    )
+                    if availability_projection_path is not None
+                    else None
+                ),
+                evaluation_only=availability_projection_path is not None,
                 record_count=state.record_count,
                 excluded_future_record_count=state.future_record_count,
                 next_available_from=state.next_available_from,
@@ -374,12 +441,8 @@ class ProductionMemoryIndex:
                 primary_membership_count=state.record_count,
                 secondary_membership_count=state.secondary_membership_count,
                 independent_unit_count=state.independent_unit_count,
-                unsupported_reasoning_record_count=(
-                    state.unsupported_reasoning_record_count
-                ),
-                unsupported_reasoning_record_ids_sha256=(
-                    state.unsupported_reasoning_record_ids_sha256
-                ),
+                unsupported_reasoning_record_count=(state.unsupported_reasoning_record_count),
+                unsupported_reasoning_record_ids_sha256=(state.unsupported_reasoning_record_ids_sha256),
                 parent_snapshot_id=parent.snapshot_id if parent is not None else None,
                 retained_record_count=state.retained_record_count,
                 added_record_count=state.record_count - state.retained_record_count,
@@ -460,14 +523,19 @@ class ProductionMemoryIndex:
         *,
         cutoff: datetime,
         parent: MemoryCellSnapshotManifest | None,
+        replay_availability_by_episode: Mapping[str, ReplayAvailabilityOverride] | None,
+        availability_projection_bytes: bytes | None,
     ) -> _StreamingBuildState:
         batch_size = self.embedding_batch_size
         resolver = RecordMemoryDocumentResolver(self.root)
+        if replay_availability_by_episode is not None:
+            _validate_replay_projection_file_scope(
+                self.root,
+                projection_episode_ids=set(replay_availability_by_episode),
+            )
         parent_hashes = self._snapshot_source_hashes(parent)
         parent_connection = (
-            _connect_index(self.root / parent.database.artifact_path, read_only=True)
-            if parent is not None
-            else None
+            _connect_index(self.root / parent.database.artifact_path, read_only=True) if parent is not None else None
         )
         connection: duckdb.DuckDBPyConnection | None = None
         dimensions = 0
@@ -486,23 +554,32 @@ class ProductionMemoryIndex:
         future_file = (build_dir / MEMORY_FUTURE_HASH_FILE).open("wb")
         routing_file = (build_dir / MEMORY_ROUTING_FILE).open("wb")
         embedding_file = (build_dir / MEMORY_EMBEDDING_HASH_FILE).open("wb")
+        if availability_projection_bytes is not None:
+            (build_dir / MEMORY_AVAILABILITY_PROJECTION_FILE).write_bytes(availability_projection_bytes)
         batch: list[BrainRecordEnvelope] = []
+        batch_available_from: dict[str, datetime] = {}
+        observed_episode_ids: set[str] = set()
         try:
             for record in _iter_source_records(self.root):
+                effective_available_from = _effective_record_available_from(
+                    record,
+                    replay_availability_by_episode,
+                )
+                observed_episode_ids.add(record.episode_id)
                 source_hash = brain_record_envelope_sha256(record)
-                if as_kst(record.available_from) > cutoff:
+                if effective_available_from > cutoff:
                     _write_jsonl_row(
                         future_file,
                         {"record_id": record.record_id, "sha256": source_hash},
                     )
                     future_count += 1
-                    available_from = as_kst(record.available_from)
                     next_available_from = min(
-                        next_available_from or available_from,
-                        available_from,
+                        next_available_from or effective_available_from,
+                        effective_available_from,
                     )
                     continue
                 batch.append(record)
+                batch_available_from[record.record_id] = effective_available_from
                 if len(batch) < batch_size:
                     continue
                 connection, dimensions, retained = self._insert_streaming_batch(
@@ -522,12 +599,14 @@ class ProductionMemoryIndex:
                     cell_counts=cell_counts,
                     reasoning_counts=reasoning_counts,
                     disposition_counts=disposition_counts,
+                    effective_available_from_by_record=batch_available_from,
                 )
                 retained_count += retained
                 record_count += len(batch)
-                batch_max = max(as_kst(item.available_from) for item in batch)
+                batch_max = max(batch_available_from.values())
                 max_available_from = max(max_available_from or batch_max, batch_max)
                 batch = []
+                batch_available_from = {}
             if batch:
                 connection, dimensions, retained = self._insert_streaming_batch(
                     database_path,
@@ -546,11 +625,28 @@ class ProductionMemoryIndex:
                     cell_counts=cell_counts,
                     reasoning_counts=reasoning_counts,
                     disposition_counts=disposition_counts,
+                    effective_available_from_by_record=batch_available_from,
                 )
                 retained_count += retained
                 record_count += len(batch)
-                batch_max = max(as_kst(item.available_from) for item in batch)
+                batch_max = max(batch_available_from.values())
                 max_available_from = max(max_available_from or batch_max, batch_max)
+            if replay_availability_by_episode is not None and observed_episode_ids != set(
+                replay_availability_by_episode
+            ):
+                missing = sorted(observed_episode_ids - set(replay_availability_by_episode))
+                unexpected = sorted(set(replay_availability_by_episode) - observed_episode_ids)
+                unexpected_with_records = [
+                    episode_id
+                    for episode_id in unexpected
+                    if not _episode_record_file_is_empty(self.root, episode_id)
+                ]
+                if missing or unexpected_with_records:
+                    raise ValueError(
+                        "replay availability episode coverage mismatch: "
+                        f"missing={missing[:10]} "
+                        f"unexpected={unexpected_with_records[:10]}"
+                    )
             if connection is None or max_available_from is None:
                 raise ValueError("production memory index requires cutoff-safe brain records")
             state = _finalize_streaming_database(
@@ -576,12 +672,8 @@ class ProductionMemoryIndex:
                 cell_count=state.cell_count,
                 secondary_membership_count=state.secondary_membership_count,
                 independent_unit_count=state.independent_unit_count,
-                unsupported_reasoning_record_count=(
-                    state.unsupported_reasoning_record_count
-                ),
-                unsupported_reasoning_record_ids_sha256=(
-                    state.unsupported_reasoning_record_ids_sha256
-                ),
+                unsupported_reasoning_record_count=(state.unsupported_reasoning_record_count),
+                unsupported_reasoning_record_ids_sha256=(state.unsupported_reasoning_record_ids_sha256),
                 readiness=state.readiness,
             )
         finally:
@@ -613,14 +705,11 @@ class ProductionMemoryIndex:
         cell_counts: Counter[str],
         reasoning_counts: Counter[str],
         disposition_counts: Counter[str],
+        effective_available_from_by_record: Mapping[str, datetime],
     ) -> tuple[duckdb.DuckDBPyConnection, int, int]:
-        source_hashes = {
-            record.record_id: brain_record_envelope_sha256(record) for record in records
-        }
+        source_hashes = {record.record_id: brain_record_envelope_sha256(record) for record in records}
         documents = {record.record_id: resolver.document(record) for record in records}
-        routing_by_id = {
-            record.record_id: record_routing_metadata(record) for record in records
-        }
+        routing_by_id = {record.record_id: record_routing_metadata(record) for record in records}
         unresolved = [
             record.record_id
             for record in records
@@ -628,10 +717,7 @@ class ProductionMemoryIndex:
             and MISSING_STRUCTURAL_CONTEXT in documents[record.record_id]
         ]
         if unresolved:
-            raise ValueError(
-                "reasoning records require structural evidence documents: "
-                + ", ".join(unresolved[:10])
-            )
+            raise ValueError("reasoning records require structural evidence documents: " + ", ".join(unresolved[:10]))
         reusable_ids = [
             record.record_id
             for record in records
@@ -642,16 +728,14 @@ class ProductionMemoryIndex:
             parent_vectors = {
                 str(row[0]): [float(value) for value in row[1]]
                 for row in parent_connection.execute(
-                    "SELECT record_id, embedding FROM records "
-                    "WHERE record_id IN (SELECT UNNEST(?::VARCHAR[]))",
+                    "SELECT record_id, embedding FROM records WHERE record_id IN (SELECT UNNEST(?::VARCHAR[]))",
                     [reusable_ids],
                 ).fetchall()
             }
             parent_documents = {
                 str(row[0]): str(row[1])
                 for row in parent_connection.execute(
-                    "SELECT record_id, document FROM records "
-                    "WHERE record_id IN (SELECT UNNEST(?::VARCHAR[]))",
+                    "SELECT record_id, document FROM records WHERE record_id IN (SELECT UNNEST(?::VARCHAR[]))",
                     [reusable_ids],
                 ).fetchall()
             }
@@ -660,21 +744,11 @@ class ProductionMemoryIndex:
                 for record_id, vector in parent_vectors.items()
                 if parent_documents.get(record_id) == documents[record_id]
             }
-        missing = [
-            record for record in records if record.record_id not in parent_vectors
-        ]
-        generated = self._embed_batches(
-            [documents[record.record_id] for record in missing]
-        )
-        generated_by_id = {
-            record.record_id: vector
-            for record, vector in zip(missing, generated, strict=True)
-        }
+        missing = [record for record in records if record.record_id not in parent_vectors]
+        generated = self._embed_batches([documents[record.record_id] for record in missing])
+        generated_by_id = {record.record_id: vector for record, vector in zip(missing, generated, strict=True)}
         vectors = [
-            _float32_vector(
-                parent_vectors.get(record.record_id)
-                or generated_by_id[record.record_id]
-            )
+            _float32_vector(parent_vectors.get(record.record_id) or generated_by_id[record.record_id])
             for record in records
         ]
         batch_dimensions = _embedding_dimensions(vectors, self.embedding_provider)
@@ -709,7 +783,7 @@ class ProductionMemoryIndex:
                     record.record_type,
                     record.training_target,
                     record.trade_date,
-                    as_kst(record.available_from).isoformat(),
+                    effective_available_from_by_record[record.record_id].isoformat(),
                     record.training_eligible,
                     record.evidence_phase,
                     routing.evidence_polarity,
@@ -740,8 +814,7 @@ class ProductionMemoryIndex:
                 )
             )
             provenance_rows.extend(
-                (record.record_id, source_id)
-                for source_id in sorted(set(record.provenance_source_ids))
+                (record.record_id, source_id) for source_id in sorted(set(record.provenance_source_ids))
             )
             _write_jsonl_row(
                 source_file,
@@ -755,10 +828,9 @@ class ProductionMemoryIndex:
                 embedding_file,
                 {"record_id": record.record_id, "sha256": embedding_hash},
             )
-            quantized = np.rint(
-                np.asarray(vector, dtype=np.float32)
-                * MEMORY_VECTOR_QUANTIZATION_SCALE
-            ).astype(np.int64)
+            quantized = np.rint(np.asarray(vector, dtype=np.float32) * MEMORY_VECTOR_QUANTIZATION_SCALE).astype(
+                np.int64
+            )
             cell_sums.setdefault(signature, np.zeros(dimensions, dtype=np.int64))
             cell_sums[signature] += quantized
             cell_counts[signature] += 1
@@ -798,21 +870,15 @@ class ProductionMemoryIndex:
         manifest = self.resolve_snapshot(cutoff_at=cutoff_at)
         if self.production and not manifest.production_ready:
             raise ValueError("selected memory snapshot is not production ready")
-        vector = (
-            query_vector
-            if query_vector is not None
-            else self._embed_batches([query])[0]
-        )
+        vector = query_vector if query_vector is not None else self._embed_batches([query])[0]
         if len(vector) != manifest.embedding_dimensions or any(
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(float(value))
+            isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value))
             for value in vector
         ):
             raise ValueError("query embedding dimension does not match memory snapshot")
         database_path = self.root / manifest.database.artifact_path
         self._verify_runtime_database(manifest)
-        connection = _connect_index(database_path, read_only=True)
+        connection = self._runtime_connection(database_path)
         try:
             filtered_metadata: list[tuple[Any, ...]] | None = None
             candidate_limit = max(limit, limit * MEMORY_INDEX_QUERY_CANDIDATE_MULTIPLIER)
@@ -896,7 +962,7 @@ class ProductionMemoryIndex:
                                r.record_id, ?
                            )) AS score
                     FROM reasoning_records r
-                    WHERE {filter_sql.removeprefix(' AND ')}
+                    WHERE {filter_sql.removeprefix(" AND ")}
                     GROUP BY r.primary_cell_id
                     HAVING score IS NOT NULL
                     ORDER BY score DESC, r.primary_cell_id
@@ -904,10 +970,7 @@ class ProductionMemoryIndex:
                     """,
                     [query, *filter_parameters, candidate_limit],
                 ).fetchall()
-                candidate_cell_ids = sorted(
-                    {str(row[0]) for row in facet_ann_rows}
-                    | {str(row[0]) for row in fts_rows}
-                )
+                candidate_cell_ids = sorted({str(row[0]) for row in facet_ann_rows} | {str(row[0]) for row in fts_rows})
                 if candidate_cell_ids:
                     filtered_metadata = connection.execute(
                         f"""
@@ -924,10 +987,7 @@ class ProductionMemoryIndex:
                         """,
                         [candidate_cell_ids, *filter_parameters],
                     ).fetchall()
-                    metadata_by_cell = {
-                        str(row[0]): (int(row[1]), int(row[2]))
-                        for row in filtered_metadata
-                    }
+                    metadata_by_cell = {str(row[0]): (int(row[1]), int(row[2])) for row in filtered_metadata}
                     ann_rows = [
                         (
                             str(row[0]),
@@ -940,9 +1000,7 @@ class ProductionMemoryIndex:
                     ]
                     ann_rows.sort(key=lambda row: (-float(row[1]), str(row[0])))
                     ann_rows = ann_rows[:candidate_limit]
-                    fts_rows = [
-                        row for row in fts_rows if str(row[0]) in metadata_by_cell
-                    ]
+                    fts_rows = [row for row in fts_rows if str(row[0]) in metadata_by_cell]
                 else:
                     ann_rows = []
                     fts_rows = []
@@ -952,12 +1010,10 @@ class ProductionMemoryIndex:
                 ann_rows=ann_rows,
                 fts_rows=fts_rows,
                 limit=limit,
-                metadata_rows=(
-                    filtered_metadata
-                ),
+                metadata_rows=(filtered_metadata),
             )
         finally:
-            connection.close()
+            self._retain_runtime_connection(connection)
 
     def members_for_cells(
         self,
@@ -971,7 +1027,7 @@ class ProductionMemoryIndex:
         manifest = self.resolve_snapshot(cutoff_at=cutoff_at)
         database_path = self.root / manifest.database.artifact_path
         self._verify_runtime_database(manifest)
-        connection = _connect_index(database_path, read_only=True)
+        connection = self._runtime_connection(database_path)
         try:
             rows = connection.execute(
                 """
@@ -1017,7 +1073,7 @@ class ProductionMemoryIndex:
                 for row in rows
             ]
         finally:
-            connection.close()
+            self._retain_runtime_connection(connection)
 
     def population_members_for_cells(
         self,
@@ -1046,10 +1102,7 @@ class ProductionMemoryIndex:
         purpose_filter_sql = ""
         purpose_parameters: list[object] = []
         if included_memory_lanes is not None:
-            purpose_filter_sql += (
-                " AND list_has_any(from_json(r.memory_lanes, '[\"VARCHAR\"]'), "
-                "?::VARCHAR[])"
-            )
+            purpose_filter_sql += " AND list_has_any(from_json(r.memory_lanes, '[\"VARCHAR\"]'), ?::VARCHAR[])"
             purpose_parameters.append(sorted(set(included_memory_lanes)))
         if included_record_types is not None:
             if not included_record_types:
@@ -1065,21 +1118,19 @@ class ProductionMemoryIndex:
             manifest,
             force=force_database_verification,
         )
-        connection = _connect_index(database_path, read_only=True)
+        connection = self._runtime_connection(database_path)
         try:
             known_cell_ids = {
                 str(row[0])
                 for row in connection.execute(
-                    "SELECT cell_id FROM cells "
-                    "WHERE cell_id IN (SELECT UNNEST(?::VARCHAR[]))",
+                    "SELECT cell_id FROM cells WHERE cell_id IN (SELECT UNNEST(?::VARCHAR[]))",
                     [selected_cells],
                 ).fetchall()
             }
             missing_cell_ids = sorted(set(selected_cells) - known_cell_ids)
             if missing_cell_ids:
                 raise ValueError(
-                    "selected population cells are absent from the snapshot: "
-                    + ", ".join(missing_cell_ids)
+                    "selected population cells are absent from the snapshot: " + ", ".join(missing_cell_ids)
                 )
             future_trade_date_count = _fetch_count(
                 connection,
@@ -1097,7 +1148,8 @@ class ProductionMemoryIndex:
                   AND r.routing_disposition IN (SELECT UNNEST(?::VARCHAR[]))
                   AND r.independent_unit_type = ?
                   AND r.trade_date > ?
-                """ + purpose_filter_sql,
+                """
+                + purpose_filter_sql,
                 [
                     selected_cells,
                     selected_cells,
@@ -1109,9 +1161,7 @@ class ProductionMemoryIndex:
                 ],
             )
             if future_trade_date_count:
-                raise ValueError(
-                    "selected population contains a trade date after the cutoff"
-                )
+                raise ValueError("selected population contains a trade date after the cutoff")
             if max_records is not None:
                 selected_record_count = _fetch_count(
                     connection,
@@ -1128,7 +1178,8 @@ class ProductionMemoryIndex:
                     WHERE r.available_from <= ?
                       AND r.routing_disposition IN (SELECT UNNEST(?::VARCHAR[]))
                       AND r.independent_unit_type = ?
-                    """ + purpose_filter_sql,
+                    """
+                    + purpose_filter_sql,
                     [
                         selected_cells,
                         selected_cells,
@@ -1197,7 +1248,7 @@ class ProductionMemoryIndex:
                 ],
             ).fetchall()
         finally:
-            connection.close()
+            self._retain_runtime_connection(connection)
         grouped: dict[str, tuple[tuple[object, ...], set[str]]] = {}
         for row in rows:
             record_id = str(row[0])
@@ -1220,12 +1271,8 @@ class ProductionMemoryIndex:
                 memory_lanes=tuple(json.loads(str(row[11]))),
                 path_type=str(row[12]),
                 regime_cluster=str(row[13]),
-                high_return_pct=(
-                    float(cast(float, row[14])) if row[14] is not None else None
-                ),
-                close_return_pct=(
-                    float(cast(float, row[15])) if row[15] is not None else None
-                ),
+                high_return_pct=(float(cast(float, row[14])) if row[14] is not None else None),
+                close_return_pct=(float(cast(float, row[15])) if row[15] is not None else None),
                 upper_limit_touched=(bool(row[16]) if row[16] is not None else None),
                 outcome_observed=bool(row[17]),
                 sample_weight=float(cast(float, row[18])),
@@ -1236,6 +1283,40 @@ class ProductionMemoryIndex:
             )
             for row, matched_cells in (grouped[key] for key in sorted(grouped))
         ]
+
+    def effective_available_from_for_records(
+        self,
+        record_ids: list[str],
+        *,
+        cutoff_at: datetime,
+    ) -> tuple[MemoryCellSnapshotManifest, dict[str, datetime]]:
+        """Read cutoff-effective availability from the active immutable snapshot."""
+
+        selected_ids = sorted(set(record_ids))
+        if not selected_ids:
+            raise ValueError("effective availability lookup requires record IDs")
+        if len(selected_ids) > 2_048:
+            raise ValueError("effective availability lookup exceeds its record budget")
+        manifest = self.resolve_snapshot(cutoff_at=cutoff_at)
+        self._verify_runtime_database(manifest)
+        connection = self._runtime_connection(self.root / manifest.database.artifact_path)
+        try:
+            rows = connection.execute(
+                """
+                SELECT record_id, available_from
+                FROM records
+                WHERE record_id IN (SELECT UNNEST(?::VARCHAR[]))
+                  AND available_from <= ?
+                ORDER BY record_id
+                """,
+                [selected_ids, as_kst(cutoff_at).isoformat()],
+            ).fetchall()
+        finally:
+            self._retain_runtime_connection(connection)
+        observed = {str(record_id): parse_datetime(str(available_from)) for record_id, available_from in rows}
+        if set(observed) != set(selected_ids):
+            raise ValueError("effective availability lookup is not closed over selected records")
+        return manifest, observed
 
     def representative_source_records(
         self,
@@ -1256,10 +1337,7 @@ class ProductionMemoryIndex:
             manifest,
             force=force_database_verification,
         )
-        connection = _connect_index(
-            self.root / manifest.database.artifact_path,
-            read_only=True,
-        )
+        connection = self._runtime_connection(self.root / manifest.database.artifact_path)
         try:
             rows = connection.execute(
                 """
@@ -1278,7 +1356,7 @@ class ProductionMemoryIndex:
                 [selected_ids, as_kst(cutoff_at).isoformat()],
             ).fetchall()
         finally:
-            connection.close()
+            self._retain_runtime_connection(connection)
         observed_ids = {str(row[0]) for row in rows}
         if observed_ids != set(selected_ids):
             raise ValueError("representative source records are absent from the snapshot")
@@ -1305,14 +1383,32 @@ class ProductionMemoryIndex:
         except OSError as exc:
             raise ValueError("memory snapshot database is unavailable") from exc
         observed_state = (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
-        if (
-            not force
-            and self._verified_database_files.get(manifest.snapshot_id) == observed_state
-        ):
+        verification_key = f"{manifest.snapshot_id}:{path.resolve()}"
+        if not force and self._verified_database_files.get(verification_key) == observed_state:
             return
         if file_sha256(path) != manifest.database.sha256:
             raise ValueError("memory snapshot database hash mismatch")
-        self._verified_database_files[manifest.snapshot_id] = observed_state
+        self._verified_database_files[verification_key] = observed_state
+
+    def _runtime_connection(self, database_path: Path) -> duckdb.DuckDBPyConnection:
+        """Reuse one immutable index connection per worker thread and snapshot."""
+
+        key = str(database_path.resolve())
+        connections = getattr(self._runtime_connection_state, "connections", None)
+        if connections is None:
+            connections = {}
+            self._runtime_connection_state.connections = connections
+        connection = connections.get(key)
+        if connection is None:
+            connection = _connect_index(database_path, read_only=True)
+            connections[key] = connection
+        return cast(duckdb.DuckDBPyConnection, connection)
+
+    @staticmethod
+    def _retain_runtime_connection(
+        _connection: duckdb.DuckDBPyConnection,
+    ) -> None:
+        """The thread-local cache owns immutable runtime connections."""
 
     def resolve_snapshot(self, *, cutoff_at: datetime) -> MemoryCellSnapshotManifest:
         cutoff = as_kst(cutoff_at)
@@ -1321,6 +1417,13 @@ class ProductionMemoryIndex:
         registry = self._read_registry()
         candidates = []
         manifests_by_id = {manifest.snapshot_id: manifest for manifest in self.list_snapshots()}
+        active_evaluation_snapshot_id: str | None = None
+        if self.current_pointer_path.is_file():
+            pointer = read_json(self.current_pointer_path)
+            active_id = str(pointer.get("snapshot_id") or "") if isinstance(pointer, dict) else ""
+            active_manifest = manifests_by_id.get(active_id)
+            if active_manifest is not None and active_manifest.evaluation_only:
+                active_evaluation_snapshot_id = active_id
         for entry in registry.get("snapshots", []):
             if not isinstance(entry, dict):
                 continue
@@ -1335,15 +1438,16 @@ class ProductionMemoryIndex:
                 requested_cutoff <= cutoff
                 and (
                     manifest is None
+                    or manifest.evaluation_only
                     or manifest.next_available_from is None
                     or cutoff < as_kst(manifest.next_available_from)
                 )
                 and embedding_model == self.embedding_provider.embedding_method
                 and manifest is not None
+                and (active_evaluation_snapshot_id is None or snapshot_id == active_evaluation_snapshot_id)
                 and _registry_entry_matches_manifest(entry, manifest, self.root)
                 and _manifest_versions_current(manifest)
-                and manifest.snapshot_id
-                == _snapshot_id(_snapshot_identity_from_manifest(manifest))
+                and manifest.snapshot_id == _snapshot_id(_snapshot_identity_from_manifest(manifest))
                 and (not self.production or manifest.production_ready)
             ):
                 candidates.append((requested_cutoff, manifest))
@@ -1374,27 +1478,18 @@ class ProductionMemoryIndex:
         *,
         requested_cutoff: datetime | None = None,
     ) -> None:
-        effective_requested_cutoff = as_kst(
-            requested_cutoff or manifest.as_of_cutoff
-        )
+        if manifest.evaluation_only:
+            raise ValueError("evaluation replay snapshots cannot enter the production activation path")
+        effective_requested_cutoff = as_kst(requested_cutoff or manifest.as_of_cutoff)
         if effective_requested_cutoff != as_kst(manifest.as_of_cutoff):
             raise ValueError("requested cutoff does not match memory snapshot cutoff")
         inspection = inspect_memory_snapshot(self.root, manifest.snapshot_id)
         if inspection.get("status") != "current_as_of":
             raise ValueError(
-                "cannot activate an invalid or stale memory snapshot: "
-                + canonical_json(inspection.get("errors", []))
+                "cannot activate an invalid or stale memory snapshot: " + canonical_json(inspection.get("errors", []))
             )
-        registry_bytes = (
-            self.as_of_registry_path.read_bytes()
-            if self.as_of_registry_path.exists()
-            else None
-        )
-        pointer_bytes = (
-            self.current_pointer_path.read_bytes()
-            if self.current_pointer_path.exists()
-            else None
-        )
+        registry_bytes = self.as_of_registry_path.read_bytes() if self.as_of_registry_path.exists() else None
+        pointer_bytes = self.current_pointer_path.read_bytes() if self.current_pointer_path.exists() else None
         try:
             self._register_snapshot(
                 manifest,
@@ -1407,14 +1502,91 @@ class ProductionMemoryIndex:
             _restore_optional_file(self.current_pointer_path, pointer_bytes)
             raise
 
+    def activate_verified_evaluation_snapshot(
+        self,
+        manifest: MemoryCellSnapshotManifest,
+        *,
+        receipt_path: Path,
+    ) -> None:
+        """Activate an isolated replay snapshot from its build receipt.
+
+        This deliberately avoids a second full database projection audit. It is
+        restricted to immutable, explicit-cutoff shadow receipts and is never used
+        by the production release path.
+        """
+
+        resolved_receipt = receipt_path.resolve()
+        try:
+            resolved_receipt.relative_to(self.root)
+        except ValueError as exc:
+            raise ValueError("evaluation snapshot receipt escapes the project") from exc
+        receipt = read_json(resolved_receipt)
+        if not isinstance(receipt, dict):
+            raise ValueError("evaluation snapshot receipt is invalid")
+        required = {
+            "schema_version": "nslab.shadow_replay_as_of_snapshot.v1",
+            "snapshot_id": manifest.snapshot_id,
+            "record_count": manifest.record_count,
+            "retained_embedding_count": manifest.record_count,
+            "generated_embedding_count": 0,
+            "centroid_population_record_count": manifest.record_count,
+            "full_corpus_centroids_used": False,
+            "holdout_overlap_count": 0,
+            "calibration_overlap_count": 0,
+            "immutable": True,
+            "production_available_from_mutated": False,
+            "availability_mode": "replay_available_from",
+            "availability_projection_version": (REPLAY_AVAILABILITY_PROJECTION_VERSION),
+        }
+        if any(receipt.get(key) != value for key, value in required.items()):
+            raise ValueError("evaluation snapshot receipt contract is not satisfied")
+        if (
+            manifest.cutoff_identity != f"explicit:{as_kst(manifest.as_of_cutoff).isoformat()}"
+            or not manifest.evaluation_only
+            or manifest.availability_mode != "replay_available_from"
+            or manifest.availability_projection is None
+            or receipt.get("availability_projection_sha256") != manifest.availability_projection.sha256
+            or receipt.get("availability_projection_episode_count") != manifest.availability_projection.item_count
+            or file_sha256(self.root / manifest.availability_projection.artifact_path)
+            != manifest.availability_projection.sha256
+            or receipt.get("build_cutoff") != as_kst(manifest.as_of_cutoff).isoformat()
+            or receipt.get("source_record_hashes_sha256")
+            != file_sha256(self.root / manifest.source_record_hashes.artifact_path)
+            or manifest.source_generation_sha256 != self._record_store_generation_sha256(rebuild_missing=False)
+            or not manifest.real_embedding
+            or manifest.unsupported_reasoning_record_count != 0
+            or not all(
+                (
+                    manifest.metadata_index_ready,
+                    manifest.fts_index_ready,
+                    manifest.hnsw_index_ready,
+                    manifest.provenance_graph_ready,
+                )
+            )
+        ):
+            raise ValueError("evaluation snapshot receipt does not close the snapshot")
+        registry_bytes = self.as_of_registry_path.read_bytes() if self.as_of_registry_path.exists() else None
+        pointer_bytes = self.current_pointer_path.read_bytes() if self.current_pointer_path.exists() else None
+        try:
+            self._register_snapshot(
+                manifest,
+                requested_cutoff=manifest.as_of_cutoff,
+                bind_current_pointer=False,
+            )
+            self._write_current_pointer(manifest)
+            self._bind_evaluation_receipt_to_pointer(
+                manifest,
+                receipt_path=resolved_receipt,
+            )
+        except Exception:
+            _restore_optional_file(self.as_of_registry_path, registry_bytes)
+            _restore_optional_file(self.current_pointer_path, pointer_bytes)
+            raise
+
     def _embed_batches(self, texts: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
         for offset in range(0, len(texts), self.embedding_batch_size):
-            vectors.extend(
-                self.embedding_provider.embed_texts(
-                    texts[offset : offset + self.embedding_batch_size]
-                )
-            )
+            vectors.extend(self.embedding_provider.embed_texts(texts[offset : offset + self.embedding_batch_size]))
         if len(vectors) != len(texts):
             raise ValueError("embedding provider returned the wrong vector count")
         return vectors
@@ -1452,16 +1624,11 @@ class ProductionMemoryIndex:
                     }
                 finally:
                     connection.close()
-        missing_indices = [
-            index
-            for index, record in enumerate(records)
-            if record.record_id not in parent_vectors
-        ]
+        missing_indices = [index for index, record in enumerate(records) if record.record_id not in parent_vectors]
         new_vectors = self._embed_batches([texts[index] for index in missing_indices])
         generated_by_index = dict(zip(missing_indices, new_vectors, strict=True))
         vectors = [
-            parent_vectors.get(record.record_id) or generated_by_index[index]
-            for index, record in enumerate(records)
+            parent_vectors.get(record.record_id) or generated_by_index[index] for index, record in enumerate(records)
         ]
         return vectors, len(parent_vectors)
 
@@ -1485,6 +1652,7 @@ class ProductionMemoryIndex:
         cutoff_identity: str,
         source_generation_sha256: str,
         embedding_method: str,
+        availability_projection_sha256: str | None,
     ) -> MemoryCellSnapshotManifest | None:
         candidates = [
             manifest
@@ -1493,6 +1661,8 @@ class ProductionMemoryIndex:
             and manifest.cutoff_identity == cutoff_identity
             and manifest.source_generation_sha256 == source_generation_sha256
             and manifest.embedding_model == embedding_method
+            and (manifest.availability_projection.sha256 if manifest.availability_projection is not None else None)
+            == availability_projection_sha256
             and _manifest_versions_current(manifest)
             and (not self.production or manifest.production_ready)
         ]
@@ -1500,8 +1670,7 @@ class ProductionMemoryIndex:
             inspection = inspect_memory_snapshot(self.root, manifest.snapshot_id)
             if inspection.get("status") != "current_as_of":
                 raise ValueError(
-                    "matching reusable memory snapshot is invalid: "
-                    + canonical_json(inspection.get("errors", []))
+                    "matching reusable memory snapshot is invalid: " + canonical_json(inspection.get("errors", []))
                 )
             return manifest
         return None
@@ -1512,23 +1681,20 @@ class ProductionMemoryIndex:
         max_available_from: datetime,
         embedding_method: str,
     ) -> MemoryCellSnapshotManifest | None:
-        manifests_by_id = {
-            manifest.snapshot_id: manifest for manifest in self.list_snapshots()
-        }
+        manifests_by_id = {manifest.snapshot_id: manifest for manifest in self.list_snapshots()}
         candidates: list[tuple[datetime, MemoryCellSnapshotManifest]] = []
         for entry in self._read_registry().get("snapshots", []):
             if not isinstance(entry, dict):
                 continue
             try:
-                requested_cutoff = as_kst(
-                    parse_datetime(str(entry["requested_cutoff"]))
-                )
+                requested_cutoff = as_kst(parse_datetime(str(entry["requested_cutoff"])))
                 manifest = manifests_by_id[str(entry["snapshot_id"])]
             except (KeyError, TypeError, ValueError):
                 continue
             if (
                 requested_cutoff > as_kst(max_available_from)
                 or manifest.embedding_model != embedding_method
+                or manifest.evaluation_only
                 or not _manifest_versions_current(manifest)
                 or not _registry_entry_matches_manifest(entry, manifest, self.root)
             ):
@@ -1548,12 +1714,37 @@ class ProductionMemoryIndex:
                 "next_available_from_stale",
             }
             if inspection.get("status") == "current_as_of" or (
-                isinstance(errors, list)
-                and errors
-                and set(errors) <= allowed_parent_staleness
+                isinstance(errors, list) and errors and set(errors) <= allowed_parent_staleness
             ):
                 return manifest
         return None
+
+    def _embedding_reuse_parent(
+        self,
+        snapshot_id: str,
+        *,
+        embedding_method: str,
+        source_generation_sha256: str,
+    ) -> MemoryCellSnapshotManifest:
+        parent = next(
+            (manifest for manifest in self.list_snapshots() if manifest.snapshot_id == snapshot_id),
+            None,
+        )
+        if parent is None:
+            raise ValueError("requested embedding reuse snapshot does not exist")
+        if (
+            parent.embedding_model != embedding_method
+            or parent.source_generation_sha256 != source_generation_sha256
+            or parent.evaluation_only
+            or not _manifest_versions_current(parent)
+        ):
+            raise ValueError("requested embedding reuse snapshot is incompatible")
+        inspection = inspect_memory_snapshot(self.root, parent.snapshot_id)
+        if inspection.get("status") != "current_as_of":
+            raise ValueError(
+                "requested embedding reuse snapshot is invalid: " + canonical_json(inspection.get("errors", []))
+            )
+        return parent
 
     def _snapshot_source_hashes(
         self,
@@ -1563,10 +1754,7 @@ class ProductionMemoryIndex:
             return {}
         path = self.root / manifest.source_record_hashes.artifact_path
         try:
-            return {
-                str(row["record_id"]): str(row["sha256"])
-                for row in _read_jsonl(path)
-            }
+            return {str(row["record_id"]): str(row["sha256"]) for row in _read_jsonl(path)}
         except (OSError, KeyError, TypeError, ValueError):
             return {}
 
@@ -1586,6 +1774,30 @@ class ProductionMemoryIndex:
         }
         temporary = self.current_pointer_path.with_suffix(".json.tmp")
         write_json(temporary, payload)
+        os.replace(temporary, self.current_pointer_path)
+
+    def _bind_evaluation_receipt_to_pointer(
+        self,
+        manifest: MemoryCellSnapshotManifest,
+        *,
+        receipt_path: Path,
+    ) -> None:
+        pointer = read_json(self.current_pointer_path)
+        if not isinstance(pointer, dict) or pointer.get("snapshot_id") != manifest.snapshot_id:
+            raise ValueError("evaluation pointer binding is unavailable")
+        pointer.update(
+            {
+                "evaluation_only": True,
+                "evaluation_receipt_path": relative_to_root(
+                    receipt_path,
+                    self.root,
+                ),
+                "evaluation_receipt_sha256": file_sha256(receipt_path),
+                "evaluation_database_sha256": manifest.database.sha256,
+            }
+        )
+        temporary = self.current_pointer_path.with_suffix(".json.tmp")
+        write_json(temporary, pointer)
         os.replace(temporary, self.current_pointer_path)
 
     def _register_snapshot(
@@ -1614,19 +1826,13 @@ class ProductionMemoryIndex:
                 "embedding_model": manifest.embedding_model,
                 "snapshot_id": manifest.snapshot_id,
                 "manifest_sha256": sha256_text(
-                    (
-                        self.snapshots_root
-                        / manifest.snapshot_id
-                        / MEMORY_MANIFEST_FILE
-                    ).read_text(encoding="utf-8")
+                    (self.snapshots_root / manifest.snapshot_id / MEMORY_MANIFEST_FILE).read_text(encoding="utf-8")
                 ),
                 "corpus_manifest_sha256": manifest.corpus_manifest_sha256,
                 "source_generation_sha256": manifest.source_generation_sha256,
                 "record_count": manifest.record_count,
                 "next_available_from": (
-                    manifest.next_available_from.isoformat()
-                    if manifest.next_available_from is not None
-                    else None
+                    manifest.next_available_from.isoformat() if manifest.next_available_from is not None else None
                 ),
                 "as_of_cutoff": manifest.as_of_cutoff.isoformat(),
                 "cutoff_identity": manifest.cutoff_identity,
@@ -1636,12 +1842,8 @@ class ProductionMemoryIndex:
                 "cell_schema_version": manifest.cell_schema_version,
                 "polarity_classifier_version": manifest.polarity_classifier_version,
                 "population_projection_version": manifest.population_projection_version,
-                "unsupported_reasoning_record_count": (
-                    manifest.unsupported_reasoning_record_count
-                ),
-                "unsupported_reasoning_record_ids_sha256": (
-                    manifest.unsupported_reasoning_record_ids_sha256
-                ),
+                "unsupported_reasoning_record_count": (manifest.unsupported_reasoning_record_count),
+                "unsupported_reasoning_record_ids_sha256": (manifest.unsupported_reasoning_record_ids_sha256),
             }
         )
         entries.sort(key=lambda item: (str(item["embedding_model"]), str(item["requested_cutoff"])))
@@ -1656,11 +1858,7 @@ class ProductionMemoryIndex:
         if bind_current_pointer and self.current_pointer_path.exists():
             try:
                 pointer = read_json(self.current_pointer_path)
-                active = next(
-                    item
-                    for item in self.list_snapshots()
-                    if item.snapshot_id == pointer.get("snapshot_id")
-                )
+                active = next(item for item in self.list_snapshots() if item.snapshot_id == pointer.get("snapshot_id"))
             except (OSError, StopIteration, TypeError, ValueError):
                 return
             self._write_current_pointer(active)
@@ -1673,9 +1871,7 @@ class ProductionMemoryIndex:
             expected = str(pointer["as_of_registry_sha256"])
         except (OSError, KeyError, TypeError, ValueError):
             return False
-        return expected == sha256_text(
-            self.as_of_registry_path.read_text(encoding="utf-8")
-        )
+        return expected == sha256_text(self.as_of_registry_path.read_text(encoding="utf-8"))
 
     def _record_store_generation_allows(
         self,
@@ -1718,8 +1914,7 @@ class ProductionMemoryIndex:
         if not (
             isinstance(generation, dict)
             and generation.get("schema_version") == "nslab.record_index_manifest.v2"
-            and generation.get("record_hash_kind")
-            == "canonical_full_envelope_sha256"
+            and generation.get("record_hash_kind") == "canonical_full_envelope_sha256"
             and isinstance(generation.get("generation_root_sha256"), str)
         ):
             if not rebuild_missing:
@@ -1770,14 +1965,10 @@ def inspect_memory_snapshot(root: Path, snapshot_id: str) -> dict[str, object]:
         raw_manifest = read_json(manifest_path)
     except (OSError, ValueError) as exc:
         return {**base, "status": "invalid", "errors": [f"manifest_invalid:{exc}"]}
-    if (
-        isinstance(raw_manifest, dict)
-        and raw_manifest.get("schema_version")
-        in {
-            "nslab.memory_cell_snapshot_manifest.v1",
-            "nslab.memory_cell_snapshot_manifest.v2",
-        }
-    ):
+    if isinstance(raw_manifest, dict) and raw_manifest.get("schema_version") in {
+        "nslab.memory_cell_snapshot_manifest.v1",
+        "nslab.memory_cell_snapshot_manifest.v2",
+    }:
         return {
             **base,
             "status": "stale",
@@ -1805,6 +1996,7 @@ def inspect_memory_snapshot(root: Path, snapshot_id: str) -> dict[str, object]:
         manifest.cell_entries,
         manifest.memberships,
         manifest.database,
+        *((manifest.availability_projection,) if manifest.availability_projection is not None else ()),
     )
     for artifact in artifacts:
         path = (root / artifact.artifact_path).resolve()
@@ -1821,10 +2013,7 @@ def inspect_memory_snapshot(root: Path, snapshot_id: str) -> dict[str, object]:
             errors.append(f"artifact_hash_mismatch:{artifact.artifact_path}")
     if not _source_generation_allows_manifest(root, manifest):
         errors.append("source_generation_hash_stale")
-    if (
-        manifest.record_count + manifest.excluded_future_record_count
-        > MEMORY_INDEX_STREAMING_AUDIT_THRESHOLD
-    ):
+    if manifest.record_count + manifest.excluded_future_record_count > MEMORY_INDEX_STREAMING_AUDIT_THRESHOLD:
         errors.extend(_streaming_snapshot_integrity_errors(root, manifest))
         status = (
             "current_as_of"
@@ -1844,20 +2033,21 @@ def inspect_memory_snapshot(root: Path, snapshot_id: str) -> dict[str, object]:
             "cell_count": manifest.cell_count,
             "streaming_audit": True,
         }
+    try:
+        replay_availability = load_snapshot_replay_availability(root, manifest)
+    except (OSError, ValueError) as exc:
+        replay_availability = None
+        errors.append(f"availability_projection_invalid:{exc}")
     source_path = root / manifest.source_record_hashes.artifact_path
     embedding_hash_path = root / manifest.embedding_hashes.artifact_path
     try:
-        declared_hashes = {
-            str(row["record_id"]): str(row["sha256"])
-            for row in _read_jsonl(source_path)
-        }
+        declared_hashes = {str(row["record_id"]): str(row["sha256"]) for row in _read_jsonl(source_path)}
     except (OSError, KeyError, TypeError, ValueError):
         declared_hashes = {}
         errors.append("source_record_hashes_invalid")
     try:
         declared_embedding_hashes = {
-            str(row["record_id"]): str(row["sha256"])
-            for row in _read_jsonl(embedding_hash_path)
+            str(row["record_id"]): str(row["sha256"]) for row in _read_jsonl(embedding_hash_path)
         }
     except (OSError, KeyError, TypeError, ValueError):
         declared_embedding_hashes = {}
@@ -1866,34 +2056,29 @@ def inspect_memory_snapshot(root: Path, snapshot_id: str) -> dict[str, object]:
     current_records = [
         record
         for record in all_source_records
-        if as_kst(record.available_from) <= as_kst(manifest.as_of_cutoff)
+        if _effective_record_available_from(record, replay_availability) <= as_kst(manifest.as_of_cutoff)
     ]
     future_records = [
         record
         for record in all_source_records
-        if as_kst(record.available_from) > as_kst(manifest.as_of_cutoff)
+        if _effective_record_available_from(record, replay_availability) > as_kst(manifest.as_of_cutoff)
     ]
     current_hashes = brain_record_envelope_hashes(current_records)
     if current_hashes != declared_hashes:
         errors.append("source_record_hashes_stale")
     future_path = root / manifest.excluded_future_record_hashes.artifact_path
     try:
-        declared_future_hashes = {
-            str(row["record_id"]): str(row["sha256"])
-            for row in _read_jsonl(future_path)
-        }
+        declared_future_hashes = {str(row["record_id"]): str(row["sha256"]) for row in _read_jsonl(future_path)}
     except (OSError, KeyError, TypeError, ValueError):
         declared_future_hashes = {}
         errors.append("future_record_hashes_invalid")
     observed_future_hashes = brain_record_envelope_hashes(future_records)
     observed_next_available_from = min(
-        (as_kst(record.available_from) for record in future_records),
+        (_effective_record_available_from(record, replay_availability) for record in future_records),
         default=None,
     )
     if observed_next_available_from != (
-        as_kst(manifest.next_available_from)
-        if manifest.next_available_from is not None
-        else None
+        as_kst(manifest.next_available_from) if manifest.next_available_from is not None else None
     ):
         errors.append("next_available_from_stale")
     if declared_future_hashes != observed_future_hashes:
@@ -1905,15 +2090,12 @@ def inspect_memory_snapshot(root: Path, snapshot_id: str) -> dict[str, object]:
         errors.append("source_future_partition_mismatch")
     routing_path = root / manifest.routing_metadata.artifact_path
     try:
-        declared_routing = {
-            str(row["record_id"]): row["routing"] for row in _read_jsonl(routing_path)
-        }
+        declared_routing = {str(row["record_id"]): row["routing"] for row in _read_jsonl(routing_path)}
     except (OSError, KeyError, TypeError, ValueError):
         declared_routing = {}
         errors.append("routing_metadata_invalid")
     current_routing = {
-        record.record_id: record_routing_metadata(record).model_dump(mode="json")
-        for record in current_records
+        record.record_id: record_routing_metadata(record).model_dump(mode="json") for record in current_records
     }
     if declared_routing != current_routing:
         errors.append("routing_metadata_hash_stale")
@@ -1922,9 +2104,7 @@ def inspect_memory_snapshot(root: Path, snapshot_id: str) -> dict[str, object]:
     membership_path = root / manifest.memberships.artifact_path
     cell_path = root / manifest.cell_entries.artifact_path
     try:
-        membership_rows = [
-            MemoryCellMembership.model_validate(row) for row in _read_jsonl(membership_path)
-        ]
+        membership_rows = [MemoryCellMembership.model_validate(row) for row in _read_jsonl(membership_path)]
         cell_rows = [MemoryCellEntry.model_validate(row) for row in _read_jsonl(cell_path)]
     except (OSError, ValueError):
         membership_rows = []
@@ -1949,7 +2129,7 @@ def inspect_memory_snapshot(root: Path, snapshot_id: str) -> dict[str, object]:
                 future_count = _fetch_count(
                     connection,
                     "SELECT COUNT(*) FROM records WHERE available_from > ?",
-                        [as_kst(manifest.max_available_from).isoformat()],
+                    [as_kst(manifest.max_available_from).isoformat()],
                 )
                 if record_count != manifest.record_count:
                     errors.append("database_record_count_mismatch")
@@ -1957,12 +2137,19 @@ def inspect_memory_snapshot(root: Path, snapshot_id: str) -> dict[str, object]:
                     errors.append("database_primary_membership_mismatch")
                 if future_count:
                     errors.append("database_future_membership_detected")
+                projected_current_records = [
+                    _record_with_effective_available_from(
+                        record,
+                        replay_availability,
+                    )
+                    for record in current_records
+                ]
                 errors.extend(
                     _database_integrity_errors(
                         connection,
                         root=root,
                         manifest=manifest,
-                        current_records=current_records,
+                        current_records=projected_current_records,
                         declared_hashes=declared_hashes,
                         declared_embedding_hashes=declared_embedding_hashes,
                         memberships=membership_rows,
@@ -2000,17 +2187,10 @@ def inspect_current_memory_index(root: Path) -> dict[str, object]:
     except (OSError, KeyError, TypeError, ValueError):
         return {"status": "invalid", "passed": False, "pointer_exists": True}
     expected_manifest_path = (
-        root.resolve()
-        / MEMORY_INDEX_ROOT
-        / MEMORY_SNAPSHOT_DIR
-        / snapshot_id
-        / MEMORY_MANIFEST_FILE
+        root.resolve() / MEMORY_INDEX_ROOT / MEMORY_SNAPSHOT_DIR / snapshot_id / MEMORY_MANIFEST_FILE
     ).resolve()
     expected_relative_path = relative_to_root(expected_manifest_path, root.resolve())
-    if (
-        manifest_relative_path != expected_relative_path
-        or manifest_path.resolve() != expected_manifest_path
-    ):
+    if manifest_relative_path != expected_relative_path or manifest_path.resolve() != expected_manifest_path:
         return {
             "status": "invalid",
             "passed": False,
@@ -2022,9 +2202,7 @@ def inspect_current_memory_index(root: Path) -> dict[str, object]:
         return {**inspection, "status": "invalid", "passed": False, "pointer_hash_verified": False}
     registry_path = root.resolve() / MEMORY_INDEX_ROOT / MEMORY_AS_OF_REGISTRY
     observed_registry_sha256 = (
-        sha256_text(registry_path.read_text(encoding="utf-8"))
-        if registry_path.exists()
-        else sha256_text("")
+        sha256_text(registry_path.read_text(encoding="utf-8")) if registry_path.exists() else sha256_text("")
     )
     if observed_registry_sha256 != registry_sha256:
         return {
@@ -2063,6 +2241,100 @@ def inspect_current_memory_index(root: Path) -> dict[str, object]:
     }
 
 
+def active_memory_snapshot_manifest(
+    root: Path,
+) -> MemoryCellSnapshotManifest | None:
+    """Resolve the hash-bound active manifest without running a full DB audit."""
+
+    root = root.resolve()
+    pointer_path = root / MEMORY_INDEX_ROOT / MEMORY_CURRENT_POINTER
+    if not pointer_path.is_file():
+        return None
+    pointer = read_json(pointer_path)
+    if not isinstance(pointer, dict):
+        raise ValueError("active memory pointer is invalid")
+    snapshot_id = str(pointer.get("snapshot_id") or "")
+    manifest_path = (root / MEMORY_INDEX_ROOT / MEMORY_SNAPSHOT_DIR / snapshot_id / MEMORY_MANIFEST_FILE).resolve()
+    expected_relative = relative_to_root(manifest_path, root)
+    if (
+        not snapshot_id
+        or pointer.get("manifest_path") != expected_relative
+        or not manifest_path.is_file()
+        or pointer.get("manifest_sha256") != sha256_text(manifest_path.read_text(encoding="utf-8"))
+    ):
+        raise ValueError("active memory pointer does not bind its manifest")
+    registry_path = root / MEMORY_INDEX_ROOT / MEMORY_AS_OF_REGISTRY
+    registry_sha256 = (
+        sha256_text(registry_path.read_text(encoding="utf-8")) if registry_path.is_file() else sha256_text("")
+    )
+    if pointer.get("as_of_registry_sha256") != registry_sha256:
+        raise ValueError("active memory pointer does not bind its registry")
+    manifest = MemoryCellSnapshotManifest.model_validate(read_json(manifest_path))
+    if manifest.snapshot_id != snapshot_id:
+        raise ValueError("active memory snapshot identity mismatch")
+    return manifest
+
+
+def inspect_verified_evaluation_memory_index(root: Path) -> dict[str, object]:
+    """Verify the receipt-bound evaluation pointer without a corpus projection."""
+
+    root = root.resolve()
+    manifest = active_memory_snapshot_manifest(root)
+    if manifest is None or not manifest.evaluation_only:
+        return {
+            "status": "not_evaluation",
+            "passed": False,
+            "production_ready": False,
+        }
+    pointer_path = root / MEMORY_INDEX_ROOT / MEMORY_CURRENT_POINTER
+    pointer = read_json(pointer_path)
+    if not isinstance(pointer, dict):
+        raise ValueError("evaluation memory pointer is invalid")
+    receipt_value = pointer.get("evaluation_receipt_path")
+    if not isinstance(receipt_value, str) or not receipt_value:
+        raise ValueError("evaluation memory pointer lacks its receipt")
+    receipt_path = (root / receipt_value).resolve()
+    try:
+        receipt_path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("evaluation memory receipt escapes the project") from exc
+    receipt = read_json(receipt_path)
+    if (
+        not isinstance(receipt, dict)
+        or pointer.get("evaluation_only") is not True
+        or pointer.get("evaluation_receipt_sha256") != file_sha256(receipt_path)
+        or pointer.get("evaluation_database_sha256") != manifest.database.sha256
+        or receipt.get("schema_version") != "nslab.shadow_replay_as_of_snapshot.v1"
+        or receipt.get("snapshot_id") != manifest.snapshot_id
+        or receipt.get("record_count") != manifest.record_count
+        or receipt.get("retained_embedding_count") != manifest.record_count
+        or receipt.get("generated_embedding_count") != 0
+        or receipt.get("centroid_population_record_count") != manifest.record_count
+        or receipt.get("full_corpus_centroids_used") is not False
+        or receipt.get("holdout_overlap_count") != 0
+        or receipt.get("calibration_overlap_count") != 0
+        or receipt.get("immutable") is not True
+        or receipt.get("production_available_from_mutated") is not False
+        or receipt.get("source_record_hashes_sha256") != manifest.source_record_hashes.sha256
+        or receipt.get("availability_projection_sha256")
+        != (manifest.availability_projection.sha256 if manifest.availability_projection is not None else None)
+        or not (root / manifest.database.artifact_path).is_file()
+        or not manifest.production_ready
+    ):
+        raise ValueError("evaluation memory receipt binding is invalid")
+    return {
+        "status": "current_as_of",
+        "passed": True,
+        "production_ready": True,
+        "evaluation_only": True,
+        "receipt_verified": True,
+        "snapshot_id": manifest.snapshot_id,
+        "record_count": manifest.record_count,
+        "cell_count": manifest.cell_count,
+        "manifest": manifest.model_dump(mode="json"),
+    }
+
+
 def _current_source_partition_verified(
     root: Path,
     manifest: MemoryCellSnapshotManifest,
@@ -2072,10 +2344,7 @@ def _current_source_partition_verified(
         read_only=True,
     )
     try:
-        connection.execute(
-            "CREATE TEMP TABLE expected_all_source "
-            "(record_id VARCHAR PRIMARY KEY, sha256 VARCHAR)"
-        )
+        connection.execute("CREATE TEMP TABLE expected_all_source (record_id VARCHAR PRIMARY KEY, sha256 VARCHAR)")
         rows: list[tuple[str, str]] = []
         for record in _iter_source_records(root):
             rows.append((record.record_id, brain_record_envelope_sha256(record)))
@@ -2117,6 +2386,10 @@ def _streaming_snapshot_integrity_errors(
     manifest: MemoryCellSnapshotManifest,
 ) -> list[str]:
     errors: list[str] = []
+    try:
+        replay_availability = load_snapshot_replay_availability(root, manifest)
+    except (OSError, ValueError) as exc:
+        return [f"availability_projection_invalid:{exc}"]
     database_path = root / manifest.database.artifact_path
     connection = _connect_index(database_path, read_only=True)
     try:
@@ -2154,14 +2427,8 @@ def _streaming_snapshot_integrity_errors(
             )
             """
         )
-        connection.execute(
-            "CREATE TEMP TABLE expected_provenance "
-            "(record_id VARCHAR, source_id VARCHAR)"
-        )
-        connection.execute(
-            "CREATE TEMP TABLE expected_future "
-            "(record_id VARCHAR PRIMARY KEY, source_sha256 VARCHAR)"
-        )
+        connection.execute("CREATE TEMP TABLE expected_provenance (record_id VARCHAR, source_id VARCHAR)")
+        connection.execute("CREATE TEMP TABLE expected_future (record_id VARCHAR PRIMARY KEY, source_sha256 VARCHAR)")
         resolver = RecordMemoryDocumentResolver(root)
         record_rows: list[tuple[object, ...]] = []
         provenance_rows: list[tuple[str, str]] = []
@@ -2169,12 +2436,15 @@ def _streaming_snapshot_integrity_errors(
         observed_next_available_from: datetime | None = None
         for record in _iter_source_records(root):
             source_hash = brain_record_envelope_sha256(record)
-            if as_kst(record.available_from) > as_kst(manifest.as_of_cutoff):
+            effective_available_from = _effective_record_available_from(
+                record,
+                replay_availability,
+            )
+            if effective_available_from > as_kst(manifest.as_of_cutoff):
                 future_rows.append((record.record_id, source_hash))
-                available_from = as_kst(record.available_from)
                 observed_next_available_from = min(
-                    observed_next_available_from or available_from,
-                    available_from,
+                    observed_next_available_from or effective_available_from,
+                    effective_available_from,
                 )
             else:
                 routing = record_routing_metadata(record)
@@ -2187,7 +2457,7 @@ def _streaming_snapshot_integrity_errors(
                         record.record_type,
                         record.training_target,
                         record.trade_date,
-                        as_kst(record.available_from).isoformat(),
+                        effective_available_from.isoformat(),
                         record.training_eligible,
                         record.evidence_phase,
                         routing.evidence_polarity,
@@ -2213,8 +2483,7 @@ def _streaming_snapshot_integrity_errors(
                     )
                 )
                 provenance_rows.extend(
-                    (record.record_id, source_id)
-                    for source_id in sorted(set(record.provenance_source_ids))
+                    (record.record_id, source_id) for source_id in sorted(set(record.provenance_source_ids))
                 )
             if len(record_rows) >= 512:
                 connection.executemany(
@@ -2254,9 +2523,7 @@ def _streaming_snapshot_integrity_errors(
                 future_rows,
             )
         if observed_next_available_from != (
-            as_kst(manifest.next_available_from)
-            if manifest.next_available_from is not None
-            else None
+            as_kst(manifest.next_available_from) if manifest.next_available_from is not None else None
         ):
             errors.append("next_available_from_stale")
         _load_hash_sidecar(
@@ -2342,10 +2609,7 @@ def _load_hash_sidecar(
     table_name: str,
     path: Path,
 ) -> None:
-    connection.execute(
-        f"CREATE TEMP TABLE {table_name} "
-        "(record_id VARCHAR PRIMARY KEY, sha256 VARCHAR)"
-    )
+    connection.execute(f"CREATE TEMP TABLE {table_name} (record_id VARCHAR PRIMARY KEY, sha256 VARCHAR)")
     rows: list[tuple[str, str]] = []
     for row in _read_jsonl(path):
         rows.append((str(row["record_id"]), str(row["sha256"])))
@@ -2495,10 +2759,9 @@ def _streaming_cell_integrity_errors(
             if signature != str(row[2]) or _cell_id(signature) != str(row[3]):
                 errors.append("database_record_signature_mismatch")
                 return errors
-            quantized = np.rint(
-                np.asarray(vector, dtype=np.float32)
-                * MEMORY_VECTOR_QUANTIZATION_SCALE
-            ).astype(np.int64)
+            quantized = np.rint(np.asarray(vector, dtype=np.float32) * MEMORY_VECTOR_QUANTIZATION_SCALE).astype(
+                np.int64
+            )
             cell_sums.setdefault(signature, np.zeros(dimensions, dtype=np.int64))
             cell_sums[signature] += quantized
             cell_counts[signature] += 1
@@ -2511,8 +2774,7 @@ def _streaming_cell_integrity_errors(
                 reasoning_counts[signature] += 1
             last_record_id = record_id
     centroids = {
-        signature: normalized_quantized_sum(values, cell_counts[signature])
-        for signature, values in cell_sums.items()
+        signature: normalized_quantized_sum(values, cell_counts[signature]) for signature, values in cell_sums.items()
     }
     reasoning_centroids = {
         signature: normalized_quantized_sum(
@@ -2521,9 +2783,7 @@ def _streaming_cell_integrity_errors(
         )
         for signature, values in reasoning_sums.items()
     }
-    cell_ids_by_signature = {
-        signature: _cell_id(signature) for signature in cell_sums
-    }
+    cell_ids_by_signature = {signature: _cell_id(signature) for signature in cell_sums}
     connection.execute(
         """
         CREATE TEMP TABLE expected_memberships (
@@ -2539,10 +2799,7 @@ def _streaming_cell_integrity_errors(
         )
         """
     )
-    connection.execute(
-        "CREATE TEMP TABLE expected_secondary_memberships "
-        "(record_id VARCHAR, cell_id VARCHAR)"
-    )
+    connection.execute("CREATE TEMP TABLE expected_secondary_memberships (record_id VARCHAR, cell_id VARCHAR)")
     last_record_id = ""
     expected_membership_rows: list[tuple[object, ...]] = []
     expected_secondary_rows: list[tuple[str, str]] = []
@@ -2584,9 +2841,7 @@ def _streaming_cell_integrity_errors(
                     str(row[6]),
                 )
             )
-            expected_secondary_rows.extend(
-                (record_id, cell_id) for cell_id in secondary_cell_ids
-            )
+            expected_secondary_rows.extend((record_id, cell_id) for cell_id in secondary_cell_ids)
             last_record_id = record_id
         connection.executemany(
             "INSERT INTO expected_memberships VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -2600,8 +2855,7 @@ def _streaming_cell_integrity_errors(
             )
             expected_secondary_rows.clear()
     membership_columns = (
-        "record_id, primary_cell_id, independent_unit_id, membership_score, "
-        "membership_rule, membership_rule_version"
+        "record_id, primary_cell_id, independent_unit_id, membership_score, membership_rule, membership_rule_version"
     )
     if _sql_symmetric_difference_count(
         connection,
@@ -2675,9 +2929,7 @@ def _streaming_cell_integrity_errors(
         errors.append("database_cells_recomputed_mismatch")
     observed_reasoning = {
         str(row[0]): (int(row[1]), [float(value) for value in row[2]])
-        for row in connection.execute(
-            "SELECT cell_id, primary_member_count, centroid FROM reasoning_cells"
-        ).fetchall()
+        for row in connection.execute("SELECT cell_id, primary_member_count, centroid FROM reasoning_cells").fetchall()
     }
     expected_reasoning = {
         _cell_id(signature): (
@@ -2746,10 +2998,7 @@ def _database_index_readiness_errors(
         or unsupported_hash != manifest.unsupported_reasoning_record_ids_sha256
     ):
         errors.append("database_unsupported_reasoning_units_mismatch")
-    index_names = {
-        str(row[0])
-        for row in connection.execute("SELECT index_name FROM duckdb_indexes()").fetchall()
-    }
+    index_names = {str(row[0]) for row in connection.execute("SELECT index_name FROM duckdb_indexes()").fetchall()}
     required = {
         "records_available_idx",
         "records_disposition_idx",
@@ -2762,24 +3011,24 @@ def _database_index_readiness_errors(
     }
     if manifest.metadata_index_ready and not required <= index_names:
         errors.append("database_metadata_indexes_missing")
-    if manifest.hnsw_index_ready and not {
-        "reasoning_cells_hnsw_idx",
-        "reasoning_cell_facets_hnsw_idx",
-    } <= index_names:
+    if (
+        manifest.hnsw_index_ready
+        and not {
+            "reasoning_cells_hnsw_idx",
+            "reasoning_cell_facets_hnsw_idx",
+        }
+        <= index_names
+    ):
         errors.append("database_hnsw_indexes_missing")
     schema_names = {
-        str(row[0])
-        for row in connection.execute(
-            "SELECT schema_name FROM information_schema.schemata"
-        ).fetchall()
+        str(row[0]) for row in connection.execute("SELECT schema_name FROM information_schema.schemata").fetchall()
     }
     if manifest.fts_index_ready and "fts_main_reasoning_records" not in schema_names:
         errors.append("database_fts_index_missing")
     try:
         reasoning_projection_mismatch = _sql_symmetric_difference_count(
             connection,
-            "SELECT record_id, primary_cell_id, memory_lanes, regime_cluster, "
-            "document FROM reasoning_records",
+            "SELECT record_id, primary_cell_id, memory_lanes, regime_cluster, document FROM reasoning_records",
             "SELECT record_id, primary_cell_id, memory_lanes, regime_cluster, "
             "document FROM records "
             "WHERE routing_disposition = 'REASONING'",
@@ -2879,20 +3128,15 @@ def _database_integrity_errors(
     cells: list[MemoryCellEntry],
 ) -> list[str]:
     errors: list[str] = []
-    database_record_ids = {
-        str(row[0]) for row in connection.execute("SELECT record_id FROM records").fetchall()
-    }
+    database_record_ids = {str(row[0]) for row in connection.execute("SELECT record_id FROM records").fetchall()}
     if database_record_ids != set(declared_hashes):
         errors.append("database_record_ids_mismatch")
     database_vectors = {
         str(row[0]): [float(value) for value in row[1]]
-        for row in connection.execute(
-            "SELECT record_id, embedding FROM records"
-        ).fetchall()
+        for row in connection.execute("SELECT record_id, embedding FROM records").fetchall()
     }
     observed_embedding_hashes = {
-        record_id: sha256_text(canonical_json(vector))
-        for record_id, vector in database_vectors.items()
+        record_id: sha256_text(canonical_json(vector)) for record_id, vector in database_vectors.items()
     }
     if observed_embedding_hashes != declared_embedding_hashes:
         errors.append("database_embedding_hashes_mismatch")
@@ -2982,15 +3226,9 @@ def _database_integrity_errors(
         errors.append("database_membership_sidecar_mismatch")
     database_secondary = {
         (str(row[0]), str(row[1]))
-        for row in connection.execute(
-            "SELECT record_id, cell_id FROM secondary_memberships"
-        ).fetchall()
+        for row in connection.execute("SELECT record_id, cell_id FROM secondary_memberships").fetchall()
     }
-    expected_secondary = {
-        (item.record_id, cell_id)
-        for item in memberships
-        for cell_id in item.secondary_cell_ids
-    }
+    expected_secondary = {(item.record_id, cell_id) for item in memberships for cell_id in item.secondary_cell_ids}
     if database_secondary != expected_secondary:
         errors.append("database_secondary_membership_mismatch")
     database_cells = {
@@ -3032,21 +3270,12 @@ def _database_integrity_errors(
             max_available_from=manifest.max_available_from,
             documents=source_documents,
         )
-        recomputed_memberships = {
-            item.record_id: item.model_dump(mode="json")
-            for item in recomputed.memberships
-        }
-        declared_memberships = {
-            item.record_id: item.model_dump(mode="json") for item in memberships
-        }
+        recomputed_memberships = {item.record_id: item.model_dump(mode="json") for item in recomputed.memberships}
+        declared_memberships = {item.record_id: item.model_dump(mode="json") for item in memberships}
         if recomputed_memberships != declared_memberships:
             errors.append("source_recomputed_membership_mismatch")
-        recomputed_cells = {
-            item.cell_id: item.model_dump(mode="json") for item in recomputed.cells
-        }
-        declared_cells = {
-            item.cell_id: item.model_dump(mode="json") for item in cells
-        }
+        recomputed_cells = {item.cell_id: item.model_dump(mode="json") for item in recomputed.cells}
+        declared_cells = {item.cell_id: item.model_dump(mode="json") for item in cells}
         if recomputed_cells != declared_cells:
             errors.append("source_recomputed_cells_mismatch")
         reasoning_cell_projection = {
@@ -3065,9 +3294,7 @@ def _database_integrity_errors(
         reasoning_units: dict[str, set[str]] = {}
         for item in recomputed.memberships:
             if item.routing_disposition == "REASONING":
-                reasoning_units.setdefault(item.primary_cell_id, set()).add(
-                    item.independent_unit_id
-                )
+                reasoning_units.setdefault(item.primary_cell_id, set()).add(item.independent_unit_id)
         expected_reasoning_projection = {
             cell.cell_id: (
                 cell.reasoning_member_count,
@@ -3081,22 +3308,15 @@ def _database_integrity_errors(
             errors.append("database_reasoning_cells_mismatch")
     database_provenance = {
         (str(row[0]), str(row[1]))
-        for row in connection.execute(
-            "SELECT record_id, source_id FROM provenance_edges"
-        ).fetchall()
+        for row in connection.execute("SELECT record_id, source_id FROM provenance_edges").fetchall()
     }
     expected_provenance = {
-        (record.record_id, source_id)
-        for record in current_records
-        for source_id in set(record.provenance_source_ids)
+        (record.record_id, source_id) for record in current_records for source_id in set(record.provenance_source_ids)
     }
     if database_provenance != expected_provenance:
         errors.append("database_provenance_edges_mismatch")
     database_dispositions = Counter(
-        str(row[0])
-        for row in connection.execute(
-            "SELECT routing_disposition FROM records"
-        ).fetchall()
+        str(row[0]) for row in connection.execute("SELECT routing_disposition FROM records").fetchall()
     )
     manifest_dispositions = Counter(
         {
@@ -3108,10 +3328,7 @@ def _database_integrity_errors(
     )
     if +database_dispositions != +manifest_dispositions:
         errors.append("database_routing_disposition_count_mismatch")
-    index_names = {
-        str(row[0])
-        for row in connection.execute("SELECT index_name FROM duckdb_indexes()").fetchall()
-    }
+    index_names = {str(row[0]) for row in connection.execute("SELECT index_name FROM duckdb_indexes()").fetchall()}
     metadata_indexes = {
         "records_available_idx",
         "records_disposition_idx",
@@ -3125,21 +3342,19 @@ def _database_integrity_errors(
     }
     if manifest.metadata_index_ready and not metadata_indexes <= index_names:
         errors.append("database_metadata_indexes_missing")
-    if manifest.hnsw_index_ready and not {
-        "reasoning_cells_hnsw_idx",
-        "reasoning_cell_facets_hnsw_idx",
-    } <= index_names:
+    if (
+        manifest.hnsw_index_ready
+        and not {
+            "reasoning_cells_hnsw_idx",
+            "reasoning_cell_facets_hnsw_idx",
+        }
+        <= index_names
+    ):
         errors.append("database_hnsw_indexes_missing")
     schema_names = {
-        str(row[0])
-        for row in connection.execute(
-            "SELECT schema_name FROM information_schema.schemata"
-        ).fetchall()
+        str(row[0]) for row in connection.execute("SELECT schema_name FROM information_schema.schemata").fetchall()
     }
-    if (
-        manifest.fts_index_ready
-        and "fts_main_reasoning_records" not in schema_names
-    ):
+    if manifest.fts_index_ready and "fts_main_reasoning_records" not in schema_names:
         errors.append("database_fts_index_missing")
     errors.extend(_reasoning_cell_facet_errors(connection))
     unsupported_count, unsupported_hash = _unsupported_reasoning_identity(connection)
@@ -3232,14 +3447,8 @@ def _create_streaming_database(
         )
         """
     )
-    connection.execute(
-        "CREATE TABLE secondary_memberships "
-        "(record_id VARCHAR NOT NULL, cell_id VARCHAR NOT NULL)"
-    )
-    connection.execute(
-        "CREATE TABLE provenance_edges "
-        "(record_id VARCHAR NOT NULL, source_id VARCHAR NOT NULL)"
-    )
+    connection.execute("CREATE TABLE secondary_memberships (record_id VARCHAR NOT NULL, cell_id VARCHAR NOT NULL)")
+    connection.execute("CREATE TABLE provenance_edges (record_id VARCHAR NOT NULL, source_id VARCHAR NOT NULL)")
     return connection
 
 
@@ -3257,10 +3466,7 @@ def _finalize_streaming_database(
     signatures = sorted(cell_sums)
     cell_ids_by_signature = {signature: _cell_id(signature) for signature in signatures}
     centroids = {
-        signature: normalized_quantized_sum(
-            cell_sums[signature], cell_counts[signature]
-        )
-        for signature in signatures
+        signature: normalized_quantized_sum(cell_sums[signature], cell_counts[signature]) for signature in signatures
     }
     reasoning_centroids = {
         signature: normalized_quantized_sum(
@@ -3333,9 +3539,7 @@ def _finalize_streaming_database(
                         MEMORY_CELL_MEMBERSHIP_RULE_VERSION,
                     )
                 )
-                secondary_rows.extend(
-                    (record_id, cell_id) for cell_id in secondary_cell_ids
-                )
+                secondary_rows.extend((record_id, cell_id) for cell_id in secondary_cell_ids)
                 secondary_count += len(secondary_cell_ids)
                 last_record_id = record_id
             connection.executemany(
@@ -3353,15 +3557,12 @@ def _finalize_streaming_database(
         membership_file.close()
     secondary_by_cell = {
         str(row[0]): int(row[1])
-        for row in connection.execute(
-            "SELECT cell_id, COUNT(*) FROM secondary_memberships GROUP BY cell_id"
-        ).fetchall()
+        for row in connection.execute("SELECT cell_id, COUNT(*) FROM secondary_memberships GROUP BY cell_id").fetchall()
     }
     independent_by_cell = {
         str(row[0]): int(row[1])
         for row in connection.execute(
-            "SELECT primary_cell_id, COUNT(DISTINCT independent_unit_id) "
-            "FROM memberships GROUP BY primary_cell_id"
+            "SELECT primary_cell_id, COUNT(DISTINCT independent_unit_id) FROM memberships GROUP BY primary_cell_id"
         ).fetchall()
     }
     reasoning_units = {
@@ -3389,9 +3590,7 @@ def _finalize_streaming_database(
             independent_unit_count=independent_by_cell[cell_id],
             centroid_sha256=sha256_text(canonical_json(centroid)),
             reasoning_centroid_sha256=(
-                sha256_text(canonical_json(reasoning_centroid))
-                if reasoning_centroid is not None
-                else None
+                sha256_text(canonical_json(reasoning_centroid)) if reasoning_centroid is not None else None
             ),
         )
         cell_entries.append(entry)
@@ -3445,9 +3644,7 @@ def _finalize_streaming_database(
         secondary_membership_count=secondary_count,
         independent_unit_count=independent_unit_count,
         unsupported_reasoning_record_count=unsupported_reasoning_record_count,
-        unsupported_reasoning_record_ids_sha256=(
-            unsupported_reasoning_record_ids_sha256
-        ),
+        unsupported_reasoning_record_ids_sha256=(unsupported_reasoning_record_ids_sha256),
         readiness=readiness,
     )
 
@@ -3470,8 +3667,7 @@ def _finalize_database_indexes(
         "CREATE INDEX records_type_idx ON records(record_type)",
         "CREATE INDEX records_primary_cell_idx ON records(primary_cell_id)",
         "CREATE INDEX records_unit_type_idx ON records(independent_unit_type)",
-        "CREATE INDEX reasoning_facets_value_idx "
-        "ON reasoning_cell_facets(facet_kind, facet_value)",
+        "CREATE INDEX reasoning_facets_value_idx ON reasoning_cell_facets(facet_kind, facet_value)",
         "CREATE INDEX reasoning_facets_cell_idx ON reasoning_cell_facets(cell_id)",
         "CREATE INDEX secondary_cell_idx ON secondary_memberships(cell_id)",
         "CREATE INDEX provenance_source_idx ON provenance_edges(source_id)",
@@ -3495,8 +3691,7 @@ def _finalize_database_indexes(
         connection.execute("LOAD vss")
         connection.execute("SET hnsw_enable_experimental_persistence = true")
         connection.execute(
-            "CREATE INDEX reasoning_cells_hnsw_idx ON reasoning_cells USING HNSW (centroid) "
-            "WITH (metric = 'cosine')"
+            "CREATE INDEX reasoning_cells_hnsw_idx ON reasoning_cells USING HNSW (centroid) WITH (metric = 'cosine')"
         )
         connection.execute(
             "CREATE INDEX reasoning_cell_facets_hnsw_idx "
@@ -3630,6 +3825,34 @@ def _iter_source_records(root: Path) -> Iterator[BrainRecordEnvelope]:
         yield from store.iter_records()
 
 
+def _episode_record_file_is_empty(root: Path, episode_id: str) -> bool:
+    """Return true only for a declared episode whose record ledger is 0 bytes."""
+
+    path = root / "memory" / "records" / f"{episode_id}.jsonl"
+    return path.is_file() and path.stat().st_size == 0
+
+
+def _validate_replay_projection_file_scope(
+    root: Path,
+    *,
+    projection_episode_ids: set[str],
+) -> None:
+    """Reject obvious replay coverage mismatches before an expensive index build."""
+
+    record_paths = list((root / "memory" / "records").glob("*.jsonl"))
+    if not record_paths:
+        return
+    file_episode_ids = {path.stem for path in record_paths}
+    nonempty_episode_ids = {path.stem for path in record_paths if path.stat().st_size > 0}
+    missing = sorted(nonempty_episode_ids - projection_episode_ids)
+    unexpected = sorted(projection_episode_ids - file_episode_ids)
+    if missing or unexpected:
+        raise ValueError(
+            "replay availability file coverage mismatch: "
+            f"missing={missing[:10]} unexpected={unexpected[:10]}"
+        )
+
+
 def _build_database(
     path: Path,
     *,
@@ -3703,8 +3926,7 @@ def _build_database(
                     canonical_json(routing.memory_lanes),
                     cells.documents[record.record_id],
                     membership.primary_cell_id,
-                    independent_unit_type(membership.independent_unit_id)
-                    or "unsupported",
+                    independent_unit_type(membership.independent_unit_id) or "unsupported",
                     population.path_type,
                     population.regime_cluster,
                     population.high_return_pct,
@@ -3769,9 +3991,7 @@ def _build_database(
         reasoning_units: dict[str, set[str]] = {}
         for item in cells.memberships:
             if item.routing_disposition == "REASONING":
-                reasoning_units.setdefault(item.primary_cell_id, set()).add(
-                    item.independent_unit_id
-                )
+                reasoning_units.setdefault(item.primary_cell_id, set()).add(item.independent_unit_id)
         reasoning_cell_rows = [
             (
                 cell.cell_id,
@@ -3815,22 +4035,16 @@ def _build_database(
                 "INSERT INTO memberships VALUES (?, ?, ?, ?, ?, ?)",
                 membership_rows,
             )
-        connection.execute(
-            "CREATE TABLE secondary_memberships (record_id VARCHAR NOT NULL, cell_id VARCHAR NOT NULL)"
-        )
+        connection.execute("CREATE TABLE secondary_memberships (record_id VARCHAR NOT NULL, cell_id VARCHAR NOT NULL)")
         secondary_rows = [
-            (item.record_id, cell_id)
-            for item in cells.memberships
-            for cell_id in item.secondary_cell_ids
+            (item.record_id, cell_id) for item in cells.memberships for cell_id in item.secondary_cell_ids
         ]
         if secondary_rows:
             connection.executemany(
                 "INSERT INTO secondary_memberships VALUES (?, ?)",
                 secondary_rows,
             )
-        connection.execute(
-            "CREATE TABLE provenance_edges (record_id VARCHAR NOT NULL, source_id VARCHAR NOT NULL)"
-        )
+        connection.execute("CREATE TABLE provenance_edges (record_id VARCHAR NOT NULL, source_id VARCHAR NOT NULL)")
         provenance_rows = [
             (record.record_id, source_id)
             for record in records
@@ -3848,8 +4062,7 @@ def _build_database(
             "CREATE INDEX records_type_idx ON records(record_type)",
             "CREATE INDEX records_primary_cell_idx ON records(primary_cell_id)",
             "CREATE INDEX records_unit_type_idx ON records(independent_unit_type)",
-            "CREATE INDEX reasoning_facets_value_idx "
-            "ON reasoning_cell_facets(facet_kind, facet_value)",
+            "CREATE INDEX reasoning_facets_value_idx ON reasoning_cell_facets(facet_kind, facet_value)",
             "CREATE INDEX reasoning_facets_cell_idx ON reasoning_cell_facets(cell_id)",
             "CREATE INDEX secondary_cell_idx ON secondary_memberships(cell_id)",
             "CREATE INDEX provenance_source_idx ON provenance_edges(source_id)",
@@ -3916,9 +4129,7 @@ def _merge_cell_candidates(
     scores: dict[str, dict[str, float | None]] = {}
     metadata: dict[str, tuple[int, int]] = {}
     if metadata_rows is not None:
-        metadata.update(
-            {str(row[0]): (int(row[1]), int(row[2])) for row in metadata_rows}
-        )
+        metadata.update({str(row[0]): (int(row[1]), int(row[2])) for row in metadata_rows})
     for cell_id, score, primary_count, unit_count in ann_rows:
         key = str(cell_id)
         scores.setdefault(key, {"ann": None, "fts": None})["ann"] = float(score)
@@ -3970,14 +4181,10 @@ def _cell_search_filter(
         lanes = sorted({value.strip() for value in included_memory_lanes if value.strip()})
         if not lanes:
             raise ValueError("cell search memory lane filter cannot be empty")
-        clauses.append(
-            "list_has_any(from_json(memory_lanes, '[\"VARCHAR\"]'), ?::VARCHAR[])"
-        )
+        clauses.append("list_has_any(from_json(memory_lanes, '[\"VARCHAR\"]'), ?::VARCHAR[])")
         parameters.append(lanes)
     if included_regime_clusters is not None:
-        regimes = sorted(
-            {value.strip().upper() for value in included_regime_clusters if value.strip()}
-        )
+        regimes = sorted({value.strip().upper() for value in included_regime_clusters if value.strip()})
         if not regimes:
             raise ValueError("cell search regime filter cannot be empty")
         clauses.append("upper(regime_cluster) IN (SELECT UNNEST(?::VARCHAR[]))")
@@ -4000,17 +4207,11 @@ def _cell_facets(
         if not lanes:
             raise ValueError("cell search memory lane filter cannot be empty")
     if included_regime_clusters is not None:
-        regimes = sorted(
-            {value.strip().upper() for value in included_regime_clusters if value.strip()}
-        )
+        regimes = sorted({value.strip().upper() for value in included_regime_clusters if value.strip()})
         if not regimes:
             raise ValueError("cell search regime filter cannot be empty")
     if lanes and regimes:
-        return [
-            ("lane_regime", f"{lane}|{regime}")
-            for lane in lanes
-            for regime in regimes
-        ]
+        return [("lane_regime", f"{lane}|{regime}") for lane in lanes for regime in regimes]
     if lanes:
         return [("lane", lane) for lane in lanes]
     if regimes:
@@ -4048,6 +4249,103 @@ def _embedding_dimensions(
     return dimensions
 
 
+def _availability_projection_bytes(
+    rows: Mapping[str, ReplayAvailabilityOverride],
+) -> bytes:
+    if not rows:
+        raise ValueError("replay availability projection cannot be empty")
+    payload = bytearray()
+    for episode_id, item in sorted(rows.items()):
+        if episode_id != item.episode_id:
+            raise ValueError("replay availability projection key mismatch")
+        payload.extend(
+            (
+                canonical_json(
+                    {
+                        "schema_version": REPLAY_AVAILABILITY_PROJECTION_VERSION,
+                        "episode_id": item.episode_id,
+                        "source_trade_date": item.source_trade_date.isoformat(),
+                        "replay_available_from": as_kst(item.replay_available_from).isoformat(),
+                        "derivation": item.derivation,
+                    }
+                )
+                + "\n"
+            ).encode("utf-8")
+        )
+    return bytes(payload)
+
+
+def load_snapshot_replay_availability(
+    root: Path,
+    manifest: MemoryCellSnapshotManifest,
+) -> dict[str, ReplayAvailabilityOverride] | None:
+    """Load the sealed episode projection for an evaluation-only snapshot."""
+
+    if manifest.availability_mode == "source_available_from":
+        if manifest.availability_projection is not None or manifest.evaluation_only:
+            raise ValueError("source availability snapshot has replay metadata")
+        return None
+    reference = manifest.availability_projection
+    if (
+        not manifest.evaluation_only
+        or manifest.availability_projection_version != REPLAY_AVAILABILITY_PROJECTION_VERSION
+        or reference is None
+    ):
+        raise ValueError("replay availability manifest metadata is incomplete")
+    path = (root.resolve() / reference.artifact_path).resolve()
+    snapshot_dir = (root.resolve() / MEMORY_INDEX_ROOT / MEMORY_SNAPSHOT_DIR / manifest.snapshot_id).resolve()
+    try:
+        path.relative_to(snapshot_dir)
+    except ValueError as exc:
+        raise ValueError("replay availability projection escapes the snapshot") from exc
+    if not path.is_file() or file_sha256(path) != reference.sha256:
+        raise ValueError("replay availability projection hash mismatch")
+    result: dict[str, ReplayAvailabilityOverride] = {}
+    for raw in _read_jsonl(path):
+        if raw.get("schema_version") != REPLAY_AVAILABILITY_PROJECTION_VERSION:
+            raise ValueError("replay availability projection schema mismatch")
+        episode_id = str(raw.get("episode_id") or "")
+        if not episode_id or episode_id in result:
+            raise ValueError("replay availability episode IDs must be unique")
+        source_trade_date = date.fromisoformat(str(raw["source_trade_date"]))
+        result[episode_id] = ReplayAvailabilityOverride(
+            episode_id=episode_id,
+            source_trade_date=source_trade_date,
+            replay_available_from=parse_datetime(str(raw["replay_available_from"])),
+            derivation=str(raw.get("derivation") or ""),
+        )
+    if len(result) != reference.item_count:
+        raise ValueError("replay availability projection count mismatch")
+    return result
+
+
+def _effective_record_available_from(
+    record: BrainRecordEnvelope,
+    replay_availability_by_episode: Mapping[str, ReplayAvailabilityOverride] | None,
+) -> datetime:
+    if replay_availability_by_episode is None:
+        return as_kst(record.available_from)
+    override = replay_availability_by_episode.get(record.episode_id)
+    if override is None:
+        raise ValueError(f"record episode lacks replay availability: {record.episode_id}")
+    if override.source_trade_date != record.trade_date:
+        raise ValueError(f"record trade date conflicts with replay availability: {record.record_id}")
+    return as_kst(override.replay_available_from)
+
+
+def _record_with_effective_available_from(
+    record: BrainRecordEnvelope,
+    replay_availability_by_episode: Mapping[str, ReplayAvailabilityOverride] | None,
+) -> BrainRecordEnvelope:
+    effective = _effective_record_available_from(
+        record,
+        replay_availability_by_episode,
+    )
+    if effective == as_kst(record.available_from):
+        return record
+    return record.model_copy(update={"available_from": effective})
+
+
 def _snapshot_id(identity: dict[str, object]) -> str:
     return f"MEMIDX-{sha256_text(canonical_json(identity))[:20]}"
 
@@ -4055,16 +4353,14 @@ def _snapshot_id(identity: dict[str, object]) -> str:
 def _snapshot_identity_from_manifest(
     manifest: MemoryCellSnapshotManifest,
 ) -> dict[str, object]:
-    return {
+    identity: dict[str, object] = {
         "schema_version": MEMORY_INDEX_SCHEMA_VERSION,
         "corpus_manifest_sha256": manifest.corpus_manifest_sha256,
         "source_generation_sha256": manifest.source_generation_sha256,
         "cutoff_identity": manifest.cutoff_identity,
         "max_available_from": manifest.max_available_from.isoformat(),
         "next_available_from": (
-            manifest.next_available_from.isoformat()
-            if manifest.next_available_from is not None
-            else None
+            manifest.next_available_from.isoformat() if manifest.next_available_from is not None else None
         ),
         "embedding_method": manifest.embedding_model,
         "embedding_dimensions": manifest.embedding_dimensions,
@@ -4073,18 +4369,24 @@ def _snapshot_identity_from_manifest(
         "cell_schema_version": manifest.cell_schema_version,
         "polarity_classifier_version": manifest.polarity_classifier_version,
         "population_projection_version": manifest.population_projection_version,
-        "unsupported_reasoning_record_count": (
-            manifest.unsupported_reasoning_record_count
-        ),
-        "unsupported_reasoning_record_ids_sha256": (
-            manifest.unsupported_reasoning_record_ids_sha256
-        ),
+        "unsupported_reasoning_record_count": (manifest.unsupported_reasoning_record_count),
+        "unsupported_reasoning_record_ids_sha256": (manifest.unsupported_reasoning_record_ids_sha256),
         "routing_metadata_sha256": manifest.routing_metadata_sha256,
         "future_hashes_sha256": manifest.excluded_future_record_hashes.sha256,
         "cells_sha256": manifest.cell_entries.sha256,
         "memberships_sha256": manifest.memberships.sha256,
         "embedding_hashes_sha256": manifest.embedding_hashes.sha256,
     }
+    if manifest.availability_projection is not None:
+        identity.update(
+            {
+                "availability_mode": manifest.availability_mode,
+                "availability_projection_version": (manifest.availability_projection_version),
+                "availability_projection_sha256": (manifest.availability_projection.sha256),
+                "evaluation_only": manifest.evaluation_only,
+            }
+        )
+    return identity
 
 
 def _manifest_versions_current(manifest: MemoryCellSnapshotManifest) -> bool:
@@ -4130,27 +4432,17 @@ def _registry_entry_matches_manifest(
     root: Path,
 ) -> bool:
     manifest_path = (
-        root.resolve()
-        / MEMORY_INDEX_ROOT
-        / MEMORY_SNAPSHOT_DIR
-        / manifest.snapshot_id
-        / MEMORY_MANIFEST_FILE
+        root.resolve() / MEMORY_INDEX_ROOT / MEMORY_SNAPSHOT_DIR / manifest.snapshot_id / MEMORY_MANIFEST_FILE
     )
     if not manifest_path.exists():
         return False
     return (
-        entry.get("manifest_sha256")
-        == sha256_text(manifest_path.read_text(encoding="utf-8"))
+        entry.get("manifest_sha256") == sha256_text(manifest_path.read_text(encoding="utf-8"))
         and entry.get("corpus_manifest_sha256") == manifest.corpus_manifest_sha256
-        and entry.get("source_generation_sha256")
-        == manifest.source_generation_sha256
+        and entry.get("source_generation_sha256") == manifest.source_generation_sha256
         and entry.get("record_count") == manifest.record_count
         and entry.get("next_available_from")
-        == (
-            manifest.next_available_from.isoformat()
-            if manifest.next_available_from is not None
-            else None
-        )
+        == (manifest.next_available_from.isoformat() if manifest.next_available_from is not None else None)
         and entry.get("max_available_from") == manifest.max_available_from.isoformat()
         and entry.get("as_of_cutoff") == manifest.as_of_cutoff.isoformat()
         and entry.get("cutoff_identity") == manifest.cutoff_identity
@@ -4158,14 +4450,10 @@ def _registry_entry_matches_manifest(
         and entry.get("clustering_version") == manifest.clustering_version
         and entry.get("normalizer_version") == manifest.normalizer_version
         and entry.get("cell_schema_version") == manifest.cell_schema_version
-        and entry.get("polarity_classifier_version")
-        == manifest.polarity_classifier_version
-        and entry.get("population_projection_version")
-        == manifest.population_projection_version
-        and entry.get("unsupported_reasoning_record_count")
-        == manifest.unsupported_reasoning_record_count
-        and entry.get("unsupported_reasoning_record_ids_sha256")
-        == manifest.unsupported_reasoning_record_ids_sha256
+        and entry.get("polarity_classifier_version") == manifest.polarity_classifier_version
+        and entry.get("population_projection_version") == manifest.population_projection_version
+        and entry.get("unsupported_reasoning_record_count") == manifest.unsupported_reasoning_record_count
+        and entry.get("unsupported_reasoning_record_ids_sha256") == manifest.unsupported_reasoning_record_ids_sha256
     )
 
 

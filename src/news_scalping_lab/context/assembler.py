@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 
+import duckdb
 from pydantic import ValidationError
 
 from news_scalping_lab.brain.compiler import (
@@ -26,6 +27,10 @@ from news_scalping_lab.contracts.models import (
     PriceSnapshot,
     ResearchEpisode,
 )
+from news_scalping_lab.memory.index import (
+    active_memory_snapshot_manifest,
+    load_snapshot_replay_availability,
+)
 from news_scalping_lab.records.hashing import brain_record_envelope_sha256
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.records.store import BrainRecordStore
@@ -36,6 +41,7 @@ from news_scalping_lab.utils import (
     file_sha256,
     is_available_as_of,
     now_kst,
+    read_json,
     stable_id,
     write_json,
 )
@@ -58,6 +64,22 @@ class BrainCompilerMetadata:
     provider: str | None
     model: str | None
     catalog_only: bool | None
+
+
+@dataclass(frozen=True)
+class _EvaluationContextPopulation:
+    snapshot_id: str
+    accepted_episodes: tuple[ResearchEpisode, ...]
+    available_record_ids: tuple[str, ...]
+    training_eligible_record_ids: tuple[str, ...]
+    counterexample_record_ids: tuple[str, ...]
+    record_hashes: dict[str, str]
+
+
+_EVALUATION_CONTEXT_CACHE: dict[
+    tuple[str, str, str],
+    _EvaluationContextPopulation,
+] = {}
 
 
 class ContextAssembler:
@@ -87,36 +109,93 @@ class ContextAssembler:
         raw_retrieved_ids = retrieved_episode_ids or []
         raw_retrieved_record_ids = retrieved_record_ids or []
         web_query_list = web_queries or []
-        all_records = BrainRecordStore(self.root).list_records()
-        all_accepted, accepted_store_findings = _read_accepted_episodes_for_context(
-            self.store,
-            records=all_records,
-        )
-        accepted = [episode for episode in all_accepted if is_available_as_of(episode.available_from, cutoff_at)]
-        unavailable = [episode for episode in all_accepted if not is_available_as_of(episode.available_from, cutoff_at)]
+        evaluation = _evaluation_context_population(self.root, self.store)
+        if evaluation is None:
+            all_records = BrainRecordStore(self.root).list_records()
+            all_accepted, accepted_store_findings = _read_accepted_episodes_for_context(
+                self.store,
+                records=all_records,
+            )
+            accepted = [
+                episode
+                for episode in all_accepted
+                if is_available_as_of(episode.available_from, cutoff_at)
+            ]
+            unavailable = [
+                episode
+                for episode in all_accepted
+                if not is_available_as_of(episode.available_from, cutoff_at)
+            ]
+            available_records = [
+                record
+                for record in all_records
+                if is_available_as_of(record.available_from, cutoff_at)
+            ]
+            unavailable_records = [
+                record
+                for record in all_records
+                if not is_available_as_of(record.available_from, cutoff_at)
+            ]
+            available_record_ids = [
+                record.record_id for record in available_records
+            ]
+            training_eligible_available_record_ids = [
+                record.record_id
+                for record in available_records
+                if record.training_eligible
+            ]
+            available_record_hashes = {
+                record.record_id: brain_record_envelope_sha256(record)
+                for record in available_records
+            }
+            retrieved_record_ids, excluded_retrieved_record_ids = (
+                _filter_retrieved_record_ids_available_as_of(
+                    raw_retrieved_record_ids,
+                    available_records=available_records,
+                    unavailable_records=unavailable_records,
+                )
+            )
+            available_counterexample_record_ids = [
+                record.record_id
+                for record in available_records
+                if record.record_type == "counterexample"
+            ]
+            accepted_record_count = len(all_records)
+        else:
+            all_records = []
+            accepted_store_findings = []
+            accepted = list(evaluation.accepted_episodes)
+            all_accepted = accepted
+            unavailable = []
+            available_records = []
+            unavailable_records = []
+            available_record_ids = list(evaluation.available_record_ids)
+            training_eligible_available_record_ids = list(
+                evaluation.training_eligible_record_ids
+            )
+            available_record_hashes = dict(evaluation.record_hashes)
+            available_id_set = set(available_record_ids)
+            retrieved_record_ids = [
+                record_id
+                for record_id in raw_retrieved_record_ids
+                if record_id in available_id_set
+            ]
+            excluded_retrieved_record_ids = [
+                record_id
+                for record_id in raw_retrieved_record_ids
+                if record_id not in available_id_set
+            ]
+            available_counterexample_record_ids = list(
+                evaluation.counterexample_record_ids
+            )
+            accepted_record_count = len(available_record_ids)
         accepted_ids = [episode.episode_id for episode in accepted]
         all_accepted_ids = [episode.episode_id for episode in all_accepted]
         unavailable_ids = [episode.episode_id for episode in unavailable]
-        available_records = [record for record in all_records if is_available_as_of(record.available_from, cutoff_at)]
-        unavailable_records = [
-            record for record in all_records if not is_available_as_of(record.available_from, cutoff_at)
-        ]
-        available_record_ids = [record.record_id for record in available_records]
-        training_eligible_available_record_ids = [
-            record.record_id for record in available_records if record.training_eligible
-        ]
-        available_record_hashes = {
-            record.record_id: brain_record_envelope_sha256(record) for record in available_records
-        }
         retrieved_ids, excluded_retrieved_ids = _filter_retrieved_ids_available_as_of(
             raw_retrieved_ids,
             accepted=accepted,
             unavailable=unavailable,
-        )
-        retrieved_record_ids, excluded_retrieved_record_ids = _filter_retrieved_record_ids_available_as_of(
-            raw_retrieved_record_ids,
-            available_records=available_records,
-            unavailable_records=unavailable_records,
         )
         accepted_hashes = self._accepted_hashes_for(accepted_ids)
         run_id = stable_id(
@@ -144,10 +223,10 @@ class ContextAssembler:
         swept_record_ids = available_record_ids if mode in {"exhaustive", "brain"} else []
         retrieved_record_id_set = set(retrieved_record_ids)
         counterexample_record_ids = [
-            record.record_id
-            for record in available_records
-            if record.record_type == "counterexample"
-            and (mode in {"exhaustive", "brain"} or record.record_id in retrieved_record_id_set)
+            record_id
+            for record_id in available_counterexample_record_ids
+            if mode in {"exhaustive", "brain"}
+            or record_id in retrieved_record_id_set
         ]
         errors: list[str] = []
         errors.extend(accepted_store_findings)
@@ -189,7 +268,7 @@ class ContextAssembler:
             retrieved_episode_ids=retrieved_ids,
             excluded_retrieved_episode_ids=excluded_retrieved_ids,
             counterexample_episode_ids=counterexample_ids,
-            accepted_record_count=len(all_records),
+            accepted_record_count=accepted_record_count,
             available_record_count=len(available_records),
             available_record_ids=available_record_ids,
             training_eligible_available_record_count=len(training_eligible_available_record_ids),
@@ -265,6 +344,12 @@ class ContextAssembler:
             return False
         if self._current_shard_episode_count() != self.shard_episode_count:
             return False
+        active_snapshot = active_memory_snapshot_manifest(self.root)
+        if active_snapshot is not None and active_snapshot.evaluation_only:
+            coverage_ids = self._current_brain_coverage_ids()
+            return coverage_ids is not None and set(coverage_ids) == set(
+                accepted_ids
+            ) and len(coverage_ids) == len(accepted_ids)
         all_accepted = _read_accepted_episodes_for_current_context_check(self.store)
         if all_accepted is None:
             return False
@@ -475,6 +560,89 @@ def current_shard_brain_file_hashes(root: Path) -> dict[str, str]:
         for path in sorted(shard_dir.glob("*.md"))
         if path.is_file()
     }
+
+
+def _evaluation_context_population(
+    root: Path,
+    store: ResearchStore,
+) -> _EvaluationContextPopulation | None:
+    snapshot = active_memory_snapshot_manifest(root)
+    if snapshot is None or not snapshot.evaluation_only:
+        return None
+    brain_path = root / "brain" / "current" / "brain_manifest.json"
+    brain = read_json(brain_path)
+    if not isinstance(brain, dict):
+        raise ValueError("evaluation brain manifest is invalid")
+    covered_ids_raw = brain.get("covered_episode_ids")
+    if not isinstance(covered_ids_raw, list):
+        raise ValueError("evaluation brain episode coverage is missing")
+    covered_ids = {
+        str(value) for value in covered_ids_raw if isinstance(value, str)
+    }
+    if (
+        not covered_ids
+        or brain.get("production_memory_snapshot_id") != snapshot.snapshot_id
+    ):
+        raise ValueError("evaluation brain is not bound to active replay memory")
+    cache_key = (
+        str(root.resolve()),
+        snapshot.snapshot_id,
+        file_sha256(brain_path),
+    )
+    cached = _EVALUATION_CONTEXT_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    replay = load_snapshot_replay_availability(root, snapshot)
+    if replay is None:
+        raise ValueError("evaluation context requires replay availability")
+    accepted: list[ResearchEpisode] = []
+    for episode in store.list_accepted():
+        if episode.episode_id not in covered_ids:
+            continue
+        override = replay.get(episode.episode_id)
+        if override is None or override.source_trade_date != episode.trade_date:
+            raise ValueError(
+                f"evaluation episode projection is missing: {episode.episode_id}"
+            )
+        accepted.append(
+            episode.model_copy(
+                update={"available_from": override.replay_available_from}
+            )
+        )
+    if {episode.episode_id for episode in accepted} != covered_ids:
+        raise ValueError("evaluation context episode set differs from the brain")
+    connection = duckdb.connect(
+        str(root / snapshot.database.artifact_path),
+        read_only=True,
+    )
+    try:
+        rows = connection.execute(
+            """
+            SELECT record_id, record_type, training_eligible, source_sha256
+            FROM records
+            ORDER BY record_id
+            """
+        ).fetchall()
+    finally:
+        connection.close()
+    if len(rows) != snapshot.record_count:
+        raise ValueError("evaluation context record set differs from the snapshot")
+    population = _EvaluationContextPopulation(
+        snapshot_id=snapshot.snapshot_id,
+        accepted_episodes=tuple(
+            sorted(accepted, key=lambda item: (item.trade_date, item.episode_id))
+        ),
+        available_record_ids=tuple(str(row[0]) for row in rows),
+        training_eligible_record_ids=tuple(
+            str(row[0]) for row in rows if bool(row[2])
+        ),
+        counterexample_record_ids=tuple(
+            str(row[0]) for row in rows if str(row[1]) == "counterexample"
+        ),
+        record_hashes={str(row[0]): str(row[3]) for row in rows},
+    )
+    _EVALUATION_CONTEXT_CACHE[cache_key] = population
+    return population
 
 
 def _read_accepted_episodes_for_context(

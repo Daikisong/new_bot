@@ -51,6 +51,38 @@
       "title": "Audit Record Count",
       "type": "integer"
     },
+    "availability_mode": {
+      "default": "source_available_from",
+      "enum": [
+        "source_available_from",
+        "replay_available_from"
+      ],
+      "title": "Availability Mode",
+      "type": "string"
+    },
+    "availability_projection": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ArtifactReference"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "availability_projection_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Availability Projection Version"
+    },
     "cell_count": {
       "minimum": 0,
       "title": "Cell Count",
@@ -99,6 +131,11 @@
     "embedding_provider": {
       "title": "Embedding Provider",
       "type": "string"
+    },
+    "evaluation_only": {
+      "default": false,
+      "title": "Evaluation Only",
+      "type": "boolean"
     },
     "excluded_future_record_count": {
       "minimum": 0,

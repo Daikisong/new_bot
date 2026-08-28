@@ -17,6 +17,7 @@ from news_scalping_lab.llm.codex_oauth_provider import (
     CodexOAuthError,
     CodexOAuthInteractiveLoginRequired,
     CodexOAuthProvider,
+    _strict_output_schema,
     probe_codex_embedding_capability,
     run_interactive_codex_login,
 )
@@ -24,6 +25,11 @@ from news_scalping_lab.llm.codex_oauth_provider import (
 
 class _StructuredResult(BaseModel):
     status: Literal["ok"]
+
+
+class _StructuredResultWithDefaults(BaseModel):
+    status: Literal["ok"] = "ok"
+    tags: list[str] = []
 
 
 class _FakeCodexRunner:
@@ -115,12 +121,22 @@ def test_codex_oauth_structured_output_validates_schema() -> None:
     assert provider.structured_validation_status == "PASSED"
 
 
+def test_codex_oauth_normalizes_pydantic_defaults_for_strict_output() -> None:
+    schema = _strict_output_schema(_StructuredResultWithDefaults.model_json_schema())
+
+    assert schema["required"] == ["status", "tags"]
+    assert schema["additionalProperties"] is False
+    assert "default" not in schema["properties"]["status"]
+    assert "default" not in schema["properties"]["tags"]
+
+
 def test_codex_oauth_structured_failure_fails_closed() -> None:
+    runner = _FakeCodexRunner(structured_payload='{"status":"wrong"}')
     provider = CodexOAuthProvider(
-        runner=_FakeCodexRunner(structured_payload='{"status":"wrong"}'),
+        runner=runner,
         structured_repair_retries=1,
     )
-    with pytest.raises(CodexOAuthError, match="schema validation"):
+    with pytest.raises(CodexOAuthError, match="Input should be 'ok'"):
         asyncio.run(
             provider.generate_structured(
                 prompt="return ok",
@@ -129,6 +145,8 @@ def test_codex_oauth_structured_failure_fails_closed() -> None:
             )
         )
     assert provider.structured_validation_status == "FAILED"
+    assert "Validation error detail:" in runner.call_kwargs[-1]["input"]
+    assert "Input should be 'ok'" in runner.call_kwargs[-1]["input"]
 
 
 def test_codex_oauth_noninteractive_login_reports_required() -> None:

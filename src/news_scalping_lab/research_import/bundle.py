@@ -43,6 +43,10 @@ from news_scalping_lab.contracts.models import (
     Provenance,
     ResearchEpisode,
 )
+from news_scalping_lab.contracts.runtime_retrieval import (
+    RuntimeEvidenceMemo,
+    RuntimeRetrievalTrace,
+)
 from news_scalping_lab.memory.beneficiary import beneficiary_graph_projection_matches
 from news_scalping_lab.memory.daily_context import (
     category_guidance_from_claims,
@@ -54,6 +58,7 @@ from news_scalping_lab.memory.daily_context import (
     material_cluster_queries_from_sources,
     population_summary_rows,
     representative_rows_from_sources,
+    runtime_evidence_compact_payload,
 )
 from news_scalping_lab.phase7_transport import verify_phase7_transport_attestation
 from news_scalping_lab.records.models import CompiledBrainClaim
@@ -1128,6 +1133,23 @@ def _verify_phase7_bundle(
             contradicting_record_ids=contradicting,
             unexplained_record_ids=unexplained,
         )
+        if daily.runtime_evidence_traces:
+            runtime_traces = [
+                RuntimeRetrievalTrace.model_validate(
+                    source_payloads.get(reference.artifact_path)
+                )
+                for reference in daily.runtime_evidence_traces
+            ]
+            runtime_memos = [
+                RuntimeEvidenceMemo.model_validate(row)
+                for reference in daily.runtime_evidence_memos
+                for row in source_rows.get(reference.artifact_path, [])
+            ]
+            expected_compact_payload = runtime_evidence_compact_payload(
+                expected_compact_payload,
+                traces=runtime_traces,
+                memos=runtime_memos,
+            )
         chain_traces = [
             AdaptiveRetrievalTrace.model_validate(
                 source_payloads.get(reference.artifact_path)
@@ -1280,6 +1302,7 @@ def _phase7_contract_payload_valid(source_path: str, payload: Any) -> bool:
         "nslab.population_manifest.v2": PopulationManifest,
         "nslab.representative_set_manifest.v3": RepresentativeSetManifest,
         "nslab.adaptive_retrieval_trace.v4": AdaptiveRetrievalTrace,
+        "nslab.runtime_retrieval_trace.v1": RuntimeRetrievalTrace,
         "nslab.memory_coverage_manifest.v2": MemoryCoverageManifest,
         "nslab.news_coverage_manifest.v1": NewsCoverageManifest,
         "nslab.event_cluster_manifest.v2": EventClusterManifest,
@@ -1315,6 +1338,7 @@ def _phase7_jsonl_payload_valid(
         "selected_category_claims.jsonl": CompiledBrainClaim,
         "representative_records.jsonl": RepresentativeRecord,
         "population_cube.jsonl": PopulationCubeRow,
+        "runtime_evidence_memos.jsonl": RuntimeEvidenceMemo,
     }
     model = model_by_name.get(name)
     if model is not None:

@@ -14,7 +14,7 @@ from news_scalping_lab.brain.compiler import BRAIN_FILES, BrainCompiler
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.retrieval.embedding import AsyncEmbeddingProviderAdapter
-from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text
+from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text, write_json
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -197,20 +197,13 @@ def test_large_brain_shard_uses_full_coverage_groups_and_bounded_representatives
         canonical_json(sorted(record.record_id for record in records))
     )
     assert sum(group["record_count"] for group in prompt["evidence_groups"]) == len(records)
-    assert prompt["representative_record_count"] <= (
-        compiler_module.LLM_FULL_SHARD_REPRESENTATIVE_LIMIT
-    )
+    assert prompt["representative_record_count"] <= (compiler_module.LLM_FULL_SHARD_REPRESENTATIVE_LIMIT)
     assert prompt["representative_record_count"] < len(records)
     representative_ids = {
-        record["record_id"]
-        for lane in ("reasoning_records", "audit_context_records")
-        for record in prompt[lane]
+        record["record_id"] for lane in ("reasoning_records", "audit_context_records") for record in prompt[lane]
     }
     assert len(representative_ids) == prompt["representative_record_count"]
-    assert all(
-        set(group["representative_record_ids"]) <= representative_ids
-        for group in prompt["evidence_groups"]
-    )
+    assert all(set(group["representative_record_ids"]) <= representative_ids for group in prompt["evidence_groups"])
 
 
 def test_llm_full_production_population_uses_bounded_shard_count() -> None:
@@ -243,9 +236,7 @@ def test_compact_shard_summaries_preserve_hashes_not_full_id_lists() -> None:
 
     assert "record_ids" not in compact
     assert compact["record_ids_sha256"] == sha256_text(canonical_json(record_ids))
-    assert compact["representative_record_ids"] == record_ids[
-        : compiler_module.LLM_FULL_SHARD_SUMMARY_RECORD_ID_LIMIT
-    ]
+    assert compact["representative_record_ids"] == record_ids[: compiler_module.LLM_FULL_SHARD_SUMMARY_RECORD_ID_LIMIT]
     assert compact["summary_sha256"] == sha256_text(summary)
     assert compact["summary_truncated"] is True
     assert compact["summary"].endswith("...[truncated]")
@@ -387,9 +378,7 @@ def test_llm_full_brain_compile_uses_map_reduce_review_and_cache(
     compiled_claims_by_record = {claim["supporting_record_ids"][0]: claim for claim in compiled_claims}
     assert compile_manifest["compiler_version"] == compiler_module.LLM_FULL_COMPILER_VERSION
     assert compile_manifest["map_reduce_version"] == compiler_module.LLM_FULL_MAP_REDUCE_VERSION
-    assert compile_manifest["schema_version"] == (
-        "nslab.llm_full_brain_compile_manifest.v2"
-    )
+    assert compile_manifest["schema_version"] == ("nslab.llm_full_brain_compile_manifest.v2")
     assert compile_manifest["reasoning_effort"] == "low"
     assert compile_report["llm_compile_run"]["reasoning_effort"] == "low"
     assert brain_manifest["catalog_only"] is False
@@ -816,10 +805,152 @@ def test_llm_full_embedding_model_change_creates_new_brain_version(
     second = BrainCompiler(tmp_path).rebuild(mode="llm-full")
 
     assert second.brain_version != first.brain_version
-    assert (
-        second.production_memory_snapshot_id
-        != first.production_memory_snapshot_id
+    assert second.production_memory_snapshot_id != first.production_memory_snapshot_id
+
+
+def test_evaluation_rebuild_requires_cutoff_and_snapshot_together(
+    tmp_path: Path,
+) -> None:
+    compiler = BrainCompiler(tmp_path)
+
+    with pytest.raises(ValueError, match="requires cutoff, memory snapshot, and receipt"):
+        compiler.rebuild(
+            mode="llm-full",
+            evaluation_cutoff_at=datetime(2030, 1, 10, 8, 0, tzinfo=KST),
+        )
+
+
+def test_compiler_accepts_prevalidated_settings_for_an_evaluation_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = compiler_module.load_settings(tmp_path)
+    compiler = BrainCompiler(tmp_path, settings=settings)
+    monkeypatch.setattr(
+        compiler_module,
+        "load_settings",
+        lambda root: (_ for _ in ()).throw(AssertionError(f"unexpected reload: {root}")),
     )
+
+    assert compiler._build_settings() is settings
+
+
+def test_evaluation_rebuild_reuses_exact_cutoff_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    llm, first = _rebuild_llm_full_fixture(
+        tmp_path,
+        monkeypatch,
+        [
+            _record(
+                "BRAIN-EVALUATION-REUSE",
+                record_type="supervised_direct_event_case",
+                training_target="direct_event_response",
+                response_class="positive_high10",
+                payload_extra={
+                    "title": "issuer signed a supply contract",
+                    "issuer_day_case_id": "20300110:000001",
+                    "event_id": "EVT-1",
+                    "path_type": "DIRECT",
+                    "ticker": "000001",
+                    "company_name": "Fixture Issuer",
+                    "label_quality": "verified",
+                    "regime_cluster": "RISK_ON",
+                },
+            )
+        ],
+    )
+    cutoff = datetime(2030, 1, 11, 8, 0, tzinfo=KST)
+    settings = compiler_module.load_settings(tmp_path)
+    provider = compiler_module.create_production_embedding_provider(
+        settings,
+        require_records=True,
+        provider=llm,
+    )
+    index = compiler_module.ProductionMemoryIndex(
+        tmp_path,
+        embedding_provider=provider,
+        production=True,
+    )
+    evaluation_snapshot = index.build(
+        as_of=cutoff,
+        promote_current=False,
+        stage_only=True,
+        cutoff_mode="explicit",
+        reuse_embeddings_from_snapshot_id=first.production_memory_snapshot_id,
+        replay_availability_by_episode={
+            "EP-llm-full": compiler_module.ReplayAvailabilityOverride(
+                episode_id="EP-llm-full",
+                source_trade_date=date(2030, 1, 10),
+                replay_available_from=datetime(
+                    2030,
+                    1,
+                    11,
+                    tzinfo=KST,
+                ),
+                derivation="UNIT_TEST_EXPLICIT",
+            )
+        },
+    )
+    receipt_path = tmp_path / "runs" / "shadow_replay_snapshot_receipt.json"
+    receipt_payload = {
+        "schema_version": "nslab.shadow_replay_as_of_snapshot.v1",
+        "snapshot_id": evaluation_snapshot.snapshot_id,
+        "build_cutoff": cutoff.isoformat(),
+        "record_count": evaluation_snapshot.record_count,
+        "retained_embedding_count": evaluation_snapshot.record_count,
+        "generated_embedding_count": 0,
+        "centroid_population_record_count": evaluation_snapshot.record_count,
+        "full_corpus_centroids_used": False,
+        "holdout_overlap_count": 0,
+        "calibration_overlap_count": 0,
+        "source_record_hashes_sha256": (evaluation_snapshot.source_record_hashes.sha256),
+        "immutable": True,
+        "production_available_from_mutated": False,
+        "availability_mode": "replay_available_from",
+        "availability_projection_version": (evaluation_snapshot.availability_projection_version),
+        "availability_projection_sha256": (
+            evaluation_snapshot.availability_projection.sha256
+            if evaluation_snapshot.availability_projection is not None
+            else None
+        ),
+        "availability_projection_episode_count": 1,
+    }
+    write_json(receipt_path, {**receipt_payload, "immutable": False})
+    with pytest.raises(ValueError, match="receipt contract"):
+        index.activate_verified_evaluation_snapshot(
+            evaluation_snapshot,
+            receipt_path=receipt_path,
+        )
+    write_json(receipt_path, receipt_payload)
+    assert evaluation_snapshot.real_embedding is True
+    assert evaluation_snapshot.unsupported_reasoning_record_count == 0
+    assert evaluation_snapshot.cutoff_identity == f"explicit:{cutoff.isoformat()}"
+
+    def fail_build(*args: object, **kwargs: object) -> object:
+        del args, kwargs
+        raise AssertionError("evaluation rebuild must reuse the sealed snapshot")
+
+    monkeypatch.setattr(compiler_module.ProductionMemoryIndex, "build", fail_build)
+
+    second = BrainCompiler(tmp_path).rebuild(
+        mode="llm-full",
+        evaluation_cutoff_at=cutoff,
+        evaluation_memory_snapshot_id=evaluation_snapshot.snapshot_id,
+        evaluation_snapshot_receipt_path=receipt_path,
+    )
+
+    assert second.production_memory_snapshot_id == evaluation_snapshot.snapshot_id
+    assert second.brain_record_cutoff_at == cutoff
+    assert second.excluded_future_episode_count == 0
+    evaluation_coverage = read_json(tmp_path / "brain" / "current" / "coverage_manifest.json")
+    assert evaluation_coverage["coverage_scope"] == "EVALUATION_REPLAY_BUILD"
+    assert evaluation_coverage["coverage_complete"] is True
+    exposure_pointer = read_json(tmp_path / "runs" / "semantic_brain_upgrade" / "exposure" / "current.json")
+    exposure_manifest = read_json(tmp_path / exposure_pointer["manifest_path"])
+    assert exposure_manifest["brain_version"] == second.brain_version
+    assert exposure_manifest["record_count"] == evaluation_snapshot.record_count
 
 
 def test_llm_full_requires_real_provider(
@@ -1073,9 +1204,7 @@ def test_llm_full_retry_reuses_orphan_category_index_after_compile_failure(
     with pytest.raises(RuntimeError, match="injected category compile failure"):
         BrainCompiler(tmp_path).rebuild(mode="llm-full")
     orphan_manifests = list(
-        (
-            tmp_path / "runs" / "checkpoints" / "category_brain_index"
-        ).glob("*/category_brain_index_manifest.json")
+        (tmp_path / "runs" / "checkpoints" / "category_brain_index").glob("*/category_brain_index_manifest.json")
     )
     assert len(orphan_manifests) == 1
     assert not (tmp_path / "brain" / "current" / "brain_manifest.json").exists()
@@ -1087,9 +1216,7 @@ def test_llm_full_retry_reuses_orphan_category_index_after_compile_failure(
     )
     manifest = BrainCompiler(tmp_path).rebuild(mode="llm-full")
 
-    assert manifest.category_brain_index_manifest_artifact == (
-        orphan_manifests[0].relative_to(tmp_path).as_posix()
-    )
+    assert manifest.category_brain_index_manifest_artifact == (orphan_manifests[0].relative_to(tmp_path).as_posix())
     assert (tmp_path / "brain" / "current" / "brain_manifest.json").exists()
 
 

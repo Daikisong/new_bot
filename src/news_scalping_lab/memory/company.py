@@ -69,9 +69,20 @@ class CompanyMemoryDeltaApplyResult:
 
 
 class CompanyMemoryStore:
-    def __init__(self, root: Path, *, create: bool = True) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        create: bool = True,
+        directory: Path | None = None,
+    ) -> None:
         self.root = root
-        self.dir = root / "memory" / "company_memory"
+        self.dir = directory or root / "memory" / "company_memory"
+        if directory is not None:
+            try:
+                self.dir.resolve().relative_to(root.resolve())
+            except ValueError as exc:
+                raise ValueError("company memory directory escapes the project") from exc
         if create:
             self.dir.mkdir(parents=True, exist_ok=True)
 

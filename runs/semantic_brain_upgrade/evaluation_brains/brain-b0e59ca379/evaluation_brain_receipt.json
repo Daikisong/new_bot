@@ -1,0 +1,12 @@
+{
+  "brain_record_cutoff_at": "2026-01-02T00:00:00+09:00",
+  "brain_version": "brain-b0e59ca379",
+  "compiled_claim_count": 235834,
+  "covered_episode_count": 1456,
+  "evaluation_only": true,
+  "evaluation_root": "C:/Users/eorb9/projects/nslab_semantic_upgrade_v7_eval_v2/project",
+  "memory_snapshot_id": "MEMIDX-4409624afdffd1d01018",
+  "production_activation_status": "NOT_PRODUCTION_ACTIVATED",
+  "schema_version": "nslab.semantic_upgrade_evaluation_brain_receipt.v1",
+  "split_selection_sha256": "7ce6b9be3396c05701e5885bec416c1653ad9148d4df3f3434dc20b7110f7a2a"
+}

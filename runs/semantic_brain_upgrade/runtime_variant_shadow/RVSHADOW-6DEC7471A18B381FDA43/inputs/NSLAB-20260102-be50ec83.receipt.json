@@ -1,0 +1,9 @@
+{
+  "cutoff_at": "2026-01-02T08:59:59+09:00",
+  "episode_id": "NSLAB-20260102-be50ec83",
+  "news_csv_sha256": "14274497daa76833f8cd2cdd9caa35ca2003131fa5bf126c52420799acb4aaa3",
+  "normalized_index_sha256": "b1010b8d75833f5639f2f46392d1dfbecaec632b0a4c408d956277c254d36cb9",
+  "row_count": 490,
+  "schema_version": "nslab.shadow_news_reconstruction.v1",
+  "source_ledger_sha256": "01ca089cdc3be086bf66db7b8577812fc20a19a928197700119dda6cb2212a6b"
+}

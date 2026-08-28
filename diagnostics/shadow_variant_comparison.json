@@ -1,0 +1,78 @@
+{
+  "schema_version": "nslab.shadow_variant_comparison.v1",
+  "evaluation_scope": "PARTIAL_CALIBRATION_LIVE_PROBE",
+  "status": "HOLD",
+  "run_id": "RVSHADOW-6DEC7471A18B381FDA43",
+  "selection": {
+    "split": "CALIBRATION",
+    "formal_case_count": 40,
+    "attempted_case_count": 1,
+    "completed_paired_case_count": 0,
+    "selection_manifest_sha256": "7ce6b9be3396c05701e5885bec416c1653ad9148d4df3f3434dc20b7110f7a2a"
+  },
+  "evaluation_brain": {
+    "brain_version": "brain-b0e59ca379",
+    "brain_manifest_sha256": "1fcf08e1ebbfd368b63b34ee45799598d4129424b9f16fb10a454884717aeb16",
+    "memory_snapshot_id": "MEMIDX-4409624afdffd1d01018",
+    "coverage_scope": "EVALUATION_REPLAY_BUILD",
+    "evaluation_only": true
+  },
+  "attempted_case": {
+    "episode_id": "NSLAB-20260102-be50ec83",
+    "trade_date": "2026-01-02",
+    "news_row_count": 490,
+    "input_receipt_sha256": "805b8664bf00278de21182475be60eb06467d3e575baad788b8a3c779d55553b",
+    "provider": "codex-oauth",
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "xhigh"
+  },
+  "shared_pre_retrieval_probe": {
+    "completed_open_world_batch_count": 21,
+    "analyzed_cluster_count": 252,
+    "covered_current_event_count": 257,
+    "live_codex_call_count": 21,
+    "started_at": "2026-08-28T22:13:11.673721+09:00",
+    "finished_at": "2026-08-28T23:49:49.948660+09:00",
+    "observed_elapsed_seconds": 5798.275,
+    "daily_p95_budget_seconds": 90.0,
+    "observed_budget_multiple": 64.425278,
+    "prompt_tokens_estimate": 1763142,
+    "completion_tokens_estimate": 82533,
+    "checkpoint_commitment_sha256": "8b3a45c30f0365fda994ed44f3abca3663c8ffa5e97bf6c036bb977063e6d671"
+  },
+  "variant_status": {
+    "V0": "NOT_COMPLETED_AFTER_SHARED_STAGE_LATENCY_GATE_FAILURE",
+    "V1": "NOT_RUN_AFTER_GATE_STOP",
+    "V2": "NOT_IMPLEMENTED_RUNTIME_GATE_NOT_PASSED"
+  },
+  "retrieval_metrics": {
+    "known_relevant_recall_at_32_64_128": null,
+    "known_relevant_recall_status": "UNAVAILABLE_REQUIRES_SEALED_RELEVANCE_LABELS",
+    "mrr": null,
+    "ndcg": null,
+    "offline_unexposed_recovery": null,
+    "rare_mechanism_recall": null,
+    "rare_recovery_proxy_status": "AVAILABLE_ONLY_IN_12_CASE_MECHANICS_REPORT_NOT_LABELED_RECALL",
+    "final_citation_rate": null
+  },
+  "market_metrics": {
+    "V0": null,
+    "V1": null,
+    "V2": null,
+    "paired_bootstrap": null,
+    "status": "UNAVAILABLE_NO_COMPLETED_PAIRED_CASE"
+  },
+  "gate_checks": {
+    "formal_split_case_closure": false,
+    "known_relevant_recall_labeled": false,
+    "daily_p95_within_phase8_budget": false,
+    "paired_variant_comparison_available": false
+  },
+  "hold_reasons": [
+    "The shared pre-retrieval stage alone exceeded the 90-second daily budget by 64.425x before one V0 observation completed.",
+    "No sealed known-relevance labels exist for Recall@32/64/128, MRR, or NDCG.",
+    "A paired V0/V1 market comparison cannot be claimed from an interrupted case."
+  ],
+  "full_rebuild_decision": "HOLD",
+  "production_activation_status": "NOT_PRODUCTION_ACTIVATED"
+}

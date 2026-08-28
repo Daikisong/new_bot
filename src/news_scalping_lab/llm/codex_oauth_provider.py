@@ -86,7 +86,7 @@ class CodexOAuthProvider:
                     self._execute,
                     current_prompt,
                     purpose,
-                    response_model.model_json_schema(),
+                    _strict_output_schema(response_model.model_json_schema()),
                 )
                 parsed = response_model.model_validate_json(output)
             except (CodexOAuthError, ValidationError, ValueError) as exc:
@@ -94,7 +94,8 @@ class CodexOAuthProvider:
                 if attempt >= self.structured_repair_retries:
                     self.structured_validation_status = "FAILED"
                     raise CodexOAuthError(
-                        "Codex structured output failed schema validation"
+                        "Codex structured output failed schema validation: "
+                        + _validation_error_detail(exc)
                     ) from exc
                 current_prompt = _repair_prompt(
                     original_prompt=prompt,
@@ -335,8 +336,49 @@ def _repair_prompt(*, original_prompt: str, validation_error: Exception) -> str:
             "The previous response failed the supplied JSON Schema validation.",
             "Return a complete corrected response matching the schema exactly.",
             f"Validation error type: {type(validation_error).__name__}",
+            "Validation error detail: " + _validation_error_detail(validation_error),
         ]
     )
+
+
+def _validation_error_detail(error: Exception, *, max_chars: int = 4000) -> str:
+    if isinstance(error, ValidationError):
+        detail = json.dumps(
+            error.errors(include_url=False, include_input=False),
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    else:
+        detail = str(error).strip() or type(error).__name__
+    if len(detail) <= max_chars:
+        return detail
+    return detail[: max_chars - 16] + "...[truncated]"
+
+
+def _strict_output_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Adapt Pydantic JSON Schema to the Codex strict-output subset."""
+
+    def normalize(value: Any) -> Any:
+        if isinstance(value, list):
+            return [normalize(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        normalized = {
+            key: normalize(item)
+            for key, item in value.items()
+            if key != "default"
+        }
+        properties = normalized.get("properties")
+        if isinstance(properties, dict):
+            normalized["required"] = list(properties)
+            normalized["additionalProperties"] = False
+        return normalized
+
+    result = normalize(schema)
+    if not isinstance(result, dict):
+        raise CodexOAuthError("Codex output schema normalization failed")
+    return result
 
 
 def _jsonl_events(value: str) -> list[dict[str, Any]]:

@@ -20,11 +20,16 @@ from news_scalping_lab.contracts.memory_context import (
 )
 from news_scalping_lab.memory.beneficiary import beneficiary_trigger_evidence
 from news_scalping_lab.memory.diversity import (
+    RepresentativeSelectionBudgetError,
     RepresentativeSelector,
+    _inspect_built_representative,
     _require_finite_vector,
 )
 from news_scalping_lab.memory.index import ProductionMemoryIndex
-from news_scalping_lab.memory.population import PopulationRetriever
+from news_scalping_lab.memory.population import (
+    PopulationRetriever,
+    _inspect_built_population,
+)
 from news_scalping_lab.utils import (
     as_kst,
     canonical_json,
@@ -104,7 +109,11 @@ class AdaptiveRetriever:
         _require_under(output_dir, self.root / ADAPTIVE_ARTIFACT_ROOT)
         path = output_dir / ADAPTIVE_TRACE_FILE
         _write_immutable_trace(path, trace)
-        inspection = self.inspect(path, force_database_verification=False)
+        inspection = _inspect_built_adaptive(
+            self.root,
+            trace_path=path,
+            expected_trace=trace,
+        )
         if inspection["passed"] is not True:
             raise ValueError(
                 "adaptive trace failed self-inspection: "
@@ -239,22 +248,34 @@ class AdaptiveRetriever:
             raise ValueError("adaptive information gain must be within zero and one")
         population_path = initial_population_manifest_path.resolve()
         representative_path = initial_representative_set_manifest_path.resolve()
-        population_inspection = self.population_retriever.inspect(
-            population_path,
-            force_database_verification=force_database_verification,
-        )
-        representative_inspection = self.representative_selector.inspect(
-            representative_path,
-            force_database_verification=False,
-        )
-        if population_inspection["passed"] is not True:
-            raise ValueError("initial adaptive population is not current")
-        if representative_inspection["passed"] is not True:
-            raise ValueError("initial adaptive representative set is not current")
         initial_population = PopulationManifest.model_validate(read_json(population_path))
         initial_representative = RepresentativeSetManifest.model_validate(
             read_json(representative_path)
         )
+        if force_database_verification:
+            population_inspection = self.population_retriever.inspect(
+                population_path,
+                force_database_verification=True,
+            )
+            representative_inspection = self.representative_selector.inspect(
+                representative_path,
+                force_database_verification=True,
+            )
+        else:
+            population_inspection = _inspect_built_population(
+                self.root,
+                manifest_path=population_path,
+                expected_manifest=initial_population,
+            )
+            representative_inspection = _inspect_built_representative(
+                self.root,
+                manifest_path=representative_path,
+                expected_manifest=initial_representative,
+            )
+        if population_inspection["passed"] is not True:
+            raise ValueError("initial adaptive population is not current")
+        if representative_inspection["passed"] is not True:
+            raise ValueError("initial adaptive representative set is not current")
         if initial_representative.population_id != initial_population.population_id:
             raise ValueError("adaptive initial representative population mismatch")
         if initial_representative.query_text != query_text:
@@ -377,10 +398,14 @@ class AdaptiveRetriever:
                 ),
                 query_regime_cluster=current_population.query_regime_cluster,
             )
-            representative_result = self.representative_selector.build(
-                population_manifest_path=population_result.manifest_path,
-                query=query_text,
-            )
+            try:
+                representative_result = self.representative_selector.build(
+                    population_manifest_path=population_result.manifest_path,
+                    query=query_text,
+                )
+            except RepresentativeSelectionBudgetError:
+                stopped_reason = "REPRESENTATIVE_BUDGET_SATURATED"
+                break
             next_population = population_result.manifest
             next_representative = representative_result.manifest
             next_cumulative_tokens = (
@@ -632,6 +657,50 @@ def _uncertainty_score(
         + 0.20 * missing_outcome
         + 0.25 * coverage_gap,
     )
+
+
+def _inspect_built_adaptive(
+    root: Path,
+    *,
+    trace_path: Path,
+    expected_trace: AdaptiveRetrievalTrace,
+) -> dict[str, Any]:
+    """Verify trace serialization and source hashes without replaying retrieval."""
+
+    errors: list[str] = []
+    try:
+        observed = AdaptiveRetrievalTrace.model_validate(read_json(trace_path))
+    except (OSError, ValueError) as exc:
+        return {"passed": False, "errors": [f"adaptive_trace_invalid:{exc}"]}
+    if observed != expected_trace:
+        errors.append("adaptive_trace_serialization_mismatch")
+    references = [
+        observed.initial_population_manifest,
+        observed.initial_representative_set_manifest,
+        observed.final_population_manifest,
+        observed.final_representative_set_manifest,
+        *(
+            reference
+            for iteration in observed.iterations
+            for reference in (
+                iteration.population_manifest,
+                iteration.representative_set_manifest,
+            )
+        ),
+        *(item.source_artifact for item in observed.trigger_evidence),
+    ]
+    for reference in references:
+        path = (root / reference.artifact_path).resolve()
+        try:
+            path.relative_to(root.resolve())
+        except ValueError:
+            errors.append("adaptive_source_path_escape")
+            continue
+        if not path.exists():
+            errors.append("adaptive_source_missing")
+        elif file_sha256(path) != reference.sha256:
+            errors.append("adaptive_source_hash_mismatch")
+    return {"passed": not errors, "errors": sorted(set(errors))}
 
 
 def _artifact_reference(root: Path, path: Path) -> ArtifactReference:

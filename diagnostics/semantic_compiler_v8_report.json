@@ -1,0 +1,24 @@
+{
+  "schema_version": "nslab.semantic_compiler_v8_report.v1",
+  "status": "NOT_RUN_GATE_HOLD",
+  "implementation_performed": false,
+  "evaluation_build_performed": false,
+  "decision": "HOLD_UNTIL_RUNTIME_GATE_PASS",
+  "runtime_gate_evidence": "diagnostics/shadow_variant_comparison.json",
+  "reasons": [
+    "The retrieval-first live shadow did not produce a completed V0/V1 pair.",
+    "The shared pre-retrieval stage irreversibly exceeded the 90-second daily latency budget.",
+    "Sealed known-relevance labels required by the runtime gate are unavailable."
+  ],
+  "semantic_unit_count": null,
+  "rare_unit_count": null,
+  "semantic_unit_coverage": null,
+  "direct_payload_exposure_count": null,
+  "synthesized_mechanism_claim_count": null,
+  "leaf_node_count": null,
+  "reduce_node_count": null,
+  "source_evaluation_brain_version": "brain-b0e59ca379",
+  "source_evaluation_memory_snapshot_id": "MEMIDX-4409624afdffd1d01018",
+  "new_brain_version": null,
+  "production_activation_status": "NOT_PRODUCTION_ACTIVATED"
+}

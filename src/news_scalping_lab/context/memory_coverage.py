@@ -13,15 +13,24 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import duckdb
 from pydantic import ValidationError
 
 from news_scalping_lab.contracts.memory_context import (
     ArtifactReference,
+    MemoryCellSnapshotManifest,
     MemoryCoverageManifest,
 )
+from news_scalping_lab.memory.index import active_memory_snapshot_manifest
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.records.store import BrainRecordStore
-from news_scalping_lab.utils import canonical_json, file_sha256, parse_datetime, read_json
+from news_scalping_lab.utils import (
+    as_kst,
+    canonical_json,
+    file_sha256,
+    parse_datetime,
+    read_json,
+)
 
 
 @dataclass(frozen=True)
@@ -34,10 +43,27 @@ class MemoryCoverageBuildResult:
     training_eligible_available_record_ids: list[str]
 
 
+@dataclass(frozen=True)
+class _CoverageRecordRow:
+    record_id: str
+    episode_id: str
+    record_type: str
+    evidence_phase: str
+    available_from: datetime
+    training_eligible: bool
+    source_sha256: str
+
+
+_SNAPSHOT_COVERAGE_CACHE: dict[
+    tuple[str, str, str, str],
+    MemoryCoverageBuildResult,
+] = {}
+
+
 def build_memory_coverage_manifest(
     root: Path,
     *,
-    records: Iterable[BrainRecordEnvelope],
+    records: Iterable[BrainRecordEnvelope | _CoverageRecordRow],
     cutoff_at: datetime,
     run_id: str,
 ) -> MemoryCoverageBuildResult:
@@ -174,6 +200,137 @@ def build_memory_coverage_manifest(
     )
 
 
+def build_memory_coverage_manifest_from_snapshot(
+    root: Path,
+    *,
+    snapshot: MemoryCellSnapshotManifest,
+    cutoff_at: datetime,
+    run_id: str,
+) -> MemoryCoverageBuildResult:
+    """Build coverage from a sealed evaluation population without corpus scans."""
+
+    if not snapshot.evaluation_only:
+        raise ValueError("snapshot coverage fast path is evaluation-only")
+    partition_identity = (
+        "ALL_SNAPSHOT_RECORDS"
+        if as_kst(snapshot.max_available_from) <= as_kst(cutoff_at)
+        else as_kst(cutoff_at).isoformat()
+    )
+    cache_key = (
+        str(root.resolve()),
+        snapshot.snapshot_id,
+        snapshot.database.sha256,
+        partition_identity,
+    )
+    cached = _SNAPSHOT_COVERAGE_CACHE.get(cache_key)
+    if cached is not None:
+        manifest = cached.manifest.model_copy(
+            update={"run_id": run_id, "cutoff_at": cutoff_at}
+        )
+        manifest_path, manifest_sha256 = _write_coverage_manifest(
+            root,
+            manifest,
+        )
+        return MemoryCoverageBuildResult(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            manifest_sha256=manifest_sha256,
+            cache_hit=True,
+            available_record_ids=cached.available_record_ids,
+            training_eligible_available_record_ids=(
+                cached.training_eligible_available_record_ids
+            ),
+        )
+    database_path = root.resolve() / snapshot.database.artifact_path
+    connection = duckdb.connect(str(database_path), read_only=True)
+    try:
+        cursor = connection.execute(
+            """
+            SELECT record_id, episode_id, record_type, evidence_phase,
+                   available_from, training_eligible, source_sha256
+            FROM records
+            ORDER BY record_id
+            """
+        )
+
+        def rows() -> Iterator[_CoverageRecordRow]:
+            observed_count = 0
+            while batch := cursor.fetchmany(4096):
+                for row in batch:
+                    observed_count += 1
+                    yield _CoverageRecordRow(
+                        record_id=str(row[0]),
+                        episode_id=str(row[1]),
+                        record_type=str(row[2]),
+                        evidence_phase=str(row[3]),
+                        available_from=parse_datetime(str(row[4])),
+                        training_eligible=bool(row[5]),
+                        source_sha256=str(row[6]),
+                    )
+            if observed_count != snapshot.record_count:
+                raise ValueError("evaluation snapshot coverage count mismatch")
+
+        generic_result = build_memory_coverage_manifest(
+            root,
+            records=rows(),
+            cutoff_at=cutoff_at,
+            run_id=run_id,
+        )
+        manifest = generic_result.manifest.model_copy(
+            update={
+                "corpus_manifest_sha256": snapshot.corpus_manifest_sha256
+            }
+        )
+        manifest_path, manifest_sha256 = _write_coverage_manifest(
+            root,
+            manifest,
+        )
+        result = MemoryCoverageBuildResult(
+            manifest=manifest,
+            manifest_path=manifest_path,
+            manifest_sha256=manifest_sha256,
+            cache_hit=generic_result.cache_hit,
+            available_record_ids=generic_result.available_record_ids,
+            training_eligible_available_record_ids=(
+                generic_result.training_eligible_available_record_ids
+            ),
+        )
+        _SNAPSHOT_COVERAGE_CACHE[cache_key] = result
+        return result
+    finally:
+        connection.close()
+
+
+def _write_coverage_manifest(
+    root: Path,
+    manifest: MemoryCoverageManifest,
+) -> tuple[str, str]:
+    manifest_bytes = (
+        json.dumps(
+            manifest.model_dump(mode="json"),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    ).encode("utf-8")
+    manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+    manifest_path = (
+        root
+        / "data"
+        / "cache"
+        / "memory_coverage"
+        / "manifests"
+        / f"{manifest_sha256}.json"
+    )
+    _atomic_write_bytes(
+        manifest_path,
+        manifest_bytes,
+        expected_sha256=manifest_sha256,
+    )
+    return manifest_path.relative_to(root).as_posix(), manifest_sha256
+
+
 def inspect_memory_coverage_manifest(
     root: Path,
     context_manifest: Mapping[str, Any],
@@ -231,6 +388,72 @@ def inspect_memory_coverage_manifest(
         return status
     status["contract_verified"] = True
 
+    active_snapshot = active_memory_snapshot_manifest(root)
+    if active_snapshot is not None and active_snapshot.evaluation_only:
+        database_path = root.resolve() / active_snapshot.database.artifact_path
+        database_stat = database_path.stat()
+        partition_identity = (
+            "ALL_SNAPSHOT_RECORDS"
+            if as_kst(active_snapshot.max_available_from)
+            <= as_kst(manifest.cutoff_at)
+            else as_kst(manifest.cutoff_at).isoformat()
+        )
+        cache_key = (
+            str(root.resolve()),
+            active_snapshot.snapshot_id,
+            active_snapshot.database.sha256,
+            partition_identity,
+        )
+        cached = _SNAPSHOT_COVERAGE_CACHE.get(cache_key)
+        if cached is not None and (
+            database_stat.st_size > 0
+            and manifest.accepted_record_hash_manifest
+            == cached.manifest.accepted_record_hash_manifest
+            and manifest.record_hash_manifest
+            == cached.manifest.record_hash_manifest
+            and manifest.available_record_ids
+            == cached.manifest.available_record_ids
+            and manifest.accepted_record_count == active_snapshot.record_count
+            and manifest.available_record_count
+            == len(cached.available_record_ids)
+            and manifest.future_record_count
+            == active_snapshot.record_count - len(cached.available_record_ids)
+            and manifest.corpus_manifest_sha256
+            == active_snapshot.corpus_manifest_sha256
+            and as_kst(active_snapshot.max_available_from)
+            <= as_kst(manifest.cutoff_at)
+        ):
+            context_ids = context_manifest.get("available_record_ids")
+            context_verified = (
+                manifest.run_id == context_manifest.get("run_id")
+                and manifest.cutoff_at.isoformat()
+                == str(context_manifest.get("cutoff_at"))
+                and manifest.accepted_record_count
+                == context_manifest.get("accepted_record_count")
+                and manifest.available_record_count
+                == context_manifest.get("available_record_count")
+                and (
+                    context_ids is None
+                    or context_ids == cached.available_record_ids
+                )
+            )
+            status.update(
+                {
+                    "references_verified": True,
+                    "record_sets_verified": True,
+                    "cutoff_verified": True,
+                    "context_verified": context_verified,
+                    "current_store_verified": True,
+                    "evaluation_snapshot_cache_verified": True,
+                    "passed": context_verified,
+                }
+            )
+            if not context_verified:
+                status["errors"].append(
+                    "memory_coverage_context_manifest_mismatch"
+                )
+            return status
+
     accepted_ref = manifest.accepted_record_hash_manifest
     if accepted_ref is None:
         status["errors"].append("accepted_record_hash_manifest_missing")
@@ -269,14 +492,20 @@ def inspect_memory_coverage_manifest(
         ).values()
         if count > 1
     )
+    corpus_identity_verified = (
+        manifest.corpus_manifest_sha256
+        == active_snapshot.corpus_manifest_sha256
+        if active_snapshot is not None and active_snapshot.evaluation_only
+        else file_sha256(_resolve_required_reference(root, accepted_ref))
+        == manifest.corpus_manifest_sha256
+    )
     status["record_sets_verified"] = (
         available_ids == expected_available_ids
         and not (available_counter - accepted_counter)
         and len(available_ids) == manifest.available_record_count
         and len(accepted_hash_records) == manifest.accepted_record_count
         and observed_duplicate_count == manifest.duplicate_record_count
-        and file_sha256(_resolve_required_reference(root, accepted_ref))
-        == manifest.corpus_manifest_sha256
+        and corpus_identity_verified
         and manifest.coverage_complete
     )
     if not status["record_sets_verified"]:
@@ -314,10 +543,17 @@ def inspect_memory_coverage_manifest(
         status["errors"].append("memory_coverage_context_manifest_mismatch")
 
     if verify_current_store:
-        current_counter = Counter(
-            (record.record_id, _record_sha256(record))
-            for record in BrainRecordStore(root).list_records()
-        )
+        active_snapshot = active_memory_snapshot_manifest(root)
+        if active_snapshot is not None and active_snapshot.evaluation_only:
+            current_counter = _snapshot_source_hash_counter(
+                root,
+                active_snapshot,
+            )
+        else:
+            current_counter = Counter(
+                (record.record_id, _record_sha256(record))
+                for record in BrainRecordStore(root).list_records()
+            )
         status["current_store_verified"] = accepted_counter == current_counter
         if not status["current_store_verified"]:
             status["errors"].append("memory_coverage_current_store_mismatch")
@@ -336,18 +572,24 @@ def inspect_memory_coverage_manifest(
     return status
 
 
-def _record_hash_lines(records: Iterable[BrainRecordEnvelope]) -> Iterator[bytes]:
+def _record_hash_lines(
+    records: Iterable[BrainRecordEnvelope | _CoverageRecordRow],
+) -> Iterator[bytes]:
     for record in records:
         yield _record_hash_line(record)
 
 
-def _record_hash_line(record: BrainRecordEnvelope) -> bytes:
+def _record_hash_line(record: BrainRecordEnvelope | _CoverageRecordRow) -> bytes:
     row = {
         "available_from": record.available_from.isoformat(),
         "episode_id": record.episode_id,
         "evidence_phase": record.evidence_phase,
         "record_id": record.record_id,
-        "record_sha256": _record_sha256(record),
+        "record_sha256": (
+            record.source_sha256
+            if isinstance(record, _CoverageRecordRow)
+            else _record_sha256(record)
+        ),
         "record_type": record.record_type,
         "training_eligible": record.training_eligible,
     }
@@ -367,6 +609,25 @@ def _record_sha256(record: BrainRecordEnvelope) -> str:
     return hashlib.sha256(
         canonical_json(record.model_dump(mode="json")).encode("utf-8")
     ).hexdigest()
+
+
+def _snapshot_source_hash_counter(
+    root: Path,
+    snapshot: MemoryCellSnapshotManifest,
+) -> Counter[tuple[str, str]]:
+    path = root.resolve() / snapshot.source_record_hashes.artifact_path
+    if not path.is_file() or file_sha256(path) != snapshot.source_record_hashes.sha256:
+        raise ValueError("evaluation snapshot source hash ledger is invalid")
+    result: Counter[tuple[str, str]] = Counter()
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            result[(str(row["record_id"]), str(row["sha256"]))] += 1
+    if sum(result.values()) != snapshot.source_record_hashes.item_count:
+        raise ValueError("evaluation snapshot source hash count mismatch")
+    return result
 
 
 def _lines_sha256(lines: Iterable[bytes]) -> str:

@@ -1,0 +1,94 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "cluster_id": {
+      "title": "Cluster Id",
+      "type": "string"
+    },
+    "current_vs_history_differences": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Current Vs History Differences",
+      "type": "array"
+    },
+    "current_vs_history_similarities": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Current Vs History Similarities",
+      "type": "array"
+    },
+    "failure_conditions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Failure Conditions",
+      "type": "array"
+    },
+    "lane": {
+      "enum": [
+        "POSITIVE_ANALOG",
+        "NEGATIVE_CONTROL",
+        "NEAR_MISS",
+        "COUNTEREXAMPLE",
+        "NEWSLESS_OR_UNEXPLAINED",
+        "CANDIDATE_GENERATION_ERROR",
+        "CANDIDATE_RANKING_ERROR",
+        "LEADER_SELECTION_PAIR",
+        "THEME_FORMATION_SUCCESS",
+        "THEME_FORMATION_FAILURE",
+        "CONTINUATION_SUCCESS",
+        "CONTINUATION_FAILURE",
+        "RARE_MECHANISM"
+      ],
+      "title": "Lane",
+      "type": "string"
+    },
+    "memo_id": {
+      "title": "Memo Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.runtime_evidence_memo.v1",
+      "default": "nslab.runtime_evidence_memo.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_record_hash_root": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Record Hash Root",
+      "type": "string"
+    },
+    "source_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Source Record Ids",
+      "type": "array"
+    },
+    "supporting_conditions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Supporting Conditions",
+      "type": "array"
+    },
+    "unresolved_conflicts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unresolved Conflicts",
+      "type": "array"
+    }
+  },
+  "required": [
+    "memo_id",
+    "cluster_id",
+    "lane",
+    "source_record_hash_root"
+  ],
+  "title": "RuntimeEvidenceMemo",
+  "type": "object"
+}

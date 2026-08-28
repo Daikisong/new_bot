@@ -21,6 +21,11 @@ from news_scalping_lab.utils import (
 T = TypeVar("T", bound=BaseModel)
 U = TypeVar("U")
 TRACE_SCHEMA_VERSION = "nslab.llm_trace.v1"
+_PRE_RETRIEVAL_VARIANT_INVARIANT_PURPOSES = (
+    "daily_event_clustering",
+    "open_world_first_analysis",
+    "news_novelty_review",
+)
 
 
 class TracingLLMProvider:
@@ -60,9 +65,7 @@ class TracingLLMProvider:
             "prompt_utf8_bytes": len(prompt.encode("utf-8")),
             "prompt_tokens_counted": self.count_tokens(prompt),
         }
-        checkpoint = self._read_ok_checkpoint(
-            operation="generate_text", purpose=purpose, input_payload=input_payload
-        )
+        checkpoint = self._read_ok_checkpoint(operation="generate_text", purpose=purpose, input_payload=input_payload)
         if checkpoint is not None:
             output = checkpoint.get("output")
             if isinstance(output, str):
@@ -140,9 +143,7 @@ class TracingLLMProvider:
         )
         return provider_output
 
-    async def generate_structured(
-        self, *, prompt: str, response_model: type[T], purpose: str
-    ) -> T:
+    async def generate_structured(self, *, prompt: str, response_model: type[T], purpose: str) -> T:
         started_at = now_kst()
         input_payload = {
             "prompt_sha256": sha256_text(prompt),
@@ -246,9 +247,7 @@ class TracingLLMProvider:
             "text_count": len(texts),
             "total_chars": sum(len(text) for text in texts),
         }
-        checkpoint = self._read_ok_checkpoint(
-            operation="embed", purpose=purpose, input_payload=input_payload
-        )
+        checkpoint = self._read_ok_checkpoint(operation="embed", purpose=purpose, input_payload=input_payload)
         if checkpoint is not None:
             output = _restore_vectors(checkpoint.get("output"))
             if output is not None:
@@ -260,9 +259,7 @@ class TracingLLMProvider:
                     status="checkpoint_hit",
                     input_payload=input_payload,
                     output=output_summary,
-                    token_usage={
-                        "prompt_tokens_estimate": sum(_estimate_tokens(text) for text in texts)
-                    },
+                    token_usage={"prompt_tokens_estimate": sum(_estimate_tokens(text) for text in texts)},
                     checkpoint_id=str(checkpoint["checkpoint_id"]),
                     retries=_checkpoint_retries(checkpoint),
                     retry_errors=_checkpoint_retry_errors(checkpoint),
@@ -279,9 +276,7 @@ class TracingLLMProvider:
                 status="error",
                 input_payload=input_payload,
                 error=exc.original,
-                token_usage={
-                    "prompt_tokens_estimate": sum(_estimate_tokens(text) for text in texts)
-                },
+                token_usage={"prompt_tokens_estimate": sum(_estimate_tokens(text) for text in texts)},
                 retries=exc.retries,
                 retry_errors=exc.retry_errors,
             )
@@ -291,9 +286,7 @@ class TracingLLMProvider:
                 started_at=started_at,
                 status="error",
                 input_payload=input_payload,
-                token_usage={
-                    "prompt_tokens_estimate": sum(_estimate_tokens(text) for text in texts)
-                },
+                token_usage={"prompt_tokens_estimate": sum(_estimate_tokens(text) for text in texts)},
                 error=exc.original,
                 checkpoint_id=checkpoint_id,
                 retries=exc.retries,
@@ -307,9 +300,7 @@ class TracingLLMProvider:
             status="ok",
             input_payload=input_payload,
             output=provider_output,
-            token_usage={
-                "prompt_tokens_estimate": sum(_estimate_tokens(text) for text in texts)
-            },
+            token_usage={"prompt_tokens_estimate": sum(_estimate_tokens(text) for text in texts)},
             retries=retries,
             retry_errors=retry_errors,
         )
@@ -327,9 +318,7 @@ class TracingLLMProvider:
         )
         return provider_output
 
-    async def _call_with_retries(
-        self, call: Callable[[], Awaitable[U]]
-    ) -> tuple[U, int, list[dict[str, str]]]:
+    async def _call_with_retries(self, call: Callable[[], Awaitable[U]]) -> tuple[U, int, list[dict[str, str]]]:
         retries = 0
         retry_errors: list[dict[str, str]] = []
         while True:
@@ -401,6 +390,12 @@ class TracingLLMProvider:
         input_payload: dict[str, Any],
     ) -> str:
         metadata = self._metadata_for(purpose)
+        checkpoint_model_config = dict(self.model_config)
+        if _purpose_matches_any(
+            purpose,
+            _PRE_RETRIEVAL_VARIANT_INVARIANT_PURPOSES,
+        ):
+            checkpoint_model_config.pop("runtime_retrieval_variant", None)
         return stable_id(
             "LLMCKPT",
             canonical_json(
@@ -408,7 +403,7 @@ class TracingLLMProvider:
                     "operation": operation,
                     "purpose": purpose,
                     "input": input_payload,
-                    "model_config": self.model_config,
+                    "model_config": checkpoint_model_config,
                     "metadata": metadata,
                 }
             ),
@@ -499,6 +494,10 @@ class TracingLLMProvider:
         if purpose_metadata is None and ".batch_" in purpose:
             purpose_metadata = self.purpose_metadata.get(purpose.split(".batch_", 1)[0])
         return {**self.default_metadata, **(purpose_metadata or {})}
+
+
+def _purpose_matches_any(purpose: str, prefixes: tuple[str, ...]) -> bool:
+    return any(purpose == prefix or purpose.startswith(prefix + ".batch_") for prefix in prefixes)
 
 
 def _estimate_tokens(text: str) -> int:

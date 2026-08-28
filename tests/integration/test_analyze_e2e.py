@@ -647,6 +647,7 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
         "open_world_max_prompt_chars": 120000,
         "novelty_cluster_batch_size": 12,
         "reasoning_effort": "low",
+        "runtime_retrieval_variant": "v4",
         "shard_episode_count": 20,
         "token_counting_version": "provider_tokenizer_or_utf8_upper_bound.v1",
     }

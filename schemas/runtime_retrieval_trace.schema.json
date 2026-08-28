@@ -1,0 +1,465 @@
+{
+  "$defs": {
+    "ArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "item_count": {
+          "minimum": 0,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.memory_artifact_reference.v1",
+          "default": "nslab.memory_artifact_reference.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_path",
+        "sha256",
+        "item_count"
+      ],
+      "title": "ArtifactReference",
+      "type": "object"
+    },
+    "RuntimeRetrievalBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "batch_size": {
+          "maximum": 32,
+          "minimum": 16,
+          "title": "Batch Size",
+          "type": "integer"
+        },
+        "entropy": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Entropy",
+          "type": "number"
+        },
+        "initial_record_count": {
+          "maximum": 32,
+          "minimum": 16,
+          "title": "Initial Record Count",
+          "type": "integer"
+        },
+        "max_depth": {
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Max Depth",
+          "type": "integer"
+        },
+        "max_record_count": {
+          "maximum": 128,
+          "minimum": 16,
+          "title": "Max Record Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.runtime_retrieval_budget.v1",
+          "default": "nslab.runtime_retrieval_budget.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "trigger_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Trigger Reasons",
+          "type": "array"
+        }
+      },
+      "required": [
+        "initial_record_count",
+        "max_record_count",
+        "max_depth",
+        "batch_size",
+        "entropy"
+      ],
+      "title": "RuntimeRetrievalBudget",
+      "type": "object"
+    },
+    "RuntimeRetrievalTraceRow": {
+      "additionalProperties": false,
+      "properties": {
+        "ann_rank": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ann Rank"
+        },
+        "available_from": {
+          "format": "date-time",
+          "title": "Available From",
+          "type": "string"
+        },
+        "cell_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Cell Ids",
+          "type": "array"
+        },
+        "drop_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Drop Reason"
+        },
+        "evidence_group_size": {
+          "default": "unknown",
+          "enum": [
+            "small",
+            "large",
+            "unknown"
+          ],
+          "title": "Evidence Group Size",
+          "type": "string"
+        },
+        "evidence_memo_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Memo Ids",
+          "type": "array"
+        },
+        "final_candidate_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Final Candidate Ids",
+          "type": "array"
+        },
+        "final_sector_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Final Sector Ids",
+          "type": "array"
+        },
+        "fts_rank": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fts Rank"
+        },
+        "independent_unit_id": {
+          "title": "Independent Unit Id",
+          "type": "string"
+        },
+        "lane": {
+          "anyOf": [
+            {
+              "enum": [
+                "POSITIVE_ANALOG",
+                "NEGATIVE_CONTROL",
+                "NEAR_MISS",
+                "COUNTEREXAMPLE",
+                "NEWSLESS_OR_UNEXPLAINED",
+                "CANDIDATE_GENERATION_ERROR",
+                "CANDIDATE_RANKING_ERROR",
+                "LEADER_SELECTION_PAIR",
+                "THEME_FORMATION_SUCCESS",
+                "THEME_FORMATION_FAILURE",
+                "CONTINUATION_SUCCESS",
+                "CONTINUATION_FAILURE",
+                "RARE_MECHANISM"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lane"
+        },
+        "offline_claim_referenced": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Offline Claim Referenced"
+        },
+        "offline_payload_exposed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Offline Payload Exposed"
+        },
+        "rare_payload": {
+          "default": false,
+          "title": "Rare Payload",
+          "type": "boolean"
+        },
+        "record_id": {
+          "title": "Record Id",
+          "type": "string"
+        },
+        "replay_available_from": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Replay Available From"
+        },
+        "rerank_score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rerank Score"
+        },
+        "runtime_payload_exposed": {
+          "default": false,
+          "title": "Runtime Payload Exposed",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "nslab.runtime_retrieval_trace_row.v1",
+          "default": "nslab.runtime_retrieval_trace_row.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "selection_reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selection Reason"
+        },
+        "source_trade_date": {
+          "format": "date",
+          "title": "Source Trade Date",
+          "type": "string"
+        },
+        "stages": {
+          "items": {
+            "enum": [
+              "ANN_CANDIDATE",
+              "FTS_CANDIDATE",
+              "CELL_MEMBER",
+              "METADATA_FILTERED",
+              "RERANKED",
+              "LANE_SELECTED",
+              "LLM_EXPOSED",
+              "MEMO_REFERENCED",
+              "FINAL_CITED",
+              "DROPPED"
+            ],
+            "type": "string"
+          },
+          "title": "Stages",
+          "type": "array"
+        }
+      },
+      "required": [
+        "record_id",
+        "independent_unit_id",
+        "source_trade_date",
+        "available_from"
+      ],
+      "title": "RuntimeRetrievalTraceRow",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "blind_web_call_count": {
+      "const": 0,
+      "default": 0,
+      "title": "Blind Web Call Count",
+      "type": "integer"
+    },
+    "budget": {
+      "$ref": "#/$defs/RuntimeRetrievalBudget"
+    },
+    "cluster_id": {
+      "title": "Cluster Id",
+      "type": "string"
+    },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "evidence_memo_artifact": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ArtifactReference"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "lane_candidate_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Lane Candidate Counts",
+      "type": "object"
+    },
+    "lane_selected_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Lane Selected Counts",
+      "type": "object"
+    },
+    "memory_snapshot_id": {
+      "title": "Memory Snapshot Id",
+      "type": "string"
+    },
+    "offline_unexposed_final_cited_count": {
+      "minimum": 0,
+      "title": "Offline Unexposed Final Cited Count",
+      "type": "integer"
+    },
+    "offline_unexposed_llm_exposed_count": {
+      "minimum": 0,
+      "title": "Offline Unexposed Llm Exposed Count",
+      "type": "integer"
+    },
+    "offline_unexposed_recovered_count": {
+      "minimum": 0,
+      "title": "Offline Unexposed Recovered Count",
+      "type": "integer"
+    },
+    "online_full_scan_count": {
+      "const": 0,
+      "default": 0,
+      "title": "Online Full Scan Count",
+      "type": "integer"
+    },
+    "policy_version": {
+      "const": "adaptive_population_drilldown.v4",
+      "default": "adaptive_population_drilldown.v4",
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "query_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Query Sha256",
+      "type": "string"
+    },
+    "query_text": {
+      "title": "Query Text",
+      "type": "string"
+    },
+    "rare_mechanism_recovered_count": {
+      "minimum": 0,
+      "title": "Rare Mechanism Recovered Count",
+      "type": "integer"
+    },
+    "rows": {
+      "items": {
+        "$ref": "#/$defs/RuntimeRetrievalTraceRow"
+      },
+      "title": "Rows",
+      "type": "array"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.runtime_retrieval_trace.v1",
+      "default": "nslab.runtime_retrieval_trace.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_population_manifests": {
+      "items": {
+        "$ref": "#/$defs/ArtifactReference"
+      },
+      "title": "Source Population Manifests",
+      "type": "array"
+    },
+    "source_representative_manifests": {
+      "items": {
+        "$ref": "#/$defs/ArtifactReference"
+      },
+      "title": "Source Representative Manifests",
+      "type": "array"
+    },
+    "trace_id": {
+      "title": "Trace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "trace_id",
+    "run_id",
+    "cluster_id",
+    "query_text",
+    "query_sha256",
+    "cutoff_at",
+    "memory_snapshot_id",
+    "budget",
+    "offline_unexposed_recovered_count",
+    "offline_unexposed_llm_exposed_count",
+    "offline_unexposed_final_cited_count",
+    "rare_mechanism_recovered_count"
+  ],
+  "title": "RuntimeRetrievalTrace",
+  "type": "object"
+}

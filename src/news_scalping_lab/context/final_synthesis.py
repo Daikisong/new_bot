@@ -521,7 +521,9 @@ def final_synthesis_phase7_artifacts_compatible(
         compact = read_json(compact_path)
     except (OSError, ValueError):
         return False
-    daily_graph_reference = daily.get("beneficiary_graph")
+    daily_graph_reference = daily.get("final_beneficiary_graph") or daily.get(
+        "beneficiary_graph"
+    )
     expected_daily = phase7_daily_prompt_projection(
         daily=daily,
         compact=compact,
@@ -560,11 +562,17 @@ def phase7_daily_prompt_projection(
         "cutoff_at": daily.get("cutoff_at"),
         "memory_snapshot_id": daily.get("memory_snapshot_id"),
         "context_complete": daily.get("context_complete") is True,
+        "runtime_retrieval_cluster_ids": daily.get(
+            "runtime_retrieval_cluster_ids"
+        ),
         "built_population_keys": daily.get("built_population_keys"),
         "uncovered_population_purposes": daily.get("uncovered_population_purposes"),
         "representative_set_count": _list_len(
             daily.get("representative_set_manifests")
         ),
+        "runtime_retrieval_traces": daily.get("runtime_retrieval_traces"),
+        "runtime_evidence_traces": daily.get("runtime_evidence_traces"),
+        "runtime_evidence_memos": daily.get("runtime_evidence_memos"),
         "supporting_record_ids": daily.get("supporting_record_ids"),
         "contradicting_record_ids": daily.get("contradicting_record_ids"),
         "unexplained_record_ids": daily.get("unexplained_record_ids"),

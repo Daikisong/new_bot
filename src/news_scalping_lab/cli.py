@@ -25,6 +25,9 @@ from news_scalping_lab.audits.external_pack import (
 from news_scalping_lab.audits.hardcoding import audit_hardcoding
 from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.audits.provenance import audit_provenance
+from news_scalping_lab.audits.semantic_exposure import (
+    build_semantic_exposure_index,
+)
 from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff_markdown
@@ -66,6 +69,20 @@ from news_scalping_lab.diagnostics import (
     real_bundle_smoke_report,
 )
 from news_scalping_lab.evaluation.evaluator import Evaluator
+from news_scalping_lab.evaluation.replay_snapshot import (
+    REPLAY_SNAPSHOT_STREAM_BATCH_SIZE,
+    build_shadow_as_of_snapshot,
+)
+from news_scalping_lab.evaluation.retrieval_mechanics import (
+    run_retrieval_mechanics_smoke,
+)
+from news_scalping_lab.evaluation.runtime_variant_shadow import (
+    run_runtime_variant_shadow,
+)
+from news_scalping_lab.evaluation.semantic_upgrade_split import (
+    build_semantic_upgrade_split,
+    split_record_ids,
+)
 from news_scalping_lab.evaluation.shadow import (
     ShadowReplayEvaluator,
     seal_shadow_dataset,
@@ -86,6 +103,7 @@ from news_scalping_lab.llm.codex_oauth_provider import (
     run_interactive_codex_login,
 )
 from news_scalping_lab.llm.factory import create_llm_provider
+from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.memory.adaptive_retrieval import AdaptiveRetriever
 from news_scalping_lab.memory.beneficiary import inspect_beneficiary_graph
 from news_scalping_lab.memory.company import CompanyMemoryStore
@@ -199,6 +217,7 @@ def _production_embedding_provider(
         module_loader=import_module,
     )
 
+
 app.add_typer(news_app, name="news")
 app.add_typer(research_app, name="research")
 app.add_typer(brain_app, name="brain")
@@ -216,6 +235,7 @@ class _CodexSmokeResult(BaseModel):
 
     status: Literal["ok"]
     provider: Literal["codex-oauth"]
+
 
 WEB_SOURCE_REQUIRED_FIELDS = {
     "schema_version",
@@ -483,14 +503,9 @@ def doctor(
     preflight = report.get("production_preflight")
     if strict and (not isinstance(readiness, dict) or readiness.get("passed") is not True):
         raise typer.Exit(code=1)
-    if production and (
-        not isinstance(production_readiness, dict)
-        or production_readiness.get("passed") is not True
-    ):
+    if production and (not isinstance(production_readiness, dict) or production_readiness.get("passed") is not True):
         raise typer.Exit(code=1)
-    if production_preflight and (
-        not isinstance(preflight, dict) or preflight.get("passed") is not True
-    ):
+    if production_preflight and (not isinstance(preflight, dict) or preflight.get("passed") is not True):
         raise typer.Exit(code=1)
 
 
@@ -544,17 +559,13 @@ def auth_codex_smoke() -> None:
         provider = CodexOAuthProvider(
             command=settings.codex_command,
             model=settings.llm.model,
-            reasoning_effort=(
-                settings.llm.reasoning_effort or settings.codex_reasoning_effort
-            ),
+            reasoning_effort=(settings.llm.reasoning_effort or settings.codex_reasoning_effort),
             max_output_tokens=256,
             structured_repair_retries=0,
         )
         health = provider.health_status()
         if health.get("logged_in") is not True:
-            raise CodexOAuthInteractiveLoginRequired(
-                "CODEX_OAUTH_INTERACTIVE_LOGIN_REQUIRED"
-            )
+            raise CodexOAuthInteractiveLoginRequired("CODEX_OAUTH_INTERACTIVE_LOGIN_REQUIRED")
         result = asyncio.run(
             provider.generate_structured(
                 prompt=(
@@ -575,6 +586,8 @@ def auth_codex_smoke() -> None:
             "credential_files_read": False,
         }
     )
+
+
 @app.command("full-check")
 def full_check() -> None:
     results: list[dict[str, object]] = []
@@ -682,9 +695,7 @@ def research_import(path: Path, mode: str = "auto") -> None:
             settings.project_root,
             llm=create_llm_provider(settings),
             llm_max_retries=settings.llm.max_retries,
-            phase7_transport_key=settings.env_value(
-                "NSLAB_PHASE7_TRANSPORT_HMAC_KEY"
-            ),
+            phase7_transport_key=settings.env_value("NSLAB_PHASE7_TRANSPORT_HMAC_KEY"),
         ).import_path(path, mode=mode)
     except (OSError, RuntimeError, ValueError) as exc:
         _exit_with_error(exc)
@@ -838,9 +849,7 @@ def research_import_bundle(
             validate=validate,
             accepted=accept,
             external_quality_gate_path=quality_gate,
-            phase7_transport_key=settings.env_value(
-                "NSLAB_PHASE7_TRANSPORT_HMAC_KEY"
-            ),
+            phase7_transport_key=settings.env_value("NSLAB_PHASE7_TRANSPORT_HMAC_KEY"),
         )
     except (OSError, ValueError) as exc:
         _exit_with_error(exc)
@@ -1027,9 +1036,7 @@ def research_import_batch(
             settings.project_root,
             llm=create_llm_provider(settings),
             llm_max_retries=settings.llm.max_retries,
-            phase7_transport_key=settings.env_value(
-                "NSLAB_PHASE7_TRANSPORT_HMAC_KEY"
-            ),
+            phase7_transport_key=settings.env_value("NSLAB_PHASE7_TRANSPORT_HMAC_KEY"),
         )
     except (RuntimeError, ValueError) as exc:
         _exit_with_error(exc)
@@ -1120,6 +1127,72 @@ def brain_rebuild(
     _echo(manifest.model_dump(mode="json"))
 
 
+@brain_app.command("rebuild-shadow-evaluation")
+def brain_rebuild_shadow_evaluation(
+    project_root: Annotated[Path, typer.Option("--project-root")],
+    cutoff_at: Annotated[str, typer.Option("--cutoff-at")],
+    memory_snapshot_id: Annotated[str, typer.Option("--memory-snapshot-id")],
+    snapshot_receipt: Annotated[Path, typer.Option("--snapshot-receipt")],
+) -> None:
+    settings = load_settings(
+        project_root,
+        resolve_production=False,
+        dotenv_root=Path.cwd(),
+    )
+    selection_path = (
+        settings.project_root / "runs" / "semantic_brain_upgrade" / "shadow_split" / "shadow_case_selection.json"
+    )
+    if not selection_path.is_file():
+        _exit_with_error(ValueError("shadow evaluation rebuild requires the pre-registered split artifact"))
+    try:
+        manifest = BrainCompiler(
+            settings.project_root,
+            shard_episode_count=settings.limits.shard_episode_count,
+            settings=settings,
+        ).rebuild(
+            mode="llm-full",
+            evaluation_cutoff_at=parse_datetime(cutoff_at),
+            evaluation_memory_snapshot_id=memory_snapshot_id,
+            evaluation_snapshot_receipt_path=(
+                snapshot_receipt.resolve()
+                if snapshot_receipt.is_absolute()
+                else (settings.project_root / snapshot_receipt).resolve()
+            ),
+        )
+        receipt_path = (
+            settings.project_root
+            / "runs"
+            / "semantic_brain_upgrade"
+            / "evaluation_brains"
+            / manifest.brain_version
+            / "evaluation_brain_receipt.json"
+        )
+        receipt = {
+            "schema_version": "nslab.semantic_upgrade_evaluation_brain_receipt.v1",
+            "brain_version": manifest.brain_version,
+            "brain_record_cutoff_at": (
+                manifest.brain_record_cutoff_at.isoformat() if manifest.brain_record_cutoff_at is not None else None
+            ),
+            "memory_snapshot_id": manifest.production_memory_snapshot_id,
+            "evaluation_only": True,
+            "compiled_claim_count": manifest.compiled_claim_count,
+            "covered_episode_count": manifest.covered_episode_count,
+            "split_selection_sha256": file_sha256(selection_path),
+            "evaluation_root": settings.project_root.as_posix(),
+            "production_activation_status": "NOT_PRODUCTION_ACTIVATED",
+        }
+        write_json(receipt_path, receipt)
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "manifest": manifest.model_dump(mode="json"),
+            "receipt_path": relative_to_root(receipt_path, settings.project_root),
+            "receipt": receipt,
+        }
+    )
+
+
 @brain_app.command("update")
 def brain_update(
     episode: Annotated[str, typer.Option("--episode")],
@@ -1152,6 +1225,26 @@ def brain_audit(
     _echo(result)
     if not result.get("passed", False):
         raise typer.Exit(code=1)
+
+
+@brain_app.command("build-semantic-exposure-index")
+def brain_build_semantic_exposure_index(
+    brain_version: Annotated[str | None, typer.Option("--brain-version")] = None,
+) -> None:
+    settings = load_settings()
+    try:
+        result = build_semantic_exposure_index(
+            settings.project_root,
+            brain_version=brain_version,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            **result.manifest,
+            "manifest_path": relative_to_root(result.manifest_path, settings.project_root),
+        }
+    )
 
 
 @brain_app.command("diff")
@@ -1877,11 +1970,7 @@ def _inspect_phase7_artifact(
         status["contract_verified"] = not required
         return status
     artifact_ref = manifest.get(artifact_field)
-    path = (
-        _resolve_project_artifact(root, artifact_ref)
-        if isinstance(artifact_ref, str)
-        else None
-    )
+    path = _resolve_project_artifact(root, artifact_ref) if isinstance(artifact_ref, str) else None
     if path is None or not path.exists():
         status["contract_verified"] = False
         status["passed"] = False
@@ -1890,15 +1979,8 @@ def _inspect_phase7_artifact(
     status["inspection"] = inspection
     status["contract_verified"] = inspection.get("passed") is True
     if not status["contract_verified"]:
-        status["errors"].extend(
-            f"{label}_{error}"
-            for error in inspection.get("errors", [])
-            if isinstance(error, str)
-        )
-    status["passed"] = bool(
-        _text_hashed_artifact_status_passed(status)
-        and status["contract_verified"]
-    )
+        status["errors"].extend(f"{label}_{error}" for error in inspection.get("errors", []) if isinstance(error, str))
+    status["passed"] = bool(_text_hashed_artifact_status_passed(status) and status["contract_verified"])
     return status
 
 
@@ -3968,9 +4050,7 @@ def _inspect_final_synthesis_context_artifact(
     }:
         status["schema_version_verified"] = False
         status["errors"].append("final_synthesis_context_phase2_downgrade")
-    if phase7_daily_memory_required(manifest) and schema_version != (
-        "nslab.final_synthesis_context.v3"
-    ):
+    if phase7_daily_memory_required(manifest) and schema_version != ("nslab.final_synthesis_context.v3"):
         status["schema_version_verified"] = False
         status["errors"].append("final_synthesis_context_phase7_downgrade")
 
@@ -4122,12 +4202,8 @@ def _inspect_final_synthesis_context_artifact(
             manifest,
             payload,
         )
-        status["daily_memory_context_verified"] = bool(
-            status["daily_memory_context_verified"] and embedded_verified
-        )
-        status["beneficiary_graph_verified"] = bool(
-            status["beneficiary_graph_verified"] and embedded_verified
-        )
+        status["daily_memory_context_verified"] = bool(status["daily_memory_context_verified"] and embedded_verified)
+        status["beneficiary_graph_verified"] = bool(status["beneficiary_graph_verified"] and embedded_verified)
         if not status["daily_memory_context_verified"]:
             status["errors"].append("final_synthesis_context_daily_memory_invalid")
         if not status["beneficiary_graph_verified"]:
@@ -4323,8 +4399,7 @@ def _inspect_final_synthesis_semantic_retrieval_context(
             "records" not in context and "episodes" not in context
             if phase7_compact
             else not record_contract_required
-            or context.get("records")
-            == _semantic_retrieval_record_context(root, manifest)
+            or context.get("records") == _semantic_retrieval_record_context(root, manifest)
         ),
     }
     status.update(checks)
@@ -4406,9 +4481,7 @@ def _inspect_final_synthesis_semantic_cluster_coverage_context(
             context.get("promoted_record_ids") == manifest.get("semantic_cluster_coverage_promoted_record_ids")
         ),
         "semantic_cluster_coverage_promoted_records_verified": (
-            "promoted_records" not in context
-            if phase7_compact
-            else context.get("promoted_records") == promoted_records
+            "promoted_records" not in context if phase7_compact else context.get("promoted_records") == promoted_records
         ),
     }
     status.update(checks)
@@ -5399,9 +5472,7 @@ def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
                 routing_mismatches.append("record_routing_sha256")
             expected_projection = record_sweep_lane_projection(shard_records)
             routing_mismatches.extend(
-                field
-                for field in RECORD_SWEEP_LANE_FIELDS
-                if payload.get(field) != expected_projection[field]
+                field for field in RECORD_SWEEP_LANE_FIELDS if payload.get(field) != expected_projection[field]
             )
             if routing_mismatches:
                 status["category_field_mismatches"].append(
@@ -5463,12 +5534,8 @@ def _inspect_record_sweep_artifacts(root: Path, manifest: dict[str, Any]) -> dic
     status["cache_hits_verified"] = expected_cache_hits == status["observed_cache_hits"]
     if isinstance(expected_swept_ids, list) and all(isinstance(record_id, str) for record_id in expected_swept_ids):
         zero_shard_manifest_only = expected_shard_count == 0 and not artifact_refs
-        status["swept_record_ids_verified"] = (
-            expected_swept_count == len(expected_swept_ids)
-            and (
-                zero_shard_manifest_only
-                or Counter(observed_record_ids) == Counter(expected_swept_ids)
-            )
+        status["swept_record_ids_verified"] = expected_swept_count == len(expected_swept_ids) and (
+            zero_shard_manifest_only or Counter(observed_record_ids) == Counter(expected_swept_ids)
         )
     else:
         status["errors"].append("swept_record_ids_invalid")
@@ -7089,19 +7156,11 @@ def _event_cluster_manifest_result_sha256(
                 "embedding_status": manifest.embedding_status,
                 "embedding_model": manifest.embedding_model,
                 "embedding_revision": manifest.embedding_revision,
-                "embedding_artifact_sha256": (
-                    manifest.embedding_artifact_sha256
-                ),
+                "embedding_artifact_sha256": (manifest.embedding_artifact_sha256),
                 "embedding_dimensions": manifest.embedding_dimensions,
-                "embedding_fallback_policy": (
-                    manifest.embedding_fallback_policy
-                ),
-                "deterministic_fallback_used": (
-                    manifest.deterministic_fallback_used
-                ),
-                "production_runtime_identity": (
-                    manifest.production_runtime_identity
-                ),
+                "embedding_fallback_policy": (manifest.embedding_fallback_policy),
+                "deterministic_fallback_used": (manifest.deterministic_fallback_used),
+                "production_runtime_identity": (manifest.production_runtime_identity),
                 "clusters": [
                     {
                         "cluster_id": cluster.cluster_id,
@@ -7868,12 +7927,7 @@ def audit_postclose_web_cmd(
 ) -> None:
     settings = load_settings()
     if settings.evidence_policy.value != "postclose-web-audit-optional":
-        _exit_with_error(
-            ValueError(
-                "post-close web audit requires "
-                "NSLAB_EVIDENCE_POLICY=postclose-web-audit-optional"
-            )
-        )
+        _exit_with_error(ValueError("post-close web audit requires NSLAB_EVIDENCE_POLICY=postclose-web-audit-optional"))
     try:
         artifact, path = asyncio.run(
             run_postclose_web_audit(
@@ -8475,6 +8529,222 @@ def memory_inspect_index() -> None:
     )
 
 
+@memory_app.command("retrieval-mechanics-smoke")
+def memory_retrieval_mechanics_smoke(
+    project_root: Annotated[Path, typer.Option("--project-root")],
+    cutoff_at: Annotated[str, typer.Option("--cutoff-at")],
+    count: Annotated[int, typer.Option("--count", min=1)] = 12,
+    configured_llm: Annotated[
+        bool,
+        typer.Option(
+            "--configured-llm",
+            help="Use the configured production LLM instead of the deterministic smoke LLM.",
+        ),
+    ] = False,
+) -> None:
+    settings = load_settings(
+        project_root,
+        resolve_production=False,
+        dotenv_root=Path.cwd(),
+    )
+    try:
+        index = ProductionMemoryIndex(
+            settings.project_root,
+            embedding_provider=_production_embedding_provider(
+                settings,
+                require_records=False,
+            ),
+            production=True,
+        )
+        llm = create_llm_provider(settings) if configured_llm else DeterministicMockLLMProvider()
+        result = asyncio.run(
+            run_retrieval_mechanics_smoke(
+                settings.project_root,
+                memory_index=index,
+                llm=llm,
+                cutoff_at=parse_datetime(cutoff_at),
+                count=count,
+            )
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "selection_manifest_path": relative_to_root(
+                result.selection_manifest_path,
+                settings.project_root,
+            ),
+            "report_path": relative_to_root(
+                result.report_path,
+                settings.project_root,
+            ),
+            "report": result.report,
+        }
+    )
+
+
+@memory_app.command("prepare-semantic-upgrade-split")
+def memory_prepare_semantic_upgrade_split(
+    project_root: Annotated[Path, typer.Option("--project-root")],
+    calibration_count: Annotated[
+        int,
+        typer.Option("--calibration-count", min=20),
+    ] = 40,
+    holdout_count: Annotated[
+        int,
+        typer.Option("--holdout-count", min=20),
+    ] = 40,
+) -> None:
+    settings = load_settings(
+        project_root,
+        resolve_production=False,
+        dotenv_root=Path.cwd(),
+    )
+    try:
+        result = build_semantic_upgrade_split(
+            settings.project_root,
+            calibration_count=calibration_count,
+            holdout_count=holdout_count,
+        )
+        calibration_ids = split_record_ids(
+            settings.project_root,
+            result.calibration_cases,
+        )
+        holdout_ids = split_record_ids(
+            settings.project_root,
+            result.holdout_cases,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "build_case_count": len(result.build_cases),
+            "calibration_case_count": len(result.calibration_cases),
+            "holdout_case_count": len(result.holdout_cases),
+            "calibration_record_count": len(calibration_ids),
+            "holdout_record_count": len(holdout_ids),
+            "calibration_holdout_overlap_count": len(calibration_ids.intersection(holdout_ids)),
+            "plan_path": relative_to_root(result.plan_path, settings.project_root),
+            "selection_path": relative_to_root(
+                result.selection_path,
+                settings.project_root,
+            ),
+        }
+    )
+
+
+@memory_app.command("build-semantic-upgrade-replay-snapshot")
+def memory_build_semantic_upgrade_replay_snapshot(
+    project_root: Annotated[Path, typer.Option("--project-root")],
+    source_snapshot_id: Annotated[str, typer.Option("--source-snapshot-id")],
+    build_cutoff: Annotated[str, typer.Option("--build-cutoff")],
+    calibration_count: Annotated[
+        int,
+        typer.Option("--calibration-count", min=20),
+    ] = 40,
+    holdout_count: Annotated[
+        int,
+        typer.Option("--holdout-count", min=20),
+    ] = 40,
+) -> None:
+    settings = load_settings(
+        project_root,
+        resolve_production=False,
+        dotenv_root=Path.cwd(),
+    )
+    try:
+        split = build_semantic_upgrade_split(
+            settings.project_root,
+            calibration_count=calibration_count,
+            holdout_count=holdout_count,
+        )
+        calibration_ids = split_record_ids(
+            settings.project_root,
+            split.calibration_cases,
+        )
+        holdout_ids = split_record_ids(
+            settings.project_root,
+            split.holdout_cases,
+        )
+        index = ProductionMemoryIndex(
+            settings.project_root,
+            embedding_provider=_production_embedding_provider(
+                settings,
+                require_records=True,
+            ),
+            production=True,
+            embedding_batch_size=REPLAY_SNAPSHOT_STREAM_BATCH_SIZE,
+        )
+        result = build_shadow_as_of_snapshot(
+            settings.project_root,
+            memory_index=index,
+            build_cutoff=parse_datetime(build_cutoff),
+            source_snapshot_id=source_snapshot_id,
+            calibration_record_ids=calibration_ids,
+            holdout_record_ids=holdout_ids,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "snapshot_id": result.memory_snapshot.snapshot_id,
+            "receipt_path": relative_to_root(
+                result.receipt_path,
+                settings.project_root,
+            ),
+            "receipt": result.receipt,
+        }
+    )
+
+
+@memory_app.command("run-runtime-variant-shadow")
+def memory_run_runtime_variant_shadow(
+    project_root: Annotated[Path, typer.Option("--project-root")],
+    selection_path: Annotated[Path, typer.Option("--selection")],
+    split: Annotated[str, typer.Option("--split")] = "CALIBRATION",
+    case_limit: Annotated[
+        int | None,
+        typer.Option("--case-limit", min=1),
+    ] = None,
+) -> None:
+    normalized_split = split.strip().upper()
+    if normalized_split not in {"CALIBRATION", "HOLDOUT"}:
+        _exit_with_error(ValueError("runtime variant shadow split is invalid"))
+    settings = load_settings(
+        project_root,
+        resolve_production=False,
+        dotenv_root=Path.cwd(),
+    )
+    resolved_selection = (
+        selection_path.resolve() if selection_path.is_absolute() else (settings.project_root / selection_path).resolve()
+    )
+    try:
+        result = asyncio.run(
+            run_runtime_variant_shadow(
+                settings.project_root,
+                settings=settings,
+                selection_path=resolved_selection,
+                split=cast(Literal["CALIBRATION", "HOLDOUT"], normalized_split),
+                case_limit=case_limit,
+            )
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "report_path": relative_to_root(
+                result.report_path,
+                settings.project_root,
+            ),
+            "progress_path": relative_to_root(
+                result.progress_path,
+                settings.project_root,
+            ),
+            "report": result.report,
+        }
+    )
+
+
 @memory_app.command("search-cells")
 def memory_search_cells(
     query: Annotated[str, typer.Argument(help="Semantic query text.")],
@@ -8857,18 +9127,12 @@ def memory_evaluate_shadow(
         llm_provider = _shadow_llm_provider_for_dataset(settings, resolved)
         result = ShadowReplayEvaluator(
             settings.project_root,
-            pre_registration_key=settings.env_value(
-                "NSLAB_SHADOW_EVALUATION_HMAC_KEY"
-            ),
+            pre_registration_key=settings.env_value("NSLAB_SHADOW_EVALUATION_HMAC_KEY"),
             memory_index=memory_index,
             price_source=price_source,
             llm_provider=llm_provider,
-            runner_attestation_key=settings.env_value(
-                "NSLAB_SHADOW_RUNNER_HMAC_KEY"
-            ),
-            truth_attestation_key=settings.env_value(
-                "NSLAB_SHADOW_TRUTH_HMAC_KEY"
-            ),
+            runner_attestation_key=settings.env_value("NSLAB_SHADOW_RUNNER_HMAC_KEY"),
+            truth_attestation_key=settings.env_value("NSLAB_SHADOW_TRUTH_HMAC_KEY"),
         ).evaluate(resolved)
     except (OSError, RuntimeError, ValueError) as exc:
         _exit_with_error(exc)
@@ -8934,12 +9198,8 @@ def memory_seal_shadow_dataset(
             memory_index=memory_index,
             price_source=price_source,
             llm_provider=llm_provider,
-            runner_attestation_key=settings.env_value(
-                "NSLAB_SHADOW_RUNNER_HMAC_KEY"
-            ),
-            truth_attestation_key=settings.env_value(
-                "NSLAB_SHADOW_TRUTH_HMAC_KEY"
-            ),
+            runner_attestation_key=settings.env_value("NSLAB_SHADOW_RUNNER_HMAC_KEY"),
+            truth_attestation_key=settings.env_value("NSLAB_SHADOW_TRUTH_HMAC_KEY"),
         )
     except (OSError, RuntimeError, ValueError) as exc:
         _exit_with_error(exc)
@@ -8947,9 +9207,7 @@ def memory_seal_shadow_dataset(
         {
             "dataset_path": relative_to_root(path, settings.project_root),
             "dataset_id": dataset.dataset_id,
-            "dataset_attestation": dataset.dataset_attestation.model_dump(
-                mode="json"
-            ),
+            "dataset_attestation": dataset.dataset_attestation.model_dump(mode="json"),
         }
     )
 
@@ -8979,11 +9237,7 @@ def memory_inspect_shadow(
         _exit_with_error(ValueError("shadow evaluation manifest escapes the project root"))
     try:
         manifest_payload = read_json(resolved)
-        source_ref = (
-            manifest_payload.get("source_dataset")
-            if isinstance(manifest_payload, dict)
-            else None
-        )
+        source_ref = manifest_payload.get("source_dataset") if isinstance(manifest_payload, dict) else None
         source_path = (
             _resolve_project_artifact(
                 settings.project_root,
@@ -8992,35 +9246,17 @@ def memory_inspect_shadow(
             if isinstance(source_ref, dict)
             else None
         )
-        memory_index = (
-            _shadow_memory_index_for_dataset(settings, source_path)
-            if source_path is not None
-            else None
-        )
-        price_source = (
-            _shadow_price_source_for_dataset(settings, source_path)
-            if source_path is not None
-            else None
-        )
-        llm_provider = (
-            _shadow_llm_provider_for_dataset(settings, source_path)
-            if source_path is not None
-            else None
-        )
+        memory_index = _shadow_memory_index_for_dataset(settings, source_path) if source_path is not None else None
+        price_source = _shadow_price_source_for_dataset(settings, source_path) if source_path is not None else None
+        llm_provider = _shadow_llm_provider_for_dataset(settings, source_path) if source_path is not None else None
         result = ShadowReplayEvaluator(
             settings.project_root,
-            pre_registration_key=settings.env_value(
-                "NSLAB_SHADOW_EVALUATION_HMAC_KEY"
-            ),
+            pre_registration_key=settings.env_value("NSLAB_SHADOW_EVALUATION_HMAC_KEY"),
             memory_index=memory_index,
             price_source=price_source,
             llm_provider=llm_provider,
-            runner_attestation_key=settings.env_value(
-                "NSLAB_SHADOW_RUNNER_HMAC_KEY"
-            ),
-            truth_attestation_key=settings.env_value(
-                "NSLAB_SHADOW_TRUTH_HMAC_KEY"
-            ),
+            runner_attestation_key=settings.env_value("NSLAB_SHADOW_RUNNER_HMAC_KEY"),
+            truth_attestation_key=settings.env_value("NSLAB_SHADOW_TRUTH_HMAC_KEY"),
         ).inspect(resolved)
     except (OSError, RuntimeError, ValueError) as exc:
         _exit_with_error(exc)
@@ -9034,9 +9270,7 @@ def _shadow_memory_index_for_dataset(
     dataset_path: Path,
 ) -> ProductionMemoryIndex | None:
     payload = read_json(dataset_path)
-    if not isinstance(payload, dict) or payload.get("dataset_kind") != (
-        "SEALED_HISTORICAL_REPLAY"
-    ):
+    if not isinstance(payload, dict) or payload.get("dataset_kind") != ("SEALED_HISTORICAL_REPLAY"):
         return None
     return ProductionMemoryIndex(
         settings.project_root,
@@ -9053,9 +9287,7 @@ def _shadow_price_source_for_dataset(
     dataset_path: Path,
 ) -> Any | None:
     payload = read_json(dataset_path)
-    if not isinstance(payload, dict) or payload.get("dataset_kind") != (
-        "SEALED_HISTORICAL_REPLAY"
-    ):
+    if not isinstance(payload, dict) or payload.get("dataset_kind") != ("SEALED_HISTORICAL_REPLAY"):
         return None
     if settings.price_provider.strip().lower() == "mock":
         raise ValueError("historical shadow replay requires a real price provider")
@@ -9067,9 +9299,7 @@ def _shadow_llm_provider_for_dataset(
     dataset_path: Path,
 ) -> Any | None:
     payload = read_json(dataset_path)
-    if not isinstance(payload, dict) or payload.get("dataset_kind") != (
-        "SEALED_HISTORICAL_REPLAY"
-    ):
+    if not isinstance(payload, dict) or payload.get("dataset_kind") != ("SEALED_HISTORICAL_REPLAY"):
         return None
     if settings.llm_provider.strip().lower() == "mock":
         raise ValueError("historical shadow replay requires a real LLM provider")
@@ -9290,9 +9520,7 @@ def production_build_inventory(
             "ready_for_import": manifest.ready_for_import,
             "ready_bundle_count": manifest.ready_bundle_count,
             "ready_record_count": manifest.ready_record_count,
-            "ready_training_eligible_record_count": (
-                manifest.ready_training_eligible_record_count
-            ),
+            "ready_training_eligible_record_count": (manifest.ready_training_eligible_record_count),
             "finding_count": manifest.finding_count,
             "findings": manifest.findings,
         }
@@ -9306,9 +9534,7 @@ def production_seal_inventory(
     settings = load_settings(resolve_production=False)
     key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
     if key_value is None:
-        _exit_with_error(
-            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
-        )
+        _exit_with_error(ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required"))
     try:
         manifest = seal_production_import_inventory(
             settings.project_root,
@@ -9321,11 +9547,7 @@ def production_seal_inventory(
         {
             "inventory_id": manifest.inventory_id,
             "sealed": manifest.attestation is not None,
-            "key_id": (
-                manifest.attestation.key_id
-                if manifest.attestation is not None
-                else None
-            ),
+            "key_id": (manifest.attestation.key_id if manifest.attestation is not None else None),
             "manifest_path": relative_to_root(inventory, settings.project_root),
         }
     )
@@ -9339,9 +9561,7 @@ def production_inspect_inventory(
     result = inspect_production_import_inventory(
         settings.project_root,
         inventory,
-        attestation_key=settings.env_value(
-            "NSLAB_PRODUCTION_PROMOTION_HMAC_KEY"
-        ),
+        attestation_key=settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY"),
     )
     _echo(result)
     if result.get("passed") is not True:
@@ -9360,23 +9580,17 @@ def production_stage_import(
     ] = False,
 ) -> None:
     if not execute:
-        _exit_with_error(
-            ValueError("production stage-import requires explicit --execute")
-        )
+        _exit_with_error(ValueError("production stage-import requires explicit --execute"))
     settings = load_settings(resolve_production=False)
     key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
     if key_value is None:
-        _exit_with_error(
-            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
-        )
+        _exit_with_error(ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required"))
     try:
         receipt, path = stage_production_batch_import(
             settings.project_root,
             inventory,
             inventory_attestation_key=key_value,
-            phase7_transport_key=settings.env_value(
-                "NSLAB_PHASE7_TRANSPORT_HMAC_KEY"
-            ),
+            phase7_transport_key=settings.env_value("NSLAB_PHASE7_TRANSPORT_HMAC_KEY"),
         )
     except (OSError, ValueError) as exc:
         _exit_with_error(exc)
@@ -9388,9 +9602,7 @@ def production_stage_import(
             "release_project_path": receipt.release_project_path,
             "imported_bundle_count": receipt.imported_bundle_count,
             "imported_record_count": receipt.imported_record_count,
-            "imported_training_eligible_record_count": (
-                receipt.imported_training_eligible_record_count
-            ),
+            "imported_training_eligible_record_count": (receipt.imported_training_eligible_record_count),
         }
     )
 
@@ -9402,9 +9614,7 @@ def production_inspect_import(
     settings = load_settings(resolve_production=False)
     key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
     if key_value is None:
-        _exit_with_error(
-            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
-        )
+        _exit_with_error(ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required"))
     result = inspect_production_batch_import(
         settings.project_root,
         receipt,
@@ -9426,9 +9636,7 @@ def production_finalize_release(
     settings = load_settings(resolve_production=False)
     key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
     if key_value is None:
-        _exit_with_error(
-            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
-        )
+        _exit_with_error(ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required"))
     try:
         manifest, path = finalize_production_release(
             settings.project_root,
@@ -9458,9 +9666,7 @@ def production_inspect_release(
     settings = load_settings(resolve_production=False)
     key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
     if key_value is None:
-        _exit_with_error(
-            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
-        )
+        _exit_with_error(ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required"))
     result = inspect_production_release(
         settings.project_root,
         manifest,
@@ -9478,9 +9684,7 @@ def production_activate(
     settings = load_settings(resolve_production=False)
     key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
     if key_value is None:
-        _exit_with_error(
-            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
-        )
+        _exit_with_error(ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required"))
     try:
         pointer, path = activate_production_release(
             settings.project_root,
@@ -9507,9 +9711,7 @@ def production_inspect_current(
     settings = load_settings(resolve_production=False)
     key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
     if key_value is None:
-        _exit_with_error(
-            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
-        )
+        _exit_with_error(ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required"))
     result = inspect_current_production_release(
         settings.project_root,
         promotion_key=key_value,
@@ -9527,9 +9729,7 @@ def production_rollback(
     settings = load_settings(resolve_production=False)
     key_value = settings.env_value("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY")
     if key_value is None:
-        _exit_with_error(
-            ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required")
-        )
+        _exit_with_error(ValueError("NSLAB_PRODUCTION_PROMOTION_HMAC_KEY is required"))
     try:
         pointer, path = rollback_production_release(
             settings.project_root,
