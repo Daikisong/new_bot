@@ -191,9 +191,7 @@ def _valid_packs(root: Path) -> tuple[Path, Path, Path]:
         "artifact_population_root": artifact_root,
         "record_population_root": record_root,
         "sorted_record_ids_root": sha256_text("R-1\n"),
-        "record_id_envelope_root": sha256_text(
-            canonical_json({"R-1": record_row["envelope_sha256"]})
-        ),
+        "record_id_envelope_root": sha256_text(canonical_json({"R-1": record_row["envelope_sha256"]})),
         "claim_root": claim_root,
         "brain_root": sha256_text("brain"),
         "memory_root": sha256_text("memory"),
@@ -303,9 +301,7 @@ def test_external_audit_export_pipeline_builds_self_verifying_packs(
                 "training_eligible": {"true": 1, "false": 0},
                 "counts": {"record_type": {"test": 1}},
                 "sorted_record_ids_root": sha256_text("R-1\n"),
-                "record_id_envelope_root": sha256_text(
-                    canonical_json({"R-1": record_row["envelope_sha256"]})
-                ),
+                "record_id_envelope_root": sha256_text(canonical_json({"R-1": record_row["envelope_sha256"]})),
                 "routing_metadata_root": sha256_text("routing-root"),
                 "record_population_merkle_root": _merkle_root([_canonical_row_digest(record_row)]),
                 "record_ledger_sha256": file_sha256(ledger_path),
@@ -572,12 +568,15 @@ def test_brain_identity_requires_gpt_5_6_sol_xhigh(tmp_path: Path) -> None:
     manifest = json.loads(target.compile_manifest_path.read_text())
     manifest["model"] = "gpt-5.4"
     write_json(target.compile_manifest_path, manifest)
-    assert audit_brain_identity(
-        target,
-        _profile(),
-        {"claim_count": 1},
-        {"total_live_calls": 1, "missing_trace_count": 0, "failure_count": 0},
-    )["passed"] is False
+    assert (
+        audit_brain_identity(
+            target,
+            _profile(),
+            {"claim_count": 1},
+            {"total_live_calls": 1, "missing_trace_count": 0, "failure_count": 0},
+        )["passed"]
+        is False
+    )
 
 
 def test_llm_call_ledger_matches_compile_manifest(tmp_path: Path) -> None:
@@ -585,9 +584,7 @@ def test_llm_call_ledger_matches_compile_manifest(tmp_path: Path) -> None:
     target = _target(tmp_path)
     compile_manifest = json.loads(target.compile_manifest_path.read_text())
     prompt_sha = sha256_text("prompt")
-    compile_manifest["record_shards"] = [
-        {"shard_index": 1, "prompt_sha256": prompt_sha, "cache_key": "CACHE-1"}
-    ]
+    compile_manifest["record_shards"] = [{"shard_index": 1, "prompt_sha256": prompt_sha, "cache_key": "CACHE-1"}]
     cache = {
         "CACHE-1": {
             "purpose": "brain_compile:shard:0001",
@@ -687,10 +684,7 @@ def test_unrepresented_reasoning_groups_are_reported() -> None:
 
 
 def test_same_signature_rare_payload_is_detected() -> None:
-    rows = [
-        {"record_id": f"R-{index}", "signature": "same", "rare": index == 3}
-        for index in range(4)
-    ]
+    rows = [{"record_id": f"R-{index}", "signature": "same", "rare": index == 3} for index in range(4)]
     chosen = deterministic_stratified_sample(
         rows,
         seed="seed",
@@ -776,10 +770,7 @@ def test_standalone_verifier_detects_tamper(tmp_path: Path) -> None:
 
 
 def _sample_rows() -> list[dict[str, Any]]:
-    return [
-        {"record_id": f"R-{index:03d}", "year": 2020 + index % 3, "kind": index % 2}
-        for index in range(30)
-    ]
+    return [{"record_id": f"R-{index:03d}", "year": 2020 + index % 3, "kind": index % 2} for index in range(30)]
 
 
 def test_sample_selection_is_seed_deterministic() -> None:
@@ -834,14 +825,20 @@ def test_sample_episode_paths_include_nested_bundle_envelopes(tmp_path: Path) ->
 
 
 def test_sample_retrieval_paths_exclude_llm_build_traces(tmp_path: Path) -> None:
-    expected = tmp_path / "runs" / "daily" / "adaptive_retrieval_trace.json"
-    write_json(expected, {"schema_version": "nslab.adaptive_retrieval_trace.v4"})
+    adaptive = tmp_path / "runs" / "daily" / "adaptive_retrieval_trace.json"
+    runtime = tmp_path / "runs" / "runtime" / "trace.evidence.final.json"
+    write_json(adaptive, {"schema_version": "nslab.adaptive_retrieval_trace.v4"})
+    write_json(runtime, {"schema_version": "nslab.runtime_retrieval_trace.v1"})
+    write_json(
+        tmp_path / "runs" / "runtime" / "trace.evidence.json",
+        {"schema_version": "nslab.runtime_retrieval_trace.v1"},
+    )
     write_json(
         tmp_path / "runs" / "traces" / "llm.json",
         {"schema_version": "nslab.llm_trace.v1"},
     )
 
-    assert external_pack._retrieval_trace_sample_paths(tmp_path) == [expected]
+    assert external_pack._retrieval_trace_sample_paths(tmp_path) == [adaptive, runtime]
 
 
 def test_sample_selection_metadata_exposes_all_roles_and_strata() -> None:

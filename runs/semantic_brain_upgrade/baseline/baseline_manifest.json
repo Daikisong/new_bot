@@ -1,0 +1,63 @@
+{
+  "schema_version": "nslab.semantic_brain_upgrade_baseline.v1",
+  "baseline_id": "SEMBASE-brain-08fe3aaaa3-fc41f6e",
+  "status": "IMMUTABLE_STAGING_BASELINE",
+  "production_activation_status": "NOT_PRODUCTION_ACTIVATED",
+  "project_root": "production/staging/P9IMPORT-3D770A7DD72457C97098/project",
+  "staging_build_commit": "0eea166b268ac80dd645e55bf32b142e8be0b443",
+  "baseline_freeze_commit": "fc41f6ec6f2279778b5f7a970826e6d379900a40",
+  "brain": {
+    "version": "brain-08fe3aaaa3",
+    "root_sha256": "1009852b70bd13c8ce4cc32fbfbf2ff52134ac377ef99b7a1bf04790f498b9c0",
+    "compiler_version": "nslab.brain.llm_full.compiler.v7",
+    "map_reduce_version": "nslab.brain.llm_full.map_reduce.v5",
+    "build_mode": "llm-full",
+    "provider": "codex-oauth",
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "xhigh"
+  },
+  "records": {
+    "count": 823279,
+    "training_eligible_count": 524948,
+    "corpus_sha256": "2d25581cdc98d89cb0f1d2fa00bec917442171ee279c001edfc764e2941f6d75",
+    "artifact_root_sha256": "142c70159e3028f692bc0c4814903708dcdad58ec3801e4847cf318e7e605510"
+  },
+  "memory": {
+    "snapshot_id": "MEMIDX-1e64a1b6e6ba7b07b799",
+    "root_sha256": "80db0601f8ebc20e8c15b54729131505120c73ee0fdb3c00a1a779f078022a83",
+    "embedding_provider": "local-production",
+    "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    "embedding_dimensions": 384
+  },
+  "warehouse_root_sha256": "d830c76d0f3544a2c1bf3a39717bbf07046653fa12939f939b7204ae27079e10",
+  "semantic_exposure": {
+    "offline_payload_exposed_count": 2688,
+    "offline_payload_not_exposed_count": 820591,
+    "claim_referenced_record_count": 256783,
+    "claim_unreferenced_record_count": 566496,
+    "rare_reasoning_payload_not_exposed_count": 247682
+  },
+  "claims": {
+    "deterministic_record_claim_count": 256783,
+    "root_sha256": "5c838deaa0ba7c0555818888963d297ae59cfbd565591db03dc5a3c18945f896"
+  },
+  "artifacts": {
+    "file_count": 92682,
+    "total_bytes": 84810725586,
+    "population_root_sha256": "cc887092654e7e06a64c4f0e80a22e394e17efeed9c86363bdd73f822bdb3b36"
+  },
+  "source_audit": {
+    "audit_id": "AUDIT-20260827T125545Z-1399DA0329",
+    "audit_tool_commit": "2ec7b1b9e1459a1431b34ac0690103c893198af9",
+    "structural_result": "STRUCTURAL_COVERAGE_COMPLETE",
+    "payload_result": "SEMANTIC_EXPOSURE_PARTIAL",
+    "claim_reference_result": "FINAL_CLAIM_INFLUENCE_PARTIAL",
+    "read_only": true
+  },
+  "preservation_policy": {
+    "reimport_allowed": false,
+    "reembedding_allowed": false,
+    "baseline_overwrite_allowed": false,
+    "production_activation_allowed": false
+  }
+}

@@ -98,6 +98,9 @@ def test_local_production_embedding_has_stable_dimension(tmp_path: Path) -> None
     )
     vectors = provider.embed_texts(["한국어", "English"])
     assert provider.dimensions == 4
+    assert provider.embedding_query_count == 1
+    assert provider.embedding_text_count == 2
+    assert provider.embedding_input_char_count == sum(len(text) for text in ["한국어", "English"])
     assert {len(vector) for vector in vectors} == {4}
     assert all(math.isclose(sum(value * value for value in vector), 1.0, abs_tol=1e-6) for vector in vectors)
 
@@ -138,8 +141,7 @@ def test_production_dimension_mismatch_fails_closed() -> None:
 def test_production_failure_emits_no_normal_prediction(tmp_path: Path) -> None:
     csv_path = tmp_path / "news.csv"
     csv_path.write_text(
-        "page,row,date,time,title,body\n"
-        '1,1,"2030-01-10","08:00:00","계약","공급 계약"\n',
+        'page,row,date,time,title,body\n1,1,"2030-01-10","08:00:00","계약","공급 계약"\n',
         encoding="utf-8",
     )
     settings = Settings(
@@ -186,21 +188,15 @@ def test_doctor_rejects_production_deterministic_fallback(tmp_path: Path) -> Non
     settings = Settings(
         project_root=tmp_path,
         embedding_provider="deterministic",
-        event_cluster_fallback_policy=(
-            EmbeddingFallbackPolicy.ALLOW_DETERMINISTIC_FALLBACK
-        ),
+        event_cluster_fallback_policy=(EmbeddingFallbackPolicy.ALLOW_DETERMINISTIC_FALLBACK),
     )
     report = production_readiness_report(
         build_doctor_report(settings, production=True),
         settings,
     )
     assert report["passed"] is False
-    assert "embedding: production event clustering must fail closed" in report[
-        "findings"
-    ]
-    assert "embedding: production semantic provider is not configured" in report[
-        "findings"
-    ]
+    assert "embedding: production event clustering must fail closed" in report["findings"]
+    assert "embedding: production semantic provider is not configured" in report["findings"]
 
 
 def test_release_finalize_rejects_embedding_identity_drift(tmp_path: Path) -> None:
@@ -209,9 +205,7 @@ def test_release_finalize_rejects_embedding_identity_drift(tmp_path: Path) -> No
         path = model_dir / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(
-            b'{"hidden_size":4}'
-            if relative_path == "config.json"
-            else f"payload:{relative_path}".encode()
+            b'{"hidden_size":4}' if relative_path == "config.json" else f"payload:{relative_path}".encode()
         )
     selected_files = selected_model_files(model_dir)
     artifact_hash = selected_artifact_root_sha256(selected_files)
@@ -246,9 +240,7 @@ def test_release_finalize_rejects_embedding_identity_drift(tmp_path: Path) -> No
             "embedding_dimensions": 4,
             "normalization": "l2",
             "model_path": model_dir.as_posix(),
-            "embedding_model_manifest_path": (
-                LOCAL_EMBEDDING_MODEL_MANIFEST_FILE.as_posix()
-            ),
+            "embedding_model_manifest_path": (LOCAL_EMBEDDING_MODEL_MANIFEST_FILE.as_posix()),
             "embedding_model_manifest_sha256": file_sha256(manifest_path),
         },
     )

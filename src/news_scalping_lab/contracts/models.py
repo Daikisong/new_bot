@@ -249,17 +249,13 @@ class OpenWorldClusterFinding(StrictModel):
     def validate_semantic_content(self) -> Self:
         if not self.event_summary.strip():
             raise ValueError("cluster finding requires an event summary")
-        if not any(
-            value.strip() for value in [*self.mechanisms, *self.uncertainties]
-        ):
+        if not any(value.strip() for value in [*self.mechanisms, *self.uncertainties]):
             raise ValueError("cluster finding requires mechanisms or uncertainties")
         return self
 
 
 class OpenWorldFirstAnalysis(StrictModel):
-    schema_version: Literal["nslab.open_world_first_analysis.v2"] = (
-        "nslab.open_world_first_analysis.v2"
-    )
+    schema_version: Literal["nslab.open_world_first_analysis.v2"] = "nslab.open_world_first_analysis.v2"
     run_id: str
     prompt_version: str
     prompt_sha256: str
@@ -352,9 +348,7 @@ class CandidateVerificationFinding(StrictModel):
     excluded_source_count: int = 0
     accepted_source_ids: list[str] = Field(default_factory=list)
     excluded_source_ids: list[str] = Field(default_factory=list)
-    verification_dimensions: list[CandidateVerificationDimension] = Field(
-        default_factory=list
-    )
+    verification_dimensions: list[CandidateVerificationDimension] = Field(default_factory=list)
     blind_safe_market_snapshot: dict[str, Any] = Field(default_factory=dict)
     d_minus_one_market_data_only: bool = False
     uncertainties: list[str] = Field(default_factory=list)
@@ -375,9 +369,7 @@ class FinalSynthesisContextArtifact(StrictModel):
     schema_version: Literal[
         "nslab.final_synthesis_context.v2",
         "nslab.final_synthesis_context.v3",
-    ] = (
-        "nslab.final_synthesis_context.v3"
-    )
+    ] = "nslab.final_synthesis_context.v3"
     run_id: str
     prompt_version: str
     required_inputs: list[str] = Field(default_factory=list)
@@ -859,11 +851,7 @@ class ContextManifest(StrictModel):
                 raise ValueError("prompt batch hashes must be unique per purpose")
             if any(not _looks_like_sha256(value) for value in batch_hashes):
                 raise ValueError("prompt batch hashes must be SHA-256 values")
-            aggregate = (
-                batch_hashes[0]
-                if len(batch_hashes) == 1
-                else sha256_text(canonical_json(batch_hashes))
-            )
+            aggregate = batch_hashes[0] if len(batch_hashes) == 1 else sha256_text(canonical_json(batch_hashes))
             if self.prompt_hashes[purpose] != aggregate:
                 raise ValueError("prompt batch aggregate hash mismatch")
         daily_configured = self.daily_memory_context_artifact is not None
@@ -876,19 +864,12 @@ class ContextManifest(StrictModel):
             raise ValueError("beneficiary graph artifact and hash must be configured together")
         if daily_configured and not graph_configured:
             raise ValueError("daily memory context requires a beneficiary graph")
-        phase7_prompt = (
-            self.llm_model_config.get("final_synthesis_prompt_version")
-            == "synthesis.final.v3"
-        )
+        phase7_prompt = self.llm_model_config.get("final_synthesis_prompt_version") == "synthesis.final.v3"
         if phase7_prompt and not (daily_configured and graph_configured):
             raise ValueError("final synthesis v3 requires daily memory and graph artifacts")
-        if daily_hash_configured and not _looks_like_sha256(
-            str(self.daily_memory_context_sha256)
-        ):
+        if daily_hash_configured and not _looks_like_sha256(str(self.daily_memory_context_sha256)):
             raise ValueError("daily memory context hash must be SHA-256")
-        if graph_hash_configured and not _looks_like_sha256(
-            str(self.beneficiary_graph_sha256)
-        ):
+        if graph_hash_configured and not _looks_like_sha256(str(self.beneficiary_graph_sha256)):
             raise ValueError("beneficiary graph hash must be SHA-256")
         if self.evidence_policy == "csv-memory-only-strict":
             if self.web_required:
@@ -896,17 +877,9 @@ class ContextManifest(StrictModel):
             if self.blind_web_search_call_count != 0:
                 raise ValueError("CSV memory-only evidence forbids BLIND web calls")
             if self.external_web_evidence_count != 0:
-                raise ValueError(
-                    "CSV memory-only evidence forbids external web evidence"
-                )
-            if (
-                self.web_sources
-                or self.candidate_web_source_ids
-                or self.candidate_web_check_count
-            ):
-                raise ValueError(
-                    "CSV memory-only evidence cannot bind web-derived sources"
-                )
+                raise ValueError("CSV memory-only evidence forbids external web evidence")
+            if self.web_sources or self.candidate_web_source_ids or self.candidate_web_check_count:
+                raise ValueError("CSV memory-only evidence cannot bind web-derived sources")
         return self
 
 

@@ -1,0 +1,22 @@
+{
+  "brain_manifest_sha256": "1fcf08e1ebbfd368b63b34ee45799598d4129424b9f16fb10a454884717aeb16",
+  "brain_version": "brain-b0e59ca379",
+  "claim_referenced_count": 235834,
+  "claim_unreferenced_count": 523474,
+  "compile_manifest_sha256": "bc64db504796270563978c9795a3ba22c93fd2f65c0a06578bf8261c41077de5",
+  "compiled_claims_sha256": "a1d1737b53eab68911236acedc791a444dbe29d5caa78a80d993171f349c47e4",
+  "compiler_version": "nslab.brain.llm_full.compiler.v7",
+  "database": {
+    "artifact_path": "runs/semantic_brain_upgrade/exposure/brain-b0e59ca379-v2/semantic_exposure.sqlite3",
+    "item_count": 759308,
+    "sha256": "606ea7450e9540e2c5a10b11a6c5a014144922a8fb0e605ee35604b4ebf06903"
+  },
+  "immutable": true,
+  "map_reduce_version": "nslab.brain.llm_full.map_reduce.v5",
+  "online_full_scan_allowed": false,
+  "payload_exposed_count": 2432,
+  "payload_not_exposed_count": 756876,
+  "rare_payload_count": 227233,
+  "record_count": 759308,
+  "schema_version": "nslab.semantic_exposure_index.v2"
+}

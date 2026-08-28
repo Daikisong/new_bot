@@ -242,8 +242,7 @@ def find_audit_target(
             and manifest.get("llm_model") == expected.get("expected_model")
             and manifest.get("reasoning_effort") == expected.get("expected_reasoning_effort")
             and observed_source_count == expected.get("expected_source_record_count")
-            and manifest.get("production_memory_snapshot_id")
-            == expected.get("expected_memory_snapshot_id")
+            and manifest.get("production_memory_snapshot_id") == expected.get("expected_memory_snapshot_id")
         )
         if identity:
             candidates.append((manifest_path, manifest, compile_manifest))
@@ -271,9 +270,7 @@ def find_audit_target(
     snapshot_id = manifest.get("production_memory_snapshot_id")
     if not isinstance(snapshot_id, str):
         raise ExternalAuditError("MEMORY_SNAPSHOT_REFERENCE_MISSING", brain_version)
-    memory_manifest_path = (
-        project_root / "memory" / "retrieval_index" / "snapshots" / snapshot_id / "manifest.json"
-    )
+    memory_manifest_path = project_root / "memory" / "retrieval_index" / "snapshots" / snapshot_id / "manifest.json"
     record_artifact_path = project_root / "memory" / "record_index" / "production_record_artifacts.json"
     required = (
         brain_path,
@@ -324,10 +321,7 @@ def capture_quick_target_state(target: AuditTarget) -> dict[str, Any]:
         file_count += 1
         total_bytes += stat.st_size
         metadata_hasher.update(f"{relative}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode())
-    critical = {
-        target.repo_relative(path): file_sha256(path)
-        for path in _critical_target_paths(target)
-    }
+    critical = {target.repo_relative(path): file_sha256(path) for path in _critical_target_paths(target)}
     record_manifest = read_json(target.project_root / "memory" / "record_index" / "manifest.json")
     return {
         "file_count": file_count,
@@ -436,7 +430,8 @@ def _artifact_flags(relative_path: str) -> tuple[bool, bool, bool]:
         relative_path.startswith("memory/records/")
         or relative_path.startswith("memory/record_manifests/")
         or relative_path.startswith("research/episodes/")
-        or relative_path in {
+        or relative_path
+        in {
             "memory/record_index/manifest.json",
             "memory/record_index/by_record_id.json",
             "brain/current/brain_manifest.json",
@@ -499,10 +494,7 @@ def scan_artifact_population(target: AuditTarget, ledger_path: Path) -> dict[str
         "artifact_population_merkle_root": _merkle_root(digests),
         "family_counts": dict(sorted(family_counts.items())),
         "family_bytes": dict(sorted(family_bytes.items())),
-        "family_roots": {
-            family: _merkle_root(values)
-            for family, values in sorted(family_digests.items())
-        },
+        "family_roots": {family: _merkle_root(values) for family, values in sorted(family_digests.items())},
         "duplicate_content_count": sum(count - 1 for count in content_counts.values() if count > 1),
         "largest_files": [
             {"relative_path": relative, "size_bytes": size, "sha256": digest}
@@ -1030,9 +1022,7 @@ def semantic_coverage_outcome(
             "STRUCTURAL_COVERAGE_COMPLETE" if total_records > 0 else "STRUCTURAL_COVERAGE_INCOMPLETE"
         ),
         "semantic_exposure_result": (
-            "SEMANTIC_EXPOSURE_COMPLETE"
-            if payload_exposed_records == total_records
-            else "SEMANTIC_EXPOSURE_PARTIAL"
+            "SEMANTIC_EXPOSURE_COMPLETE" if payload_exposed_records == total_records else "SEMANTIC_EXPOSURE_PARTIAL"
         ),
         "claim_influence_result": (
             "FINAL_CLAIM_INFLUENCE_COMPLETE"
@@ -1182,8 +1172,7 @@ def scan_semantic_exposure(
     shard_rows: list[dict[str, Any]] = []
     prompt_sizes: list[int] = []
     category_samples: dict[str, dict[str, list[BrainRecordEnvelope]]] = {
-        _brain_category(file_name): {"reasoning": [], "context": []}
-        for file_name in BRAIN_FILES
+        _brain_category(file_name): {"reasoning": [], "context": []} for file_name in BRAIN_FILES
     }
     total_records = 0
     same_signature_multi_semantic_group_count = 0
@@ -1203,9 +1192,7 @@ def scan_semantic_exposure(
             exposed_record_ids.update(representative_ids)
             group_counts = {str(row["group_id"]): _safe_int(row.get("record_count")) for row in groups}
             represented_groups = {
-                str(row["group_id"])
-                for row in groups
-                if _string_list(row.get("representative_record_ids"))
+                str(row["group_id"]) for row in groups if _string_list(row.get("representative_record_ids"))
             }
             group_semantics: dict[str, Counter[str]] = defaultdict(Counter)
             group_dimensions: dict[str, set[str]] = defaultdict(set)
@@ -1300,9 +1287,7 @@ def scan_semantic_exposure(
                 "reasoning_record_count": len(source_reasoning),
                 "records_in_represented_groups": represented_record_mass,
                 "records_in_unrepresented_groups": len(shard) - represented_record_mass,
-                "representative_group_coverage_ratio": (
-                    len(represented_groups) / len(groups) if groups else 1.0
-                ),
+                "representative_group_coverage_ratio": (len(represented_groups) / len(groups) if groups else 1.0),
                 "representative_payload_chars": len(
                     canonical_json(
                         [
@@ -1315,15 +1300,12 @@ def scan_semantic_exposure(
                 "representative_record_mass_ratio": represented_record_mass / len(shard),
                 "represented_group_count": len(represented_groups),
                 "represented_reasoning_group_count": sum(
-                    group_id in represented_groups and group_reasoning_verified[group_id]
-                    for group_id in group_counts
+                    group_id in represented_groups and group_reasoning_verified[group_id] for group_id in group_counts
                 ),
                 "schema_version": SEMANTIC_LEDGER_SCHEMA,
                 "shard_index": shard_index,
                 "source_record_count": len(shard),
-                "source_record_ids_sha256": sha256_text(
-                    canonical_json(sorted(record.record_id for record in shard))
-                ),
+                "source_record_ids_sha256": sha256_text(canonical_json(sorted(record.record_id for record in shard))),
                 "summary_chars": len(summary),
                 "summary_truncated": len(summary) > 12_000,
                 "summary_truncated_for_category": len(summary) > 12_000,
@@ -1353,9 +1335,7 @@ def scan_semantic_exposure(
     category_rows: list[dict[str, Any]] = []
     category_exposed: set[str] = set()
     category_manifest = {
-        str(row.get("category")): row
-        for row in compile_manifest.get("categories", [])
-        if isinstance(row, dict)
+        str(row.get("category")): row for row in compile_manifest.get("categories", []) if isinstance(row, dict)
     }
     for file_name in BRAIN_FILES:
         category = _brain_category(file_name)
@@ -1517,9 +1497,7 @@ def audit_import_and_inventory(
             bundle_result_count += 1
             bundle_result_statuses[str(row.get("status") or row.get("import_status") or "UNKNOWN")] += 1
     ready_entries_ref = inventory_dict.get("ready_entries")
-    ready_entries_relative = (
-        ready_entries_ref.get("artifact_path") if isinstance(ready_entries_ref, dict) else None
-    )
+    ready_entries_relative = ready_entries_ref.get("artifact_path") if isinstance(ready_entries_ref, dict) else None
     ready_entries_count = 0
     ready_entries_hash_match = False
     if isinstance(ready_entries_relative, str):
@@ -1557,9 +1535,7 @@ def audit_import_and_inventory(
         declared_artifacts = {}
     declared_artifact_count = len(declared_artifacts)
     declared_artifact_bytes = sum(
-        int(metadata.get("byte_size", 0))
-        for metadata in declared_artifacts.values()
-        if isinstance(metadata, dict)
+        int(metadata.get("byte_size", 0)) for metadata in declared_artifacts.values() if isinstance(metadata, dict)
     )
     if declared_artifact_count != artifacts_dict.get("artifact_count"):
         findings.append("record_artifact_count_mismatch")
@@ -1589,9 +1565,7 @@ def audit_import_and_inventory(
         "import_id": receipt_dict.get("import_id"),
         "imported_bundle_count": receipt_dict.get("imported_bundle_count"),
         "imported_record_count": receipt_dict.get("imported_record_count"),
-        "imported_training_eligible_record_count": receipt_dict.get(
-            "imported_training_eligible_record_count"
-        ),
+        "imported_training_eligible_record_count": receipt_dict.get("imported_training_eligible_record_count"),
         "import_loss_count": receipt_dict.get("import_loss_count"),
         "quarantined_bundle_count": receipt_dict.get("quarantined_bundle_count"),
         "bundle_result_count": bundle_result_count,
@@ -1689,15 +1663,13 @@ def audit_memory_snapshot(
         orphan_memberships = int(
             _fetchone_required(
                 connection,
-                "SELECT COUNT(*) FROM memberships m LEFT JOIN records r USING(record_id) "
-                "WHERE r.record_id IS NULL",
+                "SELECT COUNT(*) FROM memberships m LEFT JOIN records r USING(record_id) WHERE r.record_id IS NULL",
             )[0]
         )
         duplicate_primary = int(
             _fetchone_required(
                 connection,
-                "SELECT COUNT(*) FROM (SELECT record_id FROM memberships "
-                "GROUP BY record_id HAVING COUNT(*) > 1)",
+                "SELECT COUNT(*) FROM (SELECT record_id FROM memberships GROUP BY record_id HAVING COUNT(*) > 1)",
             )[0]
         )
         dense_vector_count = int(
@@ -1766,11 +1738,9 @@ def audit_memory_snapshot(
     parity = {
         "record_count": counts["records"] == manifest.get("record_count"),
         "primary_membership_count": counts["memberships"] == manifest.get("primary_membership_count"),
-        "secondary_membership_count": counts["secondary_memberships"]
-        == manifest.get("secondary_membership_count"),
+        "secondary_membership_count": counts["secondary_memberships"] == manifest.get("secondary_membership_count"),
         "cell_count": counts["cells"] == manifest.get("cell_count"),
-        "brain_snapshot_reference": brain_manifest.get("production_memory_snapshot_id")
-        == manifest.get("snapshot_id"),
+        "brain_snapshot_reference": brain_manifest.get("production_memory_snapshot_id") == manifest.get("snapshot_id"),
         "brain_source_generation_reference": isinstance(manifest.get("source_generation_sha256"), str)
         and brain_manifest.get("production_memory_source_generation_sha256")
         == manifest.get("source_generation_sha256"),
@@ -1789,9 +1759,7 @@ def audit_memory_snapshot(
         "real_embedding": manifest.get("real_embedding"),
         "snapshot_reuse_identity": {
             "brain_referenced_snapshot_id": brain_manifest.get("production_memory_snapshot_id"),
-            "brain_referenced_source_generation": brain_manifest.get(
-                "production_memory_source_generation_sha256"
-            ),
+            "brain_referenced_source_generation": brain_manifest.get("production_memory_source_generation_sha256"),
             "snapshot_manifest_sha256": file_sha256(target.memory_manifest_path),
             "prebuild_snapshot_receipt": "NOT_IN_ARTIFACT",
             "timestamp_rebuild_claim": "NOT_IN_ARTIFACT",
@@ -1850,9 +1818,7 @@ def audit_warehouse(target: AuditTarget, record_summary: dict[str, Any]) -> dict
                 counts[name] = "NOT_IN_ARTIFACT"
                 findings.append(f"warehouse_artifact_missing:{name}")
                 continue
-            counts[name] = int(
-                _fetchone_required(connection, "SELECT COUNT(*) FROM read_parquet(?)", [str(path)])[0]
-            )
+            counts[name] = int(_fetchone_required(connection, "SELECT COUNT(*) FROM read_parquet(?)", [str(path)])[0])
         brain_path = str(warehouse / "brain_records.parquet")
         brain_count, unique_count, eligible_count = _fetchone_required(
             connection,
@@ -2021,9 +1987,7 @@ def build_target_lock(
             "sha256": file_sha256(target.record_artifact_manifest_path),
         },
         "record_corpus_sha256": receipt.get("record_corpus_sha256") if isinstance(receipt, dict) else None,
-        "record_artifact_root": (
-            receipt.get("record_artifact_root_sha256") if isinstance(receipt, dict) else None
-        ),
+        "record_artifact_root": (receipt.get("record_artifact_root_sha256") if isinstance(receipt, dict) else None),
         "record_store_generation": (
             record_manifest.get("generation_root_sha256") if isinstance(record_manifest, dict) else None
         ),
@@ -2189,12 +2153,9 @@ def audit_brain_identity(
         "oauth_health": observed["oauth_health"] == "PASS",
         "compiler_version": observed["compiler_version"] == profile.get("compiler_version"),
         "map_reduce_version": observed["map_reduce_version"] == profile.get("map_reduce_version"),
-        "compile_manifest_schema": observed["compile_manifest_schema"]
-        == profile.get("compile_manifest_schema"),
-        "source_record_count": observed["source_record_count"]
-        == profile.get("expected_source_record_count"),
-        "compiled_claim_count": observed["compiled_claim_count"]
-        == profile.get("expected_compiled_claim_count"),
+        "compile_manifest_schema": observed["compile_manifest_schema"] == profile.get("compile_manifest_schema"),
+        "source_record_count": observed["source_record_count"] == profile.get("expected_source_record_count"),
+        "compiled_claim_count": observed["compiled_claim_count"] == profile.get("expected_compiled_claim_count"),
         "live_call_count": observed["live_call_count"] == profile.get("expected_live_oauth_call_count"),
         "generation_trace_closure": call_ledger.get("missing_trace_count") == 0,
         "generation_failure_zero": call_ledger.get("failure_count") == 0,
@@ -2218,9 +2179,7 @@ def audit_brain_categories(target: AuditTarget, profile: dict[str, Any]) -> dict
     if not isinstance(compile_manifest, dict):
         raise ExternalAuditError("COMPILE_MANIFEST_INVALID", target.compile_manifest_path.as_posix())
     category_manifest = {
-        str(row.get("file_name")): row
-        for row in compile_manifest.get("categories", [])
-        if isinstance(row, dict)
+        str(row.get("file_name")): row for row in compile_manifest.get("categories", []) if isinstance(row, dict)
     }
     rows: list[dict[str, Any]] = []
     content_hashes: Counter[str] = Counter()
@@ -2318,11 +2277,7 @@ def _project_brain_audit(result: dict[str, object]) -> dict[str, Any]:
         "llm_compile_findings",
         "compiled_claim_findings",
     )
-    projected_findings = {
-        key: value
-        for key in finding_keys
-        if isinstance((value := result.get(key)), list) and value
-    }
+    projected_findings = {key: value for key in finding_keys if isinstance((value := result.get(key)), list) and value}
     return {
         "schema_version": "nslab.external_audit_brain_read_only_audit.v1",
         "deep": result.get("deep"),
@@ -3038,11 +2993,9 @@ def verify_audit_pack(
     comparisons = {
         "artifact_population_root": artifact.get("artifact_population_merkle_root")
         == roots.get("artifact_population_root"),
-        "record_population_root": records.get("record_population_merkle_root")
-        == roots.get("record_population_root"),
+        "record_population_root": records.get("record_population_merkle_root") == roots.get("record_population_root"),
         "sorted_record_ids_root": records.get("sorted_record_ids_root") == roots.get("sorted_record_ids_root"),
-        "record_id_envelope_root": records.get("record_id_envelope_root")
-        == roots.get("record_id_envelope_root"),
+        "record_id_envelope_root": records.get("record_id_envelope_root") == roots.get("record_id_envelope_root"),
         "routing_metadata_root": records.get("routing_metadata_root") == roots.get("routing_metadata_root"),
         "claim_root": claims.get("claim_population_merkle_root") == roots.get("claim_root"),
         "brain_root": artifact.get("family_roots", {}).get("brain") == roots.get("brain_root"),
@@ -3191,12 +3144,8 @@ def export_audit_core(
         "stability": stability,
         "before": before,
         "after": after,
-        "artifact_population_before": {
-            key: artifact_summary.get(key) for key in artifact_parity_fields
-        },
-        "artifact_population_after": {
-            key: after_artifact_summary.get(key) for key in artifact_parity_fields
-        },
+        "artifact_population_before": {key: artifact_summary.get(key) for key in artifact_parity_fields},
+        "artifact_population_after": {key: after_artifact_summary.get(key) for key in artifact_parity_fields},
         "production_pointer_before": pointer_before,
         "production_pointer_after": pointer_after,
         "quick_state_match": before == after,
@@ -3366,9 +3315,7 @@ def export_audit_core(
         "core_lite": {**core_pack, "path": str(core_zip)},
         "core_ledgers": {**ledger_pack, "path": str(ledger_zip)},
         "core_manifest": str(work_root / "audit_core_manifest.json"),
-        "commitment_path": (
-            commitment_path.relative_to(repo_root).as_posix() if write_commitment else "NOT_WRITTEN"
-        ),
+        "commitment_path": (commitment_path.relative_to(repo_root).as_posix() if write_commitment else "NOT_WRITTEN"),
         "commitment": commitment,
         "standalone_verification": standalone,
         "deep_verification": deep_result,
@@ -3656,13 +3603,15 @@ def _episode_sample_paths(project_root: Path) -> list[Path]:
 
 
 def _retrieval_trace_sample_paths(project_root: Path) -> list[Path]:
-    """Exclude LLM build traces from the adaptive retrieval trace sample."""
+    """Return completed daily retrieval traces, excluding LLM build traces."""
     candidates: list[Path] = []
     for path in project_root.rglob("adaptive_retrieval_trace.json"):
         raw = read_json(path)
-        if isinstance(raw, dict) and str(raw.get("schema_version", "")).startswith(
-            "nslab.adaptive_retrieval_trace."
-        ):
+        if isinstance(raw, dict) and str(raw.get("schema_version", "")).startswith("nslab.adaptive_retrieval_trace."):
+            candidates.append(path)
+    for path in project_root.rglob("*.final.json"):
+        raw = read_json(path)
+        if isinstance(raw, dict) and raw.get("schema_version") == "nslab.runtime_retrieval_trace.v1":
             candidates.append(path)
     return sorted(candidates, key=lambda path: path.relative_to(project_root).as_posix())
 
@@ -3813,9 +3762,7 @@ def export_audit_sample(
         write_json(sample_root / "samples" / name, payload)
     primary_record_ids = sorted(str(row["record_id"]) for row in chosen)
     rare_record_ids = sorted(str(row["record_id"]) for row in chosen_rare)
-    selection_role_counts = Counter(
-        role for row in selection_metadata for role in row["selection_roles"]
-    )
+    selection_role_counts = Counter(role for row in selection_metadata for role in row["selection_roles"])
     sample_tool_commit = _git_output(repo_root, "rev-parse", "HEAD")
     sample_manifest = {
         "schema_version": AUDIT_SAMPLE_SCHEMA,
@@ -3835,9 +3782,7 @@ def export_audit_sample(
         "claim_count": len(claims),
         "memory_cell_count": len(cells),
         "retrieval_trace_count": len(traces),
-        "retrieval_trace_status": (
-            "PRESENT" if retrieval_trace_paths else "NOT_IN_ARTIFACT"
-        ),
+        "retrieval_trace_status": ("PRESENT" if retrieval_trace_paths else "NOT_IN_ARTIFACT"),
         "company_memory_count": len(company_memories),
         "selected_record_ids": sorted(selected_ids),
         "selected_primary_record_ids": primary_record_ids,
@@ -3875,9 +3820,7 @@ def export_audit_sample(
             "company_memories": len(company_memories),
         },
         "episode_source_status": "PRESENT" if episode_paths else "NOT_IN_ARTIFACT",
-        "retrieval_trace_status": (
-            "PRESENT" if retrieval_trace_paths else "NOT_IN_ARTIFACT"
-        ),
+        "retrieval_trace_status": ("PRESENT" if retrieval_trace_paths else "NOT_IN_ARTIFACT"),
         "read_only_parity": True,
         "secret_finding_count": 0,
     }

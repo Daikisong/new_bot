@@ -1,0 +1,33 @@
+{
+  "availability_derivation_counts": {
+    "CONSERVATIVE_WEEK_DELAY_FALLBACK": 11,
+    "NORMALIZED_INDEX_NEXT_TRADE_DATE": 1448,
+    "RECORD_NEXT_SESSION_TIMESTAMP": 84
+  },
+  "availability_mode": "replay_available_from",
+  "availability_projection_episode_count": 1543,
+  "availability_projection_sha256": "92ca45ccfd382dda98fc9e277140cc9dd840d30212906fd6e80916511685fcfe",
+  "availability_projection_version": "nslab.replay_availability_projection.v1",
+  "availability_version": "replay_explicit_or_conservative.v2",
+  "build_cutoff": "2026-01-02T00:00:00+09:00",
+  "calibration_overlap_count": 0,
+  "calibration_record_count": 32938,
+  "calibration_record_ids_sha256": "42f34f1eb52bb4a11c0826f6fae2d5d90551c69cf81c46998fb1fcabb9faf92e",
+  "centroid_population_record_count": 759308,
+  "evaluation_record_count": 61202,
+  "excluded_future_record_count": 63971,
+  "full_corpus_centroids_used": false,
+  "generated_embedding_count": 0,
+  "holdout_overlap_count": 0,
+  "holdout_record_count": 28264,
+  "holdout_record_ids_sha256": "274f415f455b6da0abbdead030da923180a092aabdcd51fd0cfa988f6269f497",
+  "immutable": true,
+  "production_available_from_mutated": false,
+  "record_count": 759308,
+  "retained_embedding_count": 759308,
+  "schema_version": "nslab.shadow_replay_as_of_snapshot.v1",
+  "snapshot_id": "MEMIDX-4409624afdffd1d01018",
+  "source_record_hashes_sha256": "4c4e12f36a6d4fe560b4ca4983a2919bb37b04c24b3a03df5c2a0bffb6dfe853",
+  "source_snapshot_id": "MEMIDX-1e64a1b6e6ba7b07b799",
+  "source_snapshot_record_count": 823279
+}

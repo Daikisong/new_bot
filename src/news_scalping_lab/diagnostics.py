@@ -255,9 +255,7 @@ def production_readiness_report(
     if settings.llm_provider.strip().lower() in OPENAI_PROVIDER_ALIASES and openai_status != "configured_not_called":
         findings.append("openai: production llm-full requires configured OpenAI SDK and API key")
     if settings.llm_provider.strip().lower() in {"codex-oauth", "codex_oauth"}:
-        codex_status = _nested_dict(
-            report, "api_connections", "codex_oauth"
-        )
+        codex_status = _nested_dict(report, "api_connections", "codex_oauth")
         if codex_status.get("status") != "PASS":
             findings.append("codex_oauth: ChatGPT OAuth health check is not ready")
     if settings.event_cluster_fallback_policy.value != "fail-closed":
@@ -275,21 +273,15 @@ def production_readiness_report(
         "local_production",
     }:
         local_embedding = report.get("local_embedding_snapshot")
-        if not isinstance(local_embedding, dict) or local_embedding.get(
-            "passed"
-        ) is not True:
-            findings.append(
-                "embedding: local production snapshot deep verification failed"
-            )
+        if not isinstance(local_embedding, dict) or local_embedding.get("passed") is not True:
+            findings.append("embedding: local production snapshot deep verification failed")
     evidence_policy = EvidencePolicy.parse(settings.evidence_policy)
     web_required = web_required_for_policy(evidence_policy)
     web_provider = settings.web_provider.strip().lower()
     brave_status = _nested_dict(report, "api_connections", "brave_search").get("status")
     if evidence_policy is EvidencePolicy.CSV_MEMORY_ONLY_STRICT:
         if web_provider != "disabled":
-            findings.append(
-                "web: CSV_MEMORY_ONLY_STRICT requires NSLAB_WEB_PROVIDER=disabled"
-            )
+            findings.append("web: CSV_MEMORY_ONLY_STRICT requires NSLAB_WEB_PROVIDER=disabled")
     else:
         if web_provider == "mock":
             findings.append("web: mock provider cannot supply production evidence")
@@ -440,8 +432,7 @@ def production_readiness_report(
         "web_provider": web_provider,
         "web_policy_status": (
             "READY_DISABLED_BY_DESIGN"
-            if evidence_policy is EvidencePolicy.CSV_MEMORY_ONLY_STRICT
-            and web_evidence["passed"] is True
+            if evidence_policy is EvidencePolicy.CSV_MEMORY_ONLY_STRICT and web_evidence["passed"] is True
             else web_evidence.get("status", "attention")
         ),
         "price_data": price_data,
@@ -3544,28 +3535,19 @@ def _production_memory_index_status(
         findings.append("production memory index unsupported record count is missing")
     elif unsupported_reasoning_record_count:
         findings.append(
-            "production memory index contains unsupported reasoning records: "
-            f"{unsupported_reasoning_record_count}"
+            f"production memory index contains unsupported reasoning records: {unsupported_reasoning_record_count}"
         )
-    brain_manifest = _read_optional_json(
-        settings.project_root / "brain" / "current" / "brain_manifest.json"
-    )
+    brain_manifest = _read_optional_json(settings.project_root / "brain" / "current" / "brain_manifest.json")
     if isinstance(brain_manifest, dict) and brain_manifest.get("build_mode") == "llm-full":
         cross_checks = {
             "snapshot_id": brain_manifest.get("production_memory_snapshot_id"),
-            "corpus_manifest_sha256": brain_manifest.get(
-                "production_memory_corpus_sha256"
-            ),
-            "source_generation_sha256": brain_manifest.get(
-                "production_memory_source_generation_sha256"
-            ),
+            "corpus_manifest_sha256": brain_manifest.get("production_memory_corpus_sha256"),
+            "source_generation_sha256": brain_manifest.get("production_memory_source_generation_sha256"),
             "as_of_cutoff": brain_manifest.get("production_memory_as_of_cutoff"),
         }
         for field, expected in cross_checks.items():
             if manifest.get(field) != expected:
-                findings.append(
-                    f"production memory index {field} does not match current brain"
-                )
+                findings.append(f"production memory index {field} does not match current brain")
     for field in (
         "metadata_index_ready",
         "fts_index_ready",
@@ -3577,9 +3559,7 @@ def _production_memory_index_status(
     embedding_method = manifest.get("embedding_model")
     configured_embedding_model = _production_configured_embedding_model(settings)
     observed_embedding_model = (
-        _llm_embedding_model_from_method(embedding_method)
-        if isinstance(embedding_method, str)
-        else None
+        _llm_embedding_model_from_method(embedding_method) if isinstance(embedding_method, str) else None
     )
     expected_prefix = f"llm_embedding:{settings.llm_provider.strip().lower()}:"
     if not isinstance(embedding_method, str) or not embedding_method.startswith(expected_prefix):
@@ -3591,14 +3571,10 @@ def _production_memory_index_status(
         manifest,
         "excluded_future_record_count",
     )
-    if (
-        isinstance(expected_source_record_count, int)
-        and (
-            record_count is None
-            or excluded_future_record_count is None
-            or record_count + excluded_future_record_count
-            != expected_source_record_count
-        )
+    if isinstance(expected_source_record_count, int) and (
+        record_count is None
+        or excluded_future_record_count is None
+        or record_count + excluded_future_record_count != expected_source_record_count
     ):
         findings.append("production memory index source partition does not match coverage")
     if manifest.get("polarity_classifier_version") != POLARITY_CLASSIFIER_VERSION:
@@ -3620,11 +3596,7 @@ def _production_memory_index_status(
         "unsupported_reasoning_record_count": unsupported_reasoning_record_count,
         "as_of_cutoff": manifest.get("as_of_cutoff"),
         "expected_source_record_count": expected_source_record_count,
-        "source_partition_verified": (
-            index.get("source_partition_verified")
-            if isinstance(index, dict)
-            else None
-        ),
+        "source_partition_verified": (index.get("source_partition_verified") if isinstance(index, dict) else None),
         "cell_count": manifest.get("cell_count"),
         "index_status": index.get("status") if isinstance(index, dict) else None,
     }
@@ -3670,13 +3642,8 @@ def _production_semantic_index_status(
                 f"real_embedding:{expected_provider}:",
                 f"llm_embedding:{expected_provider}:",
             )
-            if not embedding_method.strip().lower().startswith(
-                expected_prefixes
-            ):
-                findings.append(
-                    "semantic index provider does not match configured "
-                    "embedding provider"
-                )
+            if not embedding_method.strip().lower().startswith(expected_prefixes):
+                findings.append("semantic index provider does not match configured embedding provider")
             expected_model = configured_embedding_model
             if not isinstance(embedding_model, str) or not embedding_model:
                 findings.append("semantic index embedding model is missing")
@@ -4002,10 +3969,7 @@ def _production_semantic_index_manifest_status(
             f"llm_embedding:{configured_provider.strip().lower()}:",
         )
         if not embedding_method.strip().lower().startswith(expected_prefixes):
-            findings.append(
-                "semantic index manifest provider does not match configured "
-                "embedding provider"
-            )
+            findings.append("semantic index manifest provider does not match configured embedding provider")
         if not isinstance(embedding_model, str) or not embedding_model:
             findings.append("semantic index manifest embedding model is missing")
         elif configured_embedding_model and embedding_model.strip() != configured_embedding_model.strip():
@@ -4393,9 +4357,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     unexpected_available_manifest_kinds = sorted(available_manifest_kind_set - required_manifest_kinds)
     unexpected_missing_manifest_kinds = sorted(missing_manifest_kind_set - required_manifest_kinds)
     for manifest_kind_field in invalid_manifest_kind_fields:
-        findings.append(
-            f"training export diagnostics {manifest_kind_field} is invalid"
-        )
+        findings.append(f"training export diagnostics {manifest_kind_field} is invalid")
     if missing_export_kinds:
         findings.append("training export export_kinds are missing required kinds: " + ", ".join(missing_export_kinds))
     if unexpected_export_kinds:
@@ -4457,13 +4419,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         if field in diagnostics and not _non_negative_int_field_valid(diagnostics.get(field))
     ]
     for missing_aggregate_field in missing_aggregate_count_fields:
-        findings.append(
-            f"training export diagnostics {missing_aggregate_field} is missing"
-        )
+        findings.append(f"training export diagnostics {missing_aggregate_field} is missing")
     for invalid_aggregate_field in invalid_aggregate_count_fields:
-        findings.append(
-            f"training export diagnostics {invalid_aggregate_field} is invalid"
-        )
+        findings.append(f"training export diagnostics {invalid_aggregate_field} is invalid")
     expected_aggregate_counts = _expected_training_export_aggregate_counts_from_manifests(
         audit.get("manifests"),
     )
@@ -4497,13 +4455,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         if field in diagnostics and not _non_negative_int_field_valid(diagnostics.get(field))
     ]
     for missing_per_export_field in missing_per_export_count_fields:
-        findings.append(
-            f"training export diagnostics {missing_per_export_field} is missing"
-        )
+        findings.append(f"training export diagnostics {missing_per_export_field} is missing")
     for invalid_per_export_field in invalid_per_export_count_fields:
-        findings.append(
-            f"training export diagnostics {invalid_per_export_field} is invalid"
-        )
+        findings.append(f"training export diagnostics {invalid_per_export_field} is invalid")
     expected_per_export_counts = _expected_training_export_counts_from_manifests(
         audit.get("manifests"),
     )
@@ -4519,13 +4473,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         if field in diagnostics and not _sha256_string_map_field_valid(diagnostics.get(field))
     ]
     for missing_hash_field in missing_hash_fields:
-        findings.append(
-            f"training export diagnostics {missing_hash_field} is missing"
-        )
+        findings.append(f"training export diagnostics {missing_hash_field} is missing")
     for invalid_hash_field in invalid_hash_fields:
-        findings.append(
-            f"training export diagnostics {invalid_hash_field} is invalid"
-        )
+        findings.append(f"training export diagnostics {invalid_hash_field} is invalid")
     expected_source_record_hashes = _expected_training_export_source_record_hashes_from_manifests(
         audit.get("manifests")
     )
@@ -4575,9 +4525,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         if field in diagnostics and not _string_list_field_valid(diagnostics.get(field))
     ]
     for invalid_record_id_field in invalid_record_id_fields:
-        findings.append(
-            f"training export diagnostics {invalid_record_id_field} is invalid"
-        )
+        findings.append(f"training export diagnostics {invalid_record_id_field} is invalid")
     invalid_unsealed_preference_record_id_fields = []
     if diagnostics and unsealed_field not in diagnostics:
         findings.append(f"training export diagnostics {unsealed_field} is missing")
@@ -4597,10 +4545,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         )
     ]
     for record_id_mismatch_field in unique_record_id_mismatches:
-        findings.append(
-            "training export diagnostics "
-            f"{record_id_mismatch_field} does not match manifests"
-        )
+        findings.append(f"training export diagnostics {record_id_mismatch_field} does not match manifests")
     skipped_record_reasons_by_record_id = _string_list_dict(diagnostics.get("skipped_record_reasons_by_record_id"))
     unique_skipped_record_reasons_by_record_id = _string_list_dict(
         diagnostics.get("unique_skipped_record_reasons_by_record_id")
@@ -4619,9 +4564,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
     ):
         invalid_reason_fields.append("skipped_record_reason_counts")
     for invalid_reason_field in invalid_reason_fields:
-        findings.append(
-            f"training export diagnostics {invalid_reason_field} is invalid"
-        )
+        findings.append(f"training export diagnostics {invalid_reason_field} is invalid")
     expected_skipped_reason_fields = _expected_training_export_skipped_reason_fields_from_manifests(
         audit.get("manifests")
     )
@@ -4636,10 +4579,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         if (diagnostics and field not in invalid_reason_fields and skipped_reason_values[field] != expected_value)
     ]
     for skipped_reason_mismatch_field in skipped_record_reason_mismatches:
-        findings.append(
-            "training export diagnostics "
-            f"{skipped_reason_mismatch_field} does not match manifests"
-        )
+        findings.append(f"training export diagnostics {skipped_reason_mismatch_field} does not match manifests")
     blind_safe_row_count = _int_from_mapping(diagnostics, "blind_safe_row_count")
     hindsight_row_count = _int_from_mapping(diagnostics, "hindsight_row_count")
     phase_row_count_fields = ("blind_safe_row_count", "hindsight_row_count")
@@ -4652,13 +4592,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         if field in diagnostics and not _non_negative_int_field_valid(diagnostics.get(field))
     ]
     for missing_phase_count_field in missing_phase_row_count_fields:
-        findings.append(
-            f"training export diagnostics {missing_phase_count_field} is missing"
-        )
+        findings.append(f"training export diagnostics {missing_phase_count_field} is missing")
     for invalid_phase_count_field in invalid_phase_row_count_fields:
-        findings.append(
-            f"training export diagnostics {invalid_phase_count_field} is invalid"
-        )
+        findings.append(f"training export diagnostics {invalid_phase_count_field} is invalid")
     source_phase_counts = _int_dict(diagnostics.get("source_phase_counts"))
     source_phase_row_count = sum(source_phase_counts.values())
     counts_by_record_type = _int_dict(diagnostics.get("counts_by_record_type"))
@@ -4675,13 +4611,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         if field in diagnostics and not _int_dict_field_valid(diagnostics.get(field))
     ]
     for missing_count_field in missing_count_fields:
-        findings.append(
-            f"training export diagnostics {missing_count_field} is missing"
-        )
+        findings.append(f"training export diagnostics {missing_count_field} is missing")
     for invalid_count_field in invalid_count_fields:
-        findings.append(
-            f"training export diagnostics {invalid_count_field} is invalid"
-        )
+        findings.append(f"training export diagnostics {invalid_count_field} is invalid")
     count_map_values = {
         "source_phase_counts": source_phase_counts,
         "counts_by_record_type": counts_by_record_type,
@@ -4699,10 +4631,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         )
     ]
     for count_map_mismatch_field in count_map_mismatches:
-        findings.append(
-            "training export diagnostics "
-            f"{count_map_mismatch_field} does not match manifests"
-        )
+        findings.append(f"training export diagnostics {count_map_mismatch_field} does not match manifests")
     invalid_source_phase_labels = (
         sorted(set(source_phase_counts) - {"BLIND", "POSTMORTEM"})
         if "source_phase_counts" not in invalid_count_fields
@@ -4814,10 +4743,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             and aggregate_field in expected_aggregate_counts
             and observed_count != expected_aggregate_counts[aggregate_field]
         ):
-            findings.append(
-                "training export diagnostics "
-                f"{aggregate_field} does not match manifests"
-            )
+            findings.append(f"training export diagnostics {aggregate_field} does not match manifests")
     per_export_count_values = {
         "per_export_eligible_record_count": per_export_eligible_count,
         "per_export_exported_record_count": per_export_exported_count,
@@ -4831,10 +4757,7 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
             and per_export_field in expected_per_export_counts
             and observed_count != expected_per_export_counts[per_export_field]
         ):
-            findings.append(
-                "training export diagnostics "
-                f"{per_export_field} does not match manifests"
-            )
+            findings.append(f"training export diagnostics {per_export_field} does not match manifests")
     if (
         diagnostics
         and "counts_by_record_type" not in missing_count_fields
@@ -4951,13 +4874,9 @@ def _production_training_export_status(settings: Settings) -> dict[str, Any]:
         if field in diagnostics and not _numeric_map_field_valid(diagnostics.get(field))
     )
     for missing_weight_field in missing_weight_diagnostic_fields:
-        findings.append(
-            f"training export diagnostics {missing_weight_field} is missing"
-        )
+        findings.append(f"training export diagnostics {missing_weight_field} is missing")
     for invalid_weight_field in invalid_weight_diagnostic_fields:
-        findings.append(
-            f"training export diagnostics {invalid_weight_field} is invalid"
-        )
+        findings.append(f"training export diagnostics {invalid_weight_field} is invalid")
     weight_diagnostic_count_mismatches: list[str] = []
     if (
         duplicate_issuer_day_count is not None
@@ -6291,8 +6210,7 @@ def _llm_full_brain_status(
     valid_compiled_claim_count = compiled_claim_stats["valid_claim_count"]
     findings: list[str] = []
     phase4_brain = (
-        isinstance(current_manifest, dict)
-        and current_manifest.get("production_memory_snapshot_id") is not None
+        isinstance(current_manifest, dict) and current_manifest.get("production_memory_snapshot_id") is not None
     )
     if build_mode == "llm-full" and phase4_brain and brain_cutoff is None:
         findings.append("llm-full brain cutoff is missing or invalid")
@@ -6380,9 +6298,7 @@ def _llm_full_brain_status(
         "expected_compile_run_schema_version": LLM_FULL_COMPILE_RUN_SCHEMA_VERSION,
         "provider": compile_manifest.get("provider") if isinstance(compile_manifest, dict) else None,
         "model": compile_manifest.get("model") if isinstance(compile_manifest, dict) else None,
-        "reasoning_effort": compile_manifest.get("reasoning_effort")
-        if isinstance(compile_manifest, dict)
-        else None,
+        "reasoning_effort": compile_manifest.get("reasoning_effort") if isinstance(compile_manifest, dict) else None,
         "compile_manifest_schema_version": compile_manifest.get("schema_version")
         if isinstance(compile_manifest, dict)
         else None,
@@ -6464,9 +6380,7 @@ def _llm_full_brain_status(
         if not isinstance(reasoning_effort, str) or not reasoning_effort:
             findings.append("llm-full compile reasoning_effort is missing")
         elif reasoning_effort != settings.llm.reasoning_effort:
-            findings.append(
-                "llm-full compile reasoning_effort does not match configured reasoning_effort"
-            )
+            findings.append("llm-full compile reasoning_effort does not match configured reasoning_effort")
         compiler_version = status["compiler_version"]
         if compiler_version != LLM_FULL_COMPILER_VERSION:
             observed_version = compiler_version if isinstance(compiler_version, str) and compiler_version else "missing"
@@ -6482,9 +6396,7 @@ def _llm_full_brain_status(
         if not isinstance(source_record_count, int) or source_record_count <= 0:
             findings.append("llm-full compile source records are missing")
         elif (
-            brain_cutoff is not None
-            and known_record_ids is not None
-            and source_record_count != len(known_record_ids)
+            brain_cutoff is not None and known_record_ids is not None and source_record_count != len(known_record_ids)
         ) or (
             brain_cutoff is None
             and isinstance(expected_source_record_count, int)
@@ -7306,10 +7218,7 @@ def _openai_sdk_status() -> dict[str, Any]:
 
 
 def _brave_search_required(settings: Settings, *, production: bool = False) -> bool:
-    if (
-        EvidencePolicy.parse(settings.evidence_policy)
-        is EvidencePolicy.CSV_MEMORY_ONLY_STRICT
-    ):
+    if EvidencePolicy.parse(settings.evidence_policy) is EvidencePolicy.CSV_MEMORY_ONLY_STRICT:
         return False
     return production or settings.web_provider.strip().lower() in {
         "brave",

@@ -357,6 +357,17 @@
     "event_clusters": {
       "$ref": "#/$defs/ArtifactReference"
     },
+    "final_beneficiary_graph": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ArtifactReference"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "material_event_cluster_ids": {
       "items": {
         "type": "string"
@@ -391,6 +402,34 @@
     "run_id": {
       "title": "Run Id",
       "type": "string"
+    },
+    "runtime_evidence_memos": {
+      "items": {
+        "$ref": "#/$defs/ArtifactReference"
+      },
+      "title": "Runtime Evidence Memos",
+      "type": "array"
+    },
+    "runtime_evidence_traces": {
+      "items": {
+        "$ref": "#/$defs/ArtifactReference"
+      },
+      "title": "Runtime Evidence Traces",
+      "type": "array"
+    },
+    "runtime_retrieval_cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Runtime Retrieval Cluster Ids",
+      "type": "array"
+    },
+    "runtime_retrieval_traces": {
+      "items": {
+        "$ref": "#/$defs/ArtifactReference"
+      },
+      "title": "Runtime Retrieval Traces",
+      "type": "array"
     },
     "schema_version": {
       "const": "nslab.daily_memory_context.v2",

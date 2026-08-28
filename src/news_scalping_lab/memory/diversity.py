@@ -24,7 +24,10 @@ from news_scalping_lab.memory.index import (
     ProductionMemoryIndex,
     RepresentativeSourceRecord,
 )
-from news_scalping_lab.memory.population import PopulationRetriever
+from news_scalping_lab.memory.population import (
+    PopulationRetriever,
+    _inspect_built_population,
+)
 from news_scalping_lab.records.models import CANDIDATE_ERROR_RECORD_TYPES
 from news_scalping_lab.utils import (
     as_kst,
@@ -51,6 +54,10 @@ REPRESENTATIVE_INITIAL_MAX_RECORDS = 16
 REPRESENTATIVE_FACILITY_ANCHOR_COUNT = 32
 REPRESENTATIVE_MAX_STRATUM_RESERVE = 128
 REPRESENTATIVE_DISTRIBUTION_SHARE_ERROR_TOLERANCE = 0.25
+
+
+class RepresentativeSelectionBudgetError(ValueError):
+    """Raised when a valid population cannot fit the representative budgets."""
 
 
 @dataclass(frozen=True)
@@ -199,9 +206,10 @@ class RepresentativeSelector:
         )
         _write_immutable_bytes(records_path, record_bytes)
         _write_immutable_manifest(manifest_path, manifest)
-        inspection = self.inspect(
-            manifest_path,
-            force_database_verification=False,
+        inspection = _inspect_built_representative(
+            self.root,
+            manifest_path=manifest_path,
+            expected_manifest=manifest,
         )
         if inspection["passed"] is not True:
             raise ValueError(
@@ -411,10 +419,21 @@ class RepresentativeSelector:
         *,
         force_database_verification: bool,
     ) -> PopulationManifest:
-        inspection = self.population_retriever.inspect(
-            path,
-            force_database_verification=force_database_verification,
-        )
+        if force_database_verification:
+            inspection = self.population_retriever.inspect(
+                path,
+                force_database_verification=True,
+            )
+        else:
+            try:
+                observed = PopulationManifest.model_validate(read_json(path))
+            except (OSError, ValueError) as exc:
+                raise ValueError(f"population manifest is invalid: {exc}") from exc
+            inspection = _inspect_built_population(
+                self.root,
+                manifest_path=path,
+                expected_manifest=observed,
+            )
         if inspection["passed"] is not True:
             raise ValueError(
                 "population manifest is not current: "
@@ -479,6 +498,46 @@ class RepresentativeSelector:
             population_strata=dict(population_strata),
             query_embedding_sha256=sha256_text(canonical_json(query_vectors[0])),
         )
+
+
+def _inspect_built_representative(
+    root: Path,
+    *,
+    manifest_path: Path,
+    expected_manifest: RepresentativeSetManifest,
+) -> dict[str, Any]:
+    """Verify the written representative closure without re-running MMR."""
+
+    errors: list[str] = []
+    try:
+        observed = RepresentativeSetManifest.model_validate(read_json(manifest_path))
+    except (OSError, ValueError) as exc:
+        return {"passed": False, "errors": [f"representative_manifest_invalid:{exc}"]}
+    if observed != expected_manifest:
+        errors.append("representative_manifest_serialization_mismatch")
+    records_path = (root / observed.representative_records.artifact_path).resolve()
+    try:
+        records_path.relative_to(manifest_path.parent.resolve())
+    except ValueError:
+        errors.append("representative_records_path_escape")
+    else:
+        if not records_path.exists():
+            errors.append("representative_records_missing")
+        elif file_sha256(records_path) != observed.representative_records.sha256:
+            errors.append("representative_records_hash_mismatch")
+        else:
+            try:
+                rows = _read_jsonl(records_path)
+            except (OSError, ValueError):
+                errors.append("representative_records_invalid")
+            else:
+                if len(rows) != observed.representative_records.item_count:
+                    errors.append("representative_records_count_mismatch")
+                if [str(row.get("record_id")) for row in rows] != (
+                    observed.selected_record_ids
+                ):
+                    errors.append("representative_records_identity_mismatch")
+    return {"passed": not errors, "errors": errors}
 
 
 def _unit_candidates(
@@ -661,6 +720,13 @@ def _required_strata(candidates: list[_Candidate]) -> set[str]:
 
 def _selection_target_count(candidates: list[_Candidate]) -> int:
     unit_ids = {candidate.independent_unit_id for candidate in candidates}
+    units_by_trade_date: dict[date, set[str]] = defaultdict(set)
+    units_by_concentration_key: dict[str, set[str]] = defaultdict(set)
+    for candidate in candidates:
+        units_by_trade_date[candidate.trade_date].add(candidate.independent_unit_id)
+        units_by_concentration_key[candidate.concentration_key].add(
+            candidate.independent_unit_id
+        )
     if not unit_ids:
         raise ValueError("representative candidate set is empty")
     dimension_entropies = []
@@ -699,8 +765,18 @@ def _selection_target_count(candidates: list[_Candidate]) -> int:
         )
         * normalized_entropy
     )
+    feasible_trade_date_count = sum(
+        min(len(values), REPRESENTATIVE_MAX_TRADE_DATE_CONCENTRATION)
+        for values in units_by_trade_date.values()
+    )
+    feasible_concentration_count = sum(
+        min(len(values), REPRESENTATIVE_MAX_UNIT_KEY_CONCENTRATION)
+        for values in units_by_concentration_key.values()
+    )
     return min(
         len(unit_ids),
+        feasible_trade_date_count,
+        feasible_concentration_count,
         REPRESENTATIVE_MAX_SELECTED_RECORDS,
         max(1, adaptive_target),
     )
@@ -1013,6 +1089,12 @@ def _mmr_select(
                     facility=facility,
                     distribution=distribution,
                     selection_score=score,
+                    max_estimated_tokens=max(
+                        512,
+                        REPRESENTATIVE_MAX_TOKEN_COUNT
+                        // max(target_selected_record_count, 1)
+                        - 1,
+                    ),
                 )
                 if (
                     token_count + row.estimated_token_count + 1
@@ -1037,15 +1119,19 @@ def _mmr_select(
             if remaining_candidate.independent_unit_id == candidate.independent_unit_id:
                 remaining.pop(record_id)
     if not selected_rows:
-        raise ValueError("representative selection cannot satisfy its budgets")
+        raise RepresentativeSelectionBudgetError(
+            "representative selection cannot satisfy its budgets"
+        )
     uncovered_required = required_strata - covered_strata
     if uncovered_required:
-        raise ValueError(
+        raise RepresentativeSelectionBudgetError(
             "representative selection cannot cover required strata within budgets: "
             + ", ".join(sorted(uncovered_required))
         )
     if len(selected_rows) < target_selected_record_count:
-        raise ValueError("representative selection cannot reach its adaptive target")
+        raise RepresentativeSelectionBudgetError(
+            "representative selection cannot reach its adaptive target"
+        )
     if (
         _distribution_error_from_counts(
             population_shares,
@@ -1054,7 +1140,7 @@ def _mmr_select(
         )
         > REPRESENTATIVE_DISTRIBUTION_SHARE_ERROR_TOLERANCE
     ):
-        raise ValueError(
+        raise RepresentativeSelectionBudgetError(
             "representative selection cannot preserve population distribution "
             "within its budget"
         )
@@ -1071,8 +1157,8 @@ def _representative_row(
     facility: float,
     distribution: float,
     selection_score: float,
+    max_estimated_tokens: int,
 ) -> RepresentativeRecord:
-    excerpt = source.document[:REPRESENTATIVE_CONTEXT_EXCERPT_CHARS].strip()
     base = {
         "rank": rank,
         "record_id": candidate.record_id,
@@ -1082,26 +1168,49 @@ def _representative_row(
         "provenance_source_ids": list(source.provenance_source_ids),
         "record_label_quality": candidate.record_label_quality,
         "strata": list(candidate.strata),
-        "context_excerpt": excerpt,
         "relevance_score": relevance,
         "diversity_score": diversity,
         "facility_score": facility,
         "distribution_score": distribution,
         "selection_score": selection_score,
     }
-    estimated_tokens = 1
-    for _iteration in range(8):
-        row = RepresentativeRecord(
-            **base,
-            estimated_token_count=estimated_tokens,
-        )
-        observed = conservative_token_upper_bound(
-            canonical_json(row.model_dump(mode="json"))
-        )
-        if observed == estimated_tokens:
+    excerpt_limit = min(len(source.document), REPRESENTATIVE_CONTEXT_EXCERPT_CHARS)
+    for _truncation in range(12):
+        estimated_tokens = 1
+        row: RepresentativeRecord | None = None
+        for _iteration in range(8):
+            row = RepresentativeRecord(
+                **base,
+                context_excerpt=source.document[:excerpt_limit].strip(),
+                estimated_token_count=estimated_tokens,
+            )
+            observed = conservative_token_upper_bound(
+                canonical_json(row.model_dump(mode="json"))
+            )
+            if observed == estimated_tokens:
+                break
+            estimated_tokens = observed
+        else:
+            raise ValueError("representative token estimate did not converge")
+        if row is not None and row.estimated_token_count <= max_estimated_tokens:
             return row
-        estimated_tokens = observed
-    raise ValueError("representative token estimate did not converge")
+        if excerpt_limit == 0:
+            break
+        excerpt_limit = max(
+            0,
+            min(
+                excerpt_limit - 1,
+                math.floor(
+                    excerpt_limit
+                    * max_estimated_tokens
+                    / max(estimated_tokens, 1)
+                )
+                - 8,
+            ),
+        )
+    raise RepresentativeSelectionBudgetError(
+        "representative metadata exceeds its per-row token budget"
+    )
 
 
 def _normalized_cosine(left: list[float] | tuple[float, ...], right: tuple[float, ...]) -> float:

@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable
 from datetime import date
-from typing import Annotated, Literal, Self, cast
+from typing import Annotated, Any, Literal, Self, cast
 
 from pydantic import (
     AwareDatetime,
@@ -425,6 +425,13 @@ class MemoryCellSnapshotManifest(StrictMemoryContextModel):
     polarity_classifier_version: str
     population_projection_version: str
     routing_metadata_sha256: Sha256
+    availability_mode: Literal[
+        "source_available_from",
+        "replay_available_from",
+    ] = "source_available_from"
+    availability_projection_version: str | None = None
+    availability_projection: ArtifactReference | None = None
+    evaluation_only: bool = False
     record_hash_kind: Literal["canonical_full_envelope_sha256"] = (
         "canonical_full_envelope_sha256"
     )
@@ -475,6 +482,25 @@ class MemoryCellSnapshotManifest(StrictMemoryContextModel):
         explicit_cutoff_identity = f"explicit:{self.as_of_cutoff.isoformat()}"
         if self.cutoff_identity not in {"live_partition", explicit_cutoff_identity}:
             raise ValueError("memory snapshot cutoff identity is invalid")
+        if self.availability_mode == "replay_available_from":
+            if (
+                not self.evaluation_only
+                or not self.availability_projection_version
+                or self.availability_projection is None
+                or self.availability_projection.item_count < 1
+                or self.cutoff_identity != explicit_cutoff_identity
+            ):
+                raise ValueError(
+                    "replay availability requires an explicit evaluation projection"
+                )
+        elif (
+            self.evaluation_only
+            or self.availability_projection_version is not None
+            or self.availability_projection is not None
+        ):
+            raise ValueError(
+                "source availability snapshots cannot carry a replay projection"
+            )
         disposition_total = (
             self.reasoning_record_count
             + self.context_record_count
@@ -1355,6 +1381,7 @@ class DailyMemoryContext(StrictMemoryContextModel):
     memory_snapshot_id: str
     source_generation_sha256: Sha256
     material_event_cluster_ids: list[str] = Field(default_factory=list)
+    runtime_retrieval_cluster_ids: list[str] = Field(default_factory=list)
     uncovered_material_event_cluster_ids: list[str] = Field(default_factory=list)
     built_population_keys: list[str] = Field(default_factory=list)
     uncovered_population_purposes: dict[str, list[PopulationPurpose]] = Field(
@@ -1368,6 +1395,9 @@ class DailyMemoryContext(StrictMemoryContextModel):
     population_manifests: list[ArtifactReference] = Field(default_factory=list)
     representative_set_manifests: list[ArtifactReference] = Field(default_factory=list)
     adaptive_retrieval_traces: list[ArtifactReference] = Field(default_factory=list)
+    runtime_retrieval_traces: list[ArtifactReference] = Field(default_factory=list)
+    runtime_evidence_traces: list[ArtifactReference] = Field(default_factory=list)
+    runtime_evidence_memos: list[ArtifactReference] = Field(default_factory=list)
     category_brain_manifest: ArtifactReference
     category_brain_index_manifest: ArtifactReference
     category_selected_claims: ArtifactReference
@@ -1377,6 +1407,7 @@ class DailyMemoryContext(StrictMemoryContextModel):
     category_query_plans: list[CategoryBrainQueryPlan] = Field(default_factory=list)
     category_guidance: list[CategoryBrainGuidance] = Field(default_factory=list)
     beneficiary_graph: ArtifactReference
+    final_beneficiary_graph: ArtifactReference | None = None
     compact_final_context: ArtifactReference
     supporting_record_ids: list[str] = Field(default_factory=list)
     contradicting_record_ids: list[str] = Field(default_factory=list)
@@ -1384,6 +1415,22 @@ class DailyMemoryContext(StrictMemoryContextModel):
     unresolved_disagreements: list[str] = Field(default_factory=list)
     estimated_token_count: int = Field(ge=0)
     context_complete: bool
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_runtime_retrieval_scope(cls, value: Any) -> Any:
+        if (
+            isinstance(value, dict)
+            and "runtime_retrieval_cluster_ids" not in value
+            and value.get("runtime_retrieval_traces")
+        ):
+            return {
+                **value,
+                "runtime_retrieval_cluster_ids": list(
+                    value.get("material_event_cluster_ids") or []
+                ),
+            }
+        return value
 
     @model_validator(mode="after")
     def validate_daily_memory_context(self) -> Self:
@@ -1393,6 +1440,14 @@ class DailyMemoryContext(StrictMemoryContextModel):
             set(self.material_event_cluster_ids)
         ):
             raise ValueError("daily memory event cluster IDs must be unique")
+        if (
+            len(self.runtime_retrieval_cluster_ids)
+            != len(set(self.runtime_retrieval_cluster_ids))
+            or not set(self.runtime_retrieval_cluster_ids).issubset(
+                self.material_event_cluster_ids
+            )
+        ):
+            raise ValueError("daily runtime retrieval cluster IDs are invalid")
         if (
             len(self.uncovered_material_event_cluster_ids)
             != len(set(self.uncovered_material_event_cluster_ids))
@@ -1420,14 +1475,28 @@ class DailyMemoryContext(StrictMemoryContextModel):
             self.population_manifests,
             self.representative_set_manifests,
             self.adaptive_retrieval_traces,
+            self.runtime_retrieval_traces,
+            self.runtime_evidence_traces,
         ):
             if any(item.item_count != 1 for item in references):
                 raise ValueError("daily memory manifest references must contain one item")
             paths = [item.artifact_path for item in references]
             if len(paths) != len(set(paths)):
                 raise ValueError("daily memory manifest references must be unique")
+        if any(item.item_count < 1 for item in self.runtime_evidence_memos):
+            raise ValueError("runtime evidence memo artifacts cannot be empty")
+        memo_paths = [item.artifact_path for item in self.runtime_evidence_memos]
+        if len(memo_paths) != len(set(memo_paths)):
+            raise ValueError("runtime evidence memo references must be unique")
         if self.beneficiary_graph.item_count != 1:
             raise ValueError("daily memory beneficiary graph must contain one artifact")
+        if (
+            self.final_beneficiary_graph is not None
+            and self.final_beneficiary_graph.item_count != 1
+        ):
+            raise ValueError(
+                "daily memory final beneficiary graph must contain one artifact"
+            )
         if self.compact_final_context.item_count != 1:
             raise ValueError("daily compact context must contain one artifact")
         if self.category_brain_manifest.item_count != 1:
@@ -1474,6 +1543,20 @@ class DailyMemoryContext(StrictMemoryContextModel):
         ):
             raise ValueError(
                 "complete daily memory requires aligned population, representative, and adaptive artifacts"
+            )
+        if self.context_complete and self.runtime_retrieval_traces and (
+            len(self.runtime_retrieval_traces)
+            != len(self.runtime_retrieval_cluster_ids)
+        ):
+            raise ValueError(
+                "runtime retrieval requires one trace per memory-enabled event cluster"
+            )
+        if self.runtime_evidence_traces and (
+            len(self.runtime_evidence_traces) != len(self.runtime_retrieval_traces)
+            or len(self.runtime_evidence_memos) != len(self.runtime_evidence_traces)
+        ):
+            raise ValueError(
+                "runtime evidence traces and memo artifacts must align with retrieval traces"
             )
         return self
 

@@ -33,7 +33,14 @@ from news_scalping_lab.llm.base import LLMProvider
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
-from news_scalping_lab.memory.index import ProductionMemoryIndex
+from news_scalping_lab.memory.index import (
+    MEMORY_INDEX_ROOT,
+    MEMORY_MANIFEST_FILE,
+    MEMORY_SNAPSHOT_DIR,
+    ProductionMemoryIndex,
+    ReplayAvailabilityOverride,
+    load_snapshot_replay_availability,
+)
 from news_scalping_lab.memory.runtime import create_production_embedding_provider
 from news_scalping_lab.policies import EvidencePolicy
 from news_scalping_lab.records.hashing import (
@@ -56,6 +63,7 @@ from news_scalping_lab.retrieval.store import LocalRetrievalStore
 from news_scalping_lab.storage import ResearchStore
 from news_scalping_lab.utils import (
     KST,
+    as_kst,
     canonical_json,
     file_sha256,
     is_available_as_of,
@@ -342,10 +350,12 @@ class BrainCompiler:
         store: ResearchStore | None = None,
         *,
         shard_episode_count: int = SHARD_BRAIN_EPISODE_COUNT,
+        settings: Settings | None = None,
     ) -> None:
         self.root = root
         self.store = store or ResearchStore(root)
         self.shard_episode_count = max(1, shard_episode_count)
+        self.settings = settings
         self.current_dir = root / "brain" / "current"
         self.snapshots_dir = root / "brain" / "snapshots"
         self.diffs_dir = root / "brain" / "diffs"
@@ -364,9 +374,32 @@ class BrainCompiler:
         ):
             directory.mkdir(parents=True, exist_ok=True)
 
-    def rebuild(self, *, mode: str = "full") -> BrainManifest:
+    def _build_settings(self) -> Settings:
+        return self.settings or load_settings(self.root)
+
+    def rebuild(
+        self,
+        *,
+        mode: str = "full",
+        evaluation_cutoff_at: datetime | None = None,
+        evaluation_memory_snapshot_id: str | None = None,
+        evaluation_snapshot_receipt_path: Path | None = None,
+    ) -> BrainManifest:
+        evaluation_inputs = (
+            evaluation_cutoff_at is not None,
+            evaluation_memory_snapshot_id is not None,
+            evaluation_snapshot_receipt_path is not None,
+        )
+        if any(evaluation_inputs) and not all(evaluation_inputs):
+            raise ValueError("evaluation llm-full rebuild requires cutoff, memory snapshot, and receipt")
         if mode == "llm-full":
-            return self._rebuild_llm_full()
+            return self._rebuild_llm_full(
+                evaluation_cutoff_at=evaluation_cutoff_at,
+                evaluation_memory_snapshot_id=evaluation_memory_snapshot_id,
+                evaluation_snapshot_receipt_path=evaluation_snapshot_receipt_path,
+            )
+        if any(evaluation_inputs):
+            raise ValueError("evaluation cutoff is supported only for llm-full rebuilds")
         if mode not in {"full", "catalog"}:
             raise ValueError("only full rebuild is currently supported")
         previous_version = current_brain_version(self.root)
@@ -435,12 +468,16 @@ class BrainCompiler:
         WarehouseStore(self.root).rebuild_all()
         return manifest
 
-    def _rebuild_llm_full(self) -> BrainManifest:
-        settings = load_settings(self.root)
+    def _rebuild_llm_full(
+        self,
+        *,
+        evaluation_cutoff_at: datetime | None = None,
+        evaluation_memory_snapshot_id: str | None = None,
+        evaluation_snapshot_receipt_path: Path | None = None,
+    ) -> BrainManifest:
+        settings = self._build_settings()
         if settings.evidence_policy is not EvidencePolicy.CSV_MEMORY_ONLY_STRICT:
-            raise ValueError(
-                "llm-full production brain requires CSV_MEMORY_ONLY_STRICT"
-            )
+            raise ValueError("llm-full production brain requires CSV_MEMORY_ONLY_STRICT")
         if settings.web_provider.strip().lower() != "disabled":
             raise ValueError("llm-full production brain requires disabled web")
         if settings.event_cluster_fallback_policy.value != "fail-closed":
@@ -449,17 +486,74 @@ class BrainCompiler:
             raise ValueError("llm-full brain rebuild requires a real LLM provider")
         if settings.llm.provider.strip().lower() == "mock":
             raise ValueError("llm-full brain rebuild requires a non-mock model profile")
-        live_cutoff_at = now_kst()
+        live_cutoff_at = as_kst(evaluation_cutoff_at) if evaluation_cutoff_at is not None else now_kst()
+        evaluation_snapshot: MemoryCellSnapshotManifest | None = None
+        replay_availability: dict[str, ReplayAvailabilityOverride] | None = None
+        if evaluation_memory_snapshot_id is not None:
+            evaluation_manifest_path = (
+                self.root
+                / MEMORY_INDEX_ROOT
+                / MEMORY_SNAPSHOT_DIR
+                / evaluation_memory_snapshot_id
+                / MEMORY_MANIFEST_FILE
+            )
+            evaluation_snapshot = MemoryCellSnapshotManifest.model_validate(read_json(evaluation_manifest_path))
+            if (
+                evaluation_snapshot.snapshot_id != evaluation_memory_snapshot_id
+                or as_kst(evaluation_snapshot.as_of_cutoff) != live_cutoff_at
+            ):
+                raise ValueError("evaluation memory snapshot cutoff does not match the brain cutoff")
+            replay_availability = load_snapshot_replay_availability(
+                self.root,
+                evaluation_snapshot,
+            )
+            if replay_availability is None:
+                raise ValueError("evaluation rebuild requires a replay availability projection")
+
+        def projected_available_from(
+            episode_id: str,
+            trade_date: date,
+            source_available_from: datetime,
+        ) -> datetime:
+            if replay_availability is None:
+                return as_kst(source_available_from)
+            override = replay_availability.get(episode_id)
+            if override is None or override.source_trade_date != trade_date:
+                raise ValueError(f"evaluation replay availability is incomplete: {episode_id}")
+            return as_kst(override.replay_available_from)
+
         all_records = BrainRecordStore(self.root).list_records()
-        records = [
+        original_records = [
             record
             for record in all_records
-            if record.available_from <= live_cutoff_at
+            if projected_available_from(
+                record.episode_id,
+                record.trade_date,
+                record.available_from,
+            )
+            <= live_cutoff_at
+        ]
+        records = [
+            record.model_copy(
+                update={
+                    "available_from": projected_available_from(
+                        record.episode_id,
+                        record.trade_date,
+                        record.available_from,
+                    )
+                }
+            )
+            for record in original_records
         ]
         excluded_future_records = [
             record
             for record in all_records
-            if record.available_from > live_cutoff_at
+            if projected_available_from(
+                record.episode_id,
+                record.trade_date,
+                record.available_from,
+            )
+            > live_cutoff_at
         ]
         if not records:
             raise ValueError("llm-full brain rebuild requires normalized brain records")
@@ -473,21 +567,47 @@ class BrainCompiler:
         provider = _trace_brain_llm_provider(settings, base_provider)
         previous_version = current_brain_version(self.root)
         all_accepted_episodes = self.store.list_accepted()
-        accepted_episodes = [
+        original_accepted_episodes = [
             episode
             for episode in all_accepted_episodes
-            if episode.available_from <= live_cutoff_at
+            if projected_available_from(
+                episode.episode_id,
+                episode.trade_date,
+                episode.available_from,
+            )
+            <= live_cutoff_at
+        ]
+        accepted_episodes = [
+            episode.model_copy(
+                update={
+                    "available_from": projected_available_from(
+                        episode.episode_id,
+                        episode.trade_date,
+                        episode.available_from,
+                    )
+                }
+            )
+            for episode in original_accepted_episodes
         ]
         excluded_future_episodes = [
             episode
             for episode in all_accepted_episodes
-            if episode.available_from > live_cutoff_at
+            if projected_available_from(
+                episode.episode_id,
+                episode.trade_date,
+                episode.available_from,
+            )
+            > live_cutoff_at
         ]
-        brain_record_cutoff_at = max(
-            [
-                *[record.available_from for record in records],
-                *[episode.available_from for episode in accepted_episodes],
-            ]
+        brain_record_cutoff_at = (
+            live_cutoff_at
+            if evaluation_cutoff_at is not None
+            else max(
+                [
+                    *[record.available_from for record in records],
+                    *[episode.available_from for episode in accepted_episodes],
+                ]
+            )
         )
         accepted_hashes = self.store.accepted_hashes()
         covered_ids = sorted(
@@ -497,37 +617,34 @@ class BrainCompiler:
             }
         )
         source_hashes = {
-            episode.episode_id: accepted_hashes[episode.episode_id]
-            for episode in accepted_episodes
+            episode.episode_id: accepted_hashes[episode.episode_id] for episode in original_accepted_episodes
         }
         production_index = ProductionMemoryIndex(
             self.root,
             embedding_provider=create_production_embedding_provider(
                 settings,
                 require_records=True,
-                provider=(
-                    base_provider
-                    if settings.embedding_provider.strip().lower()
-                    in {"openai", "llm"}
-                    else None
-                ),
+                provider=(base_provider if settings.embedding_provider.strip().lower() in {"openai", "llm"} else None),
             ),
             production=True,
         )
-        memory_snapshot = production_index.build(
-            as_of=brain_record_cutoff_at,
-            promote_current=False,
-            stage_only=True,
-            cutoff_mode="live",
-        )
+        if evaluation_memory_snapshot_id is None:
+            memory_snapshot = production_index.build(
+                as_of=brain_record_cutoff_at,
+                promote_current=False,
+                stage_only=True,
+                cutoff_mode="live",
+            )
+        else:
+            if evaluation_snapshot is None:
+                raise ValueError("evaluation memory snapshot does not exist")
+            memory_snapshot = evaluation_snapshot
         record_hashes = _record_hashes_from_memory_snapshot(
             self.root,
             memory_snapshot,
-            records,
+            original_records,
         )
-        source_hashes.update(
-            {f"record:{record_id}": digest for record_id, digest in record_hashes.items()}
-        )
+        source_hashes.update({f"record:{record_id}": digest for record_id, digest in record_hashes.items()})
         created_at = max(record.available_from for record in records)
         claims = self._claims_from_records(records)
         compiled_claims = _compiled_claims_from_records(records)
@@ -547,9 +664,7 @@ class BrainCompiler:
             claims=compiled_claims,
             embedding_provider=production_index.embedding_provider,
         )
-        compiled_claims_text = "".join(
-            claim.model_dump_json() + "\n" for claim in compiled_claims
-        )
+        compiled_claims_text = "".join(claim.model_dump_json() + "\n" for claim in compiled_claims)
         embedding_runtime = embedding_identity(production_index.embedding_provider)
         manifest = BrainManifest(
             brain_version=version,
@@ -568,9 +683,7 @@ class BrainCompiler:
             embedding_provider=str(embedding_runtime["embedding_provider"]),
             embedding_model=str(embedding_runtime["embedding_model"]),
             embedding_revision=embedding_runtime["embedding_revision"],
-            embedding_artifact_sha256=embedding_runtime[
-                "embedding_artifact_sha256"
-            ],
+            embedding_artifact_sha256=embedding_runtime["embedding_artifact_sha256"],
             embedding_dimensions=memory_snapshot.embedding_dimensions,
             embedding_normalization=embedding_runtime["normalization"],
             embedding_device=embedding_runtime["device"],
@@ -645,24 +758,14 @@ class BrainCompiler:
         manifest = manifest.model_copy(
             update={
                 "production_memory_snapshot_id": memory_snapshot.snapshot_id,
-                "production_memory_corpus_sha256": (
-                    memory_snapshot.corpus_manifest_sha256
-                ),
-                "production_memory_source_generation_sha256": (
-                    memory_snapshot.source_generation_sha256
-                ),
+                "production_memory_corpus_sha256": (memory_snapshot.corpus_manifest_sha256),
+                "production_memory_source_generation_sha256": (memory_snapshot.source_generation_sha256),
                 "production_memory_as_of_cutoff": memory_snapshot.as_of_cutoff,
                 "codex_cli_version": agent_identity.get("codex_cli_version"),
-                "live_agent_call_count": agent_identity.get(
-                    "live_agent_call_count", 0
-                ),
+                "live_agent_call_count": agent_identity.get("live_agent_call_count", 0),
                 "cache_hit_count": agent_identity.get("cache_hit_count", 0),
-                "structured_validation_status": agent_identity.get(
-                    "structured_validation_status"
-                ),
-                "oauth_health_check_status": agent_identity.get(
-                    "oauth_health_check_status"
-                ),
+                "structured_validation_status": agent_identity.get("structured_validation_status"),
+                "oauth_health_check_status": agent_identity.get("oauth_health_check_status"),
             }
         )
         self._publish_llm_full_transaction(
@@ -675,6 +778,7 @@ class BrainCompiler:
             production_index=production_index,
             memory_snapshot=memory_snapshot,
             source_records=records,
+            evaluation_snapshot_receipt_path=evaluation_snapshot_receipt_path,
         )
         return manifest
 
@@ -690,6 +794,7 @@ class BrainCompiler:
         production_index: ProductionMemoryIndex,
         memory_snapshot: MemoryCellSnapshotManifest,
         source_records: list[BrainRecordEnvelope],
+        evaluation_snapshot_receipt_path: Path | None = None,
     ) -> None:
         current_dir = self.root / "brain" / "current"
         head_path = self.root / "brain" / "HEAD"
@@ -697,9 +802,14 @@ class BrainCompiler:
             self.snapshots_dir / manifest.brain_version,
             self.mechanisms_dir / manifest.brain_version,
             self.shard_brains_dir / manifest.brain_version,
+            *(
+                (self.root / "runs" / "semantic_brain_upgrade" / "exposure" / f"{manifest.brain_version}-v2",)
+                if evaluation_snapshot_receipt_path is not None
+                else ()
+            ),
         )
         immutable_preexisting = {path: path.exists() for path in immutable_paths}
-        mutable_paths = (
+        mutable_paths: tuple[Path, ...] = (
             current_dir,
             self.claims_dir / "claims.jsonl",
             self.current_mechanisms_dir,
@@ -712,16 +822,24 @@ class BrainCompiler:
             self.root / "diagnostics" / "record_coverage_report.md",
             production_index.current_pointer_path,
             production_index.as_of_registry_path,
-            self.root / "memory" / "vector_index",
-            self.root / "warehouse",
         )
-        backup_root = Path(
-            tempfile.mkdtemp(prefix=".llm-full-publish-", dir=self.root)
-        )
+        if evaluation_snapshot_receipt_path is None:
+            mutable_paths = (
+                *mutable_paths,
+                self.root / "memory" / "vector_index",
+                self.root / "warehouse",
+            )
+        else:
+            mutable_paths = (
+                *mutable_paths,
+                self.root / "runs" / "semantic_brain_upgrade" / "exposure" / "current.json",
+            )
+        backup_root = Path(tempfile.mkdtemp(prefix=".llm-full-publish-", dir=self.root))
         backups = _snapshot_paths(mutable_paths, backup_root=backup_root)
         try:
-            LocalRetrievalStore(self.root).rebuild_index()
-            WarehouseStore(self.root).rebuild_all()
+            if evaluation_snapshot_receipt_path is None:
+                LocalRetrievalStore(self.root).rebuild_index()
+                WarehouseStore(self.root).rebuild_all()
             self._write_current(
                 manifest,
                 claims,
@@ -731,13 +849,31 @@ class BrainCompiler:
                 compiled_claims=compiled_claims,
                 source_records=source_records,
             )
+            if evaluation_snapshot_receipt_path is not None:
+                # Reuse the exact projected BUILD list already compiled above.
+                # Loading the full source corpus again here would be both slow and
+                # capable of assigning exposure flags outside the replay boundary.
+                from news_scalping_lab.audits.semantic_exposure import (
+                    build_semantic_exposure_index,
+                )
+
+                build_semantic_exposure_index(
+                    self.root,
+                    records=source_records,
+                )
             self._write_mechanism_memory(manifest, [])
             self._write_shard_brains(manifest, accepted_episodes)
             self._write_immutable_snapshot(manifest.brain_version)
-            production_index.activate(
-                memory_snapshot,
-                requested_cutoff=manifest.brain_record_cutoff_at,
-            )
+            if evaluation_snapshot_receipt_path is not None:
+                production_index.activate_verified_evaluation_snapshot(
+                    memory_snapshot,
+                    receipt_path=evaluation_snapshot_receipt_path,
+                )
+            else:
+                production_index.activate(
+                    memory_snapshot,
+                    requested_cutoff=manifest.brain_record_cutoff_at,
+                )
             head_path.write_text(manifest.brain_version + "\n", encoding="utf-8")
             if previous_version != manifest.brain_version:
                 write_rebuild_diff(
@@ -1036,9 +1172,7 @@ class BrainCompiler:
         compiled_claims_path = self.current_dir / "compiled_claims.jsonl"
         if compiled_claims is not None:
             compiled_claims_path.write_bytes(
-                "".join(
-                    claim.model_dump_json() + "\n" for claim in compiled_claims
-                ).encode("utf-8")
+                "".join(claim.model_dump_json() + "\n" for claim in compiled_claims).encode("utf-8")
             )
         elif compiled_claims_path.exists():
             compiled_claims_path.unlink()
@@ -1323,6 +1457,19 @@ class BrainCompiler:
 
     def _coverage_manifest(self, manifest: BrainManifest) -> dict[str, object]:
         missing = sorted(set(self.store.accepted_hashes()) - set(manifest.covered_episode_ids))
+        evaluation_only = False
+        if manifest.production_memory_snapshot_id:
+            snapshot_path = (
+                self.root
+                / MEMORY_INDEX_ROOT
+                / MEMORY_SNAPSHOT_DIR
+                / manifest.production_memory_snapshot_id
+                / MEMORY_MANIFEST_FILE
+            )
+            try:
+                evaluation_only = MemoryCellSnapshotManifest.model_validate(read_json(snapshot_path)).evaluation_only
+            except (OSError, ValueError):
+                evaluation_only = False
         return {
             "brain_version": manifest.brain_version,
             "created_at": manifest.created_at.isoformat(),
@@ -1335,8 +1482,12 @@ class BrainCompiler:
             "accepted_episode_count": manifest.accepted_episode_count,
             "covered_episode_count": manifest.covered_episode_count,
             "covered_episode_ids": manifest.covered_episode_ids,
-            "missing_episode_ids": missing,
-            "coverage_complete": not missing and manifest.coverage_complete,
+            "missing_episode_ids": [] if evaluation_only else missing,
+            "out_of_scope_future_episode_ids": missing if evaluation_only else [],
+            "coverage_scope": ("EVALUATION_REPLAY_BUILD" if evaluation_only else "CURRENT_AVAILABLE_SOURCE"),
+            "coverage_complete": (
+                manifest.coverage_complete if evaluation_only else not missing and manifest.coverage_complete
+            ),
         }
 
 
@@ -2277,9 +2428,7 @@ async def _compile_llm_category_outputs(
                 "shard_index": shard_index,
                 "cache_key": cache_key,
                 "record_ids": [record.record_id for record in shard],
-                "record_ids_sha256": sha256_text(
-                    canonical_json(sorted(record.record_id for record in shard))
-                ),
+                "record_ids_sha256": sha256_text(canonical_json(sorted(record.record_id for record in shard))),
                 "record_count": len(shard),
                 "cache_hit": cache_hit,
                 "prompt_sha256": prompt_sha256,
@@ -2542,8 +2691,7 @@ async def _cached_generate_text(
 def _validate_llm_full_prompt(prompt: str, *, purpose: str) -> None:
     if len(prompt) > LLM_FULL_PROMPT_MAX_CHARS:
         raise ValueError(
-            f"llm-full prompt exceeds local limit for {purpose}: "
-            f"{len(prompt)} > {LLM_FULL_PROMPT_MAX_CHARS}"
+            f"llm-full prompt exceeds local limit for {purpose}: {len(prompt)} > {LLM_FULL_PROMPT_MAX_CHARS}"
         )
 
 
@@ -2562,9 +2710,7 @@ def _brain_record_shard_prompt(
     representative_records = records
     if not direct_records:
         evidence_groups, representative_records = _llm_evidence_groups(records)
-    representative_reasoning, representative_non_reasoning = _split_routing_records(
-        representative_records
-    )
+    representative_reasoning, representative_non_reasoning = _split_routing_records(representative_records)
     return json.dumps(
         {
             "instruction": (
@@ -2593,22 +2739,14 @@ def _brain_record_shard_prompt(
             "model": model,
             "reasoning_effort": reasoning_effort,
             "source_record_count": len(records),
-            "source_record_ids_sha256": sha256_text(
-                canonical_json(sorted(record.record_id for record in records))
-            ),
+            "source_record_ids_sha256": sha256_text(canonical_json(sorted(record.record_id for record in records))),
             "reasoning_record_count": len(reasoning_records),
             "audit_context_record_count": len(non_reasoning_records),
             "evidence_group_count": len(evidence_groups),
-            "evidence_group_signature_fields": list(
-                LLM_EVIDENCE_GROUP_SIGNATURE_FIELDS
-            ),
+            "evidence_group_signature_fields": list(LLM_EVIDENCE_GROUP_SIGNATURE_FIELDS),
             "evidence_groups": evidence_groups,
-            "reasoning_records": [
-                _compact_record_for_prompt(record) for record in representative_reasoning
-            ],
-            "audit_context_records": [
-                _compact_record_for_prompt(record) for record in representative_non_reasoning
-            ],
+            "reasoning_records": [_compact_record_for_prompt(record) for record in representative_reasoning],
+            "audit_context_records": [_compact_record_for_prompt(record) for record in representative_non_reasoning],
             "representative_record_count": len(representative_records),
         },
         ensure_ascii=False,
@@ -2837,16 +2975,10 @@ def _compact_shard_summaries(shard_summaries: list[dict[str, Any]]) -> list[dict
                 "shard_index": shard["shard_index"],
                 "record_count": shard["record_count"],
                 "record_ids_sha256": shard["record_ids_sha256"],
-                "representative_record_ids": shard["record_ids"][
-                    :LLM_FULL_SHARD_SUMMARY_RECORD_ID_LIMIT
-                ],
+                "representative_record_ids": shard["record_ids"][:LLM_FULL_SHARD_SUMMARY_RECORD_ID_LIMIT],
                 "summary_sha256": sha256_text(summary),
                 "summary_truncated": truncated,
-                "summary": (
-                    summary[:LLM_FULL_SHARD_SUMMARY_MAX_CHARS] + "...[truncated]"
-                    if truncated
-                    else summary
-                ),
+                "summary": (summary[:LLM_FULL_SHARD_SUMMARY_MAX_CHARS] + "...[truncated]" if truncated else summary),
             }
         )
     return compact
@@ -2903,14 +3035,10 @@ def _llm_evidence_groups(
         grouped.values(),
         key=lambda entry: (-len(entry["records"]), str(entry["group_id"])),
     )
-    selected_by_group: dict[str, list[BrainRecordEnvelope]] = {
-        str(entry["group_id"]): [] for entry in ordered_groups
-    }
+    selected_by_group: dict[str, list[BrainRecordEnvelope]] = {str(entry["group_id"]): [] for entry in ordered_groups}
     for representative_index in range(LLM_FULL_GROUP_REPRESENTATIVE_LIMIT):
         for entry in ordered_groups:
-            if sum(len(values) for values in selected_by_group.values()) >= (
-                LLM_FULL_SHARD_REPRESENTATIVE_LIMIT
-            ):
+            if sum(len(values) for values in selected_by_group.values()) >= (LLM_FULL_SHARD_REPRESENTATIVE_LIMIT):
                 break
             candidates = sorted(entry["records"], key=lambda item: (item[0], item[1]))
             if representative_index < len(candidates):
@@ -2927,10 +3055,7 @@ def _llm_evidence_groups(
         group_rows.append(
             {
                 "group_id": group_id,
-                "signature_values": [
-                    entry["signature"].get(field)
-                    for field in LLM_EVIDENCE_GROUP_SIGNATURE_FIELDS
-                ],
+                "signature_values": [entry["signature"].get(field) for field in LLM_EVIDENCE_GROUP_SIGNATURE_FIELDS],
                 "record_count": len(record_ids),
                 "record_ids_sha256": sha256_text(canonical_json(record_ids)),
                 "payload_variant_count": len(payload_hashes),

@@ -17,9 +17,17 @@ from typing import Any
 from pydantic import ValidationError
 
 from news_scalping_lab.brain.compiler import current_brain_version
-from news_scalping_lab.context.memory_coverage import build_memory_coverage_manifest
+from news_scalping_lab.context.memory_coverage import (
+    build_memory_coverage_manifest,
+    build_memory_coverage_manifest_from_snapshot,
+)
 from news_scalping_lab.context.modes import normalize_analysis_mode
+from news_scalping_lab.contracts.memory_context import MemoryCellSnapshotManifest
 from news_scalping_lab.contracts.models import ResearchEpisode
+from news_scalping_lab.memory.index import (
+    active_memory_snapshot_manifest,
+    load_snapshot_replay_availability,
+)
 from news_scalping_lab.records.hashing import (
     brain_record_envelope_sha256,
     brain_record_routing_root_sha256,
@@ -205,16 +213,32 @@ class MemorySweeper:
         cache_model_config = model_config or {}
         model_config_hash = sha256_text(canonical_json(cache_model_config))
         record_store = BrainRecordStore(self.root)
+        active_snapshot = active_memory_snapshot_manifest(self.root)
+        evaluation_snapshot = (
+            active_snapshot
+            if active_snapshot is not None and active_snapshot.evaluation_only
+            else None
+        )
         if not emit_legacy_contributions:
-            coverage = build_memory_coverage_manifest(
-                self.root,
-                records=record_store.iter_records(),
-                cutoff_at=cutoff_at,
-                run_id=run_id,
+            coverage = (
+                build_memory_coverage_manifest_from_snapshot(
+                    self.root,
+                    snapshot=evaluation_snapshot,
+                    cutoff_at=cutoff_at,
+                    run_id=run_id,
+                )
+                if evaluation_snapshot is not None
+                else build_memory_coverage_manifest(
+                    self.root,
+                    records=record_store.iter_records(),
+                    cutoff_at=cutoff_at,
+                    run_id=run_id,
+                )
             )
             accepted, accepted_store_findings = self._available_episodes(
                 cutoff_at,
                 records_present=coverage.manifest.accepted_record_count > 0,
+                evaluation_snapshot=evaluation_snapshot,
             )
             coverage_errors = list(accepted_store_findings)
             if not coverage.manifest.coverage_complete:
@@ -242,6 +266,11 @@ class MemorySweeper:
                 memory_coverage_manifest_sha256=coverage.manifest_sha256,
                 memory_coverage_cache_hit=coverage.cache_hit,
                 corpus_manifest_sha256=coverage.manifest.corpus_manifest_sha256,
+            )
+
+        if evaluation_snapshot is not None:
+            raise ValueError(
+                "evaluation replay supports compact coverage sweeps only"
             )
 
         all_records = record_store.list_records()
@@ -474,13 +503,57 @@ class MemorySweeper:
         cutoff_at: datetime,
         *,
         records_present: bool,
+        evaluation_snapshot: MemoryCellSnapshotManifest | None = None,
     ) -> tuple[list[ResearchEpisode], list[str]]:
         try:
-            accepted = [
-                episode
-                for episode in self.store.list_accepted()
-                if is_available_as_of(episode.available_from, cutoff_at)
-            ]
+            source_episodes = self.store.list_accepted()
+            if evaluation_snapshot is None:
+                accepted = [
+                    episode
+                    for episode in source_episodes
+                    if is_available_as_of(episode.available_from, cutoff_at)
+                ]
+            else:
+                brain = read_json(
+                    self.root / "brain" / "current" / "brain_manifest.json"
+                )
+                covered_ids = (
+                    set(brain.get("covered_episode_ids", []))
+                    if isinstance(brain, dict)
+                    else set()
+                )
+                replay = load_snapshot_replay_availability(
+                    self.root,
+                    evaluation_snapshot,
+                )
+                if replay is None or not covered_ids:
+                    raise ValueError(
+                        "evaluation episode coverage is not bound to replay memory"
+                    )
+                accepted = []
+                for episode in source_episodes:
+                    if episode.episode_id not in covered_ids:
+                        continue
+                    override = replay.get(episode.episode_id)
+                    if (
+                        override is None
+                        or override.source_trade_date != episode.trade_date
+                    ):
+                        raise ValueError(
+                            "evaluation episode lacks replay availability: "
+                            f"{episode.episode_id}"
+                        )
+                    projected = episode.model_copy(
+                        update={
+                            "available_from": override.replay_available_from
+                        }
+                    )
+                    if is_available_as_of(projected.available_from, cutoff_at):
+                        accepted.append(projected)
+                if {episode.episode_id for episode in accepted} != covered_ids:
+                    raise ValueError(
+                        "evaluation brain episode coverage differs from replay scope"
+                    )
         except (
             OSError,
             json.JSONDecodeError,

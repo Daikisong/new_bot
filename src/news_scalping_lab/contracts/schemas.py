@@ -59,6 +59,11 @@ from news_scalping_lab.contracts.production import (
     ProductionReleaseManifest,
     ProductionReleaseTransaction,
 )
+from news_scalping_lab.contracts.runtime_retrieval import (
+    RuntimeEvidenceMemo,
+    RuntimeEvidenceMemoBatch,
+    RuntimeRetrievalTrace,
+)
 from news_scalping_lab.contracts.shadow_evaluation import (
     ShadowEvaluationManifest,
     ShadowReplayDataset,
@@ -106,6 +111,9 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "category_claim_inclusion_proof.schema.json": CategoryClaimInclusionProof,
     "category_brain_index_manifest.schema.json": CategoryBrainIndexManifest,
     "daily_memory_context.schema.json": DailyMemoryContext,
+    "runtime_evidence_memo.schema.json": RuntimeEvidenceMemo,
+    "runtime_evidence_memo_batch.schema.json": RuntimeEvidenceMemoBatch,
+    "runtime_retrieval_trace.schema.json": RuntimeRetrievalTrace,
     "shadow_replay_dataset.schema.json": ShadowReplayDataset,
     "shadow_evaluation_manifest.schema.json": ShadowEvaluationManifest,
     "production_import_inventory_manifest.schema.json": (

@@ -108,9 +108,7 @@ async def test_tracing_llm_provider_records_text_structured_and_embed_calls(tmp_
     assert text_trace["prompt_version"] == "test-v1"
     assert structured["model_config"] == {"provider": "mock", "model": "deterministic"}
     assert structured["token_usage"]["prompt_tokens_estimate"] > 0
-    assert structured["input"]["prompt_utf8_bytes"] == len(
-        b"Research 2030-01-10\n---SOURCE_TEXT---\nnotes"
-    )
+    assert structured["input"]["prompt_utf8_bytes"] == len(b"Research 2030-01-10\n---SOURCE_TEXT---\nnotes")
     assert structured["token_usage"]["completion_tokens_estimate"] > 0
     assert text_trace["token_usage"]["completion_tokens_estimate"] > 0
     assert embed_trace["input"]["text_count"] == 2
@@ -130,6 +128,32 @@ def test_conservative_token_upper_bound_does_not_underestimate_korean() -> None:
 
     assert conservative_token_upper_bound(prompt) == len(prompt.encode("utf-8"))
     assert conservative_token_upper_bound(prompt) > len(prompt) // 4
+
+
+def test_pre_retrieval_checkpoint_identity_is_shared_across_runtime_variants(
+    tmp_path,
+) -> None:
+    common = {
+        "operation": "generate_structured",
+        "input_payload": {"prompt_sha256": "a" * 64},
+    }
+    v0 = TracingLLMProvider(
+        DeterministicMockLLMProvider(),
+        trace_dir=tmp_path / "v0",
+        model_config={"model": "same", "runtime_retrieval_variant": "legacy"},
+    )
+    v1 = TracingLLMProvider(
+        DeterministicMockLLMProvider(),
+        trace_dir=tmp_path / "v1",
+        model_config={"model": "same", "runtime_retrieval_variant": "v4"},
+    )
+
+    assert v0._checkpoint_id(purpose="open_world_first_analysis.batch_0001", **common) == v1._checkpoint_id(
+        purpose="open_world_first_analysis.batch_0001", **common
+    )
+    assert v0._checkpoint_id(purpose="candidate_expansion", **common) != (
+        v1._checkpoint_id(purpose="candidate_expansion", **common)
+    )
 
 
 @pytest.mark.asyncio

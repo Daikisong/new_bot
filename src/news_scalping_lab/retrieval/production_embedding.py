@@ -31,12 +31,8 @@ from news_scalping_lab.utils import (
     write_json,
 )
 
-LOCAL_EMBEDDING_IDENTITY_FILE = Path(
-    "diagnostics/local_embedding_identity.json"
-)
-LOCAL_EMBEDDING_MODEL_MANIFEST_FILE = Path(
-    "memory/embedding_model_manifest.json"
-)
+LOCAL_EMBEDDING_IDENTITY_FILE = Path("diagnostics/local_embedding_identity.json")
+LOCAL_EMBEDDING_MODEL_MANIFEST_FILE = Path("memory/embedding_model_manifest.json")
 LOCAL_EMBEDDING_PROVIDER = "local-production"
 LOCAL_EMBEDDING_NORMALIZATION = "l2"
 
@@ -122,12 +118,7 @@ class LocalEmbeddingSelectedFile(BaseModel):
     def validate_relative_path(cls, value: str) -> str:
         normalized = value.replace("\\", "/").strip()
         candidate = Path(normalized)
-        if (
-            not normalized
-            or candidate.is_absolute()
-            or ".." in candidate.parts
-            or normalized.startswith("/")
-        ):
+        if not normalized or candidate.is_absolute() or ".." in candidate.parts or normalized.startswith("/"):
             raise ValueError("embedding model file path must be canonical and relative")
         return normalized
 
@@ -137,9 +128,7 @@ class LocalEmbeddingModelManifest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal["nslab.local_embedding_model_manifest.v1"] = (
-        "nslab.local_embedding_model_manifest.v1"
-    )
+    schema_version: Literal["nslab.local_embedding_model_manifest.v1"] = "nslab.local_embedding_model_manifest.v1"
     provider: Literal["local-production"] = "local-production"
     model: str
     revision: str
@@ -163,15 +152,11 @@ class LocalEmbeddingModelManifest(BaseModel):
             raise ValueError("embedding model files must be unique and sorted")
         if self.selected_file_count != len(self.selected_files):
             raise ValueError("embedding selected file count mismatch")
-        if self.selected_total_bytes != sum(
-            entry.size_bytes for entry in self.selected_files
-        ):
+        if self.selected_total_bytes != sum(entry.size_bytes for entry in self.selected_files):
             raise ValueError("embedding selected byte count mismatch")
         if not LOCAL_EMBEDDING_REQUIRED_FILES.issubset(paths):
             raise ValueError("embedding model manifest is missing a required file")
-        if self.artifact_root_sha256 != selected_artifact_root_sha256(
-            self.selected_files
-        ):
+        if self.artifact_root_sha256 != selected_artifact_root_sha256(self.selected_files):
             raise ValueError("embedding model manifest root mismatch")
         return self
 
@@ -204,21 +189,17 @@ class LocalProductionEmbeddingProvider:
         self.fast_verification_seconds = fast_verification_seconds
         self.model_load_seconds = model_load_seconds
         self.normalization = LOCAL_EMBEDDING_NORMALIZATION
+        # These monotonic counters let paired shadow runs measure real model
+        # work without changing query results or relying on provider logs.
+        self.embedding_query_count = 0
+        self.embedding_text_count = 0
+        self.embedding_input_char_count = 0
         dimension_reader = getattr(model, "get_embedding_dimension", None)
-        dimensions = (
-            dimension_reader()
-            if callable(dimension_reader)
-            else model.get_sentence_embedding_dimension()
-        )
+        dimensions = dimension_reader() if callable(dimension_reader) else model.get_sentence_embedding_dimension()
         if not isinstance(dimensions, int) or isinstance(dimensions, bool) or dimensions < 1:
-            raise ProductionEmbeddingUnavailableError(
-                "local embedding model did not report a fixed dimension"
-            )
+            raise ProductionEmbeddingUnavailableError("local embedding model did not report a fixed dimension")
         self.dimensions = dimensions
-        self.embedding_method = (
-            f"local_production:{model_name}@{revision}:"
-            f"sha256:{artifact_sha256}:l2"
-        )
+        self.embedding_method = f"local_production:{model_name}@{revision}:sha256:{artifact_sha256}:l2"
 
     async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
         del purpose
@@ -227,6 +208,9 @@ class LocalProductionEmbeddingProvider:
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
+        self.embedding_query_count += 1
+        self.embedding_text_count += len(texts)
+        self.embedding_input_char_count += sum(len(text) for text in texts)
         output = self._model.encode(
             texts,
             batch_size=self.batch_size,
@@ -236,9 +220,7 @@ class LocalProductionEmbeddingProvider:
         )
         values = output.tolist() if hasattr(output, "tolist") else output
         if not isinstance(values, list):
-            raise ProductionEmbeddingUnavailableError(
-                "local embedding model returned an invalid batch"
-            )
+            raise ProductionEmbeddingUnavailableError("local embedding model returned an invalid batch")
         vectors = [list(vector) for vector in values]
         _validate_dense_vectors(
             vectors,
@@ -304,9 +286,7 @@ def prepare_local_production_embedding(settings: Settings) -> dict[str, Any]:
         "normalization": manifest.normalization,
         "device": _preferred_device(),
         "model_path": model_path.as_posix(),
-        "embedding_model_manifest_path": (
-            LOCAL_EMBEDDING_MODEL_MANIFEST_FILE.as_posix()
-        ),
+        "embedding_model_manifest_path": (LOCAL_EMBEDDING_MODEL_MANIFEST_FILE.as_posix()),
         "embedding_model_manifest_sha256": file_sha256(manifest_path),
         "full_repository_size_if_known": repository["total_bytes"],
         "selected_download_bytes": manifest.selected_total_bytes,
@@ -384,16 +364,9 @@ def load_local_production_embedding(
             fast_verification_seconds=verification["verification_seconds"],
             model_load_seconds=perf_counter() - load_started,
         )
-        if (
-            identity.get("embedding_dimensions") != provider.dimensions
-            or manifest.dimension != provider.dimensions
-        ):
-            raise ProductionEmbeddingUnavailableError(
-                "local embedding model dimension drift"
-            )
-        provider.embed_texts(
-            ["한국 상장사 공급계약", "English listed-company supply contract"]
-        )
+        if identity.get("embedding_dimensions") != provider.dimensions or manifest.dimension != provider.dimensions:
+            raise ProductionEmbeddingUnavailableError("local embedding model dimension drift")
+        provider.embed_texts(["한국 상장사 공급계약", "English listed-company supply contract"])
         _bounded_cache_put(_MODEL_CACHE, cache_key, provider, _MODEL_CACHE_LIMIT)
         return provider
 
@@ -411,22 +384,16 @@ def verify_local_production_embedding(
         identity = read_json(identity_path)
         manifest = LocalEmbeddingModelManifest.model_validate(read_json(manifest_path))
     except (OSError, ValueError) as exc:
-        raise ProductionEmbeddingUnavailableError(
-            "local production embedding is not prepared"
-        ) from exc
+        raise ProductionEmbeddingUnavailableError("local production embedding is not prepared") from exc
     if not isinstance(identity, dict):
-        raise ProductionEmbeddingUnavailableError(
-            "local embedding identity receipt is invalid"
-        )
+        raise ProductionEmbeddingUnavailableError("local embedding identity receipt is invalid")
     expected = {
         "schema_version": "nslab.local_embedding_identity.v2",
         "embedding_provider": LOCAL_EMBEDDING_PROVIDER,
         "embedding_model": settings.local_embedding_model,
         "embedding_revision": settings.local_embedding_revision,
         "normalization": LOCAL_EMBEDDING_NORMALIZATION,
-        "embedding_model_manifest_path": (
-            LOCAL_EMBEDDING_MODEL_MANIFEST_FILE.as_posix()
-        ),
+        "embedding_model_manifest_path": (LOCAL_EMBEDDING_MODEL_MANIFEST_FILE.as_posix()),
     }
     if any(identity.get(key) != value for key, value in expected.items()):
         raise ProductionEmbeddingUnavailableError(
@@ -435,9 +402,7 @@ def verify_local_production_embedding(
     try:
         manifest_sha256 = file_sha256(manifest_path)
     except OSError as exc:
-        raise ProductionEmbeddingUnavailableError(
-            "local embedding manifest is unreadable"
-        ) from exc
+        raise ProductionEmbeddingUnavailableError("local embedding manifest is unreadable") from exc
     if (
         manifest.provider != LOCAL_EMBEDDING_PROVIDER
         or manifest.model != settings.local_embedding_model
@@ -445,18 +410,13 @@ def verify_local_production_embedding(
         or manifest.normalization != LOCAL_EMBEDDING_NORMALIZATION
         or identity.get("model_path") != manifest.model_path
         or identity.get("embedding_dimensions") != manifest.dimension
-        or identity.get("embedding_artifact_sha256")
-        != manifest.artifact_root_sha256
+        or identity.get("embedding_artifact_sha256") != manifest.artifact_root_sha256
         or identity.get("embedding_model_manifest_sha256") != manifest_sha256
     ):
-        raise ProductionEmbeddingUnavailableError(
-            "local embedding manifest identity mismatch"
-        )
+        raise ProductionEmbeddingUnavailableError("local embedding manifest identity mismatch")
     model_path = Path(manifest.model_path).resolve()
     if not model_path.is_dir():
-        raise ProductionEmbeddingUnavailableError(
-            "local embedding model directory is missing"
-        )
+        raise ProductionEmbeddingUnavailableError("local embedding model directory is missing")
     started = perf_counter()
     # The cheap path always stats every selected file. This proves existence and
     # size and also creates the cache-invalidating signature without reading the
@@ -569,18 +529,13 @@ def create_configured_embedding_provider(
         )
     if selected in {"mock", "deterministic", "deterministic-hash"}:
         if production or (
-            EmbeddingFallbackPolicy.parse(settings.event_cluster_fallback_policy)
-            is EmbeddingFallbackPolicy.FAIL_CLOSED
+            EmbeddingFallbackPolicy.parse(settings.event_cluster_fallback_policy) is EmbeddingFallbackPolicy.FAIL_CLOSED
         ):
-            raise ProductionEmbeddingUnavailableError(
-                "production cannot use deterministic hash embeddings"
-            )
+            raise ProductionEmbeddingUnavailableError("production cannot use deterministic hash embeddings")
         return llm_provider or DeterministicHashEmbeddingProvider()
     if selected in {"openai", "llm"} and llm_provider is not None:
         return llm_provider
-    raise ProductionEmbeddingUnavailableError(
-        f"unsupported embedding provider: {settings.embedding_provider}"
-    )
+    raise ProductionEmbeddingUnavailableError(f"unsupported embedding provider: {settings.embedding_provider}")
 
 
 def configured_embedding_adapter(
@@ -604,9 +559,7 @@ def configured_embedding_adapter(
     if not isinstance(embedding_method, str) or not embedding_method.strip():
         model = getattr(provider, "embedding_model", None)
         if not isinstance(model, str) or not model.strip():
-            raise ProductionEmbeddingUnavailableError(
-                "embedding provider identity is unavailable"
-            )
+            raise ProductionEmbeddingUnavailableError("embedding provider identity is unavailable")
         embedding_method = f"real_embedding:{settings.embedding_provider}:{model}"
     return AsyncEmbeddingProviderAdapter(
         provider,
@@ -617,18 +570,12 @@ def configured_embedding_adapter(
 
 def directory_artifact_sha256(root: Path) -> str:
     if not root.is_dir():
-        raise ProductionEmbeddingUnavailableError(
-            "local embedding model directory is missing"
-        )
+        raise ProductionEmbeddingUnavailableError("local embedding model directory is missing")
     entries = {
-        path.relative_to(root).as_posix(): file_sha256(path)
-        for path in sorted(root.rglob("*"))
-        if path.is_file()
+        path.relative_to(root).as_posix(): file_sha256(path) for path in sorted(root.rglob("*")) if path.is_file()
     }
     if not entries:
-        raise ProductionEmbeddingUnavailableError(
-            "local embedding model directory is empty"
-        )
+        raise ProductionEmbeddingUnavailableError("local embedding model directory is empty")
     return sha256_text(canonical_json(entries))
 
 
@@ -636,9 +583,7 @@ def selected_model_files(root: Path) -> list[LocalEmbeddingSelectedFile]:
     """Hash only the files explicitly selected for the pinned runtime."""
 
     if not root.is_dir():
-        raise ProductionEmbeddingUnavailableError(
-            "local embedding model directory is missing"
-        )
+        raise ProductionEmbeddingUnavailableError("local embedding model directory is missing")
     selected: list[LocalEmbeddingSelectedFile] = []
     for path in sorted(
         (candidate for candidate in root.rglob("*") if candidate.is_file()),
@@ -659,13 +604,10 @@ def selected_model_files(root: Path) -> list[LocalEmbeddingSelectedFile]:
     if not LOCAL_EMBEDDING_REQUIRED_FILES.issubset(paths):
         missing = sorted(LOCAL_EMBEDDING_REQUIRED_FILES - paths)
         raise ProductionEmbeddingUnavailableError(
-            "local embedding snapshot is missing required files: "
-            + ", ".join(missing)
+            "local embedding snapshot is missing required files: " + ", ".join(missing)
         )
     if not selected:
-        raise ProductionEmbeddingUnavailableError(
-            "local embedding selected snapshot is empty"
-        )
+        raise ProductionEmbeddingUnavailableError("local embedding selected snapshot is empty")
     return selected
 
 
@@ -675,8 +617,7 @@ def selected_artifact_root_sha256(
     # Root the logical file projection, not absolute cache paths, directory
     # metadata, or download timestamps, so clean installs share one identity.
     projection = [
-        entry.model_dump(mode="json")
-        for entry in sorted(selected_files, key=lambda item: item.relative_path)
+        entry.model_dump(mode="json") for entry in sorted(selected_files, key=lambda item: item.relative_path)
     ]
     return sha256_text(canonical_json(projection))
 
@@ -685,14 +626,10 @@ def _configured_model_dimension(model_path: Path) -> int:
     try:
         config = read_json(model_path / "config.json")
     except (OSError, ValueError) as exc:
-        raise ProductionEmbeddingUnavailableError(
-            "local embedding config is unreadable"
-        ) from exc
+        raise ProductionEmbeddingUnavailableError("local embedding config is unreadable") from exc
     dimension = config.get("hidden_size") if isinstance(config, dict) else None
     if not isinstance(dimension, int) or isinstance(dimension, bool) or dimension < 1:
-        raise ProductionEmbeddingUnavailableError(
-            "local embedding config has no fixed hidden size"
-        )
+        raise ProductionEmbeddingUnavailableError("local embedding config has no fixed hidden size")
     return dimension
 
 
@@ -711,13 +648,9 @@ def _verify_selected_file(
             f"local embedding model file is unreadable: {entry.relative_path}"
         ) from exc
     if not is_file or stat is None:
-        raise ProductionEmbeddingUnavailableError(
-            f"local embedding model file is missing: {entry.relative_path}"
-        )
+        raise ProductionEmbeddingUnavailableError(f"local embedding model file is missing: {entry.relative_path}")
     if stat.st_size != entry.size_bytes:
-        raise ProductionEmbeddingUnavailableError(
-            f"local embedding model file size drift: {entry.relative_path}"
-        )
+        raise ProductionEmbeddingUnavailableError(f"local embedding model file size drift: {entry.relative_path}")
     if hash_content:
         try:
             actual_sha256 = file_sha256(path)
@@ -747,11 +680,7 @@ def _repository_file_projection(
             files_metadata=True,
         )
         siblings = list(getattr(info, "siblings", []))
-        names = [
-            str(item.rfilename)
-            for item in siblings
-            if isinstance(getattr(item, "rfilename", None), str)
-        ]
+        names = [str(item.rfilename) for item in siblings if isinstance(getattr(item, "rfilename", None), str)]
         sizes: list[int] = []
         sizes_complete = bool(siblings)
         for item in siblings:
@@ -760,14 +689,8 @@ def _repository_file_projection(
                 sizes_complete = False
                 continue
             sizes.append(size)
-        total_bytes = (
-            sum(sizes) if sizes_complete and len(sizes) == len(siblings) else None
-        )
-        excluded = sum(
-            1
-            for name in names
-            if not _matches_patterns(name, LOCAL_EMBEDDING_ALLOW_PATTERNS)
-        )
+        total_bytes = sum(sizes) if sizes_complete and len(sizes) == len(siblings) else None
+        excluded = sum(1 for name in names if not _matches_patterns(name, LOCAL_EMBEDDING_ALLOW_PATTERNS))
         return {
             "total_bytes": total_bytes,
             "excluded_file_count": excluded,
@@ -801,20 +724,15 @@ def embedding_identity(provider: Any) -> dict[str, Any]:
     actual = getattr(provider, "provider", provider)
     return {
         "embedding_provider": (
-            LOCAL_EMBEDDING_PROVIDER
-            if isinstance(actual, LocalProductionEmbeddingProvider)
-            else type(actual).__name__
+            LOCAL_EMBEDDING_PROVIDER if isinstance(actual, LocalProductionEmbeddingProvider) else type(actual).__name__
         ),
         "embedding_model": getattr(actual, "embedding_model", None),
         "embedding_revision": getattr(actual, "embedding_revision", None),
-        "embedding_artifact_sha256": getattr(
-            actual, "embedding_artifact_sha256", None
-        ),
+        "embedding_artifact_sha256": getattr(actual, "embedding_artifact_sha256", None),
         "embedding_dimensions": getattr(actual, "dimensions", 0),
         "normalization": getattr(actual, "normalization", None),
         "device": getattr(actual, "device", None),
-        "embedding_method": getattr(provider, "embedding_method", None)
-        or getattr(actual, "embedding_method", None),
+        "embedding_method": getattr(provider, "embedding_method", None) or getattr(actual, "embedding_method", None),
     }
 
 
@@ -825,28 +743,18 @@ def _validate_dense_vectors(
     expected_dimensions: int,
 ) -> None:
     if len(vectors) != expected_count:
-        raise ProductionEmbeddingUnavailableError(
-            "embedding provider returned the wrong vector count"
-        )
+        raise ProductionEmbeddingUnavailableError("embedding provider returned the wrong vector count")
     for vector in vectors:
         if len(vector) != expected_dimensions:
-            raise ProductionEmbeddingUnavailableError(
-                "embedding provider dimension mismatch"
-            )
+            raise ProductionEmbeddingUnavailableError("embedding provider dimension mismatch")
         if any(
-            isinstance(value, bool)
-            or not isinstance(value, int | float)
-            or not math.isfinite(float(value))
+            isinstance(value, bool) or not isinstance(value, int | float) or not math.isfinite(float(value))
             for value in vector
         ):
-            raise ProductionEmbeddingUnavailableError(
-                "embedding vectors must contain finite numeric values"
-            )
+            raise ProductionEmbeddingUnavailableError("embedding vectors must contain finite numeric values")
         magnitude = math.sqrt(sum(float(value) ** 2 for value in vector))
         if not 0.999 <= magnitude <= 1.001:
-            raise ProductionEmbeddingUnavailableError(
-                "local embedding vectors must be L2 normalized"
-            )
+            raise ProductionEmbeddingUnavailableError("local embedding vectors must be L2 normalized")
 
 
 def _preferred_device() -> str:

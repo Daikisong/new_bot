@@ -67,9 +67,7 @@ _PURPOSE_RECORD_FILTERS: dict[
         None,
         tuple(
             sorted(
-                set(CANDIDATE_ERROR_RECORD_TYPES)
-                | set(_NEWSLESS_RECORD_TYPES)
-                | set(_LEADER_SELECTION_RECORD_TYPES)
+                set(CANDIDATE_ERROR_RECORD_TYPES) | set(_NEWSLESS_RECORD_TYPES) | set(_LEADER_SELECTION_RECORD_TYPES)
             )
         ),
     ),
@@ -157,12 +155,8 @@ class PopulationRetriever:
             independent_unit_type=independent_unit_type,
             routing_dispositions=tuple(request.routing_dispositions),
             included_memory_lanes=request.included_memory_lanes,
-            included_record_types=_PURPOSE_RECORD_FILTERS[
-                request.population_purpose
-            ][0],
-            excluded_record_types=_PURPOSE_RECORD_FILTERS[
-                request.population_purpose
-            ][1],
+            included_record_types=_PURPOSE_RECORD_FILTERS[request.population_purpose][0],
+            excluded_record_types=_PURPOSE_RECORD_FILTERS[request.population_purpose][1],
             max_records=POPULATION_MAX_SELECTED_RECORDS,
         )
         if not members:
@@ -187,9 +181,7 @@ class PopulationRetriever:
             "max_selected_record_count": POPULATION_MAX_SELECTED_RECORDS,
             "max_cube_row_count": POPULATION_MAX_CUBE_ROWS,
             "purpose_classifier_version": POPULATION_PURPOSE_CLASSIFIER_VERSION,
-            "purpose_record_types_sha256": _purpose_record_types_sha256(
-                request.population_purpose
-            ),
+            "purpose_record_types_sha256": _purpose_record_types_sha256(request.population_purpose),
             "bootstrap_version": BLOCK_BOOTSTRAP_VERSION,
         }
         population_id = "POP-" + sha256_text(canonical_json(identity))[:20].upper()
@@ -199,17 +191,9 @@ class PopulationRetriever:
             query_regime_cluster=request.query_regime_cluster,
             seed=_statistics_seed(members, cutoff_at=cutoff_at),
         )
-        population_dir = (
-            self.root
-            / POPULATION_ARTIFACT_ROOT
-            / safe_run_id
-            / safe_cluster_id
-            / population_id
-        )
+        population_dir = self.root / POPULATION_ARTIFACT_ROOT / safe_run_id / safe_cluster_id / population_id
         try:
-            population_dir.resolve().relative_to(
-                (self.root / POPULATION_ARTIFACT_ROOT).resolve()
-            )
+            population_dir.resolve().relative_to((self.root / POPULATION_ARTIFACT_ROOT).resolve())
         except ValueError as exc:
             raise ValueError("population artifact path escapes its root") from exc
         member_bytes = _jsonl_bytes(computation.member_rows)
@@ -219,9 +203,7 @@ class PopulationRetriever:
                 "population cube exceeds the operational row budget: "
                 f"{len(computation.cube_rows)} > {POPULATION_MAX_CUBE_ROWS}"
             )
-        cube_bytes = _jsonl_bytes(
-            [row.model_dump(mode="json") for row in computation.cube_rows]
-        )
+        cube_bytes = _jsonl_bytes([row.model_dump(mode="json") for row in computation.cube_rows])
         member_path = population_dir / POPULATION_MEMBER_FILE
         unit_path = population_dir / POPULATION_UNIT_FILE
         cube_path = population_dir / POPULATION_CUBE_FILE
@@ -240,9 +222,7 @@ class PopulationRetriever:
             max_selected_record_count=POPULATION_MAX_SELECTED_RECORDS,
             max_cube_row_count=POPULATION_MAX_CUBE_ROWS,
             purpose_classifier_version=POPULATION_PURPOSE_CLASSIFIER_VERSION,
-            purpose_record_types_sha256=_purpose_record_types_sha256(
-                request.population_purpose
-            ),
+            purpose_record_types_sha256=_purpose_record_types_sha256(request.population_purpose),
             selected_cell_ids=list(request.selected_cell_ids),
             routing_dispositions=list(request.routing_dispositions),
             membership_manifest_sha256=sha256_text(member_bytes.decode("utf-8")),
@@ -268,15 +248,13 @@ class PopulationRetriever:
         _write_immutable_bytes(unit_path, unit_bytes)
         _write_immutable_bytes(cube_path, cube_bytes)
         _write_immutable_manifest(manifest_path, manifest)
-        inspection = self.inspect(
-            manifest_path,
-            force_database_verification=False,
+        inspection = _inspect_built_population(
+            self.root,
+            manifest_path=manifest_path,
+            expected_manifest=manifest,
         )
         if not inspection["passed"]:
-            raise ValueError(
-                "population manifest failed self-inspection: "
-                + ", ".join(inspection["errors"])
-            )
+            raise ValueError("population manifest failed self-inspection: " + ", ".join(inspection["errors"]))
         return PopulationBuildResult(manifest=manifest, manifest_path=manifest_path)
 
     def inspect(
@@ -328,12 +306,8 @@ class PopulationRetriever:
                 independent_unit_type=manifest.independent_unit_type,
                 routing_dispositions=tuple(manifest.routing_dispositions),
                 included_memory_lanes=tuple(manifest.included_memory_lanes),
-                included_record_types=_PURPOSE_RECORD_FILTERS[
-                    manifest.population_purpose
-                ][0],
-                excluded_record_types=_PURPOSE_RECORD_FILTERS[
-                    manifest.population_purpose
-                ][1],
+                included_record_types=_PURPOSE_RECORD_FILTERS[manifest.population_purpose][0],
+                excluded_record_types=_PURPOSE_RECORD_FILTERS[manifest.population_purpose][1],
                 max_records=POPULATION_MAX_SELECTED_RECORDS,
                 force_database_verification=force_database_verification,
             )
@@ -343,9 +317,7 @@ class PopulationRetriever:
                 included_memory_lanes=tuple(manifest.included_memory_lanes),
             )
             if not members:
-                raise ValueError(
-                    "selected cells contain no records for the requested population purpose"
-                )
+                raise ValueError("selected cells contain no records for the requested population purpose")
             recomputed = _compute_population(
                 members,
                 cutoff_at=manifest.cutoff_at,
@@ -362,18 +334,14 @@ class PopulationRetriever:
             if manifest.bootstrap_version != BLOCK_BOOTSTRAP_VERSION:
                 errors.append("population_bootstrap_version_mismatch")
             if (
-                manifest.selection_budget_version
-                != POPULATION_SELECTION_BUDGET_VERSION
-                or manifest.max_selected_record_count
-                != POPULATION_MAX_SELECTED_RECORDS
+                manifest.selection_budget_version != POPULATION_SELECTION_BUDGET_VERSION
+                or manifest.max_selected_record_count != POPULATION_MAX_SELECTED_RECORDS
                 or manifest.max_cube_row_count != POPULATION_MAX_CUBE_ROWS
             ):
                 errors.append("population_selection_budget_mismatch")
             if (
-                manifest.purpose_classifier_version
-                != POPULATION_PURPOSE_CLASSIFIER_VERSION
-                or manifest.purpose_record_types_sha256
-                != _purpose_record_types_sha256(manifest.population_purpose)
+                manifest.purpose_classifier_version != POPULATION_PURPOSE_CLASSIFIER_VERSION
+                or manifest.purpose_record_types_sha256 != _purpose_record_types_sha256(manifest.population_purpose)
             ):
                 errors.append("population_purpose_classifier_mismatch")
             expected_identity = {
@@ -395,14 +363,10 @@ class PopulationRetriever:
                 "max_selected_record_count": POPULATION_MAX_SELECTED_RECORDS,
                 "max_cube_row_count": POPULATION_MAX_CUBE_ROWS,
                 "purpose_classifier_version": POPULATION_PURPOSE_CLASSIFIER_VERSION,
-                "purpose_record_types_sha256": _purpose_record_types_sha256(
-                    manifest.population_purpose
-                ),
+                "purpose_record_types_sha256": _purpose_record_types_sha256(manifest.population_purpose),
                 "bootstrap_version": BLOCK_BOOTSTRAP_VERSION,
             }
-            expected_population_id = (
-                "POP-" + sha256_text(canonical_json(expected_identity))[:20].upper()
-            )
+            expected_population_id = "POP-" + sha256_text(canonical_json(expected_identity))[:20].upper()
             if expected_population_id != manifest.population_id:
                 errors.append("population_id_mismatch")
             if path.parent.name != manifest.population_id:
@@ -460,6 +424,45 @@ class PopulationRetriever:
         }
 
 
+def _inspect_built_population(
+    root: Path,
+    *,
+    manifest_path: Path,
+    expected_manifest: PopulationManifest,
+) -> dict[str, Any]:
+    """Verify the just-written closure without repeating the source DB query."""
+
+    errors: list[str] = []
+    try:
+        observed = PopulationManifest.model_validate(read_json(manifest_path))
+    except (OSError, ValueError) as exc:
+        return {"passed": False, "errors": [f"population_manifest_invalid:{exc}"]}
+    if observed != expected_manifest:
+        errors.append("population_manifest_serialization_mismatch")
+    for name in ("member_records", "independent_units", "cube_rows"):
+        reference = getattr(observed, name)
+        path = (root / reference.artifact_path).resolve()
+        try:
+            path.relative_to(manifest_path.parent.resolve())
+        except ValueError:
+            errors.append(f"{name}_path_escapes_population")
+            continue
+        if not path.exists():
+            errors.append(f"{name}_missing")
+            continue
+        if file_sha256(path) != reference.sha256:
+            errors.append(f"{name}_hash_mismatch")
+            continue
+        try:
+            row_count = len(_read_jsonl(path))
+        except (OSError, ValueError):
+            errors.append(f"{name}_invalid")
+            continue
+        if row_count != reference.item_count:
+            errors.append(f"{name}_count_mismatch")
+    return {"passed": not errors, "errors": errors}
+
+
 @dataclass(frozen=True)
 class _PopulationRequest:
     cutoff_at: str
@@ -512,9 +515,7 @@ def _normalized_request(
         selected_cell_ids=tuple(cells),
         independent_unit_type=cast(IndependentUnitType, independent_unit_type),
         population_purpose=cast(PopulationPurpose, normalized_purpose),
-        included_memory_lanes=tuple(
-            sorted(POPULATION_PURPOSE_LANES[normalized_purpose])
-        ),
+        included_memory_lanes=tuple(sorted(POPULATION_PURPOSE_LANES[normalized_purpose])),
         routing_dispositions=cast(tuple[RoutingDisposition, ...], tuple(dispositions)),
         query_regime_cluster=regime,
     )
@@ -530,8 +531,7 @@ def _members_for_purpose(
     return [
         member
         for member in members
-        if _record_matches_purpose(member, population_purpose)
-        and allowed.intersection(member.memory_lanes)
+        if _record_matches_purpose(member, population_purpose) and allowed.intersection(member.memory_lanes)
     ]
 
 
@@ -569,9 +569,7 @@ def _compute_population(
     grouped: dict[str, list[PopulationCellMember]] = defaultdict(list)
     for member in members:
         grouped[member.independent_unit_id].append(member)
-    units = [
-        _aggregate_unit(unit_id, grouped[unit_id]) for unit_id in sorted(grouped)
-    ]
+    units = [_aggregate_unit(unit_id, grouped[unit_id]) for unit_id in sorted(grouped)]
     unit_rows = [_unit_row(unit) for unit in units]
     outcome_summary = _outcome_summary(units)
     rates = [
@@ -600,16 +598,12 @@ def _compute_population(
         cube_rows=cube_rows,
         outcome_summary=outcome_summary,
         observed_rates=rates,
-        effective_sample_size=effective_sample_size(
-            unit.sample_weight for unit in units
-        ),
+        effective_sample_size=effective_sample_size(unit.sample_weight for unit in units),
         polarity_counts=count_labels(units, "polarity"),
         eligibility_counts=count_labels(units, "eligibility"),
         label_quality_counts=count_labels(units, "label_quality"),
         time_slice_counts=_count_strings(all_slices),
-        regime_counts=_count_strings(
-            regime for unit in units for regime in unit.regime_clusters
-        ),
+        regime_counts=_count_strings(regime for unit in units for regime in unit.regime_clusters),
     )
 
 
@@ -622,9 +616,7 @@ def _statistics_seed(
         "cutoff_at": as_kst(cutoff_at).isoformat(),
         "statistics_version": POPULATION_STATISTICS_VERSION,
         "bootstrap_version": BLOCK_BOOTSTRAP_VERSION,
-        "members_sha256": sha256_text(
-            canonical_json([_member_row(member) for member in members])
-        ),
+        "members_sha256": sha256_text(canonical_json([_member_row(member) for member in members])),
     }
     return int(hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()[:16], 16)
 
@@ -638,11 +630,7 @@ def _aggregate_unit(
         raise ValueError(f"independent unit spans trade dates: {independent_unit_id}")
     eligibility_values = {member.training_eligible for member in members}
     eligibility = (
-        "ELIGIBLE"
-        if eligibility_values == {True}
-        else "INELIGIBLE"
-        if eligibility_values == {False}
-        else "MIXED"
+        "ELIGIBLE" if eligibility_values == {True} else "INELIGIBLE" if eligibility_values == {False} else "MIXED"
     )
     high_return, high_status = _aggregate_unit_float(
         members,
@@ -668,12 +656,8 @@ def _aggregate_unit(
         independent_unit_id=independent_unit_id,
         trade_date=trade_dates.pop(),
         record_ids=tuple(sorted({member.record_id for member in members})),
-        cell_ids=tuple(
-            sorted({cell_id for member in members for cell_id in member.matched_cell_ids})
-        ),
-        memory_lanes=tuple(
-            sorted({lane for member in members for lane in member.memory_lanes})
-        ),
+        cell_ids=tuple(sorted({cell_id for member in members for cell_id in member.matched_cell_ids})),
+        memory_lanes=tuple(sorted({lane for member in members for lane in member.memory_lanes})),
         record_types=tuple(sorted({member.record_type for member in members})),
         path_types=tuple(sorted({member.path_type for member in members})),
         regime_clusters=(regime,),
@@ -706,11 +690,7 @@ def _aggregate_unit_float(
     statuses = {str(getattr(member, status_field)) for member in members}
     if "INVALID_CONFLICT" in statuses:
         return None, "INVALID_CONFLICT"
-    values = [
-        float(value)
-        for member in members
-        if (value := getattr(member, value_field)) is not None
-    ]
+    values = [float(value) for member in members if (value := getattr(member, value_field)) is not None]
     if not values:
         return None, "MISSING"
     if max(values) - min(values) > 1e-9:
@@ -727,11 +707,7 @@ def _aggregate_unit_bool(
     statuses = {str(getattr(member, status_field)) for member in members}
     if "INVALID_CONFLICT" in statuses:
         return None, "INVALID_CONFLICT"
-    values = {
-        bool(value)
-        for member in members
-        if (value := getattr(member, value_field)) is not None
-    }
+    values = {bool(value) for member in members if (value := getattr(member, value_field)) is not None}
     if not values:
         return None, "MISSING"
     if len(values) != 1:
@@ -786,13 +762,8 @@ def _build_cube(
                         member.label_quality,
                     )
                     if cube_key not in grouped and len(grouped) >= max_rows:
-                        raise ValueError(
-                            "population cube exceeds the operational row budget: "
-                            f"> {max_rows}"
-                        )
-                    grouped[cube_key][member.independent_unit_id].add(
-                        member.record_id
-                    )
+                        raise ValueError(f"population cube exceeds the operational row budget: > {max_rows}")
+                    grouped[cube_key][member.independent_unit_id].add(member.record_id)
     rows: list[PopulationCubeRow] = []
     for row_key in sorted(grouped):
         cell_id, lane, time_slice, regime, record_type, path_type, quality = row_key
@@ -800,11 +771,7 @@ def _build_cube(
         unit_ids = sorted(records_by_unit)
         row_units = [units_by_id[unit_id] for unit_id in unit_ids]
         record_ids = sorted(
-            {
-                record_id
-                for unit_record_ids in records_by_unit.values()
-                for record_id in unit_record_ids
-            }
+            {record_id for unit_record_ids in records_by_unit.values() for record_id in unit_record_ids}
         )
         rows.append(
             PopulationCubeRow(
@@ -817,9 +784,7 @@ def _build_cube(
                 label_quality=quality,
                 raw_record_count=len(record_ids),
                 independent_unit_count=len(unit_ids),
-                effective_sample_size=effective_sample_size(
-                    unit.sample_weight for unit in row_units
-                ),
+                effective_sample_size=effective_sample_size(unit.sample_weight for unit in row_units),
                 polarity_counts=count_labels(row_units, "polarity"),
                 outcome_summary=_outcome_summary(row_units),
                 member_record_ids_sha256=sha256_text(canonical_json(record_ids)),
@@ -854,17 +819,14 @@ def _outcome_summary(units: list[UnitObservation]) -> PopulationOutcomeSummary:
         if unit.close_return_pct is not None and unit.sample_weight > 0.0
     ]
     upper_ids = {
-        unit.independent_unit_id
-        for unit in units
-        if unit.sample_weight > 0.0 and unit.upper_limit_touched is True
+        unit.independent_unit_id for unit in units if unit.sample_weight > 0.0 and unit.upper_limit_touched is True
     }
+
     def threshold_count(threshold: float) -> int:
         return sum(
             1
             for unit in units
-            if unit.sample_weight > 0.0
-            and unit.high_return_pct is not None
-            and unit.high_return_pct >= threshold
+            if unit.sample_weight > 0.0 and unit.high_return_pct is not None and unit.high_return_pct >= threshold
         )
 
     return PopulationOutcomeSummary(
@@ -963,9 +925,7 @@ def _summary_projection(computation: _PopulationComputation) -> dict[str, Any]:
         "regime_counts": computation.regime_counts,
         "outcome_summary": computation.outcome_summary.model_dump(mode="json"),
         "observed_rates": [item.model_dump(mode="json") for item in computation.observed_rates],
-        "membership_manifest_sha256": sha256_text(
-            _jsonl_bytes(computation.member_rows).decode("utf-8")
-        ),
+        "membership_manifest_sha256": sha256_text(_jsonl_bytes(computation.member_rows).decode("utf-8")),
     }
 
 

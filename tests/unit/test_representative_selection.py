@@ -352,6 +352,7 @@ def test_representative_token_count_covers_final_serialization() -> None:
         facility=1.0,
         distribution=1.0,
         selection_score=1.0,
+        max_estimated_tokens=24_000,
     )
 
     assert row.estimated_token_count == conservative_token_upper_bound(

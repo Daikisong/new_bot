@@ -51,6 +51,7 @@ from news_scalping_lab.contracts.models import (
     PathType,
     Provenance,
 )
+from news_scalping_lab.contracts.runtime_retrieval import RuntimeRetrievalTrace
 from news_scalping_lab.inference.analyzer import DailyAnalyzer
 from news_scalping_lab.memory.adaptive_retrieval import AdaptiveRetriever
 from news_scalping_lab.memory.beneficiary import (
@@ -61,6 +62,7 @@ from news_scalping_lab.memory.daily_context import (
     DAILY_MEMORY_CONTEXT_MAX_BYTES,
     _population_summaries,
     _representative_rows,
+    bind_final_beneficiary_graph_to_daily_context,
     build_daily_memory_context,
     category_guidance_from_claims,
     compact_daily_memory_payload,
@@ -351,6 +353,7 @@ def _build_daily_fixture(
     *,
     candidate_path_type: PathType = PathType.SINGLE_EVENT,
     empty_cell_search: bool = False,
+    retrieval_graph_has_candidate: bool = True,
 ) -> tuple[ProductionMemoryIndex, Candidate, Path, Path, dict[str, object]]:
     record = _record()
     monkeypatch.setattr(BrainRecordStore, "list_records", lambda self: [record])
@@ -373,7 +376,7 @@ def _build_daily_fixture(
         run_id=RUN_ID,
         cutoff_at=CUTOFF,
         event_cluster_manifest_path=event_manifest_path,
-        candidates=[candidate],
+        candidates=[candidate] if retrieval_graph_has_candidate else [],
         company_memory_context=[],
     )
     if empty_cell_search:
@@ -391,7 +394,7 @@ def _build_daily_fixture(
         memory_coverage_manifest_path=coverage_path,
         beneficiary_graph_path=graph_path,
     )
-    assert graph.path_count == 1
+    assert graph.path_count == (1 if retrieval_graph_has_candidate else 0)
     return index, candidate, graph_path, context_path, context.model_dump(mode="json")
 
 
@@ -521,6 +524,190 @@ def test_daily_memory_context_is_compact_reproducible_and_tamper_evident(
     )
     assert tampered["passed"] is False
     assert "daily_memory_context_artifact_hash_mismatch" in tampered["errors"]
+
+
+def test_daily_analysis_creates_adaptive_trace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _index, _candidate, _graph_path, _context_path, context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+
+    assert context["adaptive_retrieval_traces"]
+    assert context["runtime_retrieval_traces"]
+
+
+def test_every_memory_enabled_material_cluster_has_trace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _index, _candidate, _graph_path, _context_path, context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    traces = [
+        RuntimeRetrievalTrace.model_validate(
+            read_json(tmp_path / reference["artifact_path"])
+        )
+        for reference in context["runtime_retrieval_traces"]
+    ]
+
+    assert {trace.cluster_id for trace in traces} == set(
+        context["material_event_cluster_ids"]
+    )
+
+
+def test_trace_precedes_final_synthesis(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _index, candidate, graph_path, context_path, context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    _manifest, final_context = _final_context(
+        tmp_path,
+        candidate=candidate,
+        graph_path=graph_path,
+        daily_path=context_path,
+        daily=context,
+    )
+    daily_payload = final_context["payload"]["daily_memory_context"]
+
+    assert daily_payload["runtime_retrieval_traces"] == context[
+        "runtime_retrieval_traces"
+    ]
+
+
+def test_retrieval_first_memory_enters_candidate_generation_projection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _index, _candidate, _graph_path, context_path, _context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    manifest = SimpleNamespace(
+        daily_memory_context_artifact=context_path.relative_to(tmp_path).as_posix(),
+        daily_memory_context_sha256=file_sha256(context_path),
+    )
+
+    v4 = DailyAnalyzer(Settings(project_root=tmp_path))
+    legacy = DailyAnalyzer(
+        Settings(project_root=tmp_path),
+        runtime_retrieval_variant="legacy",
+    )
+    projection = v4._candidate_generation_memory_context(manifest)
+
+    assert projection["policy"] == (
+        "OPEN_WORLD_FIRST_THEN_RETRIEVAL_BEFORE_CANDIDATES"
+    )
+    assert projection["memory_used_as_candidate_gate"] is False
+    assert projection["runtime_retrieval_cluster_ids"] == [CLUSTER_ID]
+    assert projection["compact_context"]["memory_snapshot_id"]
+    assert legacy._candidate_generation_memory_context(manifest) == {}
+
+
+def test_trace_uses_expected_memory_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _index, _candidate, _graph_path, _context_path, context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    traces = [
+        RuntimeRetrievalTrace.model_validate(
+            read_json(tmp_path / reference["artifact_path"])
+        )
+        for reference in context["runtime_retrieval_traces"]
+    ]
+
+    assert {trace.memory_snapshot_id for trace in traces} == {
+        context["memory_snapshot_id"]
+    }
+
+
+def test_final_graph_binding_preserves_retrieval_graph_trace_chain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index, candidate, retrieval_graph_path, context_path, _context = (
+        _build_daily_fixture(
+            tmp_path,
+            monkeypatch,
+            retrieval_graph_has_candidate=False,
+        )
+    )
+    retrieval_context = DailyMemoryContext.model_validate(read_json(context_path))
+    _graph, final_graph_path = build_beneficiary_graph(
+        tmp_path,
+        run_id=RUN_ID,
+        cutoff_at=CUTOFF,
+        event_cluster_manifest_path=(
+            tmp_path / retrieval_context.event_cluster_manifest.artifact_path
+        ),
+        candidates=[candidate],
+        company_memory_context=[],
+    )
+
+    updated, updated_path = bind_final_beneficiary_graph_to_daily_context(
+        tmp_path,
+        context_path=context_path,
+        beneficiary_graph_path=final_graph_path,
+    )
+
+    assert updated_path == context_path
+    assert updated.beneficiary_graph.artifact_path == retrieval_graph_path.relative_to(
+        tmp_path
+    ).as_posix()
+    assert updated.final_beneficiary_graph is not None
+    assert updated.final_beneficiary_graph.artifact_path == final_graph_path.relative_to(
+        tmp_path
+    ).as_posix()
+    inspection = inspect_daily_memory_context(
+        tmp_path,
+        context_path,
+        memory_index=index,
+    )
+    assert inspection["passed"] is True, inspection["errors"]
+    manifest, final_context = _final_context(
+        tmp_path,
+        candidate=candidate,
+        graph_path=final_graph_path,
+        daily_path=context_path,
+        daily=updated.model_dump(mode="json"),
+    )
+    assert final_synthesis_phase7_artifacts_compatible(
+        tmp_path,
+        manifest,
+        final_context,
+    ) is True
+
+
+def test_trace_contains_no_future_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _index, _candidate, _graph_path, _context_path, context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    traces = [
+        RuntimeRetrievalTrace.model_validate(
+            read_json(tmp_path / reference["artifact_path"])
+        )
+        for reference in context["runtime_retrieval_traces"]
+    ]
+
+    assert all(
+        row.available_from <= trace.cutoff_at
+        and row.source_trade_date <= trace.cutoff_at.date()
+        for trace in traces
+        for row in trace.rows
+    )
 
 
 def test_daily_memory_context_rejects_selected_claim_payload_rewrite(
