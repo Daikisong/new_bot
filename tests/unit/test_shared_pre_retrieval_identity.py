@@ -9,6 +9,7 @@ import pytest
 
 import news_scalping_lab.evaluation.shared_pre_retrieval as shared_module
 import news_scalping_lab.inference.event_clustering as event_clustering_module
+from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.models import (
     NewsNoveltyFinding,
     NewsNoveltyLabel,
@@ -21,7 +22,35 @@ from news_scalping_lab.contracts.quality_evaluation import (
     SharedMapReduceNode,
     SharedPreRetrievalContext,
 )
+from news_scalping_lab.inference.event_clustering import OpenWorldClusterInput
 from news_scalping_lab.utils import KST, sha256_bytes
+
+
+def test_shared_map_batches_honor_configured_cluster_limit() -> None:
+    settings = Settings()
+    settings.limits.open_world_cluster_batch_size = 3
+    analyzer = SimpleNamespace(settings=settings)
+    clusters = [
+        OpenWorldClusterInput(
+            cluster_id=f"CLUSTER-{index:02d}",
+            representative_text=f"event {index}",
+            member_news=(f"event {index}",),
+            event_ids=(f"EVT-{index:02d}",),
+            row_numbers=(index + 1,),
+        )
+        for index in range(8)
+    ]
+
+    batches = shared_module._map_batches(
+        analyzer,
+        clusters=clusters,
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+    )
+
+    assert [len(batch) for batch in batches] == [3, 3, 2]
+    assert [
+        cluster.cluster_id for batch in batches for cluster in batch
+    ] == [cluster.cluster_id for cluster in clusters]
 
 
 def test_event_clustering_transitive_helper_changes_semantic_root(

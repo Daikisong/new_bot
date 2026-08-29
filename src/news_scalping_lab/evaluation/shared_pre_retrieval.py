@@ -409,8 +409,8 @@ def _lookup_identity(
         "similarity_threshold": settings.limits.event_cluster_similarity_threshold,
         "max_semantic_variants": settings.limits.event_cluster_max_semantic_variants,
         "max_prompt_chars": settings.limits.open_world_max_prompt_chars,
-        "packing_policy": "CONTEXT_CHARS_ONLY_NO_CLUSTER_COUNT_LIMIT.v1",
-        "novelty_packing_policy": ("CONTEXT_CHARS_ONLY_NO_CLUSTER_COUNT_LIMIT.v1"),
+        "packing_policy": "CONTEXT_CHARS_AND_CONFIGURED_CLUSTER_LIMIT.v2",
+        "novelty_packing_policy": ("CONTEXT_CHARS_AND_CONFIGURED_CLUSTER_LIMIT.v2"),
         "prompt_renderer_sha256": _prompt_renderer_sha256(),
         "event_cluster_renderer_sha256": _event_cluster_renderer_sha256(),
     }
@@ -1270,6 +1270,7 @@ def _novelty_batches(
     cluster_rows: list[dict[str, Any]],
 ) -> list[list[dict[str, Any]]]:
     max_chars = max(1, analyzer.settings.limits.open_world_max_prompt_chars)
+    max_clusters = max(1, analyzer.settings.limits.novelty_cluster_batch_size)
     batches: list[list[dict[str, Any]]] = []
     current: list[dict[str, Any]] = []
     for row in cluster_rows:
@@ -1286,7 +1287,10 @@ def _novelty_batches(
             manifest=manifest,
             cutoff_at=cutoff_at,
         )
-        if current and len(tentative_prompt) > max_chars:
+        if current and (
+            len(current) >= max_clusters
+            or len(tentative_prompt) > max_chars
+        ):
             batches.append(current)
             current = []
         current.append(row)
@@ -1562,11 +1566,14 @@ def _map_batches(
     batches: list[list[OpenWorldClusterInput]] = []
     current: list[OpenWorldClusterInput] = []
     max_chars = max(1, analyzer.settings.limits.open_world_max_prompt_chars)
+    max_clusters = max(1, analyzer.settings.limits.open_world_cluster_batch_size)
     for cluster in clusters:
         if len(_map_prompt(node_id="probe", clusters=[cluster], cutoff_at=cutoff_at)) > max_chars:
             raise OpenWorldCoverageError("one explicit cluster capsule exceeds the shared prompt budget")
         tentative = [*current, cluster]
         if current and (
+            len(current) >= max_clusters
+            or
             len(
                 _map_prompt(
                     node_id="probe",
