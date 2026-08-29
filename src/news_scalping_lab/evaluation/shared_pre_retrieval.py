@@ -2249,6 +2249,10 @@ def _provider_checkpoint_output[TModel: BaseModel](
     payload = _blind_json_payload(artifact)
     if not isinstance(payload, dict):
         raise ValueError("shared provider checkpoint payload is invalid")
+    if payload.get("status") != "ok":
+        raise FileNotFoundError(
+            "shared provider checkpoint exists but is not reusable"
+        )
     checkpoint_id = tracer._checkpoint_id(
         operation="generate_structured",
         purpose=purpose,

@@ -23,7 +23,9 @@ from news_scalping_lab.contracts.quality_evaluation import (
     SharedPreRetrievalContext,
 )
 from news_scalping_lab.inference.event_clustering import OpenWorldClusterInput
-from news_scalping_lab.utils import KST, sha256_bytes
+from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
+from news_scalping_lab.llm.tracing import TracingLLMProvider
+from news_scalping_lab.utils import KST, sha256_bytes, sha256_text
 
 
 def test_shared_map_batches_honor_configured_cluster_limit() -> None:
@@ -83,6 +85,41 @@ def test_shared_novelty_batches_honor_configured_cluster_limit() -> None:
     assert [row["cluster_id"] for batch in batches for row in batch] == [
         row["cluster_id"] for row in rows
     ]
+
+
+def test_shared_replay_skips_error_checkpoint_for_live_retry(
+    tmp_path: Path,
+) -> None:
+    tracer = TracingLLMProvider(
+        DeterministicMockLLMProvider(),
+        trace_dir=tmp_path / "runs" / "traces",
+        checkpoint_dir=tmp_path / "runs" / "checkpoints" / "llm",
+    )
+    prompt = "retry this shared map"
+    purpose = "shared_open_world_map.batch_0003"
+    input_payload = {
+        "prompt_sha256": sha256_text(prompt),
+        "prompt_chars": len(prompt),
+        "prompt_utf8_bytes": len(prompt.encode("utf-8")),
+        "prompt_tokens_counted": tracer.count_tokens(prompt),
+        "response_model": OpenWorldFirstAnalysis.__name__,
+    }
+    tracer._write_checkpoint(
+        operation="generate_structured",
+        purpose=purpose,
+        status="error",
+        input_payload=input_payload,
+        error=RuntimeError("transient provider failure"),
+    )
+
+    restored = shared_module._replay_provider_checkpoint_if_available(
+        SimpleNamespace(llm=tracer, root=tmp_path),
+        prompt=prompt,
+        purpose=purpose,
+        response_model=OpenWorldFirstAnalysis,
+    )
+
+    assert restored is None
 
 
 def test_event_clustering_transitive_helper_changes_semantic_root(
