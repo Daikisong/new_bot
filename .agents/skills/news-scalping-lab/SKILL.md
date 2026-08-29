@@ -75,6 +75,29 @@ python -m news_scalping_lab.cli memory run-runtime-variant-shadow \
   --split CALIBRATION
 ```
 
+`run-runtime-variant-shadow` is a legacy diagnostic-only command. Its v1 split
+selection contains outcome-reference strings even though the implementation now
+defers every outcome open until global V0/V1 prediction closure. Do not use it
+for a formal quality claim, model selection, or promotion. Formal evaluation
+requires the physically separated commands below.
+
+Formal `QUALITY_FULL` runtime evaluation uses three physically separated steps:
+
+```bash
+python -m news_scalping_lab.cli memory prepare-quality-runtime-selection \
+  --project-root <evaluation-project> \
+  --source-selection <sealed-source-selection> \
+  --split CALIBRATION \
+  --scope THREE_CASE
+python -m news_scalping_lab.cli memory predict-runtime-variants \
+  --project-root <evaluation-project> \
+  --blind-selection <blind-runtime-selection.json>
+python -m news_scalping_lab.cli memory score-runtime-variants \
+  --project-root <evaluation-project> \
+  --paired-predictions <paired-prediction-manifest.json> \
+  --outcome-selection <runtime-outcome-selection.json>
+```
+
 - Preserve source `available_from`; replay snapshots store a separate effective
   next-session timestamp and are always `evaluation_only`.
 - BUILD excludes every CALIBRATION/HOLDOUT record, outcome, claim, centroid,
@@ -83,19 +106,29 @@ python -m news_scalping_lab.cli memory run-runtime-variant-shadow \
   pre-retrieval LLM checkpoint identity. Only the runtime retrieval variant may
   differ.
 - A limited `--case-limit` run is `SMOKE`, not a formal split result.
-- Missing sealed relevance labels, incomplete paired closure, future evidence,
-  BLIND web access, online full scans, latency-budget failure, or citation
-  failure means `HOLD`.
+- Missing paired closure, future evidence, BLIND web access, online full scans,
+  or citation failure means `HOLD`. Missing sealed relevance labels disable only
+  the corresponding retrieval-label metric; market evaluation continues and the
+  metric is reported as `RELEVANCE_LABEL_UNAVAILABLE`.
+- `QUALITY_FULL` is fixed to Codex OAuth `gpt-5.6-sol/xhigh`. Wall-clock time,
+  token use, and call count are reported as efficiency observations and never
+  abort or invalidate a formal run. Provider failure, disk exhaustion, or an
+  irrecoverable artifact-integrity failure may stop it.
+- Prediction receives only the sealed blind selection and cutoff-safe D-1
+  context. It must not resolve, hash, stat, or deserialize the physically
+  separate outcome selection. Scoring may open outcomes only after every
+  expected variant seal and paired-case closure is complete.
 - Do not build semantic compiler v8, rebuild the full corpus brain, or activate
   production unless the preceding registered gate passes.
-- The 2026-08-28 live OAuth probe for `NSLAB-20260102-be50ec83` is a preserved
-  latency-gate failure, not a resumable performance run: 490 cutoff-safe news
-  rows, 21 `gpt-5.6-sol/xhigh` open-world calls, 252 analyzed clusters, and
-  5,798.275 seconds elapsed before V0 completed. Do not resume its remaining
-  checkpoints unless the registered 90-second daily budget or the bounded call
-  architecture has first changed. See
-  `diagnostics/shadow_variant_comparison.json` for the commitment and HOLD
-  decision.
+- The 2026-08-28/29 artifacts descended from
+  `QPRED-4ecc6155c077cb5b092c` are permanently
+  `INVALIDATED_DIAGNOSTIC_ONLY`. Their prediction-input preparation read a
+  normalized index containing outcome-derived metadata, so they must never be
+  resumed, scored, compared, promoted, or used as downstream cache input. The
+  apparent long duration mixed shared OAuth work, cache hits, local retrieval,
+  and interrupted attempts; it is not evidence that the full corpus was read by
+  the LLM. Preserve the artifacts only for forensics. See
+  `diagnostics/quality_full_invalidated_run_report.json`.
 
 Audits:
 

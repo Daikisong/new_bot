@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -10,7 +11,15 @@ from datetime import date, datetime
 from pathlib import Path
 
 from news_scalping_lab.contracts.models import NewsItem, Provenance
-from news_scalping_lab.utils import KST, combine_kst, file_sha256, parse_datetime, stable_id
+from news_scalping_lab.utils import (
+    KST,
+    canonical_json,
+    combine_kst,
+    parse_datetime,
+    sha256_bytes,
+    sha256_text,
+    stable_id,
+)
 
 NEWS_CSV_ENCODINGS = ("utf-8-sig", "utf-8", "cp949", "euc-kr")
 REQUIRED_NEWS_COLUMNS = ("date", "time", "title")
@@ -48,10 +57,11 @@ def _detect_trade_date(rows: list[dict[str, str]]) -> date:
 
 def load_news_csv(path: Path, trade_date: date | None = None) -> NewsBatch:
     resolved = path.resolve()
-    rows = _read_news_csv_rows(resolved)
+    payload = resolved.read_bytes()
+    rows = _read_news_csv_rows(payload)
 
     detected_trade_date = trade_date or _detect_trade_date(rows)
-    content_hash = file_sha256(resolved)
+    content_hash = sha256_bytes(payload)
     items: list[NewsItem] = []
     for index, row in enumerate(rows, start=1):
         raw_date = _required_cell(row, "date", index)
@@ -90,14 +100,37 @@ def load_news_csv(path: Path, trade_date: date | None = None) -> NewsBatch:
     )
 
 
-def _read_news_csv_rows(path: Path) -> list[dict[str, str]]:
+def news_batch_content_root(batch: NewsBatch) -> str:
+    """Hash the stable parsed meaning shared by every QUALITY_FULL arm."""
+
+    items: list[dict[str, object]] = []
+    for item in batch.items:
+        payload = item.model_dump(mode="json")
+        provenance = payload.get("provenance")
+        if isinstance(provenance, list):
+            for row in provenance:
+                if isinstance(row, dict):
+                    row.pop("observed_at", None)
+        items.append(payload)
+    return sha256_text(
+        canonical_json(
+            {
+                "schema_version": "nslab.parsed_news_content_root.v1",
+                "trade_date": batch.trade_date.isoformat(),
+                "items": items,
+            }
+        )
+    )
+
+
+def _read_news_csv_rows(payload: bytes) -> list[dict[str, str]]:
     last_error: UnicodeDecodeError | None = None
     for encoding in NEWS_CSV_ENCODINGS:
         try:
-            with path.open("r", encoding=encoding, newline="") as handle:
-                reader = csv.DictReader(handle)
-                _validate_news_csv_columns(reader.fieldnames)
-                return [dict(row) for row in reader]
+            text = payload.decode(encoding)
+            reader = csv.DictReader(io.StringIO(text, newline=""))
+            _validate_news_csv_columns(reader.fieldnames)
+            return [dict(row) for row in reader]
         except UnicodeDecodeError as exc:
             last_error = exc
     if last_error is not None:

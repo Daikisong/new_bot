@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from datetime import date, datetime
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from news_scalping_lab.memory.cells import (
 )
 from news_scalping_lab.memory.index import (
     ProductionMemoryIndex,
+    _stable_ann_probe_rows,
     inspect_current_memory_index,
     inspect_memory_snapshot,
 )
@@ -43,6 +45,28 @@ class _TestAsyncEmbeddingProvider:
     async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
         self.embedded_text_count += len(texts)
         return DeterministicHashEmbeddingProvider().embed_texts(texts)
+
+
+def test_ann_probe_rows_use_stable_cell_id_ties_at_limit_boundary() -> None:
+    tied_rows = [
+        ("CELL-Z", 0.5, 1, 1),
+        ("CELL-B", 0.9, 1, 1),
+        ("CELL-A", 0.5, 1, 1),
+    ]
+
+    selected, tie_distance = _stable_ann_probe_rows(tied_rows, limit=2)
+
+    assert [str(row[0]) for row in selected] == ["CELL-B", "CELL-A"]
+    assert tie_distance == pytest.approx(0.5)
+
+    untied_rows = [
+        ("CELL-Z", 0.5, 1, 1),
+        ("CELL-B", 0.9, 1, 1),
+        ("CELL-A", 0.6, 1, 1),
+    ]
+    selected, tie_distance = _stable_ann_probe_rows(untied_rows, limit=2)
+    assert [str(row[0]) for row in selected] == ["CELL-B", "CELL-A"]
+    assert tie_distance is None
 
 
 class _RealLikeEmbeddingProvider(AsyncEmbeddingProviderAdapter):
@@ -772,7 +796,8 @@ def test_memory_index_snapshot_is_as_of_and_queries_cells_without_future_records
     assert manifest.hnsw_index_ready is True
     inspection = inspect_memory_snapshot(tmp_path, manifest.snapshot_id)
     assert inspection["status"] == "current_as_of", inspection["errors"]
-    connection = duckdb.connect(str(tmp_path / manifest.database.artifact_path), read_only=True)
+    database_path = tmp_path / manifest.database.artifact_path
+    connection = duckdb.connect(str(database_path), read_only=True)
     connection.execute("LOAD vss")
     vector = DeterministicHashEmbeddingProvider().embed_texts(["공급계약"])[0]
     plan = "\n".join(
@@ -798,6 +823,78 @@ def test_memory_index_snapshot_is_as_of_and_queries_cells_without_future_records
     candidates = index.search_cells("공급계약", cutoff_at=available, limit=4)
     assert candidates
     assert any(candidate.fts_score is not None for candidate in candidates)
+    query_text = "공급계약"
+    index.search_cells(
+        query_text,
+        cutoff_at=available,
+        limit=4,
+        included_memory_lanes=("positive_analogs",),
+    )
+    index.search_cells(
+        query_text,
+        cutoff_at=available,
+        limit=4,
+        included_memory_lanes=("negative_controls",),
+    )
+    database_key = str(database_path.resolve())
+    fts_caches = index._runtime_connection_state.fts_score_tables_by_database
+    assert set(fts_caches) == {database_key}
+    fts_cache = fts_caches[database_key]
+    assert len(fts_cache) == 1
+    runtime_connection = index._runtime_connection(database_path)
+    score_table = next(iter(fts_cache.values()))
+    set_based_scores = runtime_connection.execute(
+        f"SELECT record_id, score FROM {score_table} ORDER BY record_id"
+    ).fetchall()
+    macro_scores = runtime_connection.execute(
+        """
+        SELECT record_id,
+               fts_main_reasoning_records.match_bm25(record_id, ?) AS score
+        FROM reasoning_records
+        WHERE score IS NOT NULL
+        ORDER BY record_id
+        """,
+        [query_text],
+    ).fetchall()
+    assert [row[0] for row in set_based_scores] == [row[0] for row in macro_scores]
+    assert [row[1] for row in set_based_scores] == pytest.approx(
+        [row[1] for row in macro_scores],
+        abs=1e-12,
+    )
+    monkeypatch.setattr(
+        memory_index_module,
+        "MEMORY_INDEX_RUNTIME_FTS_CACHE_SIZE",
+        2,
+    )
+    second_database_path = tmp_path / "second-memory.duckdb"
+    shutil.copy2(database_path, second_database_path)
+    second_connection = index._runtime_connection(second_database_path)
+    second_shared_table = index._runtime_fts_score_table(
+        second_connection,
+        database_path=second_database_path,
+        query=query_text,
+    )
+    index._runtime_fts_score_table(
+        second_connection,
+        database_path=second_database_path,
+        query="negative outcome",
+    )
+    reused_second_table = index._runtime_fts_score_table(
+        second_connection,
+        database_path=second_database_path,
+        query=query_text,
+    )
+    assert reused_second_table == second_shared_table
+    assert second_connection.execute(
+        f"SELECT COUNT(*) FROM {reused_second_table}"
+    ).fetchone() is not None
+    assert runtime_connection.execute(
+        f"SELECT COUNT(*) FROM {score_table}"
+    ).fetchone() is not None
+    assert set(fts_caches) == {
+        database_key,
+        str(second_database_path.resolve()),
+    }
     members = index.members_for_cells(
         [candidate.cell_id for candidate in candidates],
         cutoff_at=available,

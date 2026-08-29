@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -2337,3 +2338,74 @@ def test_phase7_audit_detection_is_manifest_bound(tmp_path: Path) -> None:
     )
 
     assert cli_module._phase7_audit_required(tmp_path) is True
+
+
+def test_predict_runtime_variants_resolves_selection_from_project_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "evaluation-project"
+    project_root.mkdir()
+    unrelated_cwd = tmp_path / "caller-cwd"
+    unrelated_cwd.mkdir()
+    monkeypatch.chdir(unrelated_cwd)
+    settings = Settings(project_root=project_root)
+    monkeypatch.setattr(
+        cli_module,
+        "load_settings",
+        lambda *args, **kwargs: settings,
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "quality_full_runtime_profile",
+        lambda **kwargs: object(),
+    )
+    observed: list[Path] = []
+
+    async def fake_predict_runtime_variants(
+        root: Path,
+        *,
+        settings: Settings,
+        blind_selection_path: Path,
+        profile: object,
+    ) -> SimpleNamespace:
+        del settings, profile
+        assert root == project_root.resolve()
+        observed.append(blind_selection_path)
+        manifest = SimpleNamespace(
+            run_id="QPRED-cli-path",
+            profile=SimpleNamespace(model_dump=lambda *, mode: {"mode": mode}),
+            expected_case_ids=[],
+            seals=[],
+            paired_case_ids=[],
+            all_predictions_sealed=False,
+            outcome_opened=False,
+            production_activation_status="NOT_PRODUCTION_ACTIVATED",
+        )
+        return SimpleNamespace(
+            manifest=manifest,
+            manifest_path=project_root / "runs" / "paired_prediction_manifest.json",
+        )
+
+    monkeypatch.setattr(
+        cli_module,
+        "predict_runtime_variants",
+        fake_predict_runtime_variants,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "predict-runtime-variants",
+            "--project-root",
+            str(project_root),
+            "--blind-selection",
+            "selections/blind_runtime_selection.json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert observed == [
+        (project_root / "selections" / "blind_runtime_selection.json").resolve()
+    ]

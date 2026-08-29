@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, cast
 
-from news_scalping_lab.utils import canonical_json, file_sha256, read_json, sha256_text
+from news_scalping_lab.utils import canonical_json, sha256_bytes, sha256_text
 
 FINAL_SYNTHESIS_V2_PROMPT_VERSION = "synthesis.final.v2"
 FINAL_SYNTHESIS_V3_PROMPT_VERSION = "synthesis.final.v3"
@@ -81,6 +82,28 @@ FINAL_SYNTHESIS_REQUIRED_INPUTS_V3: tuple[str, ...] = (
     ),
     "daily_memory_context",
     "beneficiary_graph",
+)
+FINAL_SYNTHESIS_SHARED_REPLACED_INPUTS = frozenset(
+    {"current_news", "open_world_first_analysis", "news_novelty_review"}
+)
+
+
+def _shared_required_inputs(inputs: tuple[str, ...]) -> tuple[str, ...]:
+    return (
+        *(
+            item
+            for item in inputs
+            if item not in FINAL_SYNTHESIS_SHARED_REPLACED_INPUTS
+        ),
+        "shared_current_event_digest",
+    )
+
+
+FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V2 = _shared_required_inputs(
+    FINAL_SYNTHESIS_REQUIRED_INPUTS_V2
+)
+FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V3 = _shared_required_inputs(
+    FINAL_SYNTHESIS_REQUIRED_INPUTS_V3
 )
 FINAL_SYNTHESIS_V3_FORBIDDEN_PAYLOAD_KEYS = (
     FINAL_SYNTHESIS_V2_FORBIDDEN_PAYLOAD_KEYS | FINAL_SYNTHESIS_V3_REMOVED_MEMORY_INPUTS
@@ -197,7 +220,12 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
         "news_novelty_finding_count": _list_len(news_novelty.get("findings")),
         "semantic_retrieval_row_count": _list_len(semantic.get("rows")),
         "semantic_retrieval_episode_count": _list_len(semantic.get("episodes")),
-        "semantic_cluster_coverage_row_count": _list_len(cluster_coverage.get("rows")),
+        "semantic_cluster_coverage_row_count": (
+            _nonnegative_int_or_list_len(
+                cluster_coverage.get("full_row_count"),
+                cluster_coverage.get("rows"),
+            )
+        ),
         "candidate_expansion_finding_count": _list_len(expansion.get("findings")),
         "web_source_count": _list_len(web_research.get("sources")),
         "candidate_web_check_count": _list_len(payload.get("candidate_web_checks")),
@@ -376,6 +404,8 @@ def final_synthesis_input_summary(payload: dict[str, Any]) -> dict[str, Any]:
 
 def final_synthesis_required_inputs_compatible(required_inputs: list[str]) -> bool:
     return tuple(required_inputs) in {
+        FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V3,
+        FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V2,
         FINAL_SYNTHESIS_REQUIRED_INPUTS_V3,
         FINAL_SYNTHESIS_REQUIRED_INPUTS_V2,
         FINAL_SYNTHESIS_REQUIRED_INPUTS,
@@ -420,11 +450,24 @@ def final_synthesis_context_contract_verified(
         "nslab.final_synthesis_context.v2",
         "nslab.final_synthesis_context.v3",
     }:
-        expected_inputs = (
-            FINAL_SYNTHESIS_REQUIRED_INPUTS_V3
-            if schema_version == "nslab.final_synthesis_context.v3"
-            else FINAL_SYNTHESIS_REQUIRED_INPUTS_V2
-        )
+        shared_digest = payload.get("shared_current_event_digest")
+        shared_mode = isinstance(shared_digest, Mapping)
+        if shared_mode:
+            expected_inputs = (
+                FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V3
+                if schema_version == "nslab.final_synthesis_context.v3"
+                else FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V2
+            )
+            if FINAL_SYNTHESIS_SHARED_REPLACED_INPUTS.intersection(payload):
+                return False
+        else:
+            if "shared_current_event_digest" in payload:
+                return False
+            expected_inputs = (
+                FINAL_SYNTHESIS_REQUIRED_INPUTS_V3
+                if schema_version == "nslab.final_synthesis_context.v3"
+                else FINAL_SYNTHESIS_REQUIRED_INPUTS_V2
+            )
         if tuple(required_input_strings) != expected_inputs:
             return False
         forbidden = (
@@ -462,11 +505,80 @@ def final_synthesis_context_contract_verified(
     if context.get("input_summary") != expected_summary:
         return False
     manifest_summary = manifest.get("final_synthesis_context_summary")
-    if manifest_summary is not None and manifest_summary != expected_summary:
+    if manifest_summary is not None and not _final_synthesis_manifest_summary_compatible(
+        manifest_summary,
+        expected_summary,
+    ):
         return False
     return final_synthesis_price_context_compatible(
         manifest, payload
     ) and final_synthesis_manifest_record_metadata_compatible(manifest, payload)
+
+
+def _final_synthesis_manifest_summary_compatible(
+    observed: Any,
+    input_summary: dict[str, Any],
+) -> bool:
+    """Allow only the analyzer's post-synthesis audit fields beyond input identity."""
+
+    if not isinstance(observed, Mapping):
+        return False
+    if any(observed.get(key) != value for key, value in input_summary.items()):
+        return False
+    extras = set(observed) - set(input_summary)
+    token_keys = {
+        "quality_full_token_budget_observation",
+        "observed_prompt_tokens",
+        "configured_token_budget",
+    }
+    identity_keys = {
+        "verified_candidate_identity_binding",
+        "source_candidate_count",
+        "synthesized_identity_match_count",
+        "rejected_replacement_candidate_count",
+    }
+    memory_keys = {
+        "phase7_memory_provenance_binding",
+        "rejected_unselected_memory_reference_count",
+    }
+    if extras - token_keys - identity_keys - memory_keys:
+        return False
+    if extras.intersection(token_keys) and not token_keys.issubset(extras):
+        return False
+    if extras.intersection(identity_keys) and not identity_keys.issubset(extras):
+        return False
+    if extras.intersection(memory_keys) and not memory_keys.issubset(extras):
+        return False
+    if token_keys.issubset(extras) and (
+        observed.get("quality_full_token_budget_observation")
+        != "EXCEEDED_NON_BLOCKING"
+        or not _nonnegative_int(observed.get("observed_prompt_tokens"))
+        or not _nonnegative_int(observed.get("configured_token_budget"))
+    ):
+        return False
+    if identity_keys.issubset(extras):
+        source_count = observed.get("source_candidate_count")
+        matched_count = observed.get("synthesized_identity_match_count")
+        rejected_count = observed.get("rejected_replacement_candidate_count")
+        if (
+            observed.get("verified_candidate_identity_binding") is not True
+            or not _nonnegative_int(source_count)
+            or not _nonnegative_int(matched_count)
+            or not _nonnegative_int(rejected_count)
+            or cast(int, source_count)
+            != cast(int, matched_count) + cast(int, rejected_count)
+        ):
+            return False
+    return not memory_keys.issubset(extras) or (
+        observed.get("phase7_memory_provenance_binding") is True
+        and _nonnegative_int(
+            observed.get("rejected_unselected_memory_reference_count")
+        )
+    )
+
+
+def _nonnegative_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
 def final_synthesis_phase7_artifacts_compatible(
@@ -496,17 +608,19 @@ def final_synthesis_phase7_artifacts_compatible(
     if daily_path is None or graph_path is None:
         return False
     try:
-        daily = read_json(daily_path)
-        graph = read_json(graph_path)
-        daily_text = daily_path.read_text(encoding="utf-8")
-        graph_text = graph_path.read_text(encoding="utf-8")
-    except (OSError, ValueError):
+        daily, daily_text_sha256, _daily_bytes_sha256 = _read_json_hashes_once(
+            daily_path
+        )
+        graph, graph_text_sha256, _graph_bytes_sha256 = _read_json_hashes_once(
+            graph_path
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return False
     if not isinstance(daily, dict) or not isinstance(graph, dict):
         return False
-    if sha256_text(daily_text) != manifest.get("daily_memory_context_sha256"):
+    if daily_text_sha256 != manifest.get("daily_memory_context_sha256"):
         return False
-    if sha256_text(graph_text) != manifest.get("beneficiary_graph_sha256"):
+    if graph_text_sha256 != manifest.get("beneficiary_graph_sha256"):
         return False
     compact_reference = daily.get("compact_final_context")
     if not isinstance(compact_reference, Mapping):
@@ -518,8 +632,10 @@ def final_synthesis_phase7_artifacts_compatible(
     if compact_path is None:
         return False
     try:
-        compact = read_json(compact_path)
-    except (OSError, ValueError):
+        compact, _compact_text_sha256, compact_bytes_sha256 = (
+            _read_json_hashes_once(compact_path)
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return False
     daily_graph_reference = daily.get("final_beneficiary_graph") or daily.get(
         "beneficiary_graph"
@@ -536,12 +652,24 @@ def final_synthesis_phase7_artifacts_compatible(
         sha256=str(manifest.get("beneficiary_graph_sha256") or ""),
     )
     return (
-        file_sha256(compact_path) == compact_reference.get("sha256")
+        compact_bytes_sha256 == compact_reference.get("sha256")
         and dict(daily_wrapper) == expected_daily
         and dict(graph_wrapper) == expected_graph
         and isinstance(daily_graph_reference, Mapping)
         and daily_graph_reference.get("artifact_path")
         == manifest.get("beneficiary_graph_artifact")
+    )
+
+
+def _read_json_hashes_once(path: Path) -> tuple[Any, str, str]:
+    """Decode JSON and both repository hash contracts from one byte buffer."""
+
+    payload_bytes = path.read_bytes()
+    payload_text = payload_bytes.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+    return (
+        json.loads(payload_text),
+        sha256_text(payload_text),
+        sha256_bytes(payload_bytes),
     )
 
 
@@ -759,8 +887,14 @@ def final_synthesis_price_context_compatible(
 
     manifest_source_ref = price_snapshot.get("source_ref")
     if (
-        not isinstance(manifest_source_ref, str)
-        or not manifest_source_ref.strip()
+        "source_ref" not in market_data
+        or (
+            manifest_source_ref is not None
+            and (
+                not isinstance(manifest_source_ref, str)
+                or not manifest_source_ref.strip()
+            )
+        )
         or market_data.get("source_ref") != manifest_source_ref
     ):
         return False
@@ -831,6 +965,12 @@ def _same_nonnegative_int_field(
 
 def _list_len(value: Any) -> int:
     return len(value) if isinstance(value, list) else 0
+
+
+def _nonnegative_int_or_list_len(count: Any, rows: Any) -> int:
+    if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+        return count
+    return _list_len(rows)
 
 
 def _int_value(value: Any) -> int | None:

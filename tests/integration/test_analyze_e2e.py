@@ -985,10 +985,32 @@ async def test_analyze_retrieval_miss_still_outputs_candidates(tmp_path) -> None
     )
     assert all(row["included_record_ids"] == [] for row in semantic_cluster_rows)
     semantic_cluster_context = final_context["payload"]["semantic_cluster_coverage"]
-    assert semantic_cluster_context["rows"] == semantic_cluster_rows
-    assert semantic_cluster_context["covered_cluster_ids"] == [
-        event_clusters[0]["cluster_id"]
+    semantic_cluster_identities = [
+        {
+            "cluster_id": row["cluster_id"],
+            "category": row["category"],
+            "query_sha256": row["query_sha256"],
+            "included_episode_ids": row["included_episode_ids"],
+            "excluded_episode_ids": row["excluded_episode_ids"],
+            "included_record_ids": row["included_record_ids"],
+            "excluded_record_ids": row["excluded_record_ids"],
+        }
+        for row in semantic_cluster_rows
     ]
+    covered_cluster_ids = [event_clusters[0]["cluster_id"]]
+    assert semantic_cluster_context["full_row_count"] == len(
+        semantic_cluster_rows
+    )
+    assert semantic_cluster_context["full_row_identity_root_sha256"] == (
+        sha256_text(canonical_json(semantic_cluster_identities))
+    )
+    assert semantic_cluster_context["hit_rows"] == []
+    assert semantic_cluster_context["covered_cluster_count"] == 1
+    assert semantic_cluster_context["covered_cluster_root_sha256"] == (
+        sha256_text(canonical_json(covered_cluster_ids))
+    )
+    assert "rows" not in semantic_cluster_context
+    assert "promoted_records" not in semantic_cluster_context
     assert semantic_cluster_context["missing_cluster_ids"] == []
     assert semantic_cluster_context["promoted_record_ids"] == []
     assert final_context["input_summary"]["semantic_cluster_coverage_row_count"] == len(
@@ -1454,8 +1476,11 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
         encoding="utf-8",
     )
     llm = RecordingBlindLLM(
-        expected_final_prompt_substring="SafeMemoryCo",
+        expected_final_prompt_substring=(
+            "safe market context reaches final synthesis"
+        ),
         forbidden_final_prompt_substrings=[
+            "SafeMemoryCo",
             "FutureMemoryCo",
             "future market context must not reach synthesis",
             "unscoped market context must not reach synthesis",
@@ -1498,12 +1523,19 @@ async def test_analyze_uses_structured_llm_provider_for_blind_prediction(tmp_pat
     assert "provider red-team objection" in analysis.blind_prediction.candidates[0].counterarguments
     final_prompt = str(final_call["prompt"])
     assert "company_memory" in final_prompt
-    assert "SafeMemoryCo" in final_prompt
+    assert "SafeMemoryCo" not in final_prompt
     assert "FutureMemoryCo" not in final_prompt
     assert "market_memory" in final_prompt
     assert "safe market context reaches final synthesis" in final_prompt
     assert "future market context must not reach synthesis" not in final_prompt
     assert "unscoped market context must not reach synthesis" not in final_prompt
+    final_context = read_json(
+        tmp_path
+        / analysis.context_manifest.final_synthesis_context_artifact
+    )
+    assert final_context["payload"]["company_memory"]["population_count"] == 1
+    assert final_context["payload"]["company_memory"]["selected_count"] == 0
+    assert final_context["payload"]["company_memory"]["unselected_count"] == 1
     saved_manifest = read_json(tmp_path / "runs" / "manifests" / f"{analysis.run_id}.json")
     assert saved_manifest["included_company_memory_files"] == [
         "memory/company_memory/CM-safe-provider.json"

@@ -7,7 +7,7 @@ import json
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -17,6 +17,8 @@ from pydantic import ValidationError
 from news_scalping_lab.config import Settings
 from news_scalping_lab.context.assembler import ContextAssembler
 from news_scalping_lab.context.final_synthesis import (
+    FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V2,
+    FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V3,
     FINAL_SYNTHESIS_REQUIRED_INPUTS_V2,
     FINAL_SYNTHESIS_REQUIRED_INPUTS_V3,
     FINAL_SYNTHESIS_V2_PROMPT_VERSION,
@@ -70,6 +72,16 @@ from news_scalping_lab.contracts.models import (
     SemanticRetrievalPlan,
     SemanticRetrievalQuery,
 )
+from news_scalping_lab.contracts.quality_evaluation import (
+    DMinusOneProjectionRequest,
+    DMinusOnePromptProjection,
+    QualityArtifactReference,
+    SharedDMinusOneContext,
+    SharedDownstreamDigest,
+    SharedPreRetrievalContext,
+    SharedPreRetrievalContextManifest,
+    reject_forbidden_blind_payload_keys,
+)
 from news_scalping_lab.contracts.runtime_retrieval import (
     RuntimeEvidenceMemo,
     RuntimeRetrievalTrace,
@@ -79,6 +91,7 @@ from news_scalping_lab.inference.event_clustering import (
     EventClusteringResult,
     OpenWorldClusterInput,
     cluster_news_events,
+    event_clustering_from_payload,
     open_world_cluster_inputs,
 )
 from news_scalping_lab.inference.red_team import (
@@ -88,7 +101,11 @@ from news_scalping_lab.inference.red_team import (
     apply_red_team_findings,
     run_red_team_pass,
 )
-from news_scalping_lab.ingest.news import load_news_csv
+from news_scalping_lab.ingest.news import (
+    NewsBatch,
+    load_news_csv,
+    news_batch_content_root,
+)
 from news_scalping_lab.llm.base import (
     TOKEN_COUNTING_VERSION,
     EmbeddingProvider,
@@ -101,6 +118,7 @@ from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.memory import MemoryStore
 from news_scalping_lab.memory.beneficiary import build_beneficiary_graph
 from news_scalping_lab.memory.company import (
+    CompanyMemoryDeltaApplyResult,
     CompanyMemoryStore,
     production_company_memory_attestation_required,
 )
@@ -130,6 +148,7 @@ from news_scalping_lab.prices.base import (
     PriceSource,
 )
 from news_scalping_lab.prices.factory import create_price_source
+from news_scalping_lab.records.hashing import brain_record_envelope_sha256
 from news_scalping_lab.records.models import (
     CANDIDATE_ERROR_RECORD_TYPES,
     BrainRecordEnvelope,
@@ -162,6 +181,7 @@ from news_scalping_lab.utils import (
     parse_datetime,
     read_json,
     relative_to_root,
+    sha256_bytes,
     sha256_text,
     stable_id,
     write_json,
@@ -238,6 +258,63 @@ class CandidateWebCheckSubject:
     sector_hypotheses: tuple[str, ...] = ()
 
 
+def _read_verified_blind_artifact(
+    path: Path,
+    *,
+    expected_sha256: str,
+) -> object:
+    """Hash, decode, scan, and parse one artifact from the same byte buffer."""
+
+    if not path.is_file():
+        raise ValueError(f"shared pre-retrieval artifact is missing: {path}")
+    payload_bytes = path.read_bytes()
+    if sha256_bytes(payload_bytes) != expected_sha256:
+        raise ValueError(f"shared pre-retrieval artifact hash mismatch: {path}")
+    try:
+        payload_text = payload_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"shared pre-retrieval artifact is not UTF-8: {path}") from exc
+    if path.suffix.casefold() == ".jsonl":
+        rows: list[object] = []
+        for line_number, line in enumerate(payload_text.splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"shared pre-retrieval JSONL is invalid at line {line_number}: {path}") from exc
+            reject_forbidden_blind_payload_keys(row)
+            rows.append(row)
+        return rows
+    if path.suffix.casefold() != ".json":
+        raise ValueError("shared pre-retrieval artifacts must be JSON or JSONL")
+    try:
+        payload = json.loads(payload_text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"shared pre-retrieval JSON is invalid: {path}") from exc
+    reject_forbidden_blind_payload_keys(payload)
+    return payload
+
+
+def _resolve_and_read_shared_reference(
+    root: Path,
+    reference: QualityArtifactReference,
+) -> object:
+    logical = Path(reference.artifact_path)
+    if logical.is_absolute() or ".." in logical.parts:
+        raise ValueError("shared pre-retrieval artifact reference is unsafe")
+    resolved_root = root.resolve()
+    path = (resolved_root / logical).resolve()
+    try:
+        path.relative_to(resolved_root)
+    except ValueError as exc:
+        raise ValueError("shared pre-retrieval component escapes the project root") from exc
+    return _read_verified_blind_artifact(
+        path,
+        expected_sha256=reference.sha256,
+    )
+
+
 class DailyAnalyzer:
     def __init__(
         self,
@@ -249,6 +326,7 @@ class DailyAnalyzer:
         web_provider: WebResearchProvider | None = None,
         embedding_provider: EmbeddingProvider | None = None,
         runtime_retrieval_variant: Literal["legacy", "v4"] = "v4",
+        configure_price_source: bool = True,
     ) -> None:
         if runtime_retrieval_variant not in {"legacy", "v4"}:
             raise ValueError("runtime retrieval variant must be legacy or v4")
@@ -266,13 +344,18 @@ class DailyAnalyzer:
         )
         self.fallback_llm = DeterministicMockLLMProvider()
         self.retrieval = retrieval or LocalRetrievalStore(self.root)
-        self.price_source = price_source or self._configured_blind_price_source(settings)
+        self.price_source = (
+            price_source
+            if price_source is not None
+            else (self._configured_blind_price_source(settings) if configure_price_source else None)
+        )
+        self._sealed_d_minus_one_only = not configure_price_source
         self.web_provider = web_provider or create_web_provider(self.settings)
         active_snapshot = active_memory_snapshot_manifest(self.root)
         self._evaluation_memory_snapshot: MemoryCellSnapshotManifest | None = (
             active_snapshot if active_snapshot is not None and active_snapshot.evaluation_only else None
         )
-        self._evaluation_company_delta_cache: list[BrainRecordEnvelope] | None = None
+        self._evaluation_company_record_cache: tuple[list[BrainRecordEnvelope], list[BrainRecordEnvelope]] | None = None
 
     def _configured_blind_price_source(self, settings: Settings) -> PriceSource | None:
         if settings.price_provider.strip().lower() == "mock":
@@ -311,6 +394,13 @@ class DailyAnalyzer:
         cutoff_at: datetime,
         mode: str = "exhaustive",
         web_search: bool = False,
+        shared_pre_retrieval_context_path: Path | None = None,
+        shared_pre_retrieval_context_sha256: str | None = None,
+        shared_pre_retrieval_manifest_sha256: str | None = None,
+        sealed_blind_input_manifest_sha256: str | None = None,
+        preloaded_news_batch: NewsBatch | None = None,
+        shadow_preloaded_news_batch: NewsBatch | None = None,
+        shared_d_minus_one_context_path: Path | None = None,
     ) -> DailyAnalysis:
         mode = normalize_analysis_mode(mode)
         evidence_policy = EvidencePolicy.parse(self.settings.evidence_policy)
@@ -318,37 +408,124 @@ class DailyAnalyzer:
             raise UnexpectedWebAccessError(
                 "BLIND analysis never permits external web search; use the separate post-close audit command"
             )
-        full_batch = load_news_csv(news_csv, trade_date=trade_date)
+        quality_full_injection = (
+            shared_pre_retrieval_context_path,
+            shared_pre_retrieval_context_sha256,
+            shared_pre_retrieval_manifest_sha256,
+            sealed_blind_input_manifest_sha256,
+            preloaded_news_batch,
+            shared_d_minus_one_context_path,
+        )
+        configured_injections = [value is not None for value in quality_full_injection]
+        if any(configured_injections) and not all(configured_injections):
+            raise ValueError(
+                "QUALITY_FULL shared context, sealed input, preloaded news, and D-1 artifact must be injected together"
+            )
+        if shadow_preloaded_news_batch is not None and any(configured_injections):
+            raise ValueError(
+                "shadow preloaded news cannot be combined with QUALITY_FULL injection"
+            )
+        if self._sealed_d_minus_one_only and not all(configured_injections):
+            raise ValueError("sealed-D1-only analysis requires the complete immutable QUALITY_FULL input package")
+        if sealed_blind_input_manifest_sha256 is not None and (
+            len(sealed_blind_input_manifest_sha256) != 64
+            or any(character not in "0123456789abcdef" for character in sealed_blind_input_manifest_sha256)
+        ):
+            raise ValueError("sealed blind input manifest hash must be SHA-256")
+        selected_preloaded_news_batch = (
+            preloaded_news_batch
+            if preloaded_news_batch is not None
+            else shadow_preloaded_news_batch
+        )
+        full_batch = (
+            self._validate_preloaded_news_batch(
+                news_csv=news_csv,
+                trade_date=trade_date,
+                batch=selected_preloaded_news_batch,
+            )
+            if selected_preloaded_news_batch is not None
+            else load_news_csv(news_csv, trade_date=trade_date)
+        )
+        parsed_news_root_sha256 = news_batch_content_root(full_batch)
         news_window_start_at = default_news_window_start(trade_date)
         batch = full_batch.within_window(news_window_start_at, cutoff_at)
-        try:
-            event_clustering = await cluster_news_events(
-                full_batch.items,
-                window_start_at=news_window_start_at,
-                cutoff_at=cutoff_at,
-                embedding_provider=self.embedding_provider,
-                embedding_batch_size=(self.settings.limits.event_cluster_embedding_batch_size),
-                similarity_threshold=(self.settings.limits.event_cluster_similarity_threshold),
-                max_semantic_variants=(self.settings.limits.event_cluster_max_semantic_variants),
-                fallback_policy=self.settings.event_cluster_fallback_policy,
-                max_retries=self.settings.llm.max_retries,
-                production_runtime_identity=(
-                    production_embedding_method(
-                        self.settings,
-                        self.embedding_provider,
-                    )
-                    if self.settings.event_cluster_fallback_policy.value == "fail-closed"
-                    else None
-                ),
-            )
-        except ProductionEmbeddingUnavailableError as exc:
-            self._write_embedding_failure_receipt(
+        shared_context: SharedPreRetrievalContext | None = None
+        shared_context_sha256: str | None = None
+        shared_context_manifest: SharedPreRetrievalContextManifest | None = None
+        shared_context_manifest_path: Path | None = None
+        shared_context_manifest_sha256: str | None = None
+        shared_d_minus_one_context: SharedDMinusOneContext | None = None
+        shared_d_minus_one_context_sha256: str | None = None
+        resolved_shared_d_minus_one_context_path: Path | None = None
+        if shared_pre_retrieval_context_path is not None:
+            (
+                shared_context,
+                shared_context_sha256,
+                shared_context_manifest,
+                shared_context_manifest_path,
+                shared_context_manifest_sha256,
+            ) = self._load_shared_pre_retrieval_context(
+                path=shared_pre_retrieval_context_path,
+                expected_context_sha256=shared_pre_retrieval_context_sha256,
+                expected_manifest_sha256=shared_pre_retrieval_manifest_sha256,
                 news_sha256=full_batch.sha256,
                 trade_date=trade_date,
                 cutoff_at=cutoff_at,
-                error=exc,
             )
-            raise
+            event_clustering = event_clustering_from_payload(
+                _resolve_and_read_shared_reference(
+                    self.root,
+                    shared_context.event_clustering_result,
+                )
+            )
+            if (
+                shared_context.parsed_news_root_sha256 != parsed_news_root_sha256
+                or shared_context_manifest.parsed_news_root_sha256 != parsed_news_root_sha256
+            ):
+                raise ValueError("shared parsed-news content identity drifted")
+        else:
+            try:
+                event_clustering = await cluster_news_events(
+                    full_batch.items,
+                    window_start_at=news_window_start_at,
+                    cutoff_at=cutoff_at,
+                    embedding_provider=self.embedding_provider,
+                    embedding_batch_size=(self.settings.limits.event_cluster_embedding_batch_size),
+                    similarity_threshold=(self.settings.limits.event_cluster_similarity_threshold),
+                    max_semantic_variants=(self.settings.limits.event_cluster_max_semantic_variants),
+                    fallback_policy=self.settings.event_cluster_fallback_policy,
+                    max_retries=self.settings.llm.max_retries,
+                    production_runtime_identity=(
+                        production_embedding_method(
+                            self.settings,
+                            self.embedding_provider,
+                        )
+                        if self.settings.event_cluster_fallback_policy.value == "fail-closed"
+                        else None
+                    ),
+                )
+            except ProductionEmbeddingUnavailableError as exc:
+                self._write_embedding_failure_receipt(
+                    news_sha256=full_batch.sha256,
+                    trade_date=trade_date,
+                    cutoff_at=cutoff_at,
+                    error=exc,
+                )
+                raise
+        if shared_d_minus_one_context_path is not None:
+            if shared_context is None:
+                raise ValueError("shared D-1 context requires a shared pre-retrieval context")
+            (
+                shared_d_minus_one_context,
+                shared_d_minus_one_context_sha256,
+                resolved_shared_d_minus_one_context_path,
+            ) = self._load_shared_d_minus_one_context(
+                path=shared_d_minus_one_context_path,
+                expected_artifact_path=(shared_context.d_minus_one_safe_context.artifact_path),
+                expected_sha256=shared_context.d_minus_one_safe_context.sha256,
+                trade_date=trade_date,
+                cutoff_at=cutoff_at,
+            )
         clustering_result_sha256 = sha256_text(
             canonical_json(
                 {
@@ -384,25 +561,54 @@ class DailyAnalyzer:
                     "cutoff_at": cutoff_at.isoformat(),
                     "llm_model_config": self.llm_model_config,
                     "news_sha256": full_batch.sha256,
+                    "parsed_news_root_sha256": parsed_news_root_sha256,
                     "trade_date": trade_date.isoformat(),
                     "web_search": web_search,
                     "evidence_policy": evidence_policy.value,
                     "web_provider": self.settings.web_provider,
+                    "shared_pre_retrieval_context_sha256": (shared_context_sha256),
+                    "prediction_input_boundary_version": (
+                        "SEALED_BLIND_INPUT.v3" if sealed_blind_input_manifest_sha256 is not None else None
+                    ),
+                    "sealed_blind_input_manifest_sha256": (sealed_blind_input_manifest_sha256),
+                    "shared_d_minus_one_context_sha256": (shared_d_minus_one_context_sha256),
+                    "shared_d_minus_one_candidate_universe_root_sha256": (
+                        shared_d_minus_one_context.candidate_universe_root_sha256
+                        if shared_d_minus_one_context is not None
+                        else None
+                    ),
                 }
             )
         )
         open_world_inputs = open_world_cluster_inputs(event_clustering)
         news_texts = [item.representative_text for item in open_world_inputs]
         event_ids = [event_id for cluster in open_world_inputs for event_id in cluster.event_ids]
-        (
-            open_world_first_analysis,
-            open_world_prompt_hash,
-            open_world_prompt_tokens,
-            open_world_prompt_batch_hashes,
-        ) = await self._run_open_world_first_analysis(
-            clusters=open_world_inputs,
-            cutoff_at=cutoff_at,
-        )
+        if shared_context is not None:
+            open_world_first_analysis = OpenWorldFirstAnalysis.model_validate(
+                _resolve_and_read_shared_reference(
+                    self.root,
+                    shared_context.open_world_first_analysis,
+                )
+            )
+            if (
+                open_world_first_analysis.source_cluster_ids != shared_context.material_cluster_ids
+                or open_world_first_analysis.analyzed_cluster_ids != shared_context.material_cluster_ids
+                or open_world_first_analysis.uncovered_cluster_ids
+            ):
+                raise OpenWorldCoverageError("shared pre-retrieval open-world coverage drifted")
+            open_world_prompt_hash = shared_context.prompt_hashes["open_world_map_reduce"]
+            open_world_prompt_tokens = 0
+            open_world_prompt_batch_hashes = [open_world_prompt_hash]
+        else:
+            (
+                open_world_first_analysis,
+                open_world_prompt_hash,
+                open_world_prompt_tokens,
+                open_world_prompt_batch_hashes,
+            ) = await self._run_open_world_first_analysis(
+                clusters=open_world_inputs,
+                cutoff_at=cutoff_at,
+            )
         first_pass_mechanisms = open_world_first_analysis.mechanisms
         web_queries = self._build_web_queries(batch.items)
         raw_retrieved_ids = self.retrieval.search_semantic(" ".join(web_queries), limit=20)
@@ -448,34 +654,55 @@ class DailyAnalyzer:
         manifest.excluded_news_row_count = full_batch.row_count - batch.row_count
         manifest.llm_model_config = {**self.llm_model_config, "analysis_mode": mode}
         manifest.event_clustering_result_sha256 = clustering_result_sha256
+        if sealed_blind_input_manifest_sha256 is not None:
+            manifest.bind_sealed_blind_input(manifest_sha256=sealed_blind_input_manifest_sha256)
         manifest.excluded_retrieved_episode_ids = excluded_retrieved_ids
         manifest.excluded_retrieved_record_ids = excluded_retrieved_record_ids
-        self._write_open_world_first_analysis_artifact(
-            analysis=open_world_first_analysis,
-            manifest=manifest,
-            prompt_sha256=open_world_prompt_hash,
-            cutoff_at=cutoff_at,
-        )
+        if (
+            shared_context is not None
+            and shared_context_sha256 is not None
+            and shared_context_manifest is not None
+            and shared_context_manifest_path is not None
+            and shared_context_manifest_sha256 is not None
+        ):
+            self._bind_shared_pre_retrieval_context(
+                manifest=manifest,
+                context=shared_context,
+                context_sha256=shared_context_sha256,
+                context_manifest=shared_context_manifest,
+                context_manifest_path=shared_context_manifest_path,
+                context_manifest_sha256=shared_context_manifest_sha256,
+                parsed_news_root_sha256=parsed_news_root_sha256,
+                event_clustering=event_clustering,
+                open_world_analysis=open_world_first_analysis,
+            )
+        else:
+            self._write_open_world_first_analysis_artifact(
+                analysis=open_world_first_analysis,
+                manifest=manifest,
+                prompt_sha256=open_world_prompt_hash,
+                cutoff_at=cutoff_at,
+            )
+            self._write_row_disposition_artifact(
+                full_items=full_batch.items,
+                included_items=batch.items,
+                news_window_start_at=news_window_start_at,
+                cutoff_at=cutoff_at,
+                manifest=manifest,
+            )
+            self._write_event_cluster_artifact(
+                result=event_clustering,
+                cutoff_at=cutoff_at,
+                manifest=manifest,
+            )
+            self._write_news_coverage_manifests(
+                result=event_clustering,
+                news_sha256=full_batch.sha256,
+                trade_date=trade_date,
+                cutoff_at=cutoff_at,
+                manifest=manifest,
+            )
         manifest.token_counts["open_world_first_analysis_prompt"] = open_world_prompt_tokens
-        self._write_row_disposition_artifact(
-            full_items=full_batch.items,
-            included_items=batch.items,
-            news_window_start_at=news_window_start_at,
-            cutoff_at=cutoff_at,
-            manifest=manifest,
-        )
-        self._write_event_cluster_artifact(
-            result=event_clustering,
-            cutoff_at=cutoff_at,
-            manifest=manifest,
-        )
-        self._write_news_coverage_manifests(
-            result=event_clustering,
-            news_sha256=full_batch.sha256,
-            trade_date=trade_date,
-            cutoff_at=cutoff_at,
-            manifest=manifest,
-        )
         self._fail_if_brain_context_contains_unavailable_episodes(
             cutoff_at=cutoff_at,
             manifest=manifest,
@@ -488,18 +715,48 @@ class DailyAnalyzer:
                 cutoff_at=cutoff_at,
             )
 
-        manifest.price_snapshot.source_name = self._blind_price_source_name()
-        manifest.price_snapshot.source_ref = self._blind_price_source_ref()
-
-        (
-            _news_novelty_review,
-            novelty_prompt_hash,
-            novelty_prompt_tokens,
-            novelty_prompt_batch_hashes,
-        ) = await self._run_news_novelty_review(
-            manifest=manifest,
-            cutoff_at=cutoff_at,
+        manifest.price_snapshot.source_name = (
+            shared_d_minus_one_context.source_name
+            if shared_d_minus_one_context is not None
+            else self._blind_price_source_name()
         )
+        manifest.price_snapshot.source_ref = (
+            shared_d_minus_one_context.source_ref
+            if shared_d_minus_one_context is not None
+            else self._blind_price_source_ref()
+        )
+        if (
+            shared_d_minus_one_context is not None
+            and shared_d_minus_one_context_sha256 is not None
+            and resolved_shared_d_minus_one_context_path is not None
+        ):
+            self._bind_shared_d_minus_one_context(
+                manifest=manifest,
+                context=shared_d_minus_one_context,
+                context_sha256=shared_d_minus_one_context_sha256,
+                context_path=resolved_shared_d_minus_one_context_path,
+            )
+
+        if shared_context is not None:
+            _news_novelty_review = NewsNoveltyReview.model_validate(
+                _resolve_and_read_shared_reference(
+                    self.root,
+                    shared_context.news_novelty_review,
+                )
+            )
+            novelty_prompt_hash = shared_context.prompt_hashes["news_novelty_review"]
+            novelty_prompt_tokens = 0
+            novelty_prompt_batch_hashes = [novelty_prompt_hash]
+        else:
+            (
+                _news_novelty_review,
+                novelty_prompt_hash,
+                novelty_prompt_tokens,
+                novelty_prompt_batch_hashes,
+            ) = await self._run_news_novelty_review(
+                manifest=manifest,
+                cutoff_at=cutoff_at,
+            )
         manifest.token_counts["news_novelty_review_prompt"] = novelty_prompt_tokens
         sweep = MemorySweeper(
             self.root,
@@ -653,9 +910,13 @@ class DailyAnalyzer:
         )
         manifest.token_counts["blind_analysis_prompt"] = blind_prompt_tokens
         prediction = prediction.model_copy(update={"context_manifest_id": manifest.run_id})
-        d_minus_one_market_data = self._collect_d_minus_one_market_data(
-            candidates=prediction.candidates,
-            manifest=manifest,
+        d_minus_one_market_data = (
+            shared_d_minus_one_context.model_dump(mode="json")
+            if shared_d_minus_one_context is not None
+            else self._collect_d_minus_one_market_data(
+                candidates=prediction.candidates,
+                manifest=manifest,
+            )
         )
         if web_search:
             await self._collect_candidate_web_checks(
@@ -664,6 +925,26 @@ class DailyAnalyzer:
                 cutoff_at=cutoff_at,
                 d_minus_one_market_data=d_minus_one_market_data,
             )
+        else:
+            blind_subjects = self._candidate_web_check_subjects(
+                prediction,
+                manifest,
+            )
+            self._write_candidate_verification_artifact(
+                manifest=manifest,
+                subjects=blind_subjects,
+                rows=[],
+                excluded_rows=[],
+                cutoff_at=cutoff_at,
+                d_minus_one_market_data=d_minus_one_market_data,
+            )
+            manifest.candidate_web_check_summary = {
+                "status": "CSV_MEMORY_ONLY_STRICT_ZERO_WEB",
+                "subject_count": len(blind_subjects),
+                "source_count": 0,
+                "excluded_source_count": 0,
+                "blind_web_search_call_count": 0,
+            }
         red_team = await run_red_team_pass(
             root=self.root,
             llm=self.llm,
@@ -684,14 +965,9 @@ class DailyAnalyzer:
         }
         manifest.token_counts["red_team_prompt"] = red_team.prompt_token_estimate
         company_store = self._company_memory_store()
-        company_delta_result = (
-            company_store.apply_record_delta_records(
-                self._evaluation_company_delta_records(),
-                as_of=cutoff_at,
-                identity_records=self._evaluation_company_delta_records(),
-            )
-            if self._evaluation_memory_snapshot is not None
-            else company_store.apply_record_deltas(as_of=cutoff_at)
+        company_delta_result = self._apply_company_memory_record_deltas(
+            company_store,
+            as_of=cutoff_at,
         )
         if company_delta_result.skipped_invalid_record_ids:
             manifest.errors.append(
@@ -718,6 +994,22 @@ class DailyAnalyzer:
                 manifest=manifest,
                 prediction=prediction,
             )
+        final_d_minus_one_market_data = d_minus_one_market_data
+        if shared_d_minus_one_context is not None and shared_context is not None:
+            projection = self._build_d_minus_one_prompt_projection(
+                context=shared_d_minus_one_context,
+                context_reference=shared_context.d_minus_one_safe_context,
+                candidates=prediction.candidates,
+            )
+            final_d_minus_one_market_data = projection.model_dump(mode="json")
+            manifest.bind_d_minus_one_prompt_projection(
+                policy=projection.projection_policy,
+                consumed_payload_sha256=sha256_text(canonical_json(final_d_minus_one_market_data)),
+                projection_root_sha256=projection.projection_root_sha256,
+                requested_ticker_count=len(projection.requested_tickers),
+                snapshot_count=len(projection.snapshots),
+                missing_ticker_count=len(projection.missing_tickers),
+            )
         prediction, final_synthesis_prompt_hash, final_synthesis_prompt_tokens = await self._run_final_synthesis(
             prediction=prediction,
             manifest=manifest,
@@ -727,7 +1019,7 @@ class DailyAnalyzer:
             excluded_source_ids=[],
             first_pass_mechanisms=first_pass_mechanisms,
             red_team_artifact=red_team.artifact,
-            d_minus_one_market_data=d_minus_one_market_data,
+            d_minus_one_market_data=final_d_minus_one_market_data,
             company_memory_context=company_memory_context,
             market_memory_context=market_memory_context,
         )
@@ -1859,19 +2151,25 @@ class DailyAnalyzer:
         manifest: ContextManifest,
         cutoff_at: datetime,
     ) -> str:
+        shared_current_event = self._read_shared_downstream_context(manifest)
         payload = {
             "schema": "nslab.semantic_retrieval_plan.v1",
             "prompt_version": SEMANTIC_RETRIEVAL_PLAN_PROMPT_VERSION,
             "run_id": manifest.run_id,
             "cutoff_at": cutoff_at.isoformat(),
             "required_categories": list(SEMANTIC_RETRIEVAL_REQUIRED_CATEGORIES),
-            "current_news": news_texts,
-            "open_world_first_analysis": self._read_open_world_first_analysis_context(manifest)
-            or first_pass_mechanisms,
-            "news_novelty_review": self._read_news_novelty_review_context(manifest),
             "memory_sweep_artifacts": manifest.memory_sweep_artifacts,
             "retrieval_first_memory": self._candidate_generation_memory_context(manifest),
         }
+        if shared_current_event is not None:
+            payload["shared_current_event_digest"] = shared_current_event
+            payload["required_inputs"] = list(FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V2)
+        else:
+            payload["current_news"] = news_texts
+            payload["open_world_first_analysis"] = (
+                self._read_open_world_first_analysis_context(manifest) or first_pass_mechanisms
+            )
+            payload["news_novelty_review"] = self._read_news_novelty_review_context(manifest)
         return (
             "Create additional semantic retrieval queries as SemanticRetrievalPlan. "
             "Queries must be mechanism-oriented and must cover every required category: "
@@ -2232,13 +2530,11 @@ class DailyAnalyzer:
         manifest: ContextManifest,
     ) -> None:
         store = BrainRecordStore(self.root)
-        if manifest.mode in {"exhaustive", "brain"}:
-            source_record_ids = manifest.available_record_ids
-        else:
-            source_record_ids = [
-                *manifest.retrieved_record_ids,
-                *manifest.semantic_retrieval_record_ids,
-            ]
+        source_record_ids = [
+            *manifest.retrieved_record_ids,
+            *manifest.semantic_retrieval_record_ids,
+            *manifest.semantic_cluster_coverage_promoted_record_ids,
+        ]
         counterexample_ids: list[str] = []
         available_record_id_set = set(manifest.available_record_ids)
         for record_id in _unique_preserving_order(source_record_ids):
@@ -2377,21 +2673,26 @@ class DailyAnalyzer:
         manifest: ContextManifest,
         cutoff_at: datetime,
     ) -> str:
+        shared_current_event = self._read_shared_downstream_context(manifest)
         payload = {
             "schema": "nslab.candidate_expansion.v1",
             "prompt_version": CANDIDATE_EXPANSION_PROMPT_VERSION,
             "run_id": manifest.run_id,
             "cutoff_at": cutoff_at.isoformat(),
             "required_paths": [path.value for path in CANDIDATE_EXPANSION_REQUIRED_PATHS],
-            "current_news": news_texts,
-            "open_world_first_analysis": self._read_open_world_first_analysis_context(manifest)
-            or first_pass_mechanisms,
-            "news_novelty_review": self._read_news_novelty_review_context(manifest),
             "additional_semantic_retrieval": self._read_semantic_retrieval_context(manifest),
             "semantic_cluster_coverage": self._read_semantic_cluster_coverage_context(manifest),
             "retrieval_first_memory": self._candidate_generation_memory_context(manifest),
             "d_minus_one_only_for_continuation": True,
         }
+        if shared_current_event is not None:
+            payload["shared_current_event_digest"] = shared_current_event
+        else:
+            payload["current_news"] = news_texts
+            payload["open_world_first_analysis"] = (
+                self._read_open_world_first_analysis_context(manifest) or first_pass_mechanisms
+            )
+            payload["news_novelty_review"] = self._read_news_novelty_review_context(manifest)
         return (
             "Expand open-world candidate routes as CandidateExpansionReview. Execute "
             "four independent paths: SINGLE_EVENT, THEME_FORMATION, "
@@ -2873,7 +3174,7 @@ class DailyAnalyzer:
             )
         review = CandidateVerificationReview(
             run_id=manifest.run_id,
-            created_at=now_kst(),
+            created_at=cutoff_at,
             cutoff_at=cutoff_at,
             required_dimensions=list(CANDIDATE_WEB_VERIFICATION_FOCUS),
             subject_count=len(subjects),
@@ -3459,12 +3760,23 @@ class DailyAnalyzer:
         )
         prompt = self._build_final_synthesis_prompt(payload)
         prompt_tokens = count_provider_tokens(self.llm, prompt)
-        if prompt_tokens > self.settings.limits.final_synthesis_token_budget:
+        if (
+            prompt_tokens > self.settings.limits.final_synthesis_token_budget
+            and self._final_synthesis_token_budget_is_blocking(manifest)
+        ):
             manifest.errors.append(
                 "final synthesis prompt exceeds token budget: "
                 f"{prompt_tokens} > {self.settings.limits.final_synthesis_token_budget}"
             )
             raise FinalSynthesisBudgetError(manifest.errors[-1])
+        if prompt_tokens > self.settings.limits.final_synthesis_token_budget:
+            manifest.final_synthesis_context_summary.update(
+                {
+                    "quality_full_token_budget_observation": "EXCEEDED_NON_BLOCKING",
+                    "observed_prompt_tokens": prompt_tokens,
+                    "configured_token_budget": (self.settings.limits.final_synthesis_token_budget),
+                }
+            )
         prompt_sha256 = sha256_text(prompt)
         try:
             synthesized = await self.llm.generate_structured(
@@ -3478,6 +3790,18 @@ class DailyAnalyzer:
             synthesized = prediction
         phase7_memory = self._phase7_final_memory_context(manifest)
         if phase7_memory is not None:
+            synthesized, matched_candidate_count = self._bind_verified_final_candidate_identities(
+                source_prediction=prediction,
+                synthesized_prediction=synthesized,
+            )
+            manifest.final_synthesis_context_summary.update(
+                {
+                    "verified_candidate_identity_binding": True,
+                    "source_candidate_count": len(prediction.candidates),
+                    "synthesized_identity_match_count": matched_candidate_count,
+                    "rejected_replacement_candidate_count": (len(prediction.candidates) - matched_candidate_count),
+                }
+            )
             self._require_phase7_final_candidate_identity(
                 source_prediction=prediction,
                 synthesized_prediction=synthesized,
@@ -3514,6 +3838,18 @@ class DailyAnalyzer:
             default_negative_record_ids=negative_record_ids[:5],
         )
         if phase7_memory is not None:
+            normalized, rejected_memory_reference_count = self._bind_phase7_memory_provenance(
+                prediction=normalized,
+                context=phase7_memory,
+                preferred_positive_record_ids=positive_record_ids,
+                preferred_negative_record_ids=negative_record_ids,
+            )
+            manifest.final_synthesis_context_summary.update(
+                {
+                    "phase7_memory_provenance_binding": True,
+                    "rejected_unselected_memory_reference_count": (rejected_memory_reference_count),
+                }
+            )
             self._require_phase7_final_memory_ids(normalized, phase7_memory)
         normalized = normalized.model_copy(update={"context_manifest_id": manifest.run_id})
         if not normalized.blind_analysis.open_world_mechanisms:
@@ -3525,6 +3861,135 @@ class DailyAnalyzer:
                 }
             )
         return normalized, prompt_sha256, prompt_tokens
+
+    @staticmethod
+    def _bind_phase7_memory_provenance(
+        *,
+        prediction: BlindPrediction,
+        context: DailyMemoryContext,
+        preferred_positive_record_ids: list[str],
+        preferred_negative_record_ids: list[str],
+    ) -> tuple[BlindPrediction, int]:
+        supporting = set(context.supporting_record_ids)
+        contradicting = set(context.contradicting_record_ids)
+        unexplained = set(context.unexplained_record_ids)
+        selected = supporting | contradicting | unexplained
+        preferred_positive = [record_id for record_id in preferred_positive_record_ids if record_id in supporting][:5]
+        preferred_negative = [record_id for record_id in preferred_negative_record_ids if record_id in contradicting][
+            :5
+        ]
+        rejected_count = 0
+        candidates: list[Candidate] = []
+        for candidate in prediction.candidates:
+            original_record_ids = {
+                *candidate.prior_positive_record_ids,
+                *candidate.prior_negative_record_ids,
+                *candidate.memory_record_ids,
+            }
+            positive = [
+                record_id for record_id in candidate.prior_positive_record_ids if record_id in supporting
+            ] or preferred_positive
+            negative = [
+                record_id for record_id in candidate.prior_negative_record_ids if record_id in contradicting
+            ] or preferred_negative
+            other_selected = [record_id for record_id in candidate.memory_record_ids if record_id in unexplained]
+            memory_record_ids = _unique_preserving_order([*positive, *negative, *other_selected])
+            rejected_count += len(original_record_ids - selected)
+            rejected_count += len(
+                {
+                    *candidate.prior_positive_cases,
+                    *candidate.prior_negative_cases,
+                    *candidate.memory_episode_ids,
+                }
+            )
+            candidates.append(
+                candidate.model_copy(
+                    update={
+                        "prior_positive_cases": [],
+                        "prior_negative_cases": [],
+                        "memory_episode_ids": [],
+                        "prior_positive_record_ids": positive,
+                        "prior_negative_record_ids": negative,
+                        "memory_record_ids": memory_record_ids,
+                    }
+                )
+            )
+        sectors: list[DominantSectorHypothesis] = []
+        for sector in prediction.dominant_sectors:
+            original_record_ids = {
+                *sector.supporting_record_ids,
+                *sector.contradicting_record_ids,
+            }
+            sector_supporting = [
+                record_id for record_id in sector.supporting_record_ids if record_id in supporting
+            ] or preferred_positive
+            sector_contradicting = [
+                record_id for record_id in sector.contradicting_record_ids if record_id in contradicting
+            ] or preferred_negative
+            rejected_count += len(original_record_ids - selected)
+            rejected_count += len({*sector.supporting_cases, *sector.contradicting_cases})
+            sectors.append(
+                sector.model_copy(
+                    update={
+                        "supporting_cases": [],
+                        "contradicting_cases": [],
+                        "supporting_record_ids": sector_supporting,
+                        "contradicting_record_ids": sector_contradicting,
+                    }
+                )
+            )
+        return (
+            prediction.model_copy(
+                update={
+                    "candidates": candidates,
+                    "dominant_sectors": sectors,
+                }
+            ),
+            rejected_count,
+        )
+
+    @staticmethod
+    def _bind_verified_final_candidate_identities(
+        *,
+        source_prediction: BlindPrediction,
+        synthesized_prediction: BlindPrediction,
+    ) -> tuple[BlindPrediction, int]:
+        synthesized_by_identity = {
+            _final_candidate_identity(candidate): candidate for candidate in synthesized_prediction.candidates
+        }
+        bound_candidates: list[Candidate] = []
+        matched_count = 0
+        for source in source_prediction.candidates:
+            matched = synthesized_by_identity.get(_final_candidate_identity(source))
+            if matched is None:
+                bound_candidates.append(source)
+                continue
+            matched_count += 1
+            bound_candidates.append(
+                matched.model_copy(
+                    update={
+                        "rank": source.rank,
+                        "ticker": source.ticker,
+                        "company_name": source.company_name,
+                        "path_type": source.path_type,
+                        "event_ids": source.event_ids,
+                        "claimed_theme_id": source.claimed_theme_id,
+                        "claims_news_cause": source.claims_news_cause,
+                        "source_urls": source.source_urls,
+                        "prior_positive_cases": source.prior_positive_cases,
+                        "prior_negative_cases": source.prior_negative_cases,
+                        "prior_positive_record_ids": (source.prior_positive_record_ids),
+                        "prior_negative_record_ids": (source.prior_negative_record_ids),
+                        "memory_episode_ids": source.memory_episode_ids,
+                        "memory_record_ids": source.memory_record_ids,
+                        "provenance": source.provenance,
+                    }
+                )
+            )
+        return (
+            synthesized_prediction.model_copy(update={"candidates": bound_candidates}),
+            matched_count,
+        )
 
     def _phase7_final_memory_context(
         self,
@@ -3588,13 +4053,18 @@ class DailyAnalyzer:
             graph_resolved.relative_to(self.root.resolve())
         except ValueError as exc:
             raise ValueError("Phase 7 final candidate artifact escapes the project root") from exc
-        if (
-            not manifest.candidate_verification_sha256
-            or file_sha256(verification_resolved) != manifest.candidate_verification_sha256
-            or not manifest.beneficiary_graph_sha256
-            or file_sha256(graph_resolved) != manifest.beneficiary_graph_sha256
-        ):
-            raise ValueError("Phase 7 final candidate artifact is missing or stale")
+        if not manifest.candidate_verification_sha256:
+            raise ValueError("Phase 7 final candidate verification hash binding is missing")
+        if not verification_resolved.is_file():
+            raise ValueError("Phase 7 final candidate verification artifact is missing")
+        if sha256_text(verification_resolved.read_text(encoding="utf-8")) != manifest.candidate_verification_sha256:
+            raise ValueError("Phase 7 final candidate verification artifact is stale")
+        if not manifest.beneficiary_graph_sha256:
+            raise ValueError("Phase 7 beneficiary graph hash binding is missing")
+        if not graph_resolved.is_file():
+            raise ValueError("Phase 7 beneficiary graph artifact is missing")
+        if sha256_text(graph_resolved.read_text(encoding="utf-8")) != manifest.beneficiary_graph_sha256:
+            raise ValueError("Phase 7 beneficiary graph artifact is stale")
         verification = CandidateVerificationReview.model_validate(read_json(verification_resolved))
         graph = BeneficiaryGraphArtifact.model_validate(read_json(graph_resolved))
         if (
@@ -3665,6 +4135,7 @@ class DailyAnalyzer:
         company_memory_context: list[dict[str, Any]],
         market_memory_context: list[dict[str, Any]],
     ) -> dict[str, Any]:
+        shared_current_event = self._read_shared_downstream_context(manifest)
         payload: dict[str, Any] = {
             "schema": "nslab.blind_prediction.v1",
             "prompt_version": FINAL_SYNTHESIS_PROMPT_VERSION,
@@ -3678,11 +4149,6 @@ class DailyAnalyzer:
                 "model": manifest.brain_compiler_model,
                 "catalog_only": manifest.brain_compiler_catalog_only,
             },
-            "current_news": news_texts,
-            "open_world_first_analysis": self._read_open_world_first_analysis_context(manifest)
-            or first_pass_mechanisms,
-            "event_clusters": self._read_event_cluster_context(manifest),
-            "news_novelty_review": self._read_news_novelty_review_context(manifest),
             "additional_semantic_retrieval": self._read_semantic_retrieval_context(manifest),
             "semantic_cluster_coverage": self._read_semantic_cluster_coverage_context(manifest),
             "open_world_candidate_expansion": self._read_candidate_expansion_context(manifest),
@@ -3722,12 +4188,31 @@ class DailyAnalyzer:
             "candidate_verification": self._read_candidate_verification_context(manifest),
             "red_team_output": red_team_artifact.model_dump(mode="json"),
             "d_minus_one_market_data": d_minus_one_market_data,
-            "company_memory": company_memory_context,
+            "company_memory": self._company_memory_prompt_context(
+                prediction=prediction,
+                contexts=company_memory_context,
+            ),
             "market_memory": market_memory_context,
         }
+        if shared_current_event is not None:
+            payload["shared_current_event_digest"] = shared_current_event
+            payload["required_inputs"] = list(
+                FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V2
+            )
+        else:
+            payload["current_news"] = news_texts
+            payload["open_world_first_analysis"] = (
+                self._read_open_world_first_analysis_context(manifest) or first_pass_mechanisms
+            )
+            payload["event_clusters"] = self._read_event_cluster_context(manifest)
+            payload["news_novelty_review"] = self._read_news_novelty_review_context(manifest)
         if manifest.daily_memory_context_artifact:
             payload["prompt_version"] = FINAL_SYNTHESIS_V3_PROMPT_VERSION
-            payload["required_inputs"] = list(FINAL_SYNTHESIS_REQUIRED_INPUTS_V3)
+            payload["required_inputs"] = list(
+                FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V3
+                if shared_current_event is not None
+                else FINAL_SYNTHESIS_REQUIRED_INPUTS_V3
+            )
             for key in (
                 "global_brain",
                 "all_shard_brains",
@@ -3751,6 +4236,53 @@ class DailyAnalyzer:
             payload["daily_memory_context"] = self._daily_memory_context_payload(manifest)
             payload["beneficiary_graph"] = self._beneficiary_graph_payload(manifest)
         return payload
+
+    @staticmethod
+    def _final_synthesis_token_budget_is_blocking(
+        manifest: ContextManifest,
+    ) -> bool:
+        return manifest.llm_model_config.get("evaluation_profile") != "QUALITY_FULL"
+
+    @staticmethod
+    def _company_memory_prompt_context(
+        *,
+        prediction: BlindPrediction,
+        contexts: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        candidate_tickers = {
+            candidate.ticker.strip().upper() for candidate in prediction.candidates if candidate.ticker.strip()
+        }
+        candidate_names = {
+            candidate.company_name.strip() for candidate in prediction.candidates if candidate.company_name.strip()
+        }
+        selected: list[dict[str, Any]] = []
+        population_refs: list[dict[str, str]] = []
+        for context in contexts:
+            path = str(context.get("path", ""))
+            sha256 = str(context.get("sha256", ""))
+            population_refs.append({"path": path, "sha256": sha256})
+            memory = context.get("memory")
+            if not isinstance(memory, dict):
+                continue
+            ticker = str(memory.get("ticker", "")).strip().upper()
+            names = {
+                str(memory.get("company_name", "")).strip(),
+                *{str(alias).strip() for alias in memory.get("aliases", []) if str(alias).strip()},
+            }
+            if (ticker and ticker in candidate_tickers) or bool(names & candidate_names):
+                selected.append(context)
+        return {
+            "policy": "FINAL_CANDIDATE_IDENTITY_MATCH_WITH_FULL_POPULATION_ROOT.v1",
+            "population_count": len(contexts),
+            "population_artifact_root_sha256": sha256_text(canonical_json(population_refs)),
+            "candidate_tickers": sorted(candidate_tickers),
+            "candidate_company_names": sorted(candidate_names),
+            "selected_count": len(selected),
+            "selected": selected,
+            "unselected_count": len(contexts) - len(selected),
+            "full_population_remains_in_context_manifest": True,
+            "silent_truncation_used": False,
+        }
 
     def _memory_coverage_context(
         self,
@@ -4065,6 +4597,7 @@ class DailyAnalyzer:
             memory_coverage_manifest_path=(self.root / str(required_paths["memory_coverage_manifest"])),
             beneficiary_graph_path=(self.root / str(required_paths["beneficiary_graph"])),
             retrieval_cluster_ids=retrieval_cluster_ids,
+            allow_distribution_shortfall=(manifest.llm_model_config.get("evaluation_profile") == "QUALITY_FULL"),
         )
         evidence_results: list[RuntimeEvidenceBuildResult] = []
         for reference in context.runtime_retrieval_traces:
@@ -4297,6 +4830,34 @@ class DailyAnalyzer:
         manifest: ContextManifest,
         payload: dict[str, Any],
     ) -> None:
+        if manifest.shared_pre_retrieval_context_artifact:
+            expected_shared_digest = self._read_shared_downstream_context(manifest)
+            consumed_shared_digest = payload.get("shared_current_event_digest")
+            reject_forbidden_blind_payload_keys(consumed_shared_digest)
+            if expected_shared_digest is None or consumed_shared_digest != expected_shared_digest:
+                raise ValueError("final synthesis consumed a different shared downstream digest")
+        if manifest.d_minus_one_payload_sha256 is not None:
+            consumed_payload = payload.get("d_minus_one_market_data")
+            if not isinstance(consumed_payload, dict):
+                raise ValueError("final synthesis omitted the shared D-1 payload")
+            projection = DMinusOnePromptProjection.model_validate(consumed_payload)
+            consumed_sha256 = sha256_text(canonical_json(consumed_payload))
+            if (
+                consumed_sha256 != manifest.d_minus_one_consumed_payload_sha256
+                or projection.full_payload_sha256 != manifest.d_minus_one_payload_sha256
+                or projection.full_context.sha256 != manifest.d_minus_one_context_sha256
+                or projection.full_context.artifact_path != manifest.d_minus_one_context_artifact
+                or projection.candidate_universe_root_sha256 != manifest.d_minus_one_candidate_universe_root_sha256
+                or projection.full_snapshot_root_sha256 != manifest.d_minus_one_snapshot_root_sha256
+                or projection.source_revision_sha256 != manifest.d_minus_one_source_revision_sha256
+                or projection.snapshot_session_date != manifest.d_minus_one_snapshot_session_date
+                or projection.projection_policy != manifest.d_minus_one_projection_policy
+                or projection.projection_root_sha256 != manifest.d_minus_one_projection_root_sha256
+                or len(projection.requested_tickers) != manifest.d_minus_one_projection_requested_ticker_count
+                or len(projection.snapshots) != manifest.d_minus_one_projection_snapshot_count
+                or len(projection.missing_tickers) != manifest.d_minus_one_projection_missing_ticker_count
+            ):
+                raise ValueError("final synthesis consumed a different D-1 prompt projection")
         summary = final_synthesis_input_summary(payload)
         artifact = FinalSynthesisContextArtifact(
             schema_version=(
@@ -4346,6 +4907,30 @@ class DailyAnalyzer:
         payload = read_json(path)
         return payload if isinstance(payload, dict) else {}
 
+    def _read_shared_downstream_context(
+        self,
+        manifest: ContextManifest,
+    ) -> dict[str, Any] | None:
+        if not manifest.shared_pre_retrieval_context_artifact:
+            return None
+        if not manifest.shared_pre_retrieval_context_sha256:
+            raise ValueError("shared downstream context has no sealed hash")
+        context_reference = QualityArtifactReference(
+            artifact_path=manifest.shared_pre_retrieval_context_artifact,
+            sha256=manifest.shared_pre_retrieval_context_sha256,
+        )
+        context = SharedPreRetrievalContext.model_validate(
+            _resolve_and_read_shared_reference(self.root, context_reference)
+        )
+        payload = _resolve_and_read_shared_reference(
+            self.root,
+            context.downstream_digest,
+        )
+        digest = SharedDownstreamDigest.model_validate(payload)
+        if digest.context_id != context.context_id:
+            raise ValueError("shared downstream digest identity drifted")
+        return digest.model_dump(mode="json")
+
     def _read_semantic_retrieval_context(self, manifest: ContextManifest) -> dict[str, Any]:
         rows: list[dict[str, Any]] = []
         if manifest.semantic_retrieval_artifact:
@@ -4390,22 +4975,60 @@ class DailyAnalyzer:
         manifest: ContextManifest,
     ) -> dict[str, Any]:
         rows: list[dict[str, Any]] = []
+        artifact_sha256: str | None = None
         if manifest.semantic_cluster_coverage_artifact:
             path = self.root / manifest.semantic_cluster_coverage_artifact
             if path.exists():
+                artifact_sha256 = file_sha256(path)
                 for line in path.read_text(encoding="utf-8").splitlines():
                     if line.strip():
                         rows.append(json.loads(line))
+        row_identities = [
+            {
+                "cluster_id": row.get("cluster_id"),
+                "category": row.get("category"),
+                "query_sha256": row.get("query_sha256"),
+                "included_episode_ids": row.get("included_episode_ids", []),
+                "excluded_episode_ids": row.get("excluded_episode_ids", []),
+                "included_record_ids": row.get("included_record_ids", []),
+                "excluded_record_ids": row.get("excluded_record_ids", []),
+            }
+            for row in rows
+        ]
+        hit_rows = [
+            identity
+            for identity in row_identities
+            if any(
+                identity[key]
+                for key in (
+                    "included_episode_ids",
+                    "excluded_episode_ids",
+                    "included_record_ids",
+                    "excluded_record_ids",
+                )
+            )
+        ]
+        lane_counts = Counter(str(row.get("category", "")) for row in rows)
+        lane_hit_counts = Counter(
+            str(row.get("category", ""))
+            for row, identity in zip(rows, row_identities, strict=True)
+            if identity in hit_rows
+        )
         return {
             "artifact": manifest.semantic_cluster_coverage_artifact,
+            "artifact_sha256": (manifest.semantic_cluster_coverage_sha256 if artifact_sha256 is not None else None),
             "summary": manifest.semantic_cluster_coverage_summary,
-            "rows": rows,
-            "covered_cluster_ids": manifest.semantic_cluster_coverage_ids,
+            "full_row_count": len(rows),
+            "full_row_identity_root_sha256": sha256_text(canonical_json(row_identities)),
+            "prompt_rows_policy": ("NONZERO_RESULT_ROWS_ONLY_WITH_COMPLETE_LANE_COUNTS_AND_FULL_ROW_ROOT.v1"),
+            "lane_row_counts": dict(sorted(lane_counts.items())),
+            "lane_hit_row_counts": dict(sorted(lane_hit_counts.items())),
+            "hit_rows": hit_rows,
+            "covered_cluster_count": len(manifest.semantic_cluster_coverage_ids),
+            "covered_cluster_root_sha256": sha256_text(canonical_json(manifest.semantic_cluster_coverage_ids)),
             "missing_cluster_ids": manifest.semantic_cluster_coverage_missing_ids,
             "promoted_record_ids": (manifest.semantic_cluster_coverage_promoted_record_ids),
-            "promoted_records": self._read_record_context_by_ids(
-                manifest.semantic_cluster_coverage_promoted_record_ids
-            ),
+            "full_rows_silently_truncated": False,
         }
 
     def _read_record_context_by_ids(self, record_ids: list[str]) -> list[dict[str, Any]]:
@@ -4526,44 +5149,105 @@ class DailyAnalyzer:
             directory=directory,
         )
 
-    def _evaluation_company_delta_records(self) -> list[BrainRecordEnvelope]:
+    def _apply_company_memory_record_deltas(
+        self,
+        store: CompanyMemoryStore,
+        *,
+        as_of: datetime,
+    ) -> CompanyMemoryDeltaApplyResult:
+        if self._evaluation_memory_snapshot is None:
+            return store.apply_record_deltas(as_of=as_of)
+        delta_records, identity_records = self._evaluation_company_memory_record_sets()
+        result = store.apply_record_delta_records(
+            delta_records,
+            as_of=as_of,
+            identity_records=identity_records,
+        )
+        if result.skipped_invalid_record_ids:
+            raise ValueError(
+                "evaluation snapshot company-memory identity closure failed: "
+                + ", ".join(result.skipped_invalid_record_ids)
+            )
+        return result
+
+    def _evaluation_company_memory_record_sets(
+        self,
+    ) -> tuple[list[BrainRecordEnvelope], list[BrainRecordEnvelope]]:
         snapshot = self._evaluation_memory_snapshot
         if snapshot is None:
             raise ValueError("evaluation company memory requires a replay snapshot")
-        if self._evaluation_company_delta_cache is not None:
-            return self._evaluation_company_delta_cache
+        if self._evaluation_company_record_cache is not None:
+            return self._evaluation_company_record_cache
+        database_path = (self.root / snapshot.database.artifact_path).resolve()
+        try:
+            database_path.relative_to(self.root.resolve())
+        except ValueError as exc:
+            raise ValueError("evaluation company-memory snapshot database escapes the project") from exc
+        if not database_path.is_file() or file_sha256(database_path) != snapshot.database.sha256:
+            raise ValueError("evaluation company-memory snapshot database is unavailable or drifted")
         connection = duckdb.connect(
-            str(self.root / snapshot.database.artifact_path),
+            str(database_path),
             read_only=True,
         )
         try:
             rows = connection.execute(
                 """
-                SELECT record_id, episode_id, available_from
-                FROM records
-                WHERE record_type = 'company_memory_delta'
-                ORDER BY episode_id, record_id
+                WITH delta_episodes AS (
+                    SELECT DISTINCT episode_id
+                    FROM records
+                    WHERE record_type = 'company_memory_delta'
+                )
+                SELECT r.record_id,
+                       r.episode_id,
+                       r.record_type,
+                       r.available_from,
+                       r.source_sha256
+                FROM records AS r
+                INNER JOIN delta_episodes AS d USING (episode_id)
+                ORDER BY r.episode_id, r.record_id
                 """
             ).fetchall()
         finally:
             connection.close()
-        expected_by_episode: dict[str, dict[str, datetime]] = {}
-        for record_id, episode_id, available_from in rows:
-            expected_by_episode.setdefault(str(episode_id), {})[str(record_id)] = parse_datetime(str(available_from))
-        records: list[BrainRecordEnvelope] = []
+        expected_by_episode: dict[
+            str,
+            dict[str, tuple[str, datetime, str]],
+        ] = {}
+        for record_id, episode_id, record_type, available_from, source_sha256 in rows:
+            expected = expected_by_episode.setdefault(str(episode_id), {})
+            normalized_record_id = str(record_id)
+            if normalized_record_id in expected:
+                raise ValueError("evaluation company-memory snapshot has duplicate record IDs")
+            expected[normalized_record_id] = (
+                str(record_type),
+                parse_datetime(str(available_from)),
+                str(source_sha256),
+            )
+        identity_records: list[BrainRecordEnvelope] = []
         record_store = BrainRecordStore(self.root)
         for episode_id, expected in sorted(expected_by_episode.items()):
-            observed: set[str] = set()
+            observed: dict[str, BrainRecordEnvelope] = {}
             for record in record_store.read_episode_records(episode_id):
-                projected_available_from = expected.get(record.record_id)
-                if projected_available_from is None:
+                if record.record_id not in expected:
                     continue
-                observed.add(record.record_id)
-                records.append(record.model_copy(update={"available_from": projected_available_from}))
-            if observed != set(expected):
-                raise ValueError(f"evaluation company memory record closure mismatch: {episode_id}")
-        self._evaluation_company_delta_cache = records
-        return records
+                if record.record_id in observed:
+                    raise ValueError(f"evaluation company-memory source has duplicate record IDs: {record.record_id}")
+                observed[record.record_id] = record
+            if set(observed) != set(expected):
+                raise ValueError(f"evaluation company-memory record closure mismatch: {episode_id}")
+            for record_id, (record_type, available_from, source_sha256) in expected.items():
+                record = observed[record_id]
+                if record.episode_id != episode_id or record.record_type != record_type:
+                    raise ValueError(f"evaluation company-memory record identity mismatch: {record_id}")
+                if brain_record_envelope_sha256(record) != source_sha256:
+                    raise ValueError(f"evaluation company-memory source hash mismatch: {record_id}")
+                identity_records.append(record.model_copy(update={"available_from": available_from}))
+        delta_records = [record for record in identity_records if record.record_type == "company_memory_delta"]
+        self._evaluation_company_record_cache = (
+            delta_records,
+            identity_records,
+        )
+        return self._evaluation_company_record_cache
 
     def _collect_market_memory_context(
         self,
@@ -4719,6 +5403,171 @@ class DailyAnalyzer:
             "memory": payload,
         }
 
+    def _validate_preloaded_news_batch(
+        self,
+        *,
+        news_csv: Path,
+        trade_date: date,
+        batch: NewsBatch,
+    ) -> NewsBatch:
+        resolved_news = news_csv.resolve()
+        if batch.path.resolve() != resolved_news:
+            raise ValueError("preloaded news batch path differs from requested CSV")
+        current_sha256 = file_sha256(resolved_news)
+        if batch.sha256 != current_sha256:
+            raise ValueError("preloaded news batch hash differs from requested CSV")
+        if batch.trade_date != trade_date:
+            raise ValueError("preloaded news batch trade date differs from request")
+        if [item.row_number for item in batch.items] != list(range(1, len(batch.items) + 1)):
+            raise ValueError("preloaded news batch row identity is invalid")
+        for item in batch.items:
+            if not item.provenance or any(row.content_sha256 != batch.sha256 for row in item.provenance):
+                raise ValueError("preloaded news batch provenance hash is invalid")
+        return batch
+
+    @staticmethod
+    def _build_d_minus_one_prompt_projection(
+        *,
+        context: SharedDMinusOneContext,
+        context_reference: QualityArtifactReference,
+        candidates: list[Candidate],
+    ) -> DMinusOnePromptProjection:
+        requests_by_ticker: dict[str, tuple[set[int], set[str]]] = {}
+        for candidate in candidates:
+            ticker = candidate.ticker.strip().upper()
+            if not ticker or ticker in {"UNKNOWN", "UNVERIFIED"}:
+                continue
+            ranks, event_ids = requests_by_ticker.setdefault(
+                ticker,
+                (set(), set()),
+            )
+            ranks.add(candidate.rank)
+            event_ids.update(event_id.strip() for event_id in candidate.event_ids if event_id.strip())
+        request_sources = [
+            DMinusOneProjectionRequest(
+                ticker=ticker,
+                candidate_ranks=sorted(values[0]),
+                event_ids=sorted(values[1]),
+            )
+            for ticker, values in sorted(requests_by_ticker.items())
+        ]
+        requested_tickers = [request.ticker for request in request_sources]
+        snapshot_by_ticker = {row.ticker: row for row in context.snapshots}
+        snapshots = [snapshot_by_ticker[ticker] for ticker in requested_tickers if ticker in snapshot_by_ticker]
+        missing_tickers = sorted(ticker for ticker in requested_tickers if ticker not in snapshot_by_ticker)
+        projection_snapshot_root_sha256 = sha256_text(
+            canonical_json([row.model_dump(mode="json") for row in snapshots])
+        )
+        identity_payload = {
+            "schema_version": "nslab.d_minus_one_prompt_projection.v1",
+            "projection_policy": ("ALL_PRELIMINARY_CANDIDATE_TICKERS_EXACT_SEALED_SUBSET.v1"),
+            "trade_date": context.trade_date.isoformat(),
+            "cutoff_at": context.cutoff_at.isoformat(),
+            "allowed_through": context.allowed_through.isoformat(),
+            "source_name": context.source_name,
+            "source_ref": context.source_ref,
+            "full_context": context_reference.model_dump(mode="json"),
+            "full_payload_sha256": sha256_text(canonical_json(context.model_dump(mode="json"))),
+            "candidate_universe_root_sha256": (context.candidate_universe_root_sha256),
+            "full_snapshot_root_sha256": context.snapshot_root_sha256,
+            "source_revision_sha256": context.source_revision_sha256,
+            "snapshot_session_date": (
+                context.snapshot_session_date.isoformat() if context.snapshot_session_date is not None else None
+            ),
+            "full_snapshot_count": context.sealed_snapshot_count,
+            "request_sources": [request.model_dump(mode="json") for request in request_sources],
+            "requested_tickers": requested_tickers,
+            "requested_ticker_root_sha256": sha256_text(canonical_json(requested_tickers)),
+            "snapshots": [row.model_dump(mode="json") for row in snapshots],
+            "missing_tickers": missing_tickers,
+            "projection_snapshot_root_sha256": (projection_snapshot_root_sha256),
+        }
+        return DMinusOnePromptProjection.model_validate(
+            {
+                **identity_payload,
+                "projection_root_sha256": sha256_text(canonical_json(identity_payload)),
+            }
+        )
+
+    def _load_shared_d_minus_one_context(
+        self,
+        *,
+        path: Path,
+        expected_artifact_path: str,
+        expected_sha256: str,
+        trade_date: date,
+        cutoff_at: datetime,
+    ) -> tuple[SharedDMinusOneContext, str, Path]:
+        resolved = path.resolve()
+        expected = (self.root / expected_artifact_path).resolve()
+        if resolved != expected:
+            raise ValueError("shared D-1 path differs from shared context binding")
+        try:
+            relative = resolved.relative_to(self.root.resolve())
+        except ValueError as exc:
+            raise ValueError("shared D-1 context escapes project root") from exc
+        parts = relative.parts
+        if (
+            len(parts) != 6
+            or parts[:4]
+            != (
+                "runs",
+                "semantic_brain_upgrade",
+                "quality_full",
+                "blind_inputs",
+            )
+            or not parts[4].startswith("QINPUT-")
+            or parts[5:] != ("d_minus_one_safe_context.json",)
+        ):
+            raise ValueError("shared D-1 context is outside the sealed QINPUT allowlist")
+        payload_bytes = resolved.read_bytes()
+        payload_sha256 = sha256_bytes(payload_bytes)
+        if payload_sha256 != expected_sha256:
+            raise ValueError("shared D-1 context hash differs from shared binding")
+        try:
+            raw_payload = json.loads(payload_bytes.decode("utf-8-sig"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("shared D-1 context payload is invalid") from exc
+        reject_forbidden_blind_payload_keys(raw_payload)
+        context = SharedDMinusOneContext.model_validate(raw_payload)
+        if (
+            context.trade_date != trade_date
+            or context.cutoff_at != cutoff_at
+            or context.allowed_through != trade_date - timedelta(days=1)
+        ):
+            raise ValueError("shared D-1 temporal identity differs from analysis")
+        return context, payload_sha256, resolved
+
+    def _bind_shared_d_minus_one_context(
+        self,
+        *,
+        manifest: ContextManifest,
+        context: SharedDMinusOneContext,
+        context_sha256: str,
+        context_path: Path,
+    ) -> None:
+        if (
+            manifest.trade_date != context.trade_date
+            or manifest.cutoff_at != context.cutoff_at
+            or manifest.price_snapshot.allowed_through != context.allowed_through
+            or manifest.price_snapshot.source_name != context.source_name
+            or manifest.price_snapshot.source_ref != context.source_ref
+        ):
+            raise ValueError("shared D-1 context differs from analysis manifest")
+        manifest.bind_d_minus_one_context(
+            artifact_path=relative_to_root(context_path, self.root),
+            sha256=context_sha256,
+            candidate_universe_root_sha256=(context.candidate_universe_root_sha256),
+            snapshot_root_sha256=context.snapshot_root_sha256,
+            source_revision_sha256=context.source_revision_sha256,
+            snapshot_session_date=context.snapshot_session_date,
+            payload_sha256=sha256_text(canonical_json(context.model_dump(mode="json"))),
+        )
+        manifest.blind_price_repository_access_count = context.price_repository_access_count
+        manifest.blind_current_price_access_count = context.d_day_access_count
+        if context.price_repository_access_count:
+            self._mark_d_minus_one_price_access(manifest)
+
     def _collect_d_minus_one_market_data(
         self,
         *,
@@ -4787,10 +5636,25 @@ class DailyAnalyzer:
 
     def _read_brain_context(self, manifest: ContextManifest) -> list[dict[str, Any]]:
         files: list[dict[str, Any]] = []
+        reference_only_metadata = {
+            "brain_manifest.json",
+            "coverage_manifest.json",
+            "record_coverage_manifest.json",
+        }
         for relative_path in manifest.brain_files:
             path = self.root / relative_path
             if not path.exists() or not path.is_file():
                 files.append({"path": relative_path, "missing": True})
+                continue
+            if path.name in reference_only_metadata:
+                files.append(
+                    {
+                        "path": relative_path,
+                        "sha256": manifest.brain_file_hashes.get(relative_path),
+                        "byte_size": path.stat().st_size,
+                        "prompt_projection": "REFERENCE_ONLY_METADATA.v1",
+                    }
+                )
                 continue
             files.append(
                 {
@@ -5256,7 +6120,7 @@ class DailyAnalyzer:
         default_negative_record_ids: Sequence[str] | None = None,
     ) -> BlindPrediction:
         prompt_hash = sha256_text(prompt)
-        observed_at = now_kst()
+        observed_at = cutoff_at
         fallback_positive_case_ids = _unique_preserving_order(list(default_positive_case_ids or []))[:3]
         fallback_negative_case_ids = _unique_preserving_order(list(default_negative_case_ids or []))[:3]
         fallback_positive_record_ids = _unique_preserving_order(list(default_positive_record_ids or []))[:5]
@@ -5418,7 +6282,7 @@ class DailyAnalyzer:
                 ),
                 "trade_date": trade_date,
                 "cutoff_at": cutoff_at,
-                "created_at": now_kst(),
+                "created_at": cutoff_at,
                 "sealed_at": None,
                 "blind_artifact_sha256": None,
                 "blind_analysis": analysis,
@@ -5451,7 +6315,212 @@ class DailyAnalyzer:
             max_retries=self.settings.llm.max_retries,
         )
 
+    def _load_shared_pre_retrieval_context(
+        self,
+        *,
+        path: Path,
+        expected_context_sha256: str | None,
+        expected_manifest_sha256: str | None,
+        news_sha256: str,
+        trade_date: date,
+        cutoff_at: datetime,
+    ) -> tuple[
+        SharedPreRetrievalContext,
+        str,
+        SharedPreRetrievalContextManifest,
+        Path,
+        str,
+    ]:
+        if expected_context_sha256 is None or expected_manifest_sha256 is None:
+            raise ValueError("shared pre-retrieval expected hashes are required")
+        root = self.root.resolve()
+        context_path = path.resolve() if path.is_absolute() else (root / path).resolve()
+        try:
+            context_path.relative_to(root)
+        except ValueError as exc:
+            raise ValueError("shared pre-retrieval context escapes the project root") from exc
+        context_manifest_path = context_path.parent / "shared_pre_retrieval_context_manifest.json"
+        if not context_path.is_file() or not context_manifest_path.is_file():
+            raise ValueError("shared pre-retrieval context is incomplete")
+        raw_manifest = _read_verified_blind_artifact(
+            context_manifest_path,
+            expected_sha256=expected_manifest_sha256,
+        )
+        context_manifest = SharedPreRetrievalContextManifest.model_validate(raw_manifest)
+        expected_context_path = (root / context_manifest.context.artifact_path).resolve()
+        if expected_context_path != context_path:
+            raise ValueError("shared pre-retrieval manifest context path drifted")
+        raw_context = _read_verified_blind_artifact(
+            context_path,
+            expected_sha256=expected_context_sha256,
+        )
+        context = SharedPreRetrievalContext.model_validate(raw_context)
+        if (
+            context_manifest.context_id != context.context_id
+            or context_manifest.context.sha256 != expected_context_sha256
+            or context_manifest.context.artifact_path != relative_to_root(context_path, root)
+        ):
+            raise ValueError("shared pre-retrieval manifest binding drifted")
+        if context.news_sha256 != news_sha256 or context.trade_date != trade_date or context.cutoff_at != cutoff_at:
+            raise ValueError("shared pre-retrieval current-news identity drifted")
+        if (
+            context.provider != self.settings.llm_provider
+            or context.model != self.settings.llm.model
+            or context.reasoning_effort != str(self.settings.llm.reasoning_effort or "")
+        ):
+            raise ValueError("shared pre-retrieval model identity drifted")
+        references = [
+            context.event_clustering_result,
+            context.row_disposition_ledger,
+            context.event_cluster_ledger,
+            context.news_coverage_manifest,
+            context.event_cluster_manifest,
+            context.open_world_first_analysis,
+            context.news_novelty_review,
+            context.downstream_digest,
+            *[node.output for node in context.map_reduce_nodes],
+        ]
+        for reference in references:
+            _resolve_and_read_shared_reference(root, reference)
+        return (
+            context,
+            expected_context_sha256,
+            context_manifest,
+            context_manifest_path,
+            expected_manifest_sha256,
+        )
+
+    def _bind_shared_pre_retrieval_context(
+        self,
+        *,
+        manifest: ContextManifest,
+        context: SharedPreRetrievalContext,
+        context_sha256: str,
+        context_manifest: SharedPreRetrievalContextManifest,
+        context_manifest_path: Path,
+        context_manifest_sha256: str,
+        parsed_news_root_sha256: str,
+        event_clustering: EventClusteringResult,
+        open_world_analysis: OpenWorldFirstAnalysis,
+    ) -> None:
+        manifest.bind_shared_pre_retrieval_context(
+            context_artifact_path=context_manifest.context.artifact_path,
+            context_sha256=context_sha256,
+            manifest_artifact_path=relative_to_root(
+                context_manifest_path,
+                self.root,
+            ),
+            manifest_sha256=context_manifest_sha256,
+            parsed_news_root_sha256=parsed_news_root_sha256,
+        )
+        manifest.shared_pre_retrieval_summary = {
+            "context_id": context.context_id,
+            "source_row_count": len(context.source_row_ids),
+            "event_cluster_count": len(context.event_cluster_ids),
+            "material_cluster_count": len(context.material_cluster_ids),
+            "low_signal_cluster_count": len(context.low_signal_cluster_ids),
+            "map_reduce_node_count": len(context.map_reduce_nodes),
+            "root_node_id": context.root_node_id,
+            "shared_logical_llm_call_count": context.logical_llm_call_count,
+            "shared_provider_checkpoint_commitment_count": (context.provider_checkpoint_commitment_count),
+            "shared_committed_prompt_tokens_estimate": (context.committed_prompt_tokens_estimate),
+            "shared_committed_completion_tokens_estimate": (context.committed_completion_tokens_estimate),
+            "outcome_reference_count": context.outcome_reference_count,
+        }
+        manifest.llm_model_config["evaluation_profile"] = "QUALITY_FULL"
+        manifest.llm_model_config["shared_pre_retrieval_context_id"] = context.context_id
+        manifest.row_disposition_artifact = context.row_disposition_ledger.artifact_path
+        manifest.row_disposition_sha256 = context.row_disposition_ledger.sha256
+        manifest.row_disposition_coverage_ratio = 1.0
+        manifest.row_disposition_summary = {
+            "total_rows": len(context.source_row_ids),
+            "covered_rows": len(context.source_row_ids),
+            "coverage_ratio": 1.0,
+            "shared_pre_retrieval": True,
+        }
+        manifest.event_cluster_artifact = context.event_cluster_ledger.artifact_path
+        manifest.event_cluster_sha256 = context.event_cluster_ledger.sha256
+        manifest.event_cluster_count = len(context.event_cluster_ids)
+        manifest.event_cluster_summary = {
+            "source_row_count": event_clustering.cutoff_safe_row_count,
+            "all_input_row_count": event_clustering.input_row_count,
+            "audit_only_row_count": event_clustering.audit_only_row_count,
+            "cluster_count": len(context.event_cluster_ids),
+            "material_cluster_count": len(context.material_cluster_ids),
+            "cluster_method": event_clustering.clustering_version,
+            "embedding_method": event_clustering.embedding_method,
+            "embedding_status": event_clustering.embedding_status,
+            "first_n_shortcut_used": False,
+            "silent_truncation_used": False,
+            "shared_pre_retrieval": True,
+        }
+        shared_news_coverage = NewsCoverageManifest.model_validate(
+            _resolve_and_read_shared_reference(
+                self.root,
+                context.news_coverage_manifest,
+            )
+        )
+        shared_event_manifest = EventClusterManifest.model_validate(
+            _resolve_and_read_shared_reference(
+                self.root,
+                context.event_cluster_manifest,
+            )
+        )
+        binding_dir = self.root / "runs" / "checkpoints" / "event_clusters" / manifest.run_id
+        news_coverage_path = binding_dir / "news_coverage_manifest.json"
+        event_manifest_path = binding_dir / "event_cluster_manifest.json"
+        write_json(
+            news_coverage_path,
+            shared_news_coverage.model_copy(update={"run_id": manifest.run_id}).model_dump(mode="json"),
+        )
+        write_json(
+            event_manifest_path,
+            shared_event_manifest.model_copy(update={"run_id": manifest.run_id}).model_dump(mode="json"),
+        )
+        manifest.news_coverage_manifest_artifact = relative_to_root(
+            news_coverage_path,
+            self.root,
+        )
+        manifest.news_coverage_manifest_sha256 = file_sha256(news_coverage_path)
+        manifest.event_cluster_manifest_artifact = relative_to_root(
+            event_manifest_path,
+            self.root,
+        )
+        manifest.event_cluster_manifest_sha256 = file_sha256(event_manifest_path)
+        manifest.open_world_first_analysis_artifact = context.open_world_first_analysis.artifact_path
+        manifest.open_world_first_analysis_sha256 = context.open_world_first_analysis.sha256
+        manifest.open_world_first_analysis_summary = {
+            "source_cluster_count": len(open_world_analysis.source_cluster_ids),
+            "analyzed_cluster_count": len(open_world_analysis.analyzed_cluster_ids),
+            "uncovered_cluster_count": len(open_world_analysis.uncovered_cluster_ids),
+            "analysis_batch_count": open_world_analysis.analysis_batch_count,
+            "cluster_finding_count": len(open_world_analysis.cluster_findings),
+            "mechanism_count": len(open_world_analysis.mechanisms),
+            "shared_pre_retrieval": True,
+        }
+        novelty = NewsNoveltyReview.model_validate(
+            _resolve_and_read_shared_reference(
+                self.root,
+                context.news_novelty_review,
+            )
+        )
+        manifest.news_novelty_review_artifact = context.news_novelty_review.artifact_path
+        manifest.news_novelty_review_sha256 = context.news_novelty_review.sha256
+        manifest.news_novelty_review_count = novelty.reviewed_cluster_count
+        manifest.news_novelty_review_summary = {
+            "cluster_count": novelty.cluster_count,
+            "reviewed_cluster_count": novelty.reviewed_cluster_count,
+            "review_mode": novelty.review_mode,
+            "shared_pre_retrieval": True,
+        }
+
     def _enforce_evidence_policy(self, manifest: ContextManifest) -> None:
+        if (
+            manifest.evaluation_profile == "QUALITY_FULL"
+            and manifest.d_minus_one_context_sha256 is not None
+            and manifest.d_minus_one_projection_status != "BOUND"
+        ):
+            raise ValueError("QUALITY_FULL final synthesis did not bind a D-1 prompt projection")
         if EvidencePolicy.parse(manifest.evidence_policy) is not EvidencePolicy.CSV_MEMORY_ONLY_STRICT:
             return
         if manifest.blind_web_search_call_count != 0:

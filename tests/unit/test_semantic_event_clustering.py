@@ -5,6 +5,8 @@ import pytest
 from news_scalping_lab.contracts.models import NewsItem
 from news_scalping_lab.inference.event_clustering import (
     cluster_news_events,
+    event_clustering_from_payload,
+    event_clustering_payload,
     open_world_cluster_inputs,
 )
 from news_scalping_lab.utils import KST
@@ -58,6 +60,11 @@ async def test_semantic_clusters_cover_every_row_without_merging_different_numbe
     assert len(open_world_inputs) == 2
     assert len(open_world_inputs[0].member_news) == 2
     assert any("계약 체결을 발표했다" in text for text in open_world_inputs[0].member_news)
+    restored = event_clustering_from_payload(event_clustering_payload(result))
+    assert event_clustering_payload(restored) == event_clustering_payload(result)
+    assert [
+        item.row_number for cluster in restored.clusters for item in cluster.members
+    ] == [1, 2, 3, 4, 5]
 
 
 @pytest.mark.asyncio

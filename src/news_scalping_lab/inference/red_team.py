@@ -16,7 +16,6 @@ from news_scalping_lab.contracts.models import (
 from news_scalping_lab.llm.base import LLMProvider, count_provider_tokens
 from news_scalping_lab.utils import (
     canonical_json,
-    now_kst,
     read_json,
     relative_to_root,
     sha256_text,
@@ -149,7 +148,7 @@ def build_deterministic_red_team_artifact(
         source_prediction_id=prediction.prediction_id,
         prompt_version=PROMPT_VERSION,
         prompt_sha256=prompt_sha256,
-        created_at=now_kst(),
+        created_at=prediction.created_at,
         candidate_count=len(prediction.candidates),
         required_attack_checks=list(REQUIRED_ATTACK_CHECKS),
         candidate_findings=findings,
@@ -181,7 +180,7 @@ def _normalize_artifact(
             "source_prediction_id": prediction.prediction_id,
             "prompt_version": PROMPT_VERSION,
             "prompt_sha256": prompt_sha256,
-            "created_at": now_kst(),
+            "created_at": prediction.created_at,
             "candidate_count": len(prediction.candidates),
             "required_attack_checks": list(REQUIRED_ATTACK_CHECKS),
             "candidate_findings": candidate_findings,

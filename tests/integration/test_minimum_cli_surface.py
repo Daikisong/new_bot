@@ -303,11 +303,17 @@ def test_goal_minimum_cli_commands_run_as_documented(tmp_path, monkeypatch) -> N
         "excluded_web_source",
         "candidate_web_check",
         "excluded_candidate_web_check",
-        "candidate_verification",
     ):
         assert supporting[label]["configured"] is False
         assert supporting[label]["passed"] is True
         assert supporting[label]["errors"] == []
+    candidate_verification = supporting["candidate_verification"]
+    assert candidate_verification["configured"] is True
+    assert candidate_verification["passed"] is True
+    assert candidate_verification["hash_verified"] is True
+    assert candidate_verification["finding_count_verified"] is True
+    assert candidate_verification["source_counts_verified"] is True
+    assert candidate_verification["errors"] == []
     assert supporting["final_synthesis_context"]["hash_verified"] is True
     assert supporting["final_synthesis_context"]["schema_version_verified"] is True
     assert supporting["final_synthesis_context"]["run_id_verified"] is True

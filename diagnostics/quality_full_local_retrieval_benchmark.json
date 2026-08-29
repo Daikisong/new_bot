@@ -1,0 +1,89 @@
+{
+  "schema_version": "nslab.quality_full_local_retrieval_benchmark.v1",
+  "observed_at": "2026-08-29",
+  "scope": "LOCAL-only pre-LLM V1 retrieval benchmark against the evaluation project brain and memory",
+  "llm_oauth_call_count": 0,
+  "production_unchanged": true,
+  "predictive_conclusion": null,
+  "single_cluster": {
+    "run_id": "V1LOCAL-20260829T195400-5ac7b1fe",
+    "material_cluster_count": 1,
+    "wall_seconds": 33.32821150007658,
+    "process_cpu_seconds": 110.421875,
+    "peak_rss_bytes": 7034241024,
+    "peak_rss_gib": 6.5502166748046875,
+    "selected_record_count": 96,
+    "prompt_batch_count": 6,
+    "llm_exposed_record_count": 0,
+    "final_cited_record_count": 0
+  },
+  "two_cluster_worker_comparison": {
+    "material_cluster_count": 2,
+    "worker_1": {
+      "run_id": "V1W1-20260829T195627-a2167d4d",
+      "wall_seconds": 61.970729000051506,
+      "process_cpu_seconds": 202.625,
+      "peak_rss_bytes": 7254351872
+    },
+    "worker_2": {
+      "run_id": "V1W2-20260829T195805-3f8219dc",
+      "wall_seconds": 49.70226799999364,
+      "process_cpu_seconds": 210.875,
+      "peak_rss_bytes": 9195286528
+    },
+    "observed_wall_speedup": 1.246838995527289,
+    "observed_wall_reduction_percent": 19.79718364959014,
+    "observed_peak_rss_increase_bytes": 1940934656,
+    "observed_peak_rss_increase_gib": 1.8076362609863281,
+    "semantic_parity": true,
+    "combined_semantic_root_sha256": "dbd3419eba5c9eb638b9b45dbafe993f26a70f5c60a70e199e6555bcb4eedd1a",
+    "artifact_byte_size_multiset_parity": true,
+    "raw_artifact_hash_parity": false,
+    "raw_hash_difference_reason": "Fresh run IDs and artifact paths are committed into provenance-bearing artifacts."
+  },
+  "measurement_limits": {
+    "fresh_process_and_run_identity_each": true,
+    "old_invalid_run_cache_reused": false,
+    "os_file_cache_flushed": false,
+    "execution_order": [
+      "worker_1",
+      "worker_2"
+    ],
+    "order_bias_possible": true,
+    "clustering_time_included": false,
+    "llm_time_included": false,
+    "throughput_or_runtime_prediction_supported": false
+  },
+  "external_artifact_anchors": [
+    {
+      "absolute_path": "C:\\Users\\eorb9\\projects\\nslab_semantic_upgrade_v7_eval_v2\\project\\runs\\diagnostics\\V1LOCAL-20260829T195400-5ac7b1fe\\benchmark.json",
+      "bytes": 10479,
+      "sha256": "6bc996490e390b48dacef445ffa337d9867bde40572491bc6c2d426d08e53afb"
+    },
+    {
+      "absolute_path": "C:\\Users\\eorb9\\projects\\nslab_semantic_upgrade_v7_eval_v2\\project\\runs\\diagnostics\\V1LOCAL-20260829T195400-5ac7b1fe\\benchmark.md",
+      "bytes": 1603,
+      "sha256": "a005d3688a32bc4145812288ce5ff71779c0745a0b7d359a788137403600bf1d"
+    },
+    {
+      "absolute_path": "C:\\Users\\eorb9\\projects\\nslab_semantic_upgrade_v7_eval_v2\\project\\runs\\diagnostics\\V1W1-20260829T195627-a2167d4d\\worker_benchmark.json",
+      "bytes": 4930,
+      "sha256": "3e10ead24bb8865995e863a3afa13be0621d75f1174c0b8ae94f4a3740933070"
+    },
+    {
+      "absolute_path": "C:\\Users\\eorb9\\projects\\nslab_semantic_upgrade_v7_eval_v2\\project\\runs\\diagnostics\\V1W2-20260829T195805-3f8219dc\\worker_benchmark.json",
+      "bytes": 4929,
+      "sha256": "291761dbaac7fc40aeef4f1afd2f261431f61cc5911a62ad1cd27249773a18e4"
+    },
+    {
+      "absolute_path": "C:\\Users\\eorb9\\projects\\nslab_semantic_upgrade_v7_eval_v2\\project\\runs\\diagnostics\\worker_compare_harness\\comparison.json",
+      "bytes": 2678,
+      "sha256": "a628d3e39847152cccab1f064b1c0e97acf27aa2717a9742c8800e10755bc36f"
+    },
+    {
+      "absolute_path": "C:\\Users\\eorb9\\projects\\nslab_semantic_upgrade_v7_eval_v2\\project\\runs\\diagnostics\\worker_compare_harness\\comparison.md",
+      "bytes": 633,
+      "sha256": "677dd0f9d596b7eebc4662ae814506d94748eab71a324e93d52cfbe2c6d7daa2"
+    }
+  ]
+}

@@ -149,25 +149,7 @@ class PopulationRetriever:
             routing_dispositions=routing_dispositions,
             query_regime_cluster=query_regime_cluster,
         )
-        snapshot, members = self.memory_index.population_members_for_cells(
-            list(request.selected_cell_ids),
-            cutoff_at=cutoff_at,
-            independent_unit_type=independent_unit_type,
-            routing_dispositions=tuple(request.routing_dispositions),
-            included_memory_lanes=request.included_memory_lanes,
-            included_record_types=_PURPOSE_RECORD_FILTERS[request.population_purpose][0],
-            excluded_record_types=_PURPOSE_RECORD_FILTERS[request.population_purpose][1],
-            max_records=POPULATION_MAX_SELECTED_RECORDS,
-        )
-        if not members:
-            raise ValueError("selected cells contain no records for the requested unit type")
-        members = _members_for_purpose(
-            members,
-            population_purpose=request.population_purpose,
-            included_memory_lanes=request.included_memory_lanes,
-        )
-        if not members:
-            raise ValueError("selected cells contain no records for the requested population purpose")
+        snapshot = self.memory_index.resolve_snapshot(cutoff_at=cutoff_at)
         identity = {
             **request.identity_payload(),
             "run_id": run_id,
@@ -185,17 +167,52 @@ class PopulationRetriever:
             "bootstrap_version": BLOCK_BOOTSTRAP_VERSION,
         }
         population_id = "POP-" + sha256_text(canonical_json(identity))[:20].upper()
+        population_dir = self.root / POPULATION_ARTIFACT_ROOT / safe_run_id / safe_cluster_id / population_id
+        try:
+            population_dir.resolve().relative_to((self.root / POPULATION_ARTIFACT_ROOT).resolve())
+        except ValueError as exc:
+            raise ValueError("population artifact path escapes its root") from exc
+        member_path = population_dir / POPULATION_MEMBER_FILE
+        unit_path = population_dir / POPULATION_UNIT_FILE
+        cube_path = population_dir / POPULATION_CUBE_FILE
+        manifest_path = population_dir / POPULATION_MANIFEST_FILE
+        cached_manifest = _load_cached_population(
+            self.root,
+            manifest_path=manifest_path,
+            expected_identity=identity,
+        )
+        if cached_manifest is not None:
+            return PopulationBuildResult(
+                manifest=cached_manifest,
+                manifest_path=manifest_path,
+            )
+        observed_snapshot, members = self.memory_index.population_members_for_cells(
+            list(request.selected_cell_ids),
+            cutoff_at=cutoff_at,
+            independent_unit_type=independent_unit_type,
+            routing_dispositions=tuple(request.routing_dispositions),
+            included_memory_lanes=request.included_memory_lanes,
+            included_record_types=_PURPOSE_RECORD_FILTERS[request.population_purpose][0],
+            excluded_record_types=_PURPOSE_RECORD_FILTERS[request.population_purpose][1],
+            max_records=POPULATION_MAX_SELECTED_RECORDS,
+        )
+        if observed_snapshot.snapshot_id != snapshot.snapshot_id:
+            raise ValueError("population snapshot changed while building the artifact")
+        if not members:
+            raise ValueError("selected cells contain no records for the requested unit type")
+        members = _members_for_purpose(
+            members,
+            population_purpose=request.population_purpose,
+            included_memory_lanes=request.included_memory_lanes,
+        )
+        if not members:
+            raise ValueError("selected cells contain no records for the requested population purpose")
         computation = _compute_population(
             members,
             cutoff_at=cutoff_at,
             query_regime_cluster=request.query_regime_cluster,
             seed=_statistics_seed(members, cutoff_at=cutoff_at),
         )
-        population_dir = self.root / POPULATION_ARTIFACT_ROOT / safe_run_id / safe_cluster_id / population_id
-        try:
-            population_dir.resolve().relative_to((self.root / POPULATION_ARTIFACT_ROOT).resolve())
-        except ValueError as exc:
-            raise ValueError("population artifact path escapes its root") from exc
         member_bytes = _jsonl_bytes(computation.member_rows)
         unit_bytes = _jsonl_bytes(computation.unit_rows)
         if len(computation.cube_rows) > POPULATION_MAX_CUBE_ROWS:
@@ -204,10 +221,6 @@ class PopulationRetriever:
                 f"{len(computation.cube_rows)} > {POPULATION_MAX_CUBE_ROWS}"
             )
         cube_bytes = _jsonl_bytes([row.model_dump(mode="json") for row in computation.cube_rows])
-        member_path = population_dir / POPULATION_MEMBER_FILE
-        unit_path = population_dir / POPULATION_UNIT_FILE
-        cube_path = population_dir / POPULATION_CUBE_FILE
-        manifest_path = population_dir / POPULATION_MANIFEST_FILE
         manifest = PopulationManifest(
             population_id=population_id,
             run_id=run_id,
@@ -461,6 +474,64 @@ def _inspect_built_population(
         if row_count != reference.item_count:
             errors.append(f"{name}_count_mismatch")
     return {"passed": not errors, "errors": errors}
+
+
+def _load_cached_population(
+    root: Path,
+    *,
+    manifest_path: Path,
+    expected_identity: dict[str, Any],
+) -> PopulationManifest | None:
+    """Reuse only a content-addressed population with a complete local closure."""
+
+    if not manifest_path.is_file():
+        return None
+    try:
+        manifest = PopulationManifest.model_validate(read_json(manifest_path))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"cached population manifest is invalid: {exc}") from exc
+    expected_population_id = "POP-" + sha256_text(canonical_json(expected_identity))[:20].upper()
+    if (
+        manifest.population_id != expected_population_id
+        or _population_identity_from_manifest(manifest) != expected_identity
+    ):
+        raise ValueError("cached population identity differs from the active request")
+    inspection = _inspect_built_population(
+        root,
+        manifest_path=manifest_path,
+        expected_manifest=manifest,
+    )
+    if inspection["passed"] is not True:
+        raise ValueError(
+            "cached population closure is invalid: "
+            + ", ".join(str(error) for error in inspection["errors"])
+        )
+    return manifest
+
+
+def _population_identity_from_manifest(manifest: PopulationManifest) -> dict[str, Any]:
+    return {
+        "cutoff_at": as_kst(manifest.cutoff_at).isoformat(),
+        "selected_cell_ids": sorted(manifest.selected_cell_ids),
+        "independent_unit_type": manifest.independent_unit_type,
+        "population_purpose": manifest.population_purpose,
+        "included_memory_lanes": sorted(manifest.included_memory_lanes),
+        "routing_dispositions": sorted(manifest.routing_dispositions),
+        "query_regime_cluster": manifest.query_regime_cluster,
+        "run_id": manifest.run_id,
+        "cluster_id": manifest.cluster_id,
+        "memory_snapshot_id": manifest.memory_snapshot_id,
+        "source_generation_sha256": manifest.source_generation_sha256,
+        "corpus_manifest_sha256": manifest.corpus_manifest_sha256,
+        "statistics_version": manifest.statistics_version,
+        "cube_version": manifest.cube_version,
+        "selection_budget_version": manifest.selection_budget_version,
+        "max_selected_record_count": manifest.max_selected_record_count,
+        "max_cube_row_count": manifest.max_cube_row_count,
+        "purpose_classifier_version": manifest.purpose_classifier_version,
+        "purpose_record_types_sha256": manifest.purpose_record_types_sha256,
+        "bootstrap_version": manifest.bootstrap_version,
+    }
 
 
 @dataclass(frozen=True)

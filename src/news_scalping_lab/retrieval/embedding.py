@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import threading
 from collections.abc import Coroutine
 from typing import Any, Protocol
 
@@ -50,15 +51,22 @@ class AsyncEmbeddingProviderAdapter:
         self.provider = provider
         self.embedding_method = embedding_method
         self.production_capability_attested = production_capability_attested
-        self.dimensions = 0
+        inherited_dimensions = getattr(provider, "dimensions", 0)
+        self.dimensions = (
+            inherited_dimensions
+            if isinstance(inherited_dimensions, int) and inherited_dimensions >= 0
+            else 0
+        )
+        self._sync_embed_lock = threading.Lock()
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        _ensure_no_running_loop()
-        vectors = _run_embedding(
-            self.provider.embed(texts=texts, purpose="vector_index.rebuild")
-        )
+        with self._sync_embed_lock:
+            _ensure_no_running_loop()
+            vectors = _run_embedding(
+                self.provider.embed(texts=texts, purpose="vector_index.rebuild")
+            )
         if vectors:
             self.dimensions = len(vectors[0])
         return vectors

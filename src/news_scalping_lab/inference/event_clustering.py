@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from typing import Any, cast
 
 from news_scalping_lab.contracts.memory_context import NewsDisposition
 from news_scalping_lab.contracts.models import NewsItem
@@ -259,6 +259,187 @@ def open_world_cluster_inputs(
         )
         for cluster in result.material_clusters
     ]
+
+
+def event_clustering_payload(result: EventClusteringResult) -> dict[str, Any]:
+    """Serialize a complete clustering result for cross-variant reuse."""
+
+    return {
+        "schema_version": result.schema_version,
+        "clustering_version": result.clustering_version,
+        "embedding_method": result.embedding_method,
+        "embedding_status": result.embedding_status,
+        "embedding_provider": result.embedding_provider,
+        "embedding_model": result.embedding_model,
+        "embedding_revision": result.embedding_revision,
+        "embedding_artifact_sha256": result.embedding_artifact_sha256,
+        "embedding_dimensions": result.embedding_dimensions,
+        "embedding_fallback_policy": result.embedding_fallback_policy,
+        "deterministic_fallback_used": result.deterministic_fallback_used,
+        "embedding_retry_count": result.embedding_retry_count,
+        "embedding_failure_type": result.embedding_failure_type,
+        "production_runtime_identity": result.production_runtime_identity,
+        "input_row_count": result.input_row_count,
+        "cutoff_safe_row_count": result.cutoff_safe_row_count,
+        "audit_only_row_count": result.audit_only_row_count,
+        "exact_duplicate_count": result.exact_duplicate_count,
+        "semantic_duplicate_count": result.semantic_duplicate_count,
+        "warnings": list(result.warnings),
+        "clusters": [
+            {
+                "cluster_id": cluster.cluster_id,
+                "disposition": cluster.disposition,
+                "representative_event_id": cluster.representative.event_id,
+                "members": [
+                    item.model_dump(mode="json") for item in cluster.members
+                ],
+                "exact_group_count": cluster.exact_group_count,
+                "exact_duplicate_count": cluster.exact_duplicate_count,
+                "semantic_duplicate_count": cluster.semantic_duplicate_count,
+                "minimum_semantic_similarity": (
+                    cluster.minimum_semantic_similarity
+                ),
+                "cluster_signature_sha256": cluster.cluster_signature_sha256,
+            }
+            for cluster in result.clusters
+        ],
+    }
+
+
+def event_clustering_from_payload(payload: object) -> EventClusteringResult:
+    """Restore a clustering result without re-embedding the news batch."""
+
+    if not isinstance(payload, dict) or not isinstance(payload.get("clusters"), list):
+        raise ValueError("shared event clustering payload is invalid")
+    clusters: list[EventCluster] = []
+    for raw_cluster in payload["clusters"]:
+        if not isinstance(raw_cluster, dict) or not isinstance(
+            raw_cluster.get("members"),
+            list,
+        ):
+            raise ValueError("shared event cluster row is invalid")
+        members = tuple(
+            NewsItem.model_validate(item) for item in raw_cluster["members"]
+        )
+        representative_event_id = raw_cluster.get("representative_event_id")
+        representative = next(
+            (
+                item
+                for item in members
+                if item.event_id == representative_event_id
+            ),
+            None,
+        )
+        if representative is None:
+            raise ValueError("shared event cluster representative is missing")
+        disposition = raw_cluster.get("disposition")
+        if disposition not in {"MATERIAL_FULL_RETRIEVAL", "AUDIT_ONLY"}:
+            raise ValueError("shared event cluster disposition is invalid")
+        clusters.append(
+            EventCluster(
+                cluster_id=_required_string(raw_cluster, "cluster_id"),
+                disposition=cast(NewsDisposition, disposition),
+                representative=representative,
+                members=members,
+                exact_group_count=_required_int(raw_cluster, "exact_group_count"),
+                exact_duplicate_count=_required_int(
+                    raw_cluster,
+                    "exact_duplicate_count",
+                ),
+                semantic_duplicate_count=_required_int(
+                    raw_cluster,
+                    "semantic_duplicate_count",
+                ),
+                minimum_semantic_similarity=_optional_float(
+                    raw_cluster.get("minimum_semantic_similarity")
+                ),
+                cluster_signature_sha256=_required_string(
+                    raw_cluster,
+                    "cluster_signature_sha256",
+                ),
+            )
+        )
+    result = EventClusteringResult(
+        schema_version=_required_string(payload, "schema_version"),
+        clustering_version=_required_string(payload, "clustering_version"),
+        embedding_method=_required_string(payload, "embedding_method"),
+        embedding_status=_required_string(payload, "embedding_status"),
+        embedding_provider=_required_string(payload, "embedding_provider"),
+        embedding_model=_optional_string(payload.get("embedding_model")),
+        embedding_revision=_optional_string(payload.get("embedding_revision")),
+        embedding_artifact_sha256=_optional_string(
+            payload.get("embedding_artifact_sha256")
+        ),
+        embedding_dimensions=_required_int(payload, "embedding_dimensions"),
+        embedding_fallback_policy=_required_string(
+            payload,
+            "embedding_fallback_policy",
+        ),
+        deterministic_fallback_used=_required_bool(
+            payload,
+            "deterministic_fallback_used",
+        ),
+        embedding_retry_count=_required_int(payload, "embedding_retry_count"),
+        embedding_failure_type=_optional_string(
+            payload.get("embedding_failure_type")
+        ),
+        production_runtime_identity=_required_string(
+            payload,
+            "production_runtime_identity",
+        ),
+        input_row_count=_required_int(payload, "input_row_count"),
+        cutoff_safe_row_count=_required_int(payload, "cutoff_safe_row_count"),
+        audit_only_row_count=_required_int(payload, "audit_only_row_count"),
+        exact_duplicate_count=_required_int(payload, "exact_duplicate_count"),
+        semantic_duplicate_count=_required_int(
+            payload,
+            "semantic_duplicate_count",
+        ),
+        clusters=tuple(clusters),
+        warnings=tuple(
+            str(value)
+            for value in payload.get("warnings", [])
+            if isinstance(value, str)
+        ),
+    )
+    covered_rows = [
+        item.row_number for cluster in result.clusters for item in cluster.members
+    ]
+    if (
+        len(covered_rows) != result.input_row_count
+        or len(covered_rows) != len(set(covered_rows))
+    ):
+        raise ValueError("shared event clustering row coverage is incomplete")
+    return result
+
+
+def _required_string(payload: dict[str, Any], key: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"shared event clustering field is invalid: {key}")
+    return value
+
+
+def _required_int(payload: dict[str, Any], key: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"shared event clustering field is invalid: {key}")
+    return value
+
+
+def _required_bool(payload: dict[str, Any], key: str) -> bool:
+    value = payload.get(key)
+    if not isinstance(value, bool):
+        raise ValueError(f"shared event clustering field is invalid: {key}")
+    return value
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError("shared event clustering similarity is invalid")
+    return float(value)
 
 
 def _exact_groups(items: Sequence[NewsItem]) -> list[_ExactGroup]:

@@ -37,6 +37,9 @@ from news_scalping_lab.contracts.models import (
     SemanticRetrievalPlan,
     SemanticRetrievalQuery,
 )
+from news_scalping_lab.contracts.quality_evaluation import (
+    SharedOpenWorldReduceOutput,
+)
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
 from news_scalping_lab.utils import KST, now_kst, sha256_text, stable_id
 
@@ -88,10 +91,76 @@ class DeterministicMockLLMProvider:
         if response_model is CandidateExpansionReview:
             expansion_review = self._candidate_expansion_review(prompt)
             return expansion_review  # type: ignore[return-value]
+        if response_model is SharedOpenWorldReduceOutput:
+            reduction = self._shared_open_world_reduce(prompt)
+            return reduction  # type: ignore[return-value]
         if response_model is SemanticResearchDraft:
             draft = self._semantic_research_draft(prompt)
             return draft  # type: ignore[return-value]
         raise NotImplementedError(f"mock structured output not registered for {response_model}")
+
+    def _shared_open_world_reduce(
+        self,
+        prompt: str,
+    ) -> SharedOpenWorldReduceOutput:
+        marker = "---SHARED_OPEN_WORLD_REDUCE_PAYLOAD---"
+        payload: dict[str, Any] = {}
+        if marker in prompt:
+            try:
+                parsed = json.loads(prompt.split(marker, maxsplit=1)[-1].strip())
+            except json.JSONDecodeError:
+                parsed = {}
+            if isinstance(parsed, dict):
+                payload = parsed
+        children = payload.get("children")
+        child_rows = children if isinstance(children, list) else []
+
+        def merged(field: str) -> list[str]:
+            values: list[str] = []
+            for row in child_rows:
+                raw_values = row.get(field) if isinstance(row, dict) else None
+                if not isinstance(raw_values, list):
+                    continue
+                for value in raw_values:
+                    if isinstance(value, str) and value.strip() and value not in values:
+                        values.append(value)
+            return values
+
+        covered = payload.get("required_cluster_ids")
+        required_cluster_ids = (
+            [str(value) for value in covered]
+            if isinstance(covered, list)
+            else []
+        )
+        child_ids = payload.get("required_child_node_ids")
+        required_child_ids = (
+            [str(value) for value in child_ids]
+            if isinstance(child_ids, list)
+            else []
+        )
+        mechanisms = merged("mechanisms") or [
+            "current event evidence -> direct and indirect beneficiary validation"
+        ]
+        return SharedOpenWorldReduceOutput(
+            node_id=str(payload.get("node_id") or "REDUCE-mock"),
+            child_node_ids=required_child_ids,
+            covered_cluster_ids=required_cluster_ids,
+            event_clusters=merged("event_clusters"),
+            direct_company_events=merged("direct_company_events"),
+            policy_industry_events=merged("policy_industry_events"),
+            mechanisms=mechanisms,
+            beneficiary_transmission_paths=merged(
+                "beneficiary_transmission_paths"
+            ),
+            narrative_conversion_points=merged("narrative_conversion_points"),
+            direct_candidates=merged("direct_candidates"),
+            potential_sectors=merged("potential_sectors"),
+            beneficiary_investigation_questions=merged(
+                "beneficiary_investigation_questions"
+            ),
+            uncertainties=merged("uncertainties"),
+            notes=["Deterministic mock hierarchical reduction."],
+        )
 
     async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
         vectors: list[list[float]] = []

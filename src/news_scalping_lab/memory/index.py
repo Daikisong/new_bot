@@ -10,7 +10,7 @@ import shutil
 import struct
 import tempfile
 import threading
-from collections import Counter
+from collections import Counter, OrderedDict
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -80,6 +80,7 @@ from news_scalping_lab.utils import (
 )
 
 MEMORY_INDEX_SCHEMA_VERSION = "nslab.production_memory_index.v3"
+MEMORY_INDEX_RUNTIME_QUERY_VERSION = "memory_cell_hybrid_search.v2"
 MEMORY_INDEX_ROOT = Path("memory/retrieval_index")
 MEMORY_SNAPSHOT_DIR = "snapshots"
 MEMORY_CURRENT_POINTER = "current.json"
@@ -97,8 +98,15 @@ REPLAY_AVAILABILITY_PROJECTION_VERSION = "nslab.replay_availability_projection.v
 MEMORY_INDEX_EMBEDDING_BATCH_SIZE = 128
 MEMORY_INDEX_QUERY_CANDIDATE_MULTIPLIER = 4
 MEMORY_INDEX_STREAMING_AUDIT_THRESHOLD = 10_000
+MEMORY_INDEX_ANN_TIE_ABS_TOLERANCE = 1e-12
+MEMORY_INDEX_RUNTIME_FTS_CACHE_SIZE = 24
+MEMORY_INDEX_RUNTIME_POPULATION_CACHE_SIZE = 48
+MEMORY_INDEX_RUNTIME_POPULATION_CACHE_MAX_ROWS = 4_096
+MEMORY_INDEX_RUNTIME_REPRESENTATIVE_CACHE_SIZE = 24
+MEMORY_INDEX_RUNTIME_REPRESENTATIVE_CACHE_MAX_ROWS = 1_024
 _ORIGINAL_LIST_RECORDS = BrainRecordStore.list_records
 _PROCESS_VERIFIED_DATABASE_FILES: dict[str, tuple[int, int, int]] = {}
+_PROCESS_DATABASE_VERIFICATION_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -884,7 +892,8 @@ class ProductionMemoryIndex:
             candidate_limit = max(limit, limit * MEMORY_INDEX_QUERY_CANDIDATE_MULTIPLIER)
             vector_type = _vector_type(manifest.embedding_dimensions)
             ann_limit = candidate_limit
-            broad_ann_rows = connection.execute(
+            ann_probe_limit = max(ann_limit + 1, ann_limit * 2)
+            broad_ann_probe_rows = connection.execute(
                 f"""
                 SELECT cell_id,
                        1.0 - array_cosine_distance(centroid, ?::{vector_type}) AS score,
@@ -894,24 +903,55 @@ class ProductionMemoryIndex:
                 ORDER BY array_cosine_distance(centroid, ?::{vector_type})
                 LIMIT ?
                 """,
-                [vector, vector, ann_limit],
+                [vector, vector, ann_probe_limit],
             ).fetchall()
+            broad_ann_rows, broad_tie_distance = _stable_ann_probe_rows(
+                broad_ann_probe_rows,
+                limit=ann_limit,
+            )
+            if broad_tie_distance is not None:
+                broad_ann_rows = connection.execute(
+                    f"""
+                    SELECT cell_id,
+                           1.0 - distance AS score,
+                           primary_member_count,
+                           independent_unit_count
+                    FROM (
+                        SELECT cell_id,
+                               array_cosine_distance(
+                                   centroid, ?::{vector_type}
+                               ) AS distance,
+                               primary_member_count,
+                               independent_unit_count
+                        FROM reasoning_cells
+                    ) ranked
+                    WHERE distance <= ?
+                    ORDER BY distance, cell_id
+                    LIMIT ?
+                    """,
+                    [
+                        vector,
+                        broad_tie_distance
+                        + MEMORY_INDEX_ANN_TIE_ABS_TOLERANCE,
+                        ann_limit,
+                    ],
+                ).fetchall()
+            fts_score_table = self._runtime_fts_score_table(
+                connection,
+                database_path=database_path,
+                query=query,
+            )
             if included_memory_lanes is None and included_regime_clusters is None:
                 ann_rows = broad_ann_rows
                 fts_rows = connection.execute(
-                    """
+                    f"""
                     SELECT primary_cell_id, MAX(score) AS score
-                    FROM (
-                        SELECT primary_cell_id,
-                               fts_main_reasoning_records.match_bm25(record_id, ?) AS score
-                        FROM reasoning_records
-                    ) matched
-                    WHERE score IS NOT NULL
+                    FROM {fts_score_table}
                     GROUP BY primary_cell_id
-                    ORDER BY score DESC
+                    ORDER BY score DESC, primary_cell_id
                     LIMIT ?
                     """,
-                    [query, candidate_limit],
+                    [candidate_limit],
                 ).fetchall()
             else:
                 filter_sql, filter_parameters = _cell_search_filter(
@@ -924,7 +964,7 @@ class ProductionMemoryIndex:
                 )
                 facet_scores: dict[str, float] = {}
                 for facet_kind, facet_value in facets:
-                    facet_rows = connection.execute(
+                    facet_probe_rows = connection.execute(
                         f"""
                         SELECT cell_id,
                                1.0 - array_cosine_distance(
@@ -942,9 +982,38 @@ class ProductionMemoryIndex:
                             facet_kind,
                             facet_value,
                             vector,
-                            ann_limit,
+                            ann_probe_limit,
                         ],
                     ).fetchall()
+                    facet_rows, facet_tie_distance = _stable_ann_probe_rows(
+                        facet_probe_rows,
+                        limit=ann_limit,
+                    )
+                    if facet_tie_distance is not None:
+                        facet_rows = connection.execute(
+                            f"""
+                            SELECT cell_id, 1.0 - distance AS score
+                            FROM (
+                                SELECT cell_id,
+                                       array_cosine_distance(
+                                           centroid, ?::{vector_type}
+                                       ) AS distance
+                                FROM reasoning_cell_facets
+                                WHERE facet_kind = ? AND facet_value = ?
+                            ) ranked
+                            WHERE distance <= ?
+                            ORDER BY distance, cell_id
+                            LIMIT ?
+                            """,
+                            [
+                                vector,
+                                facet_kind,
+                                facet_value,
+                                facet_tie_distance
+                                + MEMORY_INDEX_ANN_TIE_ABS_TOLERANCE,
+                                ann_limit,
+                            ],
+                        ).fetchall()
                     for cell_id, score in facet_rows:
                         key = str(cell_id)
                         facet_scores[key] = max(
@@ -957,18 +1026,16 @@ class ProductionMemoryIndex:
                 )[:ann_limit]
                 fts_rows = connection.execute(
                     f"""
-                    SELECT r.primary_cell_id,
-                           MAX(fts_main_reasoning_records.match_bm25(
-                               r.record_id, ?
-                           )) AS score
-                    FROM reasoning_records r
+                    SELECT scores.primary_cell_id,
+                           MAX(scores.score) AS score
+                    FROM {fts_score_table} scores
+                    JOIN reasoning_records r USING (record_id)
                     WHERE {filter_sql.removeprefix(" AND ")}
-                    GROUP BY r.primary_cell_id
-                    HAVING score IS NOT NULL
-                    ORDER BY score DESC, r.primary_cell_id
+                    GROUP BY scores.primary_cell_id
+                    ORDER BY score DESC, scores.primary_cell_id
                     LIMIT ?
                     """,
-                    [query, *filter_parameters, candidate_limit],
+                    [*filter_parameters, candidate_limit],
                 ).fetchall()
                 candidate_cell_ids = sorted({str(row[0]) for row in facet_ann_rows} | {str(row[0]) for row in fts_rows})
                 if candidate_cell_ids:
@@ -1118,6 +1185,42 @@ class ProductionMemoryIndex:
             manifest,
             force=force_database_verification,
         )
+        cutoff = as_kst(cutoff_at)
+        population_cache = getattr(
+            self._runtime_connection_state,
+            "population_member_results",
+            None,
+        )
+        if population_cache is None:
+            population_cache = OrderedDict()
+            self._runtime_connection_state.population_member_results = population_cache
+        typed_population_cache = cast(
+            OrderedDict[tuple[object, ...], tuple[PopulationCellMember, ...]],
+            population_cache,
+        )
+        population_cache_key: tuple[object, ...] = (
+            manifest.snapshot_id,
+            cutoff.isoformat(),
+            tuple(selected_cells),
+            independent_unit_type,
+            tuple(sorted(set(routing_dispositions))),
+            (
+                tuple(sorted(set(included_memory_lanes)))
+                if included_memory_lanes is not None
+                else None
+            ),
+            (
+                tuple(sorted(set(included_record_types)))
+                if included_record_types is not None
+                else None
+            ),
+            tuple(sorted(set(excluded_record_types))),
+            max_records,
+        )
+        cached_members = typed_population_cache.get(population_cache_key)
+        if cached_members is not None:
+            typed_population_cache.move_to_end(population_cache_key)
+            return manifest, list(cached_members)
         connection = self._runtime_connection(database_path)
         try:
             known_cell_ids = {
@@ -1132,73 +1235,11 @@ class ProductionMemoryIndex:
                 raise ValueError(
                     "selected population cells are absent from the snapshot: " + ", ".join(missing_cell_ids)
                 )
-            future_trade_date_count = _fetch_count(
-                connection,
-                """
-                WITH matched AS (
-                    SELECT record_id FROM memberships
-                    WHERE primary_cell_id IN (SELECT UNNEST(?::VARCHAR[]))
-                    UNION
-                    SELECT record_id FROM secondary_memberships
-                    WHERE cell_id IN (SELECT UNNEST(?::VARCHAR[]))
-                )
-                SELECT COUNT(*)
-                FROM records r JOIN matched USING (record_id)
-                WHERE r.available_from <= ?
-                  AND r.routing_disposition IN (SELECT UNNEST(?::VARCHAR[]))
-                  AND r.independent_unit_type = ?
-                  AND r.trade_date > ?
-                """
-                + purpose_filter_sql,
-                [
-                    selected_cells,
-                    selected_cells,
-                    as_kst(cutoff_at).isoformat(),
-                    sorted(set(routing_dispositions)),
-                    independent_unit_type,
-                    as_kst(cutoff_at).date(),
-                    *purpose_parameters,
-                ],
-            )
-            if future_trade_date_count:
-                raise ValueError("selected population contains a trade date after the cutoff")
-            if max_records is not None:
-                selected_record_count = _fetch_count(
-                    connection,
-                    """
-                    WITH matched AS (
-                        SELECT record_id FROM memberships
-                        WHERE primary_cell_id IN (SELECT UNNEST(?::VARCHAR[]))
-                        UNION
-                        SELECT record_id FROM secondary_memberships
-                        WHERE cell_id IN (SELECT UNNEST(?::VARCHAR[]))
-                    )
-                    SELECT COUNT(*)
-                    FROM records r JOIN matched USING (record_id)
-                    WHERE r.available_from <= ?
-                      AND r.routing_disposition IN (SELECT UNNEST(?::VARCHAR[]))
-                      AND r.independent_unit_type = ?
-                    """
-                    + purpose_filter_sql,
-                    [
-                        selected_cells,
-                        selected_cells,
-                        as_kst(cutoff_at).isoformat(),
-                        sorted(set(routing_dispositions)),
-                        independent_unit_type,
-                        *purpose_parameters,
-                    ],
-                )
-                if selected_record_count > max_records:
-                    raise ValueError(
-                        "selected population exceeds the operational record budget: "
-                        f"{selected_record_count} > {max_records}"
-                    )
             rows = connection.execute(
                 f"""
                 WITH matched AS (
                     SELECT record_id, primary_cell_id AS cell_id
-                    FROM memberships
+                    FROM records
                     WHERE primary_cell_id IN (SELECT UNNEST(?::VARCHAR[]))
                     UNION
                     SELECT record_id, cell_id
@@ -1231,7 +1272,6 @@ class ProductionMemoryIndex:
                 FROM records r
                 JOIN matched USING (record_id)
                 WHERE r.available_from <= ?
-                  AND r.trade_date <= ?
                   AND r.routing_disposition IN (SELECT UNNEST(?::VARCHAR[]))
                   AND r.independent_unit_type = ?
                   {purpose_filter_sql}
@@ -1240,8 +1280,7 @@ class ProductionMemoryIndex:
                 [
                     selected_cells,
                     selected_cells,
-                    as_kst(cutoff_at).isoformat(),
-                    as_kst(cutoff_at).date(),
+                    cutoff.isoformat(),
                     sorted(set(routing_dispositions)),
                     independent_unit_type,
                     *purpose_parameters,
@@ -1251,11 +1290,18 @@ class ProductionMemoryIndex:
             self._retain_runtime_connection(connection)
         grouped: dict[str, tuple[tuple[object, ...], set[str]]] = {}
         for row in rows:
+            if cast(date, row[5]) > cutoff.date():
+                raise ValueError("selected population contains a trade date after the cutoff")
             record_id = str(row[0])
             if record_id not in grouped:
                 grouped[record_id] = (row, set())
             grouped[record_id][1].add(str(row[4]))
-        return manifest, [
+        if max_records is not None and len(grouped) > max_records:
+            raise ValueError(
+                "selected population exceeds the operational record budget: "
+                f"{len(grouped)} > {max_records}"
+            )
+        members = [
             PopulationCellMember(
                 record_id=str(row[0]),
                 independent_unit_id=str(row[1]),
@@ -1283,6 +1329,14 @@ class ProductionMemoryIndex:
             )
             for row, matched_cells in (grouped[key] for key in sorted(grouped))
         ]
+        if len(members) <= MEMORY_INDEX_RUNTIME_POPULATION_CACHE_MAX_ROWS:
+            while (
+                len(typed_population_cache)
+                >= MEMORY_INDEX_RUNTIME_POPULATION_CACHE_SIZE
+            ):
+                typed_population_cache.popitem(last=False)
+            typed_population_cache[population_cache_key] = tuple(members)
+        return manifest, members
 
     def effective_available_from_for_records(
         self,
@@ -1337,6 +1391,32 @@ class ProductionMemoryIndex:
             manifest,
             force=force_database_verification,
         )
+        representative_cache = getattr(
+            self._runtime_connection_state,
+            "representative_source_results",
+            None,
+        )
+        if representative_cache is None:
+            representative_cache = OrderedDict()
+            self._runtime_connection_state.representative_source_results = (
+                representative_cache
+            )
+        typed_representative_cache = cast(
+            OrderedDict[
+                tuple[str, str, tuple[str, ...]],
+                tuple[RepresentativeSourceRecord, ...],
+            ],
+            representative_cache,
+        )
+        representative_cache_key = (
+            manifest.snapshot_id,
+            as_kst(cutoff_at).isoformat(),
+            tuple(selected_ids),
+        )
+        cached_rows = typed_representative_cache.get(representative_cache_key)
+        if cached_rows is not None:
+            typed_representative_cache.move_to_end(representative_cache_key)
+            return manifest, list(cached_rows)
         connection = self._runtime_connection(self.root / manifest.database.artifact_path)
         try:
             rows = connection.execute(
@@ -1344,32 +1424,53 @@ class ProductionMemoryIndex:
                 SELECT r.record_id,
                        r.embedding,
                        r.document,
-                       r.source_sha256,
-                       list(p.source_id ORDER BY p.source_id) AS provenance_source_ids
+                       r.source_sha256
                 FROM records r
-                LEFT JOIN provenance_edges p USING (record_id)
                 WHERE r.record_id IN (SELECT UNNEST(?::VARCHAR[]))
                   AND r.available_from <= ?
-                GROUP BY r.record_id, r.embedding, r.document, r.source_sha256
                 ORDER BY r.record_id
                 """,
                 [selected_ids, as_kst(cutoff_at).isoformat()],
+            ).fetchall()
+            provenance_rows = connection.execute(
+                """
+                SELECT record_id, source_id
+                FROM provenance_edges
+                WHERE record_id IN (SELECT UNNEST(?::VARCHAR[]))
+                ORDER BY record_id, source_id
+                """,
+                [selected_ids],
             ).fetchall()
         finally:
             self._retain_runtime_connection(connection)
         observed_ids = {str(row[0]) for row in rows}
         if observed_ids != set(selected_ids):
             raise ValueError("representative source records are absent from the snapshot")
-        return manifest, [
+        provenance_by_record: dict[str, list[str]] = {
+            record_id: [] for record_id in selected_ids
+        }
+        for record_id, source_id in provenance_rows:
+            provenance_by_record[str(record_id)].append(str(source_id))
+        source_records = [
             RepresentativeSourceRecord(
                 record_id=str(row[0]),
                 embedding=tuple(float(value) for value in row[1]),
                 document=str(row[2]),
                 source_sha256=str(row[3]),
-                provenance_source_ids=tuple(str(value) for value in row[4]),
+                provenance_source_ids=tuple(provenance_by_record[str(row[0])]),
             )
             for row in rows
         ]
+        if len(source_records) <= MEMORY_INDEX_RUNTIME_REPRESENTATIVE_CACHE_MAX_ROWS:
+            while (
+                len(typed_representative_cache)
+                >= MEMORY_INDEX_RUNTIME_REPRESENTATIVE_CACHE_SIZE
+            ):
+                typed_representative_cache.popitem(last=False)
+            typed_representative_cache[representative_cache_key] = tuple(
+                source_records
+            )
+        return manifest, source_records
 
     def _verify_runtime_database(
         self,
@@ -1384,11 +1485,12 @@ class ProductionMemoryIndex:
             raise ValueError("memory snapshot database is unavailable") from exc
         observed_state = (stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
         verification_key = f"{manifest.snapshot_id}:{path.resolve()}"
-        if not force and self._verified_database_files.get(verification_key) == observed_state:
-            return
-        if file_sha256(path) != manifest.database.sha256:
-            raise ValueError("memory snapshot database hash mismatch")
-        self._verified_database_files[verification_key] = observed_state
+        with _PROCESS_DATABASE_VERIFICATION_LOCK:
+            if not force and self._verified_database_files.get(verification_key) == observed_state:
+                return
+            if file_sha256(path) != manifest.database.sha256:
+                raise ValueError("memory snapshot database hash mismatch")
+            self._verified_database_files[verification_key] = observed_state
 
     def _runtime_connection(self, database_path: Path) -> duckdb.DuckDBPyConnection:
         """Reuse one immutable index connection per worker thread and snapshot."""
@@ -1403,6 +1505,97 @@ class ProductionMemoryIndex:
             connection = _connect_index(database_path, read_only=True)
             connections[key] = connection
         return cast(duckdb.DuckDBPyConnection, connection)
+
+    def _runtime_fts_score_table(
+        self,
+        connection: duckdb.DuckDBPyConnection,
+        *,
+        database_path: Path,
+        query: str,
+    ) -> str:
+        """Cache query-only BM25 scores so lane filters do not recompute them."""
+
+        caches = getattr(
+            self._runtime_connection_state,
+            "fts_score_tables_by_database",
+            None,
+        )
+        if caches is None:
+            caches = {}
+            self._runtime_connection_state.fts_score_tables_by_database = caches
+        typed_caches = cast(dict[str, OrderedDict[str, str]], caches)
+        database_key = str(database_path.resolve())
+        typed_cache = typed_caches.setdefault(database_key, OrderedDict())
+        query_sha256 = sha256_text(query)
+        existing = typed_cache.get(query_sha256)
+        if existing is not None:
+            typed_cache.move_to_end(query_sha256)
+            return existing
+        while len(typed_cache) >= MEMORY_INDEX_RUNTIME_FTS_CACHE_SIZE:
+            _old_query_sha256, old_table = typed_cache.popitem(last=False)
+            connection.execute(f"DROP TABLE IF EXISTS {old_table}")
+        table_name = f"runtime_fts_{query_sha256[:20]}"
+        connection.execute(
+            f"""
+            CREATE TEMP TABLE {table_name} AS
+            WITH tokens AS (
+                SELECT DISTINCT stem(
+                    UNNEST(fts_main_reasoning_records.tokenize(?)),
+                    'none'
+                ) AS term
+            ),
+            query_terms AS (
+                SELECT dictionary.termid, dictionary.df
+                FROM fts_main_reasoning_records.dict dictionary
+                JOIN tokens ON dictionary.term = tokens.term
+            ),
+            term_frequency AS (
+                SELECT terms.docid,
+                       terms.termid,
+                       COUNT(*) AS tf
+                FROM fts_main_reasoning_records.terms terms
+                JOIN query_terms USING (termid)
+                GROUP BY terms.docid, terms.termid
+            ),
+            subscores AS (
+                SELECT frequency.docid,
+                       LOG(
+                           (
+                               (stats.num_docs - query_terms.df + 0.5)
+                               / (query_terms.df + 0.5)
+                           ) + 1
+                       ) * (
+                           (frequency.tf * 2.2)
+                           / (
+                               frequency.tf
+                               + 1.2 * (
+                                   0.25
+                                   + 0.75 * (documents.len / stats.avgdl)
+                               )
+                           )
+                       ) AS subscore
+                FROM term_frequency frequency
+                JOIN query_terms USING (termid)
+                JOIN fts_main_reasoning_records.docs documents USING (docid)
+                CROSS JOIN fts_main_reasoning_records.stats stats
+            ),
+            scores AS (
+                SELECT docid, SUM(subscore) AS score
+                FROM subscores
+                GROUP BY docid
+            )
+            SELECT documents.name AS record_id,
+                   records.primary_cell_id,
+                   scores.score
+            FROM scores
+            JOIN fts_main_reasoning_records.docs documents USING (docid)
+            JOIN reasoning_records records
+              ON records.record_id = documents.name
+            """,
+            [query],
+        )
+        typed_cache[query_sha256] = table_name
+        return table_name
 
     @staticmethod
     def _retain_runtime_connection(
@@ -4168,6 +4361,28 @@ def _merge_cell_candidates(
         )
     candidates.sort(key=lambda item: (-item.score, item.cell_id))
     return candidates[:limit]
+
+
+def _stable_ann_probe_rows(
+    rows: list[tuple[Any, ...]],
+    *,
+    limit: int,
+) -> tuple[list[tuple[Any, ...]], float | None]:
+    """Sort ANN ties and request exact completion when a tie crosses LIMIT."""
+
+    ordered = sorted(rows, key=lambda row: (-float(row[1]), str(row[0])))
+    if len(ordered) <= limit:
+        return ordered, None
+    boundary_score = float(ordered[limit - 1][1])
+    next_score = float(ordered[limit][1])
+    if math.isclose(
+        boundary_score,
+        next_score,
+        rel_tol=0.0,
+        abs_tol=MEMORY_INDEX_ANN_TIE_ABS_TOLERANCE,
+    ):
+        return ordered[:limit], 1.0 - boundary_score
+    return ordered[:limit], None
 
 
 def _cell_search_filter(

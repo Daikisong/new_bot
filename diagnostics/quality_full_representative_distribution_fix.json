@@ -1,0 +1,57 @@
+{
+  "schema_version": "nslab.quality_full_representative_distribution_fix.v1",
+  "report_status": "MECHANICALLY_VERIFIED_DIAGNOSTIC_ONLY",
+  "verified_at": "2026-08-29T17:38:35.989411+09:00",
+  "population_id": "POP-EFE27D6D871A60A72FF6",
+  "cluster_id": "EVCL-88fec7617a87d4a9",
+  "memory_snapshot_id": "MEMIDX-4409624afdffd1d01018",
+  "candidate_pool_count": 138,
+  "population_record_count": 140,
+  "population_unit_count": 138,
+  "target_selected_record_count": 11,
+  "old_artifact": {
+    "representative_set_id": "REP-4194F6A4300CA656A62D",
+    "selection_version": "stratified_mmr_facility.v3.quality_full_distribution_observed",
+    "manifest_sha256": "283f25765f5b08206bdf5c48d3921f79f87442a33223c5a24bb66ce1b6d0210a",
+    "selected_record_count": 12,
+    "serialized_jsonl_bytes": 23113,
+    "max_serialized_jsonl_bytes": 24000,
+    "max_distribution_share_error": 0.2971014492753623,
+    "recorded_distribution_share_error_tolerance": 0.2971014492753623,
+    "contract_status": "INVALID_TOLERANCE_INFLATION"
+  },
+  "new_artifact": {
+    "representative_set_id": "REP-E8BA22597AEB25B4586F",
+    "selection_version": "stratified_mmr_facility.v3.quality_full_extended_pack",
+    "manifest_sha256": "cd57b56ef625a79105e935367bf2ca16aa6498bf35ee134ea21dabb2b7dacd96",
+    "records_sha256": "d588c189d9bae1bb32b46d5f66398f18d978a41f823973c1a6976744e3b76db4",
+    "selected_record_count": 14,
+    "serialized_jsonl_bytes": 33944,
+    "max_serialized_jsonl_bytes": 48000,
+    "max_distribution_share_error": 0.2256728778467909,
+    "distribution_share_error_tolerance": 0.25,
+    "contract_status": "PASS"
+  },
+  "behavioral_change": {
+    "distribution_tolerance_is_fixed": true,
+    "distribution_shortfall_can_be_waived": false,
+    "quality_full_uses_extended_physical_pack": true,
+    "normal_pack_max_serialized_jsonl_bytes": 24000,
+    "quality_full_pack_max_serialized_jsonl_bytes": 48000,
+    "old_cache_reuse_prevented_by_new_selection_version": true
+  },
+  "verification": {
+    "representative_selector_inspection_passed": true,
+    "inspection_errors": [],
+    "production_embedding_model": "local_production:sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2@e8f8c211226b894fcb81acc59f3b34ba3efd5f42:sha256:e0da458bb4f008d3c9fbf6dbff0fe0a482c025dfd7b759ef0294fb978d9eeca0:l2",
+    "live_llm_call_count": 0,
+    "production_mutation_performed": false
+  },
+  "scope": {
+    "predictive_quality_conclusion": null,
+    "retrieval_value_conclusion": null,
+    "eligible_for_model_selection": false,
+    "eligible_for_production_activation": false,
+    "purpose": "PR-126 representative-selection contract and regression evidence"
+  }
+}

@@ -235,18 +235,31 @@ class MemorySweeper:
                     run_id=run_id,
                 )
             )
-            accepted, accepted_store_findings = self._available_episodes(
-                cutoff_at,
-                records_present=coverage.manifest.accepted_record_count > 0,
-                evaluation_snapshot=evaluation_snapshot,
-            )
+            if evaluation_snapshot is not None:
+                evaluation_episode_ids = _evaluation_covered_episode_ids(
+                    self.root,
+                    snapshot=evaluation_snapshot,
+                )
+                accepted: list[ResearchEpisode] = []
+                accepted_store_findings: list[str] = []
+            else:
+                accepted, accepted_store_findings = self._available_episodes(
+                    cutoff_at,
+                    records_present=coverage.manifest.accepted_record_count > 0,
+                    evaluation_snapshot=None,
+                )
+                evaluation_episode_ids = [
+                    episode.episode_id for episode in accepted
+                ]
             coverage_errors = list(accepted_store_findings)
             if not coverage.manifest.coverage_complete:
                 coverage_errors.append("memory coverage manifest is incomplete")
-            swept_episode_ids = [] if mode == "fast" else [episode.episode_id for episode in accepted]
+            swept_episode_ids = (
+                [] if mode == "fast" else evaluation_episode_ids
+            )
             production_swept_record_ids = [] if mode == "fast" else coverage.available_record_ids
             return SweepResult(
-                accepted_episode_count=len(accepted),
+                accepted_episode_count=len(evaluation_episode_ids),
                 swept_episode_ids=swept_episode_ids,
                 accepted_record_count=coverage.manifest.accepted_record_count,
                 available_record_count=coverage.manifest.available_record_count,
@@ -848,6 +861,29 @@ class MemorySweeper:
             if path.exists():
                 char_count += len(path.read_text(encoding="utf-8"))
         return max(1, char_count // 4) if char_count else 0
+
+
+def _evaluation_covered_episode_ids(
+    root: Path,
+    *,
+    snapshot: MemoryCellSnapshotManifest,
+) -> list[str]:
+    brain = read_json(root / "brain" / "current" / "brain_manifest.json")
+    covered = brain.get("covered_episode_ids") if isinstance(brain, dict) else None
+    if (
+        not isinstance(covered, list)
+        or brain.get("production_memory_snapshot_id") != snapshot.snapshot_id
+    ):
+        raise ValueError("evaluation brain episode coverage is invalid")
+    covered_ids = sorted(
+        {str(value) for value in covered if isinstance(value, str) and value}
+    )
+    replay = load_snapshot_replay_availability(root, snapshot)
+    if not covered_ids or replay is None or not set(covered_ids).issubset(replay):
+        raise ValueError(
+            "evaluation brain episode coverage is not bound to replay availability"
+        )
+    return covered_ids
 
 
 def _episode_source_hashes(

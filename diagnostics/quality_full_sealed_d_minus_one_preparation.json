@@ -1,0 +1,103 @@
+{
+  "schema_version": "nslab.quality_full_sealed_d_minus_one_preparation.v1",
+  "report_status": "MECHANICALLY_VERIFIED_PREPARATION_ONLY",
+  "verified_at": "2026-08-29T19:26:16.2664986+09:00",
+  "evidence_updated_at": "2026-08-29T19:51:36.0360579+09:00",
+  "selection": {
+    "selection_id": "QSEL-19b3c80ba392db8564c9",
+    "artifact_path": "runs/semantic_brain_upgrade/quality_full/selections/QSEL-19b3c80ba392db8564c9/blind_runtime_selection.json",
+    "sha256": "bfcc21e433ab36cf457254f7587f7fb71d2a12e4a332a12c0fead0b0554d3f9c",
+    "serialized_bytes": 3929,
+    "strict_reload_passed": true,
+    "case_count": 3,
+    "outcome_reference_count_visible_to_prediction": 0
+  },
+  "physically_separate_outcome_selection": {
+    "artifact_path": "runs/semantic_brain_upgrade/quality_full/selections/QSEL-19b3c80ba392db8564c9/runtime_outcome_selection.json",
+    "sha256": "6c10f848bf6c77ebb3df0aa8fa5a9b951c419c3412db4192d9ad8ab96a114bdb",
+    "serialized_bytes": 1300,
+    "available_to_prediction_process": false
+  },
+  "preparation": {
+    "elapsed_seconds": 140.471,
+    "price_source": "stock-web",
+    "price_source_revision_sha256": "7cb4dbd1cdaaec846315be849716df458e6f2ff063322f07c7fef7f2d3b6a472",
+    "llm_call_count": 0,
+    "oauth_call_count": 0,
+    "production_mutation_performed": false,
+    "total_d_minus_one_payload_bytes": 1701610
+  },
+  "cases": [
+    {
+      "episode_id": "NSLAB-20260102-be50ec83",
+      "trade_date": "2026-01-02",
+      "cutoff_safe_news_row_count": 490,
+      "input_id": "QINPUT-4d61091fbd272df49ca2",
+      "input_manifest_sha256": "b35050566f29159b4c40bb2cc95c596ba31ae26c2216e8a711ced0f9ddbfd824",
+      "d_minus_one_file_sha256": "a91cb1f7d0ddf207594182ddf30cdb9f45528a58978cc88087e9e80f4cbafa62",
+      "d_minus_one_payload_bytes": 567093,
+      "snapshot_session_date": "2025-12-30",
+      "snapshot_count": 2759,
+      "candidate_universe_root_sha256": "f641fd9604753a4453827013f5924d68ccabca50659aed8fa0e33eeb8c7fcd85",
+      "snapshot_root_sha256": "e366537d730bb523a15668e60a8c38d0b84fb0d44e817cc3c81d2544b767710a",
+      "d_day_or_future_snapshot_count": 0,
+      "duplicate_ticker_count": 0,
+      "skipped_ticker_identity_count": 0,
+      "prediction_price_repository_access_count": 0,
+      "outcome_access_count": 0
+    },
+    {
+      "episode_id": "NSLAB-20260324-bc14e7ac",
+      "trade_date": "2026-03-24",
+      "cutoff_safe_news_row_count": 1652,
+      "input_id": "QINPUT-a1202b179ab58f07faaf",
+      "input_manifest_sha256": "381d92d79b62fcc806517be7b1f08ec38b480ec3e292787762c5b4b0d7b00c9a",
+      "d_minus_one_file_sha256": "61427fd39d248738d9afb1afc208330ff2390c7b4af15b0a0dfd0a2b7ae8a64d",
+      "d_minus_one_payload_bytes": 568539,
+      "snapshot_session_date": "2026-03-23",
+      "snapshot_count": 2758,
+      "candidate_universe_root_sha256": "a2dfc639a250c652b056a9bf31ada3692036c0342dcbe2e1492f970561db0767",
+      "snapshot_root_sha256": "f4fd77124a22ab2a35883052f4c4fe28f884352153a4c50daf02ed89702bc4d1",
+      "d_day_or_future_snapshot_count": 0,
+      "duplicate_ticker_count": 0,
+      "skipped_ticker_identity_count": 0,
+      "prediction_price_repository_access_count": 0,
+      "outcome_access_count": 0
+    },
+    {
+      "episode_id": "NSLAB-20260316-5e3b82bc",
+      "trade_date": "2026-03-16",
+      "cutoff_safe_news_row_count": 2506,
+      "input_id": "QINPUT-56b8e084dbfe00b695e1",
+      "input_manifest_sha256": "a5e43d9a4e77233f355ee71c01ade69f2cabcb848933dd7f35148046619086e9",
+      "d_minus_one_file_sha256": "a35a5572a69e605f70a15820934aa2c1f632d09fa61b3ded978761590ce07be6",
+      "d_minus_one_payload_bytes": 565978,
+      "snapshot_session_date": "2026-03-13",
+      "snapshot_count": 2746,
+      "candidate_universe_root_sha256": "25826ce21fd3a2bf7de24785e8c7439e76e4fbf49777bdcb3716a8d07db1c390",
+      "snapshot_root_sha256": "f3c58b05a10c40c9b127a374b97f9b0d8f0a104465f7a7f83f2144e58302e890",
+      "d_day_or_future_snapshot_count": 0,
+      "duplicate_ticker_count": 0,
+      "skipped_ticker_identity_count": 0,
+      "prediction_price_repository_access_count": 0,
+      "outcome_access_count": 0
+    }
+  ],
+  "verification": {
+    "strict_selection_and_d1_model_validation": "PASS",
+    "sealed_d1_constructor_and_loader_stock_web_spy": "PASS",
+    "d_minus_one_targeted_regression": "PASS_40",
+    "quality_runtime_unit_regression": "PASS_39",
+    "ruff": "PASS",
+    "mypy": "PASS_135_FILES",
+    "schema_parity": "PASS",
+    "full_qpred_zero_price_source_integration": "PASS_SYNTHETIC_BOUNDARY_INTEGRATION_NO_OAUTH",
+    "actual_3_case_qpred_score_status": "NOT_RUN"
+  },
+  "scope": {
+    "predictive_quality_conclusion": null,
+    "eligible_for_model_selection": false,
+    "eligible_for_production_activation": false,
+    "purpose": "Immutable cutoff-safe D-1 QINPUT and QSEL preparation evidence"
+  }
+}

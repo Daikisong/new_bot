@@ -46,6 +46,12 @@ class OutcomeUniversePriceSource(Protocol):
         """Return D-day outcome labels for the full tradable universe when available."""
 
 
+@runtime_checkable
+class BlindSnapshotUniversePriceSource(Protocol):
+    def get_blind_snapshot_universe(self, *, through: date) -> list[PriceRecord]:
+        """Return only instruments with a cutoff-safe snapshot through ``through``."""
+
+
 class BlindPriceGuard:
     def __init__(self, source: PriceSource, *, trade_date: date) -> None:
         self.source = source

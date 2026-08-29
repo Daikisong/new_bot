@@ -750,6 +750,31 @@ class ContextManifest(StrictModel):
     event_cluster_manifest_artifact: str | None = None
     event_cluster_manifest_sha256: str | None = None
     event_clustering_result_sha256: str | None = None
+    evaluation_profile: str | None = None
+    prediction_input_boundary_version: Literal[
+        "SEALED_BLIND_INPUT.v3"
+    ] | None = None
+    sealed_blind_input_manifest_sha256: str | None = None
+    shared_pre_retrieval_context_artifact: str | None = None
+    shared_pre_retrieval_context_sha256: str | None = None
+    shared_pre_retrieval_manifest_artifact: str | None = None
+    shared_pre_retrieval_manifest_sha256: str | None = None
+    shared_pre_retrieval_summary: dict[str, Any] = Field(default_factory=dict)
+    parsed_news_root_sha256: str | None = None
+    d_minus_one_context_artifact: str | None = None
+    d_minus_one_context_sha256: str | None = None
+    d_minus_one_candidate_universe_root_sha256: str | None = None
+    d_minus_one_snapshot_root_sha256: str | None = None
+    d_minus_one_source_revision_sha256: str | None = None
+    d_minus_one_snapshot_session_date: date | None = None
+    d_minus_one_payload_sha256: str | None = None
+    d_minus_one_consumed_payload_sha256: str | None = None
+    d_minus_one_projection_status: Literal["PENDING", "BOUND"] | None = None
+    d_minus_one_projection_policy: str | None = None
+    d_minus_one_projection_root_sha256: str | None = None
+    d_minus_one_projection_requested_ticker_count: int | None = None
+    d_minus_one_projection_snapshot_count: int | None = None
+    d_minus_one_projection_missing_ticker_count: int | None = None
     open_world_first_analysis_artifact: str | None = None
     open_world_first_analysis_sha256: str | None = None
     open_world_first_analysis_summary: dict[str, Any] = Field(default_factory=dict)
@@ -842,6 +867,175 @@ class ContextManifest(StrictModel):
         object.__setattr__(self, "daily_memory_context_artifact", artifact_path)
         object.__setattr__(self, "daily_memory_context_sha256", sha256)
 
+    def bind_shared_pre_retrieval_context(
+        self,
+        *,
+        context_artifact_path: str,
+        context_sha256: str,
+        manifest_artifact_path: str,
+        manifest_sha256: str,
+        parsed_news_root_sha256: str,
+    ) -> None:
+        if not all(
+            value.strip()
+            for value in (context_artifact_path, manifest_artifact_path)
+        ) or not all(
+            _looks_like_sha256(value)
+            for value in (
+                context_sha256,
+                manifest_sha256,
+                parsed_news_root_sha256,
+            )
+        ):
+            raise ValueError("shared pre-retrieval binding is invalid")
+        object.__setattr__(self, "evaluation_profile", "QUALITY_FULL")
+        object.__setattr__(
+            self,
+            "shared_pre_retrieval_context_artifact",
+            context_artifact_path,
+        )
+        object.__setattr__(
+            self,
+            "shared_pre_retrieval_context_sha256",
+            context_sha256,
+        )
+        object.__setattr__(
+            self,
+            "shared_pre_retrieval_manifest_artifact",
+            manifest_artifact_path,
+        )
+        object.__setattr__(
+            self,
+            "shared_pre_retrieval_manifest_sha256",
+            manifest_sha256,
+        )
+        object.__setattr__(
+            self,
+            "parsed_news_root_sha256",
+            parsed_news_root_sha256,
+        )
+
+    def bind_sealed_blind_input(self, *, manifest_sha256: str) -> None:
+        if not _looks_like_sha256(manifest_sha256):
+            raise ValueError("sealed blind input manifest hash must be SHA-256")
+        object.__setattr__(self, "evaluation_profile", "QUALITY_FULL")
+        object.__setattr__(
+            self,
+            "prediction_input_boundary_version",
+            "SEALED_BLIND_INPUT.v3",
+        )
+        object.__setattr__(
+            self,
+            "sealed_blind_input_manifest_sha256",
+            manifest_sha256,
+        )
+
+    def bind_d_minus_one_context(
+        self,
+        *,
+        artifact_path: str,
+        sha256: str,
+        candidate_universe_root_sha256: str,
+        snapshot_root_sha256: str,
+        source_revision_sha256: str,
+        snapshot_session_date: date | None,
+        payload_sha256: str,
+    ) -> None:
+        if not artifact_path.strip() or not all(
+            _looks_like_sha256(value)
+            for value in (
+                sha256,
+                candidate_universe_root_sha256,
+                snapshot_root_sha256,
+                source_revision_sha256,
+                payload_sha256,
+            )
+        ):
+            raise ValueError("D-1 context artifact binding is invalid")
+        object.__setattr__(self, "evaluation_profile", "QUALITY_FULL")
+        object.__setattr__(self, "d_minus_one_context_artifact", artifact_path)
+        object.__setattr__(self, "d_minus_one_context_sha256", sha256)
+        object.__setattr__(
+            self,
+            "d_minus_one_candidate_universe_root_sha256",
+            candidate_universe_root_sha256,
+        )
+        object.__setattr__(
+            self,
+            "d_minus_one_snapshot_root_sha256",
+            snapshot_root_sha256,
+        )
+        object.__setattr__(
+            self,
+            "d_minus_one_source_revision_sha256",
+            source_revision_sha256,
+        )
+        object.__setattr__(
+            self,
+            "d_minus_one_snapshot_session_date",
+            snapshot_session_date,
+        )
+        object.__setattr__(self, "d_minus_one_payload_sha256", payload_sha256)
+        object.__setattr__(self, "d_minus_one_projection_status", "PENDING")
+
+    def bind_d_minus_one_prompt_projection(
+        self,
+        *,
+        policy: str,
+        consumed_payload_sha256: str,
+        projection_root_sha256: str,
+        requested_ticker_count: int,
+        snapshot_count: int,
+        missing_ticker_count: int,
+    ) -> None:
+        if not policy.strip() or not all(
+            _looks_like_sha256(value)
+            for value in (
+                consumed_payload_sha256,
+                projection_root_sha256,
+            )
+        ):
+            raise ValueError("D-1 prompt projection binding is invalid")
+        counts = (
+            requested_ticker_count,
+            snapshot_count,
+            missing_ticker_count,
+        )
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+            for value in counts
+        ):
+            raise ValueError("D-1 prompt projection counts are invalid")
+        if snapshot_count + missing_ticker_count != requested_ticker_count:
+            raise ValueError("D-1 prompt projection disposition is incomplete")
+        object.__setattr__(
+            self,
+            "d_minus_one_consumed_payload_sha256",
+            consumed_payload_sha256,
+        )
+        object.__setattr__(self, "d_minus_one_projection_policy", policy)
+        object.__setattr__(
+            self,
+            "d_minus_one_projection_root_sha256",
+            projection_root_sha256,
+        )
+        object.__setattr__(
+            self,
+            "d_minus_one_projection_requested_ticker_count",
+            requested_ticker_count,
+        )
+        object.__setattr__(
+            self,
+            "d_minus_one_projection_snapshot_count",
+            snapshot_count,
+        )
+        object.__setattr__(
+            self,
+            "d_minus_one_projection_missing_ticker_count",
+            missing_ticker_count,
+        )
+        object.__setattr__(self, "d_minus_one_projection_status", "BOUND")
+
     @model_validator(mode="after")
     def validate_prompt_batches(self) -> Self:
         for purpose, batch_hashes in self.prompt_batch_hashes.items():
@@ -862,6 +1056,127 @@ class ContextManifest(StrictModel):
             raise ValueError("daily memory artifact and hash must be configured together")
         if graph_configured != graph_hash_configured:
             raise ValueError("beneficiary graph artifact and hash must be configured together")
+        shared_context_configured = (
+            self.shared_pre_retrieval_context_artifact is not None
+        )
+        shared_context_hash_configured = (
+            self.shared_pre_retrieval_context_sha256 is not None
+        )
+        shared_manifest_configured = (
+            self.shared_pre_retrieval_manifest_artifact is not None
+        )
+        shared_manifest_hash_configured = (
+            self.shared_pre_retrieval_manifest_sha256 is not None
+        )
+        if shared_context_configured != shared_context_hash_configured:
+            raise ValueError(
+                "shared pre-retrieval context artifact and hash must match"
+            )
+        if shared_manifest_configured != shared_manifest_hash_configured:
+            raise ValueError(
+                "shared pre-retrieval manifest artifact and hash must match"
+            )
+        if shared_context_configured != shared_manifest_configured:
+            raise ValueError(
+                "shared pre-retrieval context and manifest must be bound together"
+            )
+        if shared_context_configured and self.evaluation_profile != "QUALITY_FULL":
+            raise ValueError(
+                "shared pre-retrieval context requires QUALITY_FULL profile"
+            )
+        if shared_context_configured and not _looks_like_sha256(
+            str(self.parsed_news_root_sha256)
+        ):
+            raise ValueError("shared pre-retrieval context requires parsed news root")
+        if not shared_context_configured and self.parsed_news_root_sha256 is not None:
+            raise ValueError("parsed news root requires shared pre-retrieval context")
+        d_minus_one_values = (
+            self.d_minus_one_context_artifact,
+            self.d_minus_one_context_sha256,
+            self.d_minus_one_candidate_universe_root_sha256,
+            self.d_minus_one_snapshot_root_sha256,
+            self.d_minus_one_source_revision_sha256,
+            self.d_minus_one_payload_sha256,
+        )
+        d_minus_one_configured = [value is not None for value in d_minus_one_values]
+        if any(d_minus_one_configured) and not all(d_minus_one_configured):
+            raise ValueError("D-1 context artifact and roots must be bound together")
+        if all(d_minus_one_configured):
+            if not shared_context_configured or self.evaluation_profile != "QUALITY_FULL":
+                raise ValueError("D-1 context binding requires shared QUALITY_FULL context")
+            if not all(
+                _looks_like_sha256(str(value))
+                for value in (
+                    self.d_minus_one_context_sha256,
+                    self.d_minus_one_candidate_universe_root_sha256,
+                    self.d_minus_one_snapshot_root_sha256,
+                    self.d_minus_one_source_revision_sha256,
+                    self.d_minus_one_payload_sha256,
+                )
+            ):
+                raise ValueError("D-1 context binding requires SHA-256 roots")
+        projection_values = (
+            self.d_minus_one_consumed_payload_sha256,
+            self.d_minus_one_projection_policy,
+            self.d_minus_one_projection_root_sha256,
+            self.d_minus_one_projection_requested_ticker_count,
+            self.d_minus_one_projection_snapshot_count,
+            self.d_minus_one_projection_missing_ticker_count,
+        )
+        projection_configured = [value is not None for value in projection_values]
+        if any(projection_configured) and not all(projection_configured):
+            raise ValueError("D-1 prompt projection binding is incomplete")
+        if not any(d_minus_one_configured):
+            if self.d_minus_one_projection_status is not None:
+                raise ValueError("D-1 projection status requires a full context")
+        elif (
+            not all(projection_configured)
+            and self.d_minus_one_projection_status != "PENDING"
+        ):
+            raise ValueError("D-1 prompt projection must remain pending until bound")
+        if all(projection_configured):
+            if self.d_minus_one_projection_status != "BOUND":
+                raise ValueError("D-1 prompt projection must be marked bound")
+            if not all(
+                _looks_like_sha256(str(value))
+                for value in (
+                    self.d_minus_one_consumed_payload_sha256,
+                    self.d_minus_one_projection_root_sha256,
+                )
+            ):
+                raise ValueError("D-1 projection binding requires SHA-256 roots")
+            requested_count = self.d_minus_one_projection_requested_ticker_count
+            snapshot_count = self.d_minus_one_projection_snapshot_count
+            missing_count = self.d_minus_one_projection_missing_ticker_count
+            if not all(
+                isinstance(value, int)
+                and not isinstance(value, bool)
+                and value >= 0
+                for value in (requested_count, snapshot_count, missing_count)
+            ):
+                raise ValueError("D-1 projection counts are invalid")
+            assert isinstance(requested_count, int)
+            assert isinstance(snapshot_count, int)
+            assert isinstance(missing_count, int)
+            if (
+                snapshot_count + missing_count
+                != requested_count
+            ):
+                raise ValueError("D-1 projection disposition is incomplete")
+        boundary_configured = self.prediction_input_boundary_version is not None
+        blind_input_hash_configured = (
+            self.sealed_blind_input_manifest_sha256 is not None
+        )
+        if boundary_configured != blind_input_hash_configured:
+            raise ValueError(
+                "sealed blind input boundary and manifest hash must match"
+            )
+        if blind_input_hash_configured and not _looks_like_sha256(
+            str(self.sealed_blind_input_manifest_sha256)
+        ):
+            raise ValueError("sealed blind input manifest hash must be SHA-256")
+        if boundary_configured and self.evaluation_profile != "QUALITY_FULL":
+            raise ValueError("sealed blind inputs require QUALITY_FULL profile")
         if daily_configured and not graph_configured:
             raise ValueError("daily memory context requires a beneficiary graph")
         phase7_prompt = self.llm_model_config.get("final_synthesis_prompt_version") == "synthesis.final.v3"

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import news_scalping_lab.memory.daily_context as daily_context_module
 from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.brain.category_index import (
     build_category_brain_index,
@@ -74,6 +75,12 @@ from news_scalping_lab.memory.daily_context import (
     daily_memory_source_chain_errors,
     inspect_daily_memory_context,
 )
+from news_scalping_lab.memory.diversity import (
+    REPRESENTATIVE_QUALITY_FULL_MAX_TOKEN_COUNT,
+    REPRESENTATIVE_QUALITY_FULL_SELECTION_VERSION,
+    RepresentativeSelectionBudgetError,
+    RepresentativeSelector,
+)
 from news_scalping_lab.memory.index import ProductionMemoryIndex
 from news_scalping_lab.memory.runtime_v4 import (
     RuntimeRetrievalBuildResult,
@@ -108,7 +115,11 @@ TRADE_DATE = date(2030, 1, 11)
 
 
 class _EmbeddingBackend:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, list[str]]] = []
+
     async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
+        self.calls.append((purpose, list(texts)))
         return DeterministicHashEmbeddingProvider().embed_texts(texts)
 
 
@@ -200,17 +211,20 @@ def _source_manifests(
     root: Path,
     *,
     corpus_sha256: str,
+    cluster_count: int = 1,
 ) -> tuple[Path, Path, Path, Path]:
+    cluster_ids = [CLUSTER_ID, *[f"{CLUSTER_ID}-{index}" for index in range(2, cluster_count + 1)]]
     source_dir = root / "runs" / "checkpoints" / "daily_memory_sources" / RUN_ID
     event_rows_path = source_dir / "event_clusters.jsonl"
     _write_jsonl(
         event_rows_path,
         [
             {
-                "cluster_id": CLUSTER_ID,
-                "representative_title_excerpt": "supply agreement mechanism",
-                "representative_body_excerpt": "material disclosure before cutoff",
+                "cluster_id": cluster_id,
+                "representative_title_excerpt": f"supply agreement mechanism {index}",
+                "representative_body_excerpt": f"material disclosure before cutoff {index}",
             }
+            for index, cluster_id in enumerate(cluster_ids, start=1)
         ],
     )
     event_manifest_path = source_dir / "event_cluster_manifest.json"
@@ -224,21 +238,22 @@ def _source_manifests(
         embedding_batch_size=1,
         similarity_threshold=0.8,
         max_semantic_variants=2,
-        input_row_count=1,
-        cluster_count=1,
-        material_cluster_count=1,
+        input_row_count=cluster_count,
+        cluster_count=cluster_count,
+        material_cluster_count=cluster_count,
         unassigned_row_count=0,
         duplicate_assignment_count=0,
         clusters=[
             EventClusterEntry(
-                cluster_id=CLUSTER_ID,
-                representative_event_id="EVENT-NEWS-1",
-                member_event_ids=["EVENT-NEWS-1"],
-                member_source_ids=["SRC-NEWS-1"],
-                member_row_numbers=[1],
+                cluster_id=cluster_id,
+                representative_event_id=f"EVENT-NEWS-{index}",
+                member_event_ids=[f"EVENT-NEWS-{index}"],
+                member_source_ids=[f"SRC-NEWS-{index}"],
+                member_row_numbers=[index],
                 disposition="MATERIAL_FULL_RETRIEVAL",
-                cluster_signature_sha256="1" * 64,
+                cluster_signature_sha256=f"{index:x}" * 64,
             )
+            for index, cluster_id in enumerate(cluster_ids, start=1)
         ],
     )
     write_json(event_manifest_path, event_manifest.model_dump(mode="json"))
@@ -248,20 +263,21 @@ def _source_manifests(
         trade_date=TRADE_DATE,
         cutoff_at=CUTOFF,
         input_news_sha256="2" * 64,
-        input_row_count=1,
-        covered_row_count=1,
+        input_row_count=cluster_count,
+        covered_row_count=cluster_count,
         missing_row_count=0,
         duplicate_assignment_count=0,
-        disposition_counts={"MATERIAL_FULL_RETRIEVAL": 1},
+        disposition_counts={"MATERIAL_FULL_RETRIEVAL": cluster_count},
         row_coverage_sha256="3" * 64,
         rows=[
             NewsRowCoverage(
-                row_number=1,
-                event_id="EVENT-NEWS-1",
-                source_id="SRC-NEWS-1",
-                primary_cluster_id=CLUSTER_ID,
+                row_number=index,
+                event_id=f"EVENT-NEWS-{index}",
+                source_id=f"SRC-NEWS-{index}",
+                primary_cluster_id=cluster_id,
                 disposition="MATERIAL_FULL_RETRIEVAL",
             )
+            for index, cluster_id in enumerate(cluster_ids, start=1)
         ],
     )
     write_json(news_manifest_path, news_manifest.model_dump(mode="json"))
@@ -363,6 +379,9 @@ def _build_daily_fixture(
     candidate_path_type: PathType = PathType.SINGLE_EVENT,
     empty_cell_search: bool = False,
     retrieval_graph_has_candidate: bool = True,
+    cluster_count: int = 1,
+    max_cluster_workers: int = 1,
+    allow_distribution_shortfall: bool = False,
 ) -> tuple[ProductionMemoryIndex, Candidate, Path, Path, dict[str, object]]:
     record = _record()
     monkeypatch.setattr(BrainRecordStore, "list_records", lambda self: [record])
@@ -378,6 +397,7 @@ def _build_daily_fixture(
     news_path, event_manifest_path, event_rows_path, coverage_path = _source_manifests(
         root,
         corpus_sha256=snapshot.corpus_manifest_sha256,
+        cluster_count=cluster_count,
     )
     candidate = _candidate(path_type=candidate_path_type)
     graph, graph_path = build_beneficiary_graph(
@@ -402,6 +422,8 @@ def _build_daily_fixture(
         event_cluster_artifact_path=event_rows_path,
         memory_coverage_manifest_path=coverage_path,
         beneficiary_graph_path=graph_path,
+        max_cluster_workers=max_cluster_workers,
+        allow_distribution_shortfall=allow_distribution_shortfall,
     )
     assert graph.path_count == (1 if retrieval_graph_has_candidate else 0)
     return index, candidate, graph_path, context_path, context.model_dump(mode="json")
@@ -533,6 +555,266 @@ def test_daily_memory_context_is_compact_reproducible_and_tamper_evident(
     )
     assert tampered["passed"] is False
     assert "daily_memory_context_artifact_hash_mismatch" in tampered["errors"]
+
+
+def test_daily_cluster_reuses_batch_embedding_and_closes_query_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index, _candidate, _graph_path, _context_path, context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    provider = index.embedding_provider
+    assert isinstance(provider, AsyncEmbeddingProviderAdapter)
+    backend = provider.provider
+    assert isinstance(backend, _EmbeddingBackend)
+    query_plan = context["category_query_plans"][0]
+    assert isinstance(query_plan, dict)
+    query = str(query_plan["original_query"])
+    expanded_query = str(query_plan["expanded_query"])
+
+    assert [texts for _purpose, texts in backend.calls if query in texts] == [[query]]
+    assert [
+        texts for _purpose, texts in backend.calls if expanded_query in texts
+    ] == [[expanded_query]]
+
+    representative_reference = context["representative_set_manifests"][0]
+    adaptive_reference = context["adaptive_retrieval_traces"][0]
+    population_reference = context["population_manifests"][0]
+    assert isinstance(representative_reference, dict)
+    assert isinstance(adaptive_reference, dict)
+    assert isinstance(population_reference, dict)
+    representative = read_json(
+        tmp_path / str(representative_reference["artifact_path"])
+    )
+    adaptive = read_json(tmp_path / str(adaptive_reference["artifact_path"]))
+    checkpoint_paths = list(
+        (tmp_path / "runs" / "checkpoints" / "daily_memory_context").glob(
+            "**/cluster_checkpoint.json"
+        )
+    )
+    assert len(checkpoint_paths) == 1
+    checkpoint = read_json(checkpoint_paths[0])
+    checkpoint_identity = checkpoint["identity"]
+    query_embedding_sha256 = str(query_plan["query_embedding_sha256"])
+
+    assert representative["query_embedding_sha256"] == query_embedding_sha256
+    assert adaptive["query_embedding_sha256"] == query_embedding_sha256
+    assert checkpoint_identity["query_embedding_sha256"] == query_embedding_sha256
+    assert representative["population_manifest_sha256"] == population_reference["sha256"]
+    assert checkpoint_identity["input_cluster_root"]
+    assert checkpoint_identity["semantic_policy_root"]
+    assert checkpoint_identity["category_brain_manifest"]
+    assert checkpoint_identity["category_brain_index_manifest"]
+    assert checkpoint_identity["embedding_runtime_identity"][
+        "embedding_method"
+    ] == provider.embedding_method
+    assert checkpoint_identity["embedding_runtime_identity"][
+        "runtime_embedding_dimensions"
+    ] == checkpoint_identity["embedding_runtime_identity"][
+        "snapshot_embedding_dimensions"
+    ]
+
+
+def test_quality_full_adaptive_uses_representative_token_envelope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_build = RepresentativeSelector.build
+
+    def force_quality_full_selection(
+        selector: RepresentativeSelector,
+        **kwargs: object,
+    ) -> object:
+        if kwargs.get("allow_distribution_shortfall") is not True:
+            raise RepresentativeSelectionBudgetError(
+                "force QUALITY_FULL representative envelope"
+            )
+        return original_build(selector, **kwargs)
+
+    monkeypatch.setattr(
+        RepresentativeSelector,
+        "build",
+        force_quality_full_selection,
+    )
+    _index, _candidate, _graph_path, _context_path, context = (
+        _build_daily_fixture(
+            tmp_path,
+            monkeypatch,
+            allow_distribution_shortfall=True,
+        )
+    )
+    representative_reference = context["representative_set_manifests"][0]
+    adaptive_reference = context["adaptive_retrieval_traces"][0]
+    representative = read_json(
+        tmp_path / str(representative_reference["artifact_path"])
+    )
+    adaptive = read_json(tmp_path / str(adaptive_reference["artifact_path"]))
+
+    assert (
+        representative["selection_version"]
+        == REPRESENTATIVE_QUALITY_FULL_SELECTION_VERSION
+    )
+    assert (
+        representative["max_token_count"]
+        == REPRESENTATIVE_QUALITY_FULL_MAX_TOKEN_COUNT
+    )
+    assert adaptive["max_token_count"] == representative["max_token_count"]
+
+
+def test_daily_cluster_checkpoint_skips_search_and_rejects_nested_tamper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index, _candidate_value, graph_path, context_path, context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    source_dir = (
+        tmp_path / "runs" / "checkpoints" / "daily_memory_sources" / RUN_ID
+    )
+    snapshot = index.resolve_snapshot(cutoff_at=CUTOFF)
+
+    def rebuild() -> tuple[DailyMemoryContext, Path]:
+        return build_daily_memory_context(
+            tmp_path,
+            memory_index=index,
+            run_id=RUN_ID,
+            trade_date=TRADE_DATE,
+            cutoff_at=CUTOFF,
+            corpus_manifest_sha256=snapshot.corpus_manifest_sha256,
+            news_coverage_manifest_path=(
+                source_dir / "news_coverage_manifest.json"
+            ),
+            event_cluster_manifest_path=(
+                source_dir / "event_cluster_manifest.json"
+            ),
+            event_cluster_artifact_path=source_dir / "event_clusters.jsonl",
+            memory_coverage_manifest_path=(
+                source_dir / "memory_coverage_manifest.json"
+            ),
+            beneficiary_graph_path=graph_path,
+        )
+
+    def fail_cell_search(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("verified cluster checkpoint must skip cell search")
+
+    monkeypatch.setattr(index, "search_cells", fail_cell_search)
+    resumed, resumed_path = rebuild()
+    assert resumed_path == context_path
+    assert resumed.model_dump(mode="json") == context
+
+    checkpoint_paths = list(
+        (tmp_path / "runs" / "checkpoints" / "daily_memory_context").glob(
+            "**/cluster_checkpoint.json"
+        )
+    )
+    assert len(checkpoint_paths) == 1
+    checkpoint_path = checkpoint_paths[0]
+    checkpoint_bytes = checkpoint_path.read_bytes()
+    adaptive_refs = context["adaptive_retrieval_traces"]
+    assert isinstance(adaptive_refs, list)
+    adaptive_ref = adaptive_refs[0]
+    assert isinstance(adaptive_ref, dict)
+    adaptive_path = tmp_path / str(adaptive_ref["artifact_path"])
+    adaptive_bytes = adaptive_path.read_bytes()
+    adaptive_payload = read_json(adaptive_path)
+    adaptive_payload["query_embedding_sha256"] = "f" * 64
+    write_json(adaptive_path, adaptive_payload)
+    checkpoint_payload = read_json(checkpoint_path)
+    checkpoint_adaptive_ref = checkpoint_payload["adaptive_retrieval_traces"][0]
+    checkpoint_adaptive_ref["sha256"] = file_sha256(adaptive_path)
+    write_json(checkpoint_path, checkpoint_payload)
+    with pytest.raises(ValueError, match="adaptive policy or query is stale"):
+        rebuild()
+    adaptive_path.write_bytes(adaptive_bytes)
+    checkpoint_path.write_bytes(checkpoint_bytes)
+
+    representative_refs = context["representative_set_manifests"]
+    assert isinstance(representative_refs, list)
+    representative_ref = representative_refs[0]
+    assert isinstance(representative_ref, dict)
+    representative_manifest = read_json(
+        tmp_path / str(representative_ref["artifact_path"])
+    )
+    assert isinstance(representative_manifest, dict)
+    records_ref = representative_manifest["representative_records"]
+    assert isinstance(records_ref, dict)
+    records_path = tmp_path / str(records_ref["artifact_path"])
+    records_path.write_bytes(records_path.read_bytes() + b" ")
+
+    with pytest.raises(ValueError, match="artifact closure is invalid"):
+        rebuild()
+
+
+def test_daily_cluster_checkpoint_rejects_stale_semantic_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index, _candidate, graph_path, _context_path, _context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    source_dir = (
+        tmp_path / "runs" / "checkpoints" / "daily_memory_sources" / RUN_ID
+    )
+    snapshot = index.resolve_snapshot(cutoff_at=CUTOFF)
+    monkeypatch.setattr(
+        daily_context_module,
+        "MEMORY_INDEX_RUNTIME_QUERY_VERSION",
+        "memory_cell_hybrid_search.stale-policy-test",
+    )
+
+    def fail_cell_search(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("stale semantic policy must rebuild the cluster")
+
+    monkeypatch.setattr(index, "search_cells", fail_cell_search)
+    with pytest.raises(AssertionError, match="stale semantic policy"):
+        build_daily_memory_context(
+            tmp_path,
+            memory_index=index,
+            run_id=RUN_ID,
+            trade_date=TRADE_DATE,
+            cutoff_at=CUTOFF,
+            corpus_manifest_sha256=snapshot.corpus_manifest_sha256,
+            news_coverage_manifest_path=(
+                source_dir / "news_coverage_manifest.json"
+            ),
+            event_cluster_manifest_path=(
+                source_dir / "event_cluster_manifest.json"
+            ),
+            event_cluster_artifact_path=source_dir / "event_clusters.jsonl",
+            memory_coverage_manifest_path=(
+                source_dir / "memory_coverage_manifest.json"
+            ),
+            beneficiary_graph_path=graph_path,
+        )
+
+
+def test_two_worker_cluster_build_is_byte_identical_to_sequential_build(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _sequential_index, _candidate, _graph, sequential_path, sequential = (
+        _build_daily_fixture(
+            tmp_path / "sequential",
+            monkeypatch,
+            cluster_count=2,
+            max_cluster_workers=1,
+        )
+    )
+    _parallel_index, _candidate, _graph, parallel_path, parallel = (
+        _build_daily_fixture(
+            tmp_path / "parallel",
+            monkeypatch,
+            cluster_count=2,
+            max_cluster_workers=2,
+        )
+    )
+
+    assert parallel == sequential
+    assert parallel_path.read_bytes() == sequential_path.read_bytes()
 
 
 def test_daily_analysis_creates_adaptive_trace(
@@ -858,7 +1140,9 @@ def test_runtime_evidence_and_final_graph_stages_resume_without_rewrite(
         },
     )
     shadow_manifest = SimpleNamespace(
+        run_id=RUN_ID,
         daily_memory_context_artifact=final_path.relative_to(tmp_path).as_posix(),
+        daily_memory_context_sha256=file_sha256(final_path),
         daily_memory_context_summary={
             "runtime_retrieval_final_manifest_artifact": (
                 final_manifest_path.relative_to(tmp_path).as_posix()
@@ -872,7 +1156,11 @@ def test_runtime_evidence_and_final_graph_stages_resume_without_rewrite(
         trade_date=TRADE_DATE,
     )
 
-    trace_stats = _trace_stats(tmp_path, shadow_manifest)
+    trace_stats = _trace_stats(
+        tmp_path,
+        shadow_manifest,
+        expected_prediction_id=prediction.prediction_id,
+    )
 
     assert trace_stats["final_cited_record_count"] == 1
     assert trace_stats["runtime_final_candidate_ids"] == {
@@ -2012,9 +2300,13 @@ def test_final_v3_rejects_new_candidate_and_unselected_memory(
         candidate_verification_artifact=(
             verification_path.relative_to(tmp_path).as_posix()
         ),
-        candidate_verification_sha256=file_sha256(verification_path),
+        candidate_verification_sha256=sha256_text(
+            verification_path.read_text(encoding="utf-8")
+        ),
         beneficiary_graph_artifact=graph_path.relative_to(tmp_path).as_posix(),
-        beneficiary_graph_sha256=file_sha256(graph_path),
+        beneficiary_graph_sha256=sha256_text(
+            graph_path.read_text(encoding="utf-8")
+        ),
     )
     source = BlindPrediction(
         prediction_id="PRED-SOURCE",

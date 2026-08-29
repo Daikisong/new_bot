@@ -20,10 +20,11 @@ from news_scalping_lab.contracts.memory_context import (
 )
 from news_scalping_lab.memory.beneficiary import beneficiary_trigger_evidence
 from news_scalping_lab.memory.diversity import (
+    REPRESENTATIVE_QUALITY_FULL_SELECTION_VERSION,
     RepresentativeSelectionBudgetError,
     RepresentativeSelector,
     _inspect_built_representative,
-    _require_finite_vector,
+    _normalized_embedding_vector,
 )
 from news_scalping_lab.memory.index import ProductionMemoryIndex
 from news_scalping_lab.memory.population import (
@@ -78,6 +79,7 @@ class AdaptiveRetriever:
         initial_population_manifest_path: Path,
         initial_representative_set_manifest_path: Path,
         query: str,
+        query_vector: list[float] | None = None,
         max_depth: int = ADAPTIVE_MAX_DEPTH,
         max_cell_count: int = ADAPTIVE_MAX_CELL_COUNT,
         max_record_count: int = ADAPTIVE_MAX_RECORD_COUNT,
@@ -85,18 +87,68 @@ class AdaptiveRetriever:
         min_information_gain: float = ADAPTIVE_MIN_INFORMATION_GAIN,
         trigger_evidence: list[AdaptiveTriggerEvidence] | None = None,
     ) -> tuple[AdaptiveRetrievalTrace, Path]:
-        trace = self._execute(
-            initial_population_manifest_path=initial_population_manifest_path,
-            initial_representative_set_manifest_path=(
-                initial_representative_set_manifest_path
+        query_text = query.strip()
+        if not query_text:
+            raise ValueError("adaptive retrieval requires a query")
+        population_path = initial_population_manifest_path.resolve()
+        representative_path = initial_representative_set_manifest_path.resolve()
+        initial_population = PopulationManifest.model_validate(read_json(population_path))
+        initial_representative = RepresentativeSetManifest.model_validate(
+            read_json(representative_path)
+        )
+        if query_vector is not None:
+            query_vector = _normalized_embedding_vector(
+                query_vector,
+                field="adaptive query",
+            )
+            if sha256_text(canonical_json(query_vector)) != (
+                initial_representative.query_embedding_sha256
+            ):
+                raise ValueError(
+                    "adaptive query embedding differs from representative query"
+                )
+        trigger_rows = list(trigger_evidence or [])
+        _validate_trigger_evidence(
+            self.root,
+            trigger_rows,
+            cluster_id=initial_population.cluster_id,
+            cutoff_at=initial_population.cutoff_at,
+        )
+        cached = _load_cached_adaptive_trace(
+            self.root,
+            run_id=initial_population.run_id,
+            cluster_id=initial_population.cluster_id,
+            cutoff_at=initial_population.cutoff_at,
+            query=query_text,
+            initial_population_reference=_artifact_reference(
+                self.root,
+                population_path,
             ),
-            query=query,
+            initial_representative_reference=_artifact_reference(
+                self.root,
+                representative_path,
+            ),
+            query_embedding_sha256=initial_representative.query_embedding_sha256,
             max_depth=max_depth,
             max_cell_count=max_cell_count,
             max_record_count=max_record_count,
             max_token_count=max_token_count,
             min_information_gain=min_information_gain,
-            trigger_evidence=list(trigger_evidence or []),
+            trigger_evidence=trigger_rows,
+        )
+        if cached is not None:
+            return cached
+        trace = self._execute(
+            initial_population_manifest_path=population_path,
+            initial_representative_set_manifest_path=representative_path,
+            query=query_text,
+            query_vector=query_vector,
+            max_depth=max_depth,
+            max_cell_count=max_cell_count,
+            max_record_count=max_record_count,
+            max_token_count=max_token_count,
+            min_information_gain=min_information_gain,
+            trigger_evidence=trigger_rows,
             force_database_verification=False,
         )
         output_dir = (
@@ -205,6 +257,7 @@ class AdaptiveRetriever:
                         initial_representative_path
                     ),
                     query=trace.query_text,
+                    query_vector=None,
                     max_depth=trace.max_depth,
                     max_cell_count=trace.max_cell_count,
                     max_record_count=trace.max_record_count,
@@ -231,6 +284,7 @@ class AdaptiveRetriever:
         initial_population_manifest_path: Path,
         initial_representative_set_manifest_path: Path,
         query: str,
+        query_vector: list[float] | None,
         max_depth: int,
         max_cell_count: int,
         max_record_count: int,
@@ -286,11 +340,19 @@ class AdaptiveRetriever:
             cluster_id=initial_population.cluster_id,
             cutoff_at=initial_population.cutoff_at,
         )
-        query_vectors = self.memory_index.embedding_provider.embed_texts([query_text])
-        if len(query_vectors) != 1:
-            raise ValueError("embedding provider returned the wrong query vector count")
-        query_vector = query_vectors[0]
-        _require_finite_vector(query_vector, field="adaptive query")
+        if query_vector is None:
+            query_vectors = self.memory_index.embedding_provider.embed_texts(
+                [query_text]
+            )
+            if len(query_vectors) != 1:
+                raise ValueError(
+                    "embedding provider returned the wrong query vector count"
+                )
+            query_vector = query_vectors[0]
+        query_vector = _normalized_embedding_vector(
+            query_vector,
+            field="adaptive query",
+        )
         query_embedding_sha256 = sha256_text(canonical_json(query_vector))
         if query_embedding_sha256 != initial_representative.query_embedding_sha256:
             raise ValueError("adaptive query embedding differs from representative query")
@@ -352,19 +414,19 @@ class AdaptiveRetriever:
             )
             if len(expansion_vectors) != 1:
                 raise ValueError("embedding provider returned the wrong expansion vector count")
-            _require_finite_vector(
+            expansion_vector = _normalized_embedding_vector(
                 expansion_vectors[0],
                 field="adaptive expansion",
             )
             expansion_embedding_sha256 = sha256_text(
-                canonical_json(expansion_vectors[0])
+                canonical_json(expansion_vector)
             )
             expansion_embedding_sha256s.append(expansion_embedding_sha256)
             search_candidates = self.memory_index.search_cells(
                 expansion_query,
                 cutoff_at=initial_population.cutoff_at,
                 limit=max(1, max_cell_count * 4),
-                query_vector=expansion_vectors[0],
+                query_vector=expansion_vector,
                 included_memory_lanes=expansion_lanes or None,
                 included_regime_clusters=expansion_regimes or None,
             )
@@ -402,6 +464,11 @@ class AdaptiveRetriever:
                 representative_result = self.representative_selector.build(
                     population_manifest_path=population_result.manifest_path,
                     query=query_text,
+                    query_vector=query_vector,
+                    allow_distribution_shortfall=(
+                        initial_representative.selection_version
+                        == REPRESENTATIVE_QUALITY_FULL_SELECTION_VERSION
+                    ),
                 )
             except RepresentativeSelectionBudgetError:
                 stopped_reason = "REPRESENTATIVE_BUDGET_SATURATED"
@@ -701,6 +768,108 @@ def _inspect_built_adaptive(
         elif file_sha256(path) != reference.sha256:
             errors.append("adaptive_source_hash_mismatch")
     return {"passed": not errors, "errors": sorted(set(errors))}
+
+
+def _load_cached_adaptive_trace(
+    root: Path,
+    *,
+    run_id: str,
+    cluster_id: str,
+    cutoff_at: datetime,
+    query: str,
+    initial_population_reference: ArtifactReference,
+    initial_representative_reference: ArtifactReference,
+    query_embedding_sha256: str,
+    max_depth: int,
+    max_cell_count: int,
+    max_record_count: int,
+    max_token_count: int,
+    min_information_gain: float,
+    trigger_evidence: list[AdaptiveTriggerEvidence],
+) -> tuple[AdaptiveRetrievalTrace, Path] | None:
+    cluster_dir = (
+        root
+        / ADAPTIVE_ARTIFACT_ROOT
+        / _safe_segment(run_id, field="run_id")
+        / _safe_segment(cluster_id, field="cluster_id")
+    )
+    if not cluster_dir.is_dir():
+        return None
+    matches: list[tuple[AdaptiveRetrievalTrace, Path]] = []
+    for path in sorted(cluster_dir.glob(f"*/{ADAPTIVE_TRACE_FILE}")):
+        try:
+            trace = AdaptiveRetrievalTrace.model_validate(read_json(path))
+        except (OSError, ValueError):
+            continue
+        if (
+            trace.run_id != run_id
+            or trace.cluster_id != cluster_id
+            or as_kst(trace.cutoff_at) != as_kst(cutoff_at)
+            or trace.query_text != query
+            or trace.query_embedding_sha256 != query_embedding_sha256
+            or trace.initial_population_manifest != initial_population_reference
+            or trace.initial_representative_set_manifest
+            != initial_representative_reference
+            or trace.policy_version != ADAPTIVE_RETRIEVAL_POLICY_VERSION
+            or trace.max_depth != max_depth
+            or trace.max_cell_count != max_cell_count
+            or trace.max_record_count != max_record_count
+            or trace.max_token_count != max_token_count
+            or trace.min_information_gain != min_information_gain
+            or trace.trigger_evidence != trigger_evidence
+        ):
+            continue
+        expected_id = "ADAPT-" + sha256_text(
+            canonical_json(_adaptive_trace_identity(trace))
+        )[:20].upper()
+        if path.parent.name != trace.trace_id:
+            raise ValueError("cached adaptive trace identity is invalid")
+        if trace.trace_id != expected_id:
+            # The trace schema does not persist expansion hashes for attempts that
+            # stop before an iteration is committed. Replay those traces rather
+            # than treating an incomplete identity projection as corruption.
+            continue
+        inspection = _inspect_built_adaptive(
+            root,
+            trace_path=path,
+            expected_trace=trace,
+        )
+        if inspection["passed"] is not True:
+            raise ValueError(
+                "cached adaptive trace closure is invalid: "
+                + ", ".join(str(error) for error in inspection["errors"])
+            )
+        matches.append((trace, path))
+    if len(matches) > 1:
+        raise ValueError("multiple cached adaptive traces match the active request")
+    return matches[0] if matches else None
+
+
+def _adaptive_trace_identity(trace: AdaptiveRetrievalTrace) -> dict[str, Any]:
+    return {
+        "schema_version": "nslab.adaptive_retrieval_identity.v1",
+        "run_id": trace.run_id,
+        "cluster_id": trace.cluster_id,
+        "cutoff_at": trace.cutoff_at.isoformat(),
+        "query_sha256": trace.query_sha256,
+        "query_embedding_sha256": trace.query_embedding_sha256,
+        "initial_population_sha256": trace.initial_population_manifest.sha256,
+        "initial_representative_sha256": (
+            trace.initial_representative_set_manifest.sha256
+        ),
+        "policy_version": trace.policy_version,
+        "max_depth": trace.max_depth,
+        "max_cell_count": trace.max_cell_count,
+        "max_record_count": trace.max_record_count,
+        "max_token_count": trace.max_token_count,
+        "min_information_gain": trace.min_information_gain,
+        "trigger_evidence": [
+            item.model_dump(mode="json") for item in trace.trigger_evidence
+        ],
+        "expansion_embedding_sha256s": [
+            item.expansion_embedding_sha256 for item in trace.iterations
+        ],
+    }
 
 
 def _artifact_reference(root: Path, path: Path) -> ArtifactReference:

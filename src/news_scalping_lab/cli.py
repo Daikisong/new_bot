@@ -61,6 +61,7 @@ from news_scalping_lab.contracts.memory_context import (
     PopulationPurpose,
     RoutingDisposition,
 )
+from news_scalping_lab.contracts.quality_evaluation import quality_full_runtime_profile
 from news_scalping_lab.contracts.schemas import export_json_schemas
 from news_scalping_lab.diagnostic_reports import write_diagnostic_report
 from news_scalping_lab.diagnostics import (
@@ -69,6 +70,11 @@ from news_scalping_lab.diagnostics import (
     real_bundle_smoke_report,
 )
 from news_scalping_lab.evaluation.evaluator import Evaluator
+from news_scalping_lab.evaluation.quality_runtime import (
+    predict_runtime_variants,
+    prepare_quality_runtime_selection,
+    score_runtime_variants,
+)
 from news_scalping_lab.evaluation.replay_snapshot import (
     REPLAY_SNAPSHOT_STREAM_BATCH_SIZE,
     build_shadow_as_of_snapshot,
@@ -117,6 +123,7 @@ from news_scalping_lab.memory.population import PopulationRetriever
 from news_scalping_lab.memory.runtime import (
     create_production_embedding_provider as _create_production_embedding_provider,
 )
+from news_scalping_lab.prices.base import BlindSnapshotUniversePriceSource
 from news_scalping_lab.prices.factory import create_price_source
 from news_scalping_lab.production.bootstrap import (
     bootstrap_local_environment,
@@ -4463,17 +4470,87 @@ def _inspect_final_synthesis_semantic_cluster_coverage_context(
         _string_list(manifest.get("semantic_cluster_coverage_promoted_record_ids")),
     )
     phase7_compact = "daily_memory_context" in context_payload
+    compact_policy = (
+        context.get("prompt_rows_policy")
+        == "NONZERO_RESULT_ROWS_ONLY_WITH_COMPLETE_LANE_COUNTS_AND_FULL_ROW_ROOT.v1"
+    )
+    if compact_policy:
+        row_identities = [
+            {
+                "cluster_id": row.get("cluster_id"),
+                "category": row.get("category"),
+                "query_sha256": row.get("query_sha256"),
+                "included_episode_ids": row.get("included_episode_ids", []),
+                "excluded_episode_ids": row.get("excluded_episode_ids", []),
+                "included_record_ids": row.get("included_record_ids", []),
+                "excluded_record_ids": row.get("excluded_record_ids", []),
+            }
+            for row in rows
+        ]
+        hit_rows = [
+            identity
+            for identity in row_identities
+            if any(
+                identity[key]
+                for key in (
+                    "included_episode_ids",
+                    "excluded_episode_ids",
+                    "included_record_ids",
+                    "excluded_record_ids",
+                )
+            )
+        ]
+        lane_counts = Counter(str(row.get("category", "")) for row in rows)
+        lane_hit_counts = Counter(
+            str(row.get("category", ""))
+            for row, identity in zip(rows, row_identities, strict=True)
+            if identity in hit_rows
+        )
+        rows_verified = (
+            context.get("full_row_count") == len(rows)
+            and context.get("full_row_identity_root_sha256")
+            == sha256_text(canonical_json(row_identities))
+            and context.get("lane_row_counts")
+            == dict(sorted(lane_counts.items()))
+            and context.get("lane_hit_row_counts")
+            == dict(sorted(lane_hit_counts.items()))
+            and context.get("hit_rows") == hit_rows
+            and context.get("full_rows_silently_truncated") is False
+        )
+        covered_ids = _string_list(
+            manifest.get("semantic_cluster_coverage_ids")
+        )
+        ids_verified = (
+            context.get("covered_cluster_count") == len(covered_ids)
+            and context.get("covered_cluster_root_sha256")
+            == sha256_text(canonical_json(covered_ids))
+        )
+        promoted_records_verified = "promoted_records" not in context
+    else:
+        rows_verified = context.get("rows") == rows
+        ids_verified = context.get("covered_cluster_ids") == manifest.get(
+            "semantic_cluster_coverage_ids"
+        )
+        promoted_records_verified = (
+            "promoted_records" not in context
+            if phase7_compact
+            else context.get("promoted_records") == promoted_records
+        )
     checks = {
         "semantic_cluster_coverage_artifact_verified": (
-            context.get("artifact") == manifest.get("semantic_cluster_coverage_artifact")
+            context.get("artifact")
+            == manifest.get("semantic_cluster_coverage_artifact")
+            and (
+                not compact_policy
+                or context.get("artifact_sha256")
+                == manifest.get("semantic_cluster_coverage_sha256")
+            )
         ),
         "semantic_cluster_coverage_summary_verified": (
             context.get("summary") == manifest.get("semantic_cluster_coverage_summary")
         ),
-        "semantic_cluster_coverage_rows_verified": context.get("rows") == rows,
-        "semantic_cluster_coverage_ids_verified": (
-            context.get("covered_cluster_ids") == manifest.get("semantic_cluster_coverage_ids")
-        ),
+        "semantic_cluster_coverage_rows_verified": rows_verified,
+        "semantic_cluster_coverage_ids_verified": ids_verified,
         "semantic_cluster_coverage_missing_ids_verified": (
             context.get("missing_cluster_ids") == manifest.get("semantic_cluster_coverage_missing_ids")
         ),
@@ -4481,7 +4558,7 @@ def _inspect_final_synthesis_semantic_cluster_coverage_context(
             context.get("promoted_record_ids") == manifest.get("semantic_cluster_coverage_promoted_record_ids")
         ),
         "semantic_cluster_coverage_promoted_records_verified": (
-            "promoted_records" not in context if phase7_compact else context.get("promoted_records") == promoted_records
+            promoted_records_verified
         ),
     }
     status.update(checks)
@@ -8741,6 +8818,189 @@ def memory_run_runtime_variant_shadow(
                 settings.project_root,
             ),
             "report": result.report,
+        }
+    )
+
+
+@memory_app.command("prepare-quality-runtime-selection")
+def memory_prepare_quality_runtime_selection(
+    project_root: Annotated[Path, typer.Option("--project-root")],
+    source_selection: Annotated[Path, typer.Option("--source-selection")],
+    split: Annotated[str, typer.Option("--split")] = "CALIBRATION",
+    scope: Annotated[str, typer.Option("--scope")] = "THREE_CASE",
+) -> None:
+    normalized_split = split.strip().upper()
+    normalized_scope = scope.strip().upper()
+    if normalized_split not in {"CALIBRATION", "HOLDOUT"}:
+        _exit_with_error(ValueError("quality runtime selection split is invalid"))
+    if normalized_scope not in {"THREE_CASE", "FULL_SPLIT"}:
+        _exit_with_error(ValueError("quality runtime selection scope is invalid"))
+    settings = load_settings(
+        project_root,
+        resolve_production=False,
+        dotenv_root=Path.cwd(),
+    )
+    resolved_selection = (
+        source_selection.resolve()
+        if source_selection.is_absolute()
+        else (settings.project_root / source_selection).resolve()
+    )
+    try:
+        price_source = create_price_source(settings)
+        if not isinstance(price_source, BlindSnapshotUniversePriceSource):
+            raise ValueError(
+                "quality runtime preparation requires a cutoff-safe universe price source"
+            )
+        result = prepare_quality_runtime_selection(
+            settings.project_root,
+            source_selection_path=resolved_selection,
+            split=cast(Literal["CALIBRATION", "HOLDOUT"], normalized_split),
+            scope=cast(Literal["THREE_CASE", "FULL_SPLIT"], normalized_scope),
+            price_source=price_source,
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "selection_id": result.blind_selection.selection_id,
+            "case_count": len(result.blind_selection.cases),
+            "cases": [
+                {
+                    "episode_id": case.episode_id,
+                    "trade_date": case.trade_date.isoformat(),
+                    "cutoff_safe_news_row_count": (
+                        case.cutoff_safe_news_row_count
+                    ),
+                    "d_minus_one_context_sha256": (
+                        case.d_minus_one_context_sha256
+                    ),
+                    "d_minus_one_candidate_universe_root_sha256": (
+                        case.d_minus_one_candidate_universe_root_sha256
+                    ),
+                    "d_minus_one_snapshot_root_sha256": (
+                        case.d_minus_one_snapshot_root_sha256
+                    ),
+                    "d_minus_one_snapshot_session_date": (
+                        case.d_minus_one_snapshot_session_date.isoformat()
+                        if case.d_minus_one_snapshot_session_date is not None
+                        else None
+                    ),
+                }
+                for case in result.blind_selection.cases
+            ],
+            "blind_selection_path": relative_to_root(
+                result.blind_selection_path,
+                settings.project_root,
+            ),
+            "outcome_selection_path": relative_to_root(
+                result.outcome_selection_path,
+                settings.project_root,
+            ),
+            "outcome_reference_count_visible_to_prediction": 0,
+            "production_activation_status": "NOT_PRODUCTION_ACTIVATED",
+        }
+    )
+
+
+@memory_app.command("predict-runtime-variants")
+def memory_predict_runtime_variants(
+    project_root: Annotated[Path, typer.Option("--project-root")],
+    blind_selection: Annotated[Path, typer.Option("--blind-selection")],
+) -> None:
+    settings = load_settings(
+        project_root,
+        resolve_production=False,
+        dotenv_root=Path.cwd(),
+    )
+    resolved_blind_selection = (
+        blind_selection.resolve()
+        if blind_selection.is_absolute()
+        else (settings.project_root / blind_selection).resolve()
+    )
+    try:
+        profile = quality_full_runtime_profile(
+            provider=settings.llm_provider,
+            model=settings.llm.model,
+            reasoning_effort=str(settings.llm.reasoning_effort or ""),
+        )
+        result = asyncio.run(
+            predict_runtime_variants(
+                settings.project_root,
+                settings=settings,
+                blind_selection_path=resolved_blind_selection,
+                profile=profile,
+            )
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "run_id": result.manifest.run_id,
+            "profile": result.manifest.profile.model_dump(mode="json"),
+            "expected_case_count": len(result.manifest.expected_case_ids),
+            "prediction_seal_count": len(result.manifest.seals),
+            "paired_case_count": len(result.manifest.paired_case_ids),
+            "all_predictions_sealed": result.manifest.all_predictions_sealed,
+            "outcome_opened": result.manifest.outcome_opened,
+            "manifest_path": relative_to_root(
+                result.manifest_path,
+                settings.project_root,
+            ),
+            "production_activation_status": (
+                result.manifest.production_activation_status
+            ),
+        }
+    )
+
+
+@memory_app.command("score-runtime-variants")
+def memory_score_runtime_variants(
+    project_root: Annotated[Path, typer.Option("--project-root")],
+    paired_predictions: Annotated[
+        Path,
+        typer.Option("--paired-predictions"),
+    ],
+    outcome_selection: Annotated[Path, typer.Option("--outcome-selection")],
+) -> None:
+    settings = load_settings(
+        project_root,
+        resolve_production=False,
+        dotenv_root=Path.cwd(),
+    )
+
+    def resolved(path: Path) -> Path:
+        return (
+            path.resolve()
+            if path.is_absolute()
+            else (settings.project_root / path).resolve()
+        )
+
+    try:
+        result = score_runtime_variants(
+            settings.project_root,
+            paired_prediction_manifest_path=resolved(paired_predictions),
+            outcome_selection_path=resolved(outcome_selection),
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "report_path": relative_to_root(
+                result.report_path,
+                settings.project_root,
+            ),
+            "markdown_path": relative_to_root(
+                result.markdown_path,
+                settings.project_root,
+            ),
+            "quality_evaluation_status": result.report[
+                "quality_evaluation_status"
+            ],
+            "paired_case_count": result.report["paired_case_count"],
+            "latency_is_blocking": result.report["latency_is_blocking"],
+            "production_activation_status": result.report[
+                "production_activation_status"
+            ],
         }
     )
 

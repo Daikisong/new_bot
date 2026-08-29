@@ -6,11 +6,15 @@ import hashlib
 import json
 import math
 import os
+import struct
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
+
+import numpy as np
+import numpy.typing as npt
 
 from news_scalping_lab.contracts.memory_context import (
     ArtifactReference,
@@ -39,13 +43,17 @@ from news_scalping_lab.utils import (
     write_json,
 )
 
-REPRESENTATIVE_SELECTION_VERSION = "stratified_mmr_facility.v2"
+REPRESENTATIVE_SELECTION_VERSION = "stratified_mmr_facility.v3"
+REPRESENTATIVE_QUALITY_FULL_SELECTION_VERSION = (
+    "stratified_mmr_facility.v3.quality_full_extended_pack"
+)
 REPRESENTATIVE_ARTIFACT_ROOT = Path("runs/representatives")
 REPRESENTATIVE_RECORD_FILE = "representative_records.jsonl"
 REPRESENTATIVE_MANIFEST_FILE = "representative_set_manifest.json"
 REPRESENTATIVE_MAX_SELECTED_RECORDS = 32
 REPRESENTATIVE_MAX_CANDIDATE_POOL = 512
 REPRESENTATIVE_MAX_TOKEN_COUNT = 24_000
+REPRESENTATIVE_QUALITY_FULL_MAX_TOKEN_COUNT = 48_000
 REPRESENTATIVE_MAX_TRADE_DATE_CONCENTRATION = 8
 REPRESENTATIVE_MAX_UNIT_KEY_CONCENTRATION = 4
 REPRESENTATIVE_CONTEXT_EXCERPT_CHARS = 1_600
@@ -106,6 +114,8 @@ class RepresentativeSelector:
         *,
         population_manifest_path: Path,
         query: str,
+        query_vector: list[float] | None = None,
+        allow_distribution_shortfall: bool = False,
     ) -> RepresentativeBuildResult:
         query_text = query.strip()
         if not query_text:
@@ -115,18 +125,38 @@ class RepresentativeSelector:
             population_path,
             force_database_verification=False,
         )
-        selection = self._select(
-            population,
-            population_path=population_path,
-            query=query_text,
-            force_database_verification=False,
+        if query_vector is None:
+            query_vectors = self.memory_index.embedding_provider.embed_texts(
+                [query_text]
+            )
+            if len(query_vectors) != 1:
+                raise ValueError(
+                    "embedding provider returned the wrong query vector count"
+                )
+            query_vector = query_vectors[0]
+        query_vector = _normalized_embedding_vector(
+            query_vector,
+            field="representative query",
+        )
+        query_embedding_sha256 = sha256_text(canonical_json(query_vector))
+        selection_version = (
+            REPRESENTATIVE_QUALITY_FULL_SELECTION_VERSION
+            if allow_distribution_shortfall
+            else REPRESENTATIVE_SELECTION_VERSION
+        )
+        max_token_count = (
+            REPRESENTATIVE_QUALITY_FULL_MAX_TOKEN_COUNT
+            if allow_distribution_shortfall
+            else REPRESENTATIVE_MAX_TOKEN_COUNT
         )
         identity = _representative_identity(
             population,
             population_path=population_path,
             query=query_text,
             embedding_model=self.memory_index.embedding_provider.embedding_method,
-            query_embedding_sha256=selection.query_embedding_sha256,
+            query_embedding_sha256=query_embedding_sha256,
+            selection_version=selection_version,
+            max_token_count=max_token_count,
         )
         representative_set_id = "REP-" + sha256_text(canonical_json(identity))[
             :20
@@ -141,6 +171,26 @@ class RepresentativeSelector:
         _require_under(output_dir, self.root / REPRESENTATIVE_ARTIFACT_ROOT)
         records_path = output_dir / REPRESENTATIVE_RECORD_FILE
         manifest_path = output_dir / REPRESENTATIVE_MANIFEST_FILE
+        cached_manifest = _load_cached_representative(
+            self.root,
+            manifest_path=manifest_path,
+            expected_identity=identity,
+        )
+        if cached_manifest is not None:
+            return RepresentativeBuildResult(
+                manifest=cached_manifest,
+                manifest_path=manifest_path,
+            )
+        selection = self._select(
+            population,
+            population_path=population_path,
+            query=query_text,
+            force_database_verification=False,
+            query_vector=query_vector,
+            allow_distribution_shortfall=allow_distribution_shortfall,
+        )
+        if selection.query_embedding_sha256 != query_embedding_sha256:
+            raise ValueError("representative selection changed the query embedding identity")
         record_bytes = _jsonl_bytes(
             [row.model_dump(mode="json") for row in selection.rows]
         )
@@ -166,7 +216,7 @@ class RepresentativeSelector:
             memory_snapshot_id=population.memory_snapshot_id,
             source_generation_sha256=population.source_generation_sha256,
             corpus_manifest_sha256=population.corpus_manifest_sha256,
-            selection_version=REPRESENTATIVE_SELECTION_VERSION,
+            selection_version=selection_version,
             embedding_model=self.memory_index.embedding_provider.embedding_method,
             candidate_pool_count=selection.candidate_pool_count,
             target_selected_record_count=selection.target_selected_record_count,
@@ -182,7 +232,7 @@ class RepresentativeSelector:
             ),
             max_selected_record_count=REPRESENTATIVE_MAX_SELECTED_RECORDS,
             max_candidate_pool_count=REPRESENTATIVE_MAX_CANDIDATE_POOL,
-            max_token_count=REPRESENTATIVE_MAX_TOKEN_COUNT,
+            max_token_count=max_token_count,
             max_trade_date_concentration=(
                 REPRESENTATIVE_MAX_TRADE_DATE_CONCENTRATION
             ),
@@ -287,6 +337,20 @@ class RepresentativeSelector:
             ):
                 errors.append("representative_records_hash_mismatch")
         if population is not None:
+            quality_full_distribution = (
+                manifest.selection_version
+                == REPRESENTATIVE_QUALITY_FULL_SELECTION_VERSION
+            )
+            expected_max_token_count = (
+                REPRESENTATIVE_QUALITY_FULL_MAX_TOKEN_COUNT
+                if quality_full_distribution
+                else REPRESENTATIVE_MAX_TOKEN_COUNT
+            )
+            if manifest.selection_version not in {
+                REPRESENTATIVE_SELECTION_VERSION,
+                REPRESENTATIVE_QUALITY_FULL_SELECTION_VERSION,
+            }:
+                errors.append("representative_selection_version_unknown")
             if file_sha256(population_path) != manifest.population_manifest_sha256:
                 errors.append("representative_population_hash_mismatch")
             identity_pairs = (
@@ -320,6 +384,7 @@ class RepresentativeSelector:
                     population_path=population_path,
                     query=manifest.query_text,
                     force_database_verification=False,
+                    allow_distribution_shortfall=quality_full_distribution,
                 )
             except (OSError, RuntimeError, ValueError) as exc:
                 errors.append(f"representative_recompute_failed:{exc}")
@@ -330,6 +395,8 @@ class RepresentativeSelector:
                     query=manifest.query_text,
                     embedding_model=manifest.embedding_model,
                     query_embedding_sha256=recomputed.query_embedding_sha256,
+                    selection_version=manifest.selection_version,
+                    max_token_count=expected_max_token_count,
                 )
                 expected_id = "REP-" + sha256_text(canonical_json(expected_identity))[
                     :20
@@ -352,7 +419,7 @@ class RepresentativeSelector:
                     selected_unit_count=len(recomputed.rows),
                 )
                 expected_summary = {
-                    "selection_version": REPRESENTATIVE_SELECTION_VERSION,
+                    "selection_version": manifest.selection_version,
                     "embedding_model": self.memory_index.embedding_provider.embedding_method,
                     "query_embedding_sha256": recomputed.query_embedding_sha256,
                     "candidate_pool_count": recomputed.candidate_pool_count,
@@ -371,7 +438,7 @@ class RepresentativeSelector:
                     ),
                     "max_selected_record_count": REPRESENTATIVE_MAX_SELECTED_RECORDS,
                     "max_candidate_pool_count": REPRESENTATIVE_MAX_CANDIDATE_POOL,
-                    "max_token_count": REPRESENTATIVE_MAX_TOKEN_COUNT,
+                    "max_token_count": expected_max_token_count,
                     "max_trade_date_concentration": (
                         REPRESENTATIVE_MAX_TRADE_DATE_CONCENTRATION
                     ),
@@ -448,6 +515,8 @@ class RepresentativeSelector:
         population_path: Path,
         query: str,
         force_database_verification: bool,
+        query_vector: list[float] | None = None,
+        allow_distribution_shortfall: bool = False,
     ) -> _Selection:
         member_rows = _read_jsonl(
             self.root / population.member_records.artifact_path
@@ -479,24 +548,34 @@ class RepresentativeSelector:
         if snapshot.snapshot_id != population.memory_snapshot_id:
             raise ValueError("representative snapshot differs from population snapshot")
         source_by_id = {row.record_id: row for row in source_rows}
-        query_vectors = self.memory_index.embedding_provider.embed_texts([query])
-        if len(query_vectors) != 1:
-            raise ValueError("embedding provider returned the wrong query vector count")
-        _require_finite_vector(query_vectors[0], field="representative query")
+        if query_vector is None:
+            query_vectors = self.memory_index.embedding_provider.embed_texts([query])
+            if len(query_vectors) != 1:
+                raise ValueError("embedding provider returned the wrong query vector count")
+            query_vector = query_vectors[0]
+        query_vector = _normalized_embedding_vector(
+            query_vector,
+            field="representative query",
+        )
         target_selected_record_count = _selection_target_count(candidates)
         rows = _mmr_select(
             pool,
             source_by_id,
-            query_vectors[0],
+            query_vector,
             target_selected_record_count=target_selected_record_count,
             population_strata=population_strata,
+            max_token_count=(
+                REPRESENTATIVE_QUALITY_FULL_MAX_TOKEN_COUNT
+                if allow_distribution_shortfall
+                else REPRESENTATIVE_MAX_TOKEN_COUNT
+            ),
         )
         return _Selection(
             rows=rows,
             candidate_pool_count=len(pool),
             target_selected_record_count=target_selected_record_count,
             population_strata=dict(population_strata),
-            query_embedding_sha256=sha256_text(canonical_json(query_vectors[0])),
+            query_embedding_sha256=sha256_text(canonical_json(query_vector)),
         )
 
 
@@ -538,6 +617,63 @@ def _inspect_built_representative(
                 ):
                     errors.append("representative_records_identity_mismatch")
     return {"passed": not errors, "errors": errors}
+
+
+def _load_cached_representative(
+    root: Path,
+    *,
+    manifest_path: Path,
+    expected_identity: dict[str, Any],
+) -> RepresentativeSetManifest | None:
+    """Reuse only a current representative manifest with a closed record artifact."""
+
+    if not manifest_path.is_file():
+        return None
+    try:
+        manifest = RepresentativeSetManifest.model_validate(read_json(manifest_path))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"cached representative manifest is invalid: {exc}") from exc
+    expected_id = "REP-" + sha256_text(canonical_json(expected_identity))[:20].upper()
+    if (
+        manifest.representative_set_id != expected_id
+        or _representative_identity_from_manifest(manifest) != expected_identity
+    ):
+        raise ValueError("cached representative identity differs from the active request")
+    inspection = _inspect_built_representative(
+        root,
+        manifest_path=manifest_path,
+        expected_manifest=manifest,
+    )
+    if inspection["passed"] is not True:
+        raise ValueError(
+            "cached representative closure is invalid: "
+            + ", ".join(str(error) for error in inspection["errors"])
+        )
+    return manifest
+
+
+def _representative_identity_from_manifest(
+    manifest: RepresentativeSetManifest,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "nslab.representative_set_identity.v1",
+        "run_id": manifest.run_id,
+        "cluster_id": manifest.cluster_id,
+        "cutoff_at": manifest.cutoff_at.isoformat(),
+        "population_id": manifest.population_id,
+        "population_manifest_sha256": manifest.population_manifest_sha256,
+        "memory_snapshot_id": manifest.memory_snapshot_id,
+        "source_generation_sha256": manifest.source_generation_sha256,
+        "query_sha256": manifest.query_sha256,
+        "query_embedding_sha256": manifest.query_embedding_sha256,
+        "selection_version": manifest.selection_version,
+        "embedding_model": manifest.embedding_model,
+        "max_selected_record_count": manifest.max_selected_record_count,
+        "max_candidate_pool_count": manifest.max_candidate_pool_count,
+        "max_token_count": manifest.max_token_count,
+        "max_trade_date_concentration": manifest.max_trade_date_concentration,
+        "max_unit_key_concentration": manifest.max_unit_key_concentration,
+    }
 
 
 def _unit_candidates(
@@ -953,7 +1089,10 @@ def _mmr_select(
     *,
     target_selected_record_count: int,
     population_strata: dict[str, set[str]],
+    max_token_count: int = REPRESENTATIVE_MAX_TOKEN_COUNT,
 ) -> list[RepresentativeRecord]:
+    if max_token_count < 1:
+        raise ValueError("representative max token count must be positive")
     missing_sources = sorted(
         candidate.record_id
         for candidate in candidates
@@ -965,7 +1104,7 @@ def _mmr_select(
         )
     remaining = {candidate.record_id: candidate for candidate in candidates}
     selected_rows: list[RepresentativeRecord] = []
-    selected_vectors: list[tuple[float, ...]] = []
+    selected_candidate_indices: list[int] = []
     selected_units: set[str] = set()
     covered_strata: set[str] = set()
     selected_strata: Counter[str] = Counter()
@@ -983,11 +1122,26 @@ def _mmr_select(
     ):
         anchor_by_unit.setdefault(candidate.independent_unit_id, candidate)
     anchors = list(anchor_by_unit.values())[:REPRESENTATIVE_FACILITY_ANCHOR_COUNT]
+    candidate_index_by_id = {
+        candidate.record_id: index for index, candidate in enumerate(candidates)
+    }
+    similarity_matrix = _pairwise_normalized_cosines(
+        [source_by_id[candidate.record_id].embedding for candidate in candidates]
+    )
+    relevance_by_id = {
+        candidate.record_id: _normalized_cosine(
+            query_vector,
+            source_by_id[candidate.record_id].embedding,
+        )
+        for candidate in candidates
+    }
     facility_similarities = {
         candidate.record_id: tuple(
-            _normalized_cosine(
-                source_by_id[candidate.record_id].embedding,
-                source_by_id[anchor.record_id].embedding,
+            float(
+                similarity_matrix[
+                    candidate_index_by_id[candidate.record_id],
+                    candidate_index_by_id[anchor.record_id],
+                ]
             )
             for anchor in anchors
         )
@@ -1044,13 +1198,14 @@ def _mmr_select(
             ):
                 continue
             source = source_by_id[candidate.record_id]
-            relevance = _normalized_cosine(query_vector, source.embedding)
+            candidate_index = candidate_index_by_id[candidate.record_id]
+            relevance = relevance_by_id[candidate.record_id]
             diversity = (
                 1.0
-                if not selected_vectors
+                if not selected_candidate_indices
                 else min(
-                    1.0 - _normalized_cosine(source.embedding, vector)
-                    for vector in selected_vectors
+                    1.0 - float(similarity_matrix[candidate_index, selected_index])
+                    for selected_index in selected_candidate_indices
                 )
             )
             coverage = len(set(candidate.strata) - covered_strata) / len(
@@ -1091,14 +1246,12 @@ def _mmr_select(
                     selection_score=score,
                     max_estimated_tokens=max(
                         512,
-                        REPRESENTATIVE_MAX_TOKEN_COUNT
-                        // max(target_selected_record_count, 1)
-                        - 1,
+                        max_token_count // max(target_selected_record_count, 1) - 1,
                     ),
                 )
                 if (
                     token_count + row.estimated_token_count + 1
-                    <= REPRESENTATIVE_MAX_TOKEN_COUNT
+                    <= max_token_count
                 ):
                     best = (score, candidate.record_id, candidate, row)
         if best is None:
@@ -1106,7 +1259,7 @@ def _mmr_select(
         _score, _record_id, candidate, row = best
         source = source_by_id[candidate.record_id]
         selected_rows.append(row)
-        selected_vectors.append(source.embedding)
+        selected_candidate_indices.append(candidate_index_by_id[candidate.record_id])
         selected_units.add(candidate.independent_unit_id)
         covered_strata.update(candidate.strata)
         selected_strata.update(candidate.strata)
@@ -1228,6 +1381,26 @@ def _normalized_cosine(left: list[float] | tuple[float, ...], right: tuple[float
     return max(0.0, min(1.0, (cosine + 1.0) / 2.0))
 
 
+def _pairwise_normalized_cosines(
+    vectors: list[tuple[float, ...]],
+) -> npt.NDArray[np.float64]:
+    """Compute the reusable MMR similarity matrix in one bounded BLAS operation."""
+
+    if not vectors:
+        return np.empty((0, 0), dtype=np.float64)
+    matrix = np.asarray(vectors, dtype=np.float64)
+    if matrix.ndim != 2 or matrix.shape[1] < 1 or not np.isfinite(matrix).all():
+        raise ValueError("representative similarity vectors must be finite and rectangular")
+    norms = np.linalg.norm(matrix, axis=1)
+    nonzero = norms > 0.0
+    normalized = np.zeros_like(matrix)
+    normalized[nonzero] = matrix[nonzero] / norms[nonzero, np.newaxis]
+    similarities = np.clip((normalized @ normalized.T + 1.0) / 2.0, 0.0, 1.0)
+    similarities[~nonzero, :] = 0.0
+    similarities[:, ~nonzero] = 0.0
+    return similarities
+
+
 def _require_finite_vector(
     vector: list[float] | tuple[float, ...],
     *,
@@ -1242,6 +1415,15 @@ def _require_finite_vector(
         raise ValueError(f"{field} embedding must be non-empty and finite")
 
 
+def _normalized_embedding_vector(
+    vector: list[float],
+    *,
+    field: str,
+) -> list[float]:
+    _require_finite_vector(vector, field=field)
+    return [struct.unpack("!f", struct.pack("!f", value))[0] for value in vector]
+
+
 def _representative_identity(
     population: PopulationManifest,
     *,
@@ -1249,6 +1431,8 @@ def _representative_identity(
     query: str,
     embedding_model: str,
     query_embedding_sha256: str,
+    selection_version: str = REPRESENTATIVE_SELECTION_VERSION,
+    max_token_count: int = REPRESENTATIVE_MAX_TOKEN_COUNT,
 ) -> dict[str, Any]:
     return {
         "schema_version": "nslab.representative_set_identity.v1",
@@ -1261,11 +1445,11 @@ def _representative_identity(
         "source_generation_sha256": population.source_generation_sha256,
         "query_sha256": sha256_text(query),
         "query_embedding_sha256": query_embedding_sha256,
-        "selection_version": REPRESENTATIVE_SELECTION_VERSION,
+        "selection_version": selection_version,
         "embedding_model": embedding_model,
         "max_selected_record_count": REPRESENTATIVE_MAX_SELECTED_RECORDS,
         "max_candidate_pool_count": REPRESENTATIVE_MAX_CANDIDATE_POOL,
-        "max_token_count": REPRESENTATIVE_MAX_TOKEN_COUNT,
+        "max_token_count": max_token_count,
         "max_trade_date_concentration": REPRESENTATIVE_MAX_TRADE_DATE_CONCENTRATION,
         "max_unit_key_concentration": REPRESENTATIVE_MAX_UNIT_KEY_CONCENTRATION,
     }
