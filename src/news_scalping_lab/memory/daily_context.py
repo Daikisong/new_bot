@@ -39,6 +39,7 @@ from news_scalping_lab.contracts.memory_context import (
 from news_scalping_lab.contracts.models import BrainManifest
 from news_scalping_lab.contracts.runtime_retrieval import (
     RuntimeEvidenceMemo,
+    RuntimeEvidencePackManifest,
     RuntimeRetrievalTrace,
 )
 from news_scalping_lab.memory.adaptive_retrieval import (
@@ -108,6 +109,7 @@ from news_scalping_lab.utils import (
     parse_datetime,
     read_json,
     relative_to_root,
+    sha256_bytes,
     sha256_text,
 )
 
@@ -1392,6 +1394,11 @@ def inspect_daily_memory_context(
         *context.runtime_retrieval_traces,
         *context.runtime_evidence_traces,
         *context.runtime_evidence_memos,
+        *(
+            [context.runtime_evidence_pack_manifest]
+            if context.runtime_evidence_pack_manifest is not None
+            else []
+        ),
         context.beneficiary_graph,
         *([context.final_beneficiary_graph] if context.final_beneficiary_graph is not None else []),
         context.compact_final_context,
@@ -1408,6 +1415,7 @@ def inspect_daily_memory_context(
         elif file_sha256(artifact_path) != reference.sha256:
             errors.append("daily_memory_context_artifact_hash_mismatch")
     runtime_trace_clusters: list[str] = []
+    runtime_traces: list[RuntimeRetrievalTrace] = []
     for reference in context.runtime_retrieval_traces:
         try:
             runtime_trace = RuntimeRetrievalTrace.model_validate(read_json(root / reference.artifact_path))
@@ -1421,8 +1429,57 @@ def inspect_daily_memory_context(
         ):
             errors.append("daily_memory_runtime_trace_identity_mismatch")
         runtime_trace_clusters.append(runtime_trace.cluster_id)
+        runtime_traces.append(runtime_trace)
     if runtime_trace_clusters != context.runtime_retrieval_cluster_ids:
         errors.append("daily_memory_runtime_trace_cluster_coverage_mismatch")
+    if context.runtime_evidence_pack_manifest is not None:
+        try:
+            pack_path = (
+                root
+                / context.runtime_evidence_pack_manifest.artifact_path
+            ).resolve()
+            pack_path.relative_to(root)
+            pack_bytes = pack_path.read_bytes()
+            if sha256_bytes(pack_bytes) != (
+                context.runtime_evidence_pack_manifest.sha256
+            ):
+                raise ValueError("runtime evidence pack manifest hash mismatch")
+            pack_manifest = RuntimeEvidencePackManifest.model_validate(
+                json.loads(pack_bytes)
+            )
+            selected_occurrence_count = sum(
+                sum("LANE_SELECTED" in row.stages for row in trace.rows)
+                for trace in runtime_traces
+            )
+            selected_record_ids = {
+                row.record_id
+                for trace in runtime_traces
+                for row in trace.rows
+                if "LANE_SELECTED" in row.stages
+            }
+            if (
+                pack_manifest.run_id != context.run_id
+                or as_kst(pack_manifest.cutoff_at) != as_kst(context.cutoff_at)
+                or pack_manifest.memory_snapshot_id
+                != context.memory_snapshot_id
+                or pack_manifest.cluster_ids
+                != sorted(context.runtime_retrieval_cluster_ids)
+                or pack_manifest.assignment_count
+                != selected_occurrence_count
+                or pack_manifest.unique_record_count
+                != len(selected_record_ids)
+                or context.runtime_evidence_assignment_count
+                != pack_manifest.assignment_count
+                or context.runtime_evidence_unique_record_count
+                != pack_manifest.unique_record_count
+                or context.runtime_evidence_packed_call_count
+                != len(pack_manifest.packs)
+                or context.runtime_evidence_avoided_payload_occurrence_count
+                != pack_manifest.avoided_payload_occurrence_count
+            ):
+                errors.append("daily_memory_runtime_evidence_pack_mismatch")
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            errors.append(f"daily_memory_runtime_evidence_pack_invalid:{exc}")
     graph_inspection = inspect_beneficiary_graph(
         root,
         root / context.beneficiary_graph.artifact_path,
@@ -1899,6 +1956,8 @@ def attach_runtime_evidence_to_daily_context(
     *,
     context_path: Path,
     evidence_results: list[RuntimeEvidenceBuildResult],
+    pack_manifest: RuntimeEvidencePackManifest | None = None,
+    pack_manifest_path: Path | None = None,
 ) -> tuple[DailyMemoryContext, Path]:
     """Attach LLM evidence memos before final synthesis binds the context hash."""
 
@@ -1932,11 +1991,45 @@ def attach_runtime_evidence_to_daily_context(
         )
         for cluster_id in context.runtime_retrieval_cluster_ids
     ]
+    if (pack_manifest is None) != (pack_manifest_path is None):
+        raise ValueError("runtime evidence pack manifest and path must be paired")
+    pack_reference: ArtifactReference | None = None
+    if pack_manifest is not None and pack_manifest_path is not None:
+        selected_occurrence_count = sum(
+            sum("LANE_SELECTED" in row.stages for row in trace.rows)
+            for trace in (
+                result_by_cluster[cluster_id].trace
+                for cluster_id in context.runtime_retrieval_cluster_ids
+            )
+        )
+        selected_record_ids = {
+            row.record_id
+            for result in result_by_cluster.values()
+            for row in result.trace.rows
+            if "LANE_SELECTED" in row.stages
+        }
+        if (
+            pack_manifest.run_id != context.run_id
+            or pack_manifest.cutoff_at != context.cutoff_at
+            or pack_manifest.memory_snapshot_id != context.memory_snapshot_id
+            or pack_manifest.cluster_ids
+            != sorted(context.runtime_retrieval_cluster_ids)
+            or pack_manifest.assignment_count != selected_occurrence_count
+            or pack_manifest.unique_record_count != len(selected_record_ids)
+        ):
+            raise ValueError("runtime evidence pack manifest closure mismatch")
+        parsed_pack = RuntimeEvidencePackManifest.model_validate(
+            read_json(pack_manifest_path)
+        )
+        if parsed_pack != pack_manifest:
+            raise ValueError("runtime evidence pack manifest bytes drifted")
+        pack_reference = _artifact_reference(root, pack_manifest_path)
     if context.runtime_evidence_traces:
         if (
             resolved_context_path == runtime_context_path.resolve()
             and context.runtime_evidence_traces == evidence_trace_refs
             and context.runtime_evidence_memos == memo_refs
+            and context.runtime_evidence_pack_manifest == pack_reference
         ):
             return context, resolved_context_path
         raise ValueError("runtime evidence is already attached with different inputs")
@@ -1974,6 +2067,21 @@ def attach_runtime_evidence_to_daily_context(
         update={
             "runtime_evidence_traces": evidence_trace_refs,
             "runtime_evidence_memos": memo_refs,
+            "runtime_evidence_pack_manifest": pack_reference,
+            "runtime_evidence_assignment_count": (
+                pack_manifest.assignment_count if pack_manifest is not None else 0
+            ),
+            "runtime_evidence_unique_record_count": (
+                pack_manifest.unique_record_count if pack_manifest is not None else 0
+            ),
+            "runtime_evidence_packed_call_count": (
+                len(pack_manifest.packs) if pack_manifest is not None else 0
+            ),
+            "runtime_evidence_avoided_payload_occurrence_count": (
+                pack_manifest.avoided_payload_occurrence_count
+                if pack_manifest is not None
+                else 0
+            ),
             "compact_final_context": _artifact_reference(root, compact_path),
             "supporting_record_ids": supporting,
             "contradicting_record_ids": contradicting,

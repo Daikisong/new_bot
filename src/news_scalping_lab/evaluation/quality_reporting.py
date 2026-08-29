@@ -307,6 +307,11 @@ def render_quality_score(report: dict[str, Any]) -> str:
                     "offline_unexposed_payload_exposure_rate",
                     "offline_unexposed_final_citation_rate",
                     "rare_mechanism_recovered_unique_count",
+                    "evidence_assignment_count",
+                    "evidence_unique_record_count",
+                    "evidence_packed_call_count",
+                    "evidence_provider_checkpoint_count",
+                    "evidence_avoided_payload_occurrence_count",
                     "unique_episode_count",
                     "unique_year_count",
                 )
@@ -539,6 +544,22 @@ def _retrieval_metrics(rows: list[QualityCaseObservation]) -> dict[str, Any]:
     )
     result.update(
         {
+            "evidence_assignment_count": sum(
+                item.evidence_assignment_count for item in retrievals
+            ),
+            "evidence_unique_record_count": sum(
+                item.evidence_unique_record_count for item in retrievals
+            ),
+            "evidence_packed_call_count": sum(
+                item.evidence_packed_call_count for item in retrievals
+            ),
+            "evidence_provider_checkpoint_count": sum(
+                item.evidence_provider_checkpoint_count for item in retrievals
+            ),
+            "evidence_avoided_payload_occurrence_count": sum(
+                item.evidence_avoided_payload_occurrence_count
+                for item in retrievals
+            ),
             "offline_unexposed_searched_record_occurrence_count": (
                 offline_searched_occurrences
             ),
@@ -1026,6 +1047,15 @@ def _win_tie_loss(case_rows: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
 def _case_retrieval_numbers(row: QualityCaseObservation) -> dict[str, int]:
     retrieval = row.retrieval
     return {
+        "evidence_assignment_count": retrieval.evidence_assignment_count,
+        "evidence_unique_record_count": retrieval.evidence_unique_record_count,
+        "evidence_packed_call_count": retrieval.evidence_packed_call_count,
+        "evidence_provider_checkpoint_count": (
+            retrieval.evidence_provider_checkpoint_count
+        ),
+        "evidence_avoided_payload_occurrence_count": (
+            retrieval.evidence_avoided_payload_occurrence_count
+        ),
         "searched_record_occurrence_count": retrieval.searched_record_occurrence_count,
         "selected_record_occurrence_count": retrieval.selected_record_occurrence_count,
         "llm_exposed_record_occurrence_count": retrieval.llm_exposed_record_occurrence_count,

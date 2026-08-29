@@ -1,0 +1,70 @@
+{
+  "schema_version": "nslab.quality_full_runtime_evidence_fanout_fix.v1",
+  "created_date_kst": "2026-08-29",
+  "safe_selection_id": "QSEL-19b3c80ba392db8564c9",
+  "safe_selection_sha256": "bfcc21e433ab36cf457254f7587f7fb71d2a12e4a332a12c0fead0b0554d3f9c",
+  "incomplete_shared_context_id": "SHAREDCTX-9934ed4eef311fd9d5d6",
+  "attempt_observation": {
+    "first_case_material_cluster_count": 478,
+    "completed_live_shared_novelty_batch_calls": 7,
+    "next_shared_novelty_call_interrupted": true,
+    "paired_prediction_manifest_created": false,
+    "v0_prediction_closed": false,
+    "v1_prediction_closed": false,
+    "score_created": false,
+    "production_mutation_count": 0
+  },
+  "former_runtime_evidence_topology": {
+    "scope": "per_cluster_sequential",
+    "calls_per_cluster_min": 1,
+    "calls_per_cluster_max": 6,
+    "projected_first_case_calls_min": 478,
+    "projected_first_case_calls_max": 2868,
+    "verdict": "DUPLICATE_CROSS_CLUSTER_PAYLOAD_FANOUT"
+  },
+  "replacement_topology": {
+    "policy_version": "runtime_evidence_cross_cluster_pack.v1",
+    "assignment_identity": [
+      "cluster_id",
+      "record_id",
+      "lane"
+    ],
+    "all_assignments_preserved": true,
+    "duplicate_record_payload_packed_once_per_bounded_pack": true,
+    "max_prompt_chars": 240000,
+    "first_n_shortcut_used": false,
+    "silent_truncation_used": false,
+    "pre_call_plan_artifact": "runtime_evidence_pack_plan.json",
+    "provider_checkpoint_commitment_required_for_quality_full": true,
+    "exact_actual_first_case_pack_count": "NOT_MEASURED_UNTIL_LOCAL_RETRIEVAL_PLAN"
+  },
+  "regression_observations": {
+    "shared_payload_case": {
+      "cluster_count": 2,
+      "assignment_count": 40,
+      "unique_record_count": 20,
+      "packed_call_count": 1,
+      "avoided_payload_occurrence_count": 20,
+      "assignment_loss_count": 0
+    },
+    "large_payload_case": {
+      "cluster_count": 2,
+      "unique_record_count": 40,
+      "packed_call_count_min": 3,
+      "prompt_budget_respected": true,
+      "assignment_loss_count": 0
+    },
+    "checkpoint_resume_repeated_live_call_count": 0,
+    "resealed_plan_drift_rejected": true
+  },
+  "verification": {
+    "ruff": "PASS",
+    "mypy": "PASS",
+    "focused_regression": "PASS",
+    "full_pytest": "PASS",
+    "full_pytest_passed_count": 1845,
+    "full_pytest_elapsed_seconds": 342.28
+  },
+  "quality_verdict": "NOT_EVALUATED",
+  "production_activation": "HOLD"
+}

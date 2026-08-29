@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
+from news_scalping_lab.contracts.memory_context import ArtifactReference
 from news_scalping_lab.contracts.models import (
     BlindAnalysis,
     BlindPrediction,
@@ -14,9 +16,15 @@ from news_scalping_lab.contracts.models import (
 )
 from news_scalping_lab.contracts.runtime_retrieval import (
     RuntimeEvidenceMemo,
+    RuntimeEvidenceMemoBatch,
+    RuntimeEvidenceMemoPack,
     RuntimeRetrievalLane,
 )
+from news_scalping_lab.evaluation.runtime_variant_shadow import (
+    _verify_runtime_evidence_pack_graph,
+)
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
+from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.memory.daily_context import (
     DAILY_MEMORY_CONTEXT_MAX_BYTES,
     runtime_evidence_compact_payload,
@@ -26,6 +34,7 @@ from news_scalping_lab.memory.runtime_v4 import (
     RuntimeCandidate,
     SemanticExposureState,
     build_runtime_evidence_memos,
+    build_runtime_evidence_memos_packed,
     build_runtime_retrieval_trace,
     candidates_from_daily_artifacts,
     dynamic_runtime_budget,
@@ -34,7 +43,7 @@ from news_scalping_lab.memory.runtime_v4 import (
     select_runtime_candidates,
 )
 from news_scalping_lab.records.models import BrainRecordEnvelope
-from news_scalping_lab.utils import KST, canonical_json, sha256_text
+from news_scalping_lab.utils import KST, canonical_json, sha256_bytes, sha256_text
 
 CUTOFF = datetime(2030, 1, 11, 8, 59, 59, tzinfo=KST)
 
@@ -171,6 +180,109 @@ def _build(tmp_path: Path, candidates: list[RuntimeCandidate]):
         source_population_manifests=[],
         source_representative_manifests=[],
     )
+
+
+def _build_cluster(
+    tmp_path: Path,
+    candidates: list[RuntimeCandidate],
+    *,
+    cluster_id: str,
+    query_text: str,
+):
+    return build_runtime_retrieval_trace(
+        tmp_path,
+        run_id="RUN-V4-PACKED",
+        cluster_id=cluster_id,
+        query_text=query_text,
+        cutoff_at=CUTOFF,
+        memory_snapshot_id="MEMIDX-TEST",
+        candidates=candidates,
+        source_population_manifests=[],
+        source_representative_manifests=[],
+    )
+
+
+def _pack_input(prompt: str) -> dict[str, Any]:
+    marker = "---RUNTIME_EVIDENCE_PACK_INPUT---"
+    assert marker in prompt
+    payload = json.loads(prompt.split(marker, maxsplit=1)[1])
+    assert isinstance(payload, dict)
+    return cast(dict[str, Any], payload)
+
+
+class _PackedIndex:
+    def representative_source_records(
+        self,
+        record_ids: list[str],
+        *,
+        cutoff_at: datetime,
+    ):
+        del cutoff_at
+        rows = [
+            type("Source", (), {"record_id": record_id})()
+            for record_id in record_ids
+        ]
+        return object(), rows
+
+
+class _RecordingFallbackPackLLM:
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    async def generate_structured(self, *, prompt: str, response_model, purpose: str):
+        del response_model, purpose
+        self.prompts.append(prompt)
+        raise NotImplementedError
+
+
+class _StructuredPackLLM:
+    def __init__(self, *, expected_plan_path: Path | None = None) -> None:
+        self.call_count = 0
+        self.expected_plan_path = expected_plan_path
+
+    async def generate_structured(self, *, prompt: str, response_model, purpose: str):
+        del purpose
+        assert response_model is RuntimeEvidenceMemoPack
+        if self.expected_plan_path is not None:
+            assert self.expected_plan_path.is_file()
+        self.call_count += 1
+        payload = _pack_input(prompt)
+        assignments = cast(list[dict[str, str]], payload["assignments"])
+        by_cluster: dict[str, list[dict[str, str]]] = {}
+        for assignment in assignments:
+            by_cluster.setdefault(assignment["cluster_id"], []).append(
+                assignment
+            )
+        batches: list[RuntimeEvidenceMemoBatch] = []
+        for cluster_id, rows in sorted(by_cluster.items()):
+            memos = [
+                RuntimeEvidenceMemo(
+                    memo_id=f"RAW-{cluster_id}-{index}",
+                    cluster_id=cluster_id,
+                    lane=cast(RuntimeRetrievalLane, row["lane"]),
+                    source_record_ids=[row["record_id"]],
+                    source_record_hash_root="0" * 64,
+                    current_vs_history_similarities=["model compared payload"],
+                    current_vs_history_differences=["cluster-specific difference"],
+                )
+                for index, row in enumerate(rows, start=1)
+            ]
+            batches.append(
+                RuntimeEvidenceMemoBatch(
+                    cluster_id=cluster_id,
+                    source_record_ids=sorted(
+                        {row["record_id"] for row in rows}
+                    ),
+                    memos=memos,
+                )
+            )
+        return RuntimeEvidenceMemoPack(
+            cluster_ids=sorted(by_cluster),
+            source_record_ids=sorted(
+                {row["record_id"] for row in assignments}
+            ),
+            batches=batches,
+        )
 
 
 def test_hnsw_fts_union(tmp_path: Path) -> None:
@@ -355,6 +467,253 @@ async def test_selected_record_payload_enters_evidence_memo(
         for row in evidence.trace.rows
         if "LANE_SELECTED" in row.stages
     )
+
+
+@pytest.mark.asyncio
+async def test_cross_cluster_pack_deduplicates_payload_without_losing_assignments(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records = {
+        f"REC-PACK-{index:03d}": _record(f"REC-PACK-{index:03d}")
+        for index in range(20)
+    }
+    candidates = [_candidate(record) for record in records.values()]
+    retrievals = [
+        _build_cluster(
+            tmp_path,
+            candidates,
+            cluster_id="CLUSTER-PACK-A",
+            query_text="current mechanism alpha",
+        ),
+        _build_cluster(
+            tmp_path,
+            candidates,
+            cluster_id="CLUSTER-PACK-B",
+            query_text="current mechanism beta",
+        ),
+    ]
+    monkeypatch.setattr(
+        "news_scalping_lab.memory.runtime_v4._load_records_by_ids",
+        lambda _root, record_ids: {
+            record_id: records[record_id] for record_id in record_ids
+        },
+    )
+    llm = _RecordingFallbackPackLLM()
+
+    packed = await build_runtime_evidence_memos_packed(
+        tmp_path,
+        retrievals=retrievals,
+        memory_index=cast(Any, _PackedIndex()),
+        llm=cast(Any, llm),
+    )
+
+    assert len(llm.prompts) == 1
+    prompt_payload = _pack_input(llm.prompts[0])
+    assert len(prompt_payload["records"]) == 20
+    assert len(prompt_payload["assignments"]) == 40
+    assert len({row["record_id"] for row in prompt_payload["records"]}) == 20
+    assert packed.manifest.assignment_count == 40
+    assert packed.manifest.unique_record_count == 20
+    assert packed.manifest.packed_payload_occurrence_count == 20
+    assert packed.manifest.avoided_payload_occurrence_count == 20
+    assert len(packed.manifest.packs) == 1
+    plan_path = tmp_path / packed.manifest.plan.artifact_path
+    assert plan_path.is_file()
+    plan_payload = json.loads(plan_path.read_text(encoding="utf-8"))
+    assert len(plan_payload["packs"]) == len(packed.manifest.packs)
+    assert plan_payload["assignment_count"] == 40
+    assert {result.trace.cluster_id for result in packed.evidence_results} == {
+        "CLUSTER-PACK-A",
+        "CLUSTER-PACK-B",
+    }
+    assert all(
+        {
+            row.record_id
+            for row in result.trace.rows
+            if row.runtime_payload_exposed
+        }
+        == set(records)
+        for result in packed.evidence_results
+    )
+    assert _verify_runtime_evidence_pack_graph(
+        tmp_path,
+        manifest=packed.manifest,
+    ) == 0
+
+    plan_payload["packs"][0]["prompt_chars"] += 1
+    forged_plan_bytes = canonical_json(plan_payload).encode("utf-8")
+    plan_path.write_bytes(forged_plan_bytes)
+    forged_manifest = packed.manifest.model_copy(
+        update={
+            "plan": ArtifactReference(
+                artifact_path=packed.manifest.plan.artifact_path,
+                sha256=sha256_bytes(forged_plan_bytes),
+                item_count=packed.manifest.plan.item_count,
+            )
+        }
+    )
+    with pytest.raises(
+        ValueError,
+        match="completed pack differs from its plan",
+    ):
+        _verify_runtime_evidence_pack_graph(
+            tmp_path,
+            manifest=forged_manifest,
+        )
+
+
+@pytest.mark.asyncio
+async def test_cross_cluster_pack_uses_context_budget_without_truncation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records = {
+        f"REC-LARGE-{index:03d}": _record(
+            f"REC-LARGE-{index:03d}",
+            payload_extra={"raw_reasoning": f"payload-{index}-" + "x" * 15_000},
+        )
+        for index in range(40)
+    }
+    candidates = [_candidate(record) for record in records.values()]
+    retrievals = [
+        _build_cluster(
+            tmp_path,
+            candidates,
+            cluster_id="CLUSTER-LARGE-A",
+            query_text="large current mechanism alpha",
+        ),
+        _build_cluster(
+            tmp_path,
+            candidates,
+            cluster_id="CLUSTER-LARGE-B",
+            query_text="large current mechanism beta",
+        ),
+    ]
+    monkeypatch.setattr(
+        "news_scalping_lab.memory.runtime_v4._load_records_by_ids",
+        lambda _root, record_ids: {
+            record_id: records[record_id] for record_id in record_ids
+        },
+    )
+    llm = _RecordingFallbackPackLLM()
+
+    packed = await build_runtime_evidence_memos_packed(
+        tmp_path,
+        retrievals=retrievals,
+        memory_index=cast(Any, _PackedIndex()),
+        llm=cast(Any, llm),
+    )
+
+    assert len(llm.prompts) == len(packed.manifest.packs)
+    assert len(llm.prompts) >= 3
+    observed_assignments = {
+        (row["cluster_id"], row["record_id"])
+        for prompt in llm.prompts
+        for row in _pack_input(prompt)["assignments"]
+    }
+    expected_assignments = {
+        (retrieval.trace.cluster_id, record_id)
+        for retrieval in retrievals
+        for record_id in retrieval.selected_record_ids
+    }
+    assert observed_assignments == expected_assignments
+    assert all(len(prompt) <= 240_000 for prompt in llm.prompts)
+    assert packed.manifest.assignment_count == len(expected_assignments)
+    assert packed.manifest.unique_record_count == len(
+        {record_id for _cluster_id, record_id in expected_assignments}
+    )
+    assert packed.manifest.first_n_shortcut_used is False
+    assert packed.manifest.silent_truncation_used is False
+
+
+@pytest.mark.asyncio
+async def test_cross_cluster_pack_resume_uses_llm_checkpoints(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    records = {
+        f"REC-RESUME-{index:03d}": _record(f"REC-RESUME-{index:03d}")
+        for index in range(20)
+    }
+    candidates = [_candidate(record) for record in records.values()]
+    retrievals = [
+        _build_cluster(
+            tmp_path,
+            candidates,
+            cluster_id="CLUSTER-RESUME-A",
+            query_text="resume mechanism alpha",
+        ),
+        _build_cluster(
+            tmp_path,
+            candidates,
+            cluster_id="CLUSTER-RESUME-B",
+            query_text="resume mechanism beta",
+        ),
+    ]
+    monkeypatch.setattr(
+        "news_scalping_lab.memory.runtime_v4._load_records_by_ids",
+        lambda _root, record_ids: {
+            record_id: records[record_id] for record_id in record_ids
+        },
+    )
+    plan_path = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "runtime_evidence_packs"
+        / "RUN-V4-PACKED"
+        / "runtime_evidence_pack_plan.json"
+    )
+    provider = _StructuredPackLLM(expected_plan_path=plan_path)
+    tracer = TracingLLMProvider(
+        cast(Any, provider),
+        trace_dir=tmp_path / "traces",
+        checkpoint_dir=tmp_path / "checkpoints",
+        model_config={
+            "provider": "codex-oauth",
+            "model": "gpt-5.6-sol",
+            "reasoning_effort": "xhigh",
+        },
+    )
+
+    first = await build_runtime_evidence_memos_packed(
+        tmp_path,
+        retrievals=retrievals,
+        memory_index=cast(Any, _PackedIndex()),
+        llm=tracer,
+    )
+    live_calls = provider.call_count
+    resumed = await build_runtime_evidence_memos_packed(
+        tmp_path,
+        retrievals=retrievals,
+        memory_index=cast(Any, _PackedIndex()),
+        llm=tracer,
+    )
+
+    assert live_calls == len(first.manifest.packs)
+    assert provider.call_count == live_calls
+    assert resumed.manifest == first.manifest
+    assert resumed.manifest_path.read_bytes() == first.manifest_path.read_bytes()
+    assert first.manifest.plan.artifact_path == plan_path.relative_to(
+        tmp_path
+    ).as_posix()
+    assert all(
+        node.provider_checkpoint is not None
+        and node.provider_checkpoint_id
+        and node.provider_output_sha256
+        for node in first.manifest.packs
+    )
+    assert _verify_runtime_evidence_pack_graph(
+        tmp_path,
+        manifest=first.manifest,
+    ) == len(first.manifest.packs)
+    trace_statuses = [
+        json.loads(path.read_text(encoding="utf-8"))["status"]
+        for path in sorted((tmp_path / "traces").glob("*.json"))
+    ]
+    assert "ok" in trace_statuses
+    assert "checkpoint_hit" in trace_statuses
 
 
 @pytest.mark.asyncio

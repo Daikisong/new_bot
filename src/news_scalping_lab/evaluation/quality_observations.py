@@ -111,6 +111,16 @@ class RetrievalClusterObservation(_StrictObservation):
 class RetrievalCaseObservation(_StrictObservation):
     memory_snapshot_id: str
     adaptive_trace_count: int = Field(ge=0)
+    evidence_pack_manifest_path: str | None = None
+    evidence_pack_manifest_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    evidence_assignment_count: int = Field(default=0, ge=0)
+    evidence_unique_record_count: int = Field(default=0, ge=0)
+    evidence_packed_call_count: int = Field(default=0, ge=0)
+    evidence_provider_checkpoint_count: int = Field(default=0, ge=0)
+    evidence_avoided_payload_occurrence_count: int = Field(default=0, ge=0)
     clusters: list[RetrievalClusterObservation]
     searched_record_ids: list[str]
     selected_record_ids: list[str]
@@ -145,6 +155,28 @@ class RetrievalCaseObservation(_StrictObservation):
         cluster_ids = [cluster.cluster_id for cluster in self.clusters]
         if cluster_ids != sorted(set(cluster_ids)):
             raise ValueError("retrieval clusters must be sorted and unique")
+        pack_pair = (
+            self.evidence_pack_manifest_path is not None,
+            self.evidence_pack_manifest_sha256 is not None,
+        )
+        pack_counts = (
+            self.evidence_assignment_count,
+            self.evidence_unique_record_count,
+            self.evidence_packed_call_count,
+        )
+        if pack_pair[0] != pack_pair[1]:
+            raise ValueError("retrieval evidence pack path/hash must be paired")
+        if not pack_pair[0]:
+            if (
+                any(pack_counts)
+                or self.evidence_provider_checkpoint_count
+                or self.evidence_avoided_payload_occurrence_count
+            ):
+                raise ValueError("retrieval evidence pack counts require a manifest")
+        elif any(count < 1 for count in pack_counts):
+            raise ValueError("retrieval evidence pack counts must be positive")
+        if self.evidence_provider_checkpoint_count > self.evidence_packed_call_count:
+            raise ValueError("retrieval evidence checkpoint count exceeds packed calls")
         for field_name in (
             "searched_record_ids",
             "selected_record_ids",
@@ -188,6 +220,15 @@ class RetrievalCaseObservation(_StrictObservation):
             )
             if getattr(self, count_field) != expected_count:
                 raise ValueError(f"retrieval case {count_field} is stale")
+        if pack_pair[0] and (
+            self.evidence_assignment_count
+            != self.selected_record_occurrence_count
+            or self.evidence_unique_record_count
+            != len(self.selected_record_ids)
+            or self.evidence_avoided_payload_occurrence_count
+            > self.evidence_assignment_count
+        ):
+            raise ValueError("retrieval evidence pack accounting is stale")
         expected_years: dict[str, int] = {}
         expected_lanes: dict[str, dict[str, int]] = {}
         for cluster in self.clusters:

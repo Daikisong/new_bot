@@ -28,7 +28,12 @@ PRODUCTION_HOLD
 - Its physically separate outcome selection SHA-256 is
   `6c10f848bf6c77ebb3df0aa8fa5a9b951c419c3412db4192d9ad8ab96a114bdb`.
 - No paired prediction manifest or score report exists for that selection.
-- No OAuth inference was run after the safe selection was prepared.
+- One safe prediction attempt created incomplete shared context
+  `SHAREDCTX-9934ed4eef311fd9d5d6`. Existing map/reduce checkpoints were
+  restored and seven live novelty-batch calls completed; the next call was
+  interrupted, and the attempt was
+  stopped cleanly before V0/V1 prediction closure. It produced no `QPRED`, no
+  score, and no production mutation.
 - Production brain, memory, warehouse, record store, and activation pointers
   were not changed.
 
@@ -56,6 +61,11 @@ PRODUCTION_HOLD
    V0/V1 cartesian population before outcome access and uses one verified outcome
    buffer per case. It remains diagnostic-only because its legacy selection
    format contains outcome-reference strings; it is not a formal evaluator.
+9. V1 runtime evidence is now packed across all clusters. Every selected
+   `(cluster_id, record_id, lane)` assignment remains present, but the same
+   record payload is serialized only once per bounded pack. An immutable call
+   plan is written before the first provider call; the completed manifest binds
+   that plan, normalized outputs, and authenticated tracing checkpoints.
 
 ## Safe Input Anchors
 
@@ -74,15 +84,29 @@ price-repository access, and zero outcome access during preparation.
 ruff                         PASS
 mypy                         PASS (135 source files)
 schema parity                PASS
-full pytest                  PASS (1,842 tests)
+full pytest                  PASS (1,845 tests)
 independent boundary audit   PASS (no HIGH/MEDIUM)
-OAuth calls                  0
+safe-attempt OAuth calls     partial shared novelty only
 real safe 3-case evaluation  NOT_RUN
 production mutation          0
 ```
 
-The full suite completed in 377.60 seconds. Warnings were existing/runtime
+The full suite completed in 342.28 seconds. Warnings were existing/runtime
 deprecation and audit-fixture warnings, not test failures.
+
+## Why The Safe Attempt Was Stopped
+
+The first safe date contained 478 material clusters. The former implementation
+made one to six sequential evidence calls per cluster, implying 478 to 2,868
+additional calls for that date before final synthesis. This was duplicate
+cross-cluster context fan-out, not required quality work and not evidence that
+the full research corpus was being read. The attempt was checkpoint-stopped so
+the repeated payloads could be packed without dropping assignments.
+
+The replacement path writes `runtime_evidence_pack_plan.json` after local
+retrieval and before any packed OAuth request. Its pack count is the exact
+remaining runtime-evidence call count for that case and is the only supported
+basis for a provider-time forecast.
 
 ## Local Retrieval Observation
 
@@ -118,6 +142,9 @@ ran second, so this is not a throughput promise.
    theme/newsless truth?
 6. Is it safe to begin the real three-case `predict-runtime-variants` run, or is
    another implementation blocker present?
+7. Does the runtime-evidence pack graph prove complete assignment coverage,
+   enforce prompt bounds without first-N/truncation, and reject plan/output/
+   checkpoint commitment drift?
 
 Do not approve V0/V1 quality, compiler v8 work, model selection, or production
 activation from this checkpoint alone. Those require the real three-case score,

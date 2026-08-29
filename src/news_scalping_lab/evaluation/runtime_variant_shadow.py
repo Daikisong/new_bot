@@ -25,6 +25,9 @@ from news_scalping_lab.contracts.models import (
 )
 from news_scalping_lab.contracts.runtime_retrieval import (
     RuntimeEvidenceMemo,
+    RuntimeEvidenceMemoPack,
+    RuntimeEvidencePackManifest,
+    RuntimeEvidencePackPlan,
     RuntimeRetrievalTrace,
 )
 from news_scalping_lab.evaluation.quality_observations import (
@@ -1181,6 +1184,13 @@ def _trace_stats(
         "artifact_closure_verified": False,
         "cluster_observations": [],
         "retrieval_observation": None,
+        "evidence_pack_manifest_path": None,
+        "evidence_pack_manifest_sha256": None,
+        "evidence_assignment_count": 0,
+        "evidence_unique_record_count": 0,
+        "evidence_packed_call_count": 0,
+        "evidence_provider_checkpoint_count": 0,
+        "evidence_avoided_payload_occurrence_count": 0,
     }
     artifact = getattr(manifest, "daily_memory_context_artifact", None)
     if not artifact:
@@ -1220,6 +1230,54 @@ def _trace_stats(
             artifact_path=reference.artifact_path,
             artifact_sha256=reference.sha256,
             label="daily memory dependency",
+        )
+    if context.runtime_evidence_pack_manifest is not None:
+        pack_reference = context.runtime_evidence_pack_manifest
+        _pack_path, pack_bytes = _read_verified_runtime_artifact(
+            root,
+            artifact_path=pack_reference.artifact_path,
+            artifact_sha256=pack_reference.sha256,
+            label="runtime evidence pack manifest",
+        )
+        pack_manifest = RuntimeEvidencePackManifest.model_validate(
+            _decode_json_bytes(
+                pack_bytes,
+                label="runtime evidence pack manifest",
+            )
+        )
+        provider_checkpoint_count = _verify_runtime_evidence_pack_graph(
+            root,
+            manifest=pack_manifest,
+        )
+        if (
+            pack_manifest.run_id != context.run_id
+            or as_kst(pack_manifest.cutoff_at) != as_kst(context.cutoff_at)
+            or pack_manifest.memory_snapshot_id
+            != context.memory_snapshot_id
+            or pack_manifest.cluster_ids
+            != sorted(context.runtime_retrieval_cluster_ids)
+            or context.runtime_evidence_assignment_count
+            != pack_manifest.assignment_count
+            or context.runtime_evidence_unique_record_count
+            != pack_manifest.unique_record_count
+            or context.runtime_evidence_packed_call_count
+            != len(pack_manifest.packs)
+            or context.runtime_evidence_avoided_payload_occurrence_count
+            != pack_manifest.avoided_payload_occurrence_count
+        ):
+            raise ValueError("runtime evidence pack manifest differs from context")
+        base.update(
+            {
+                "evidence_pack_manifest_path": pack_reference.artifact_path,
+                "evidence_pack_manifest_sha256": pack_reference.sha256,
+                "evidence_assignment_count": pack_manifest.assignment_count,
+                "evidence_unique_record_count": pack_manifest.unique_record_count,
+                "evidence_packed_call_count": len(pack_manifest.packs),
+                "evidence_provider_checkpoint_count": provider_checkpoint_count,
+                "evidence_avoided_payload_occurrence_count": (
+                    pack_manifest.avoided_payload_occurrence_count
+                ),
+            }
         )
     trace_entries, final_manifest = _runtime_trace_entries(
         root,
@@ -1439,6 +1497,17 @@ def _trace_stats(
     retrieval = RetrievalCaseObservation(
         memory_snapshot_id=context.memory_snapshot_id,
         adaptive_trace_count=len(context.adaptive_retrieval_traces),
+        evidence_pack_manifest_path=base["evidence_pack_manifest_path"],
+        evidence_pack_manifest_sha256=base["evidence_pack_manifest_sha256"],
+        evidence_assignment_count=base["evidence_assignment_count"],
+        evidence_unique_record_count=base["evidence_unique_record_count"],
+        evidence_packed_call_count=base["evidence_packed_call_count"],
+        evidence_provider_checkpoint_count=base[
+            "evidence_provider_checkpoint_count"
+        ],
+        evidence_avoided_payload_occurrence_count=base[
+            "evidence_avoided_payload_occurrence_count"
+        ],
         clusters=cluster_observations,
         searched_record_ids=sorted(all_record_ids["searched_record_ids"]),
         selected_record_ids=sorted(all_record_ids["selected_record_ids"]),
@@ -1715,6 +1784,124 @@ def _verified_runtime_artifact(
         label=label,
     )
     return path
+
+
+def _verify_runtime_evidence_pack_graph(
+    root: Path,
+    *,
+    manifest: RuntimeEvidencePackManifest,
+) -> int:
+    """Verify the immutable pre-call plan, normalized outputs, and provider checkpoints."""
+
+    _plan_path, plan_bytes = _read_verified_runtime_artifact(
+        root,
+        artifact_path=manifest.plan.artifact_path,
+        artifact_sha256=manifest.plan.sha256,
+        label="runtime evidence pack plan",
+    )
+    plan = RuntimeEvidencePackPlan.model_validate(
+        _decode_json_bytes(plan_bytes, label="runtime evidence pack plan")
+    )
+    if manifest.plan.item_count != len(plan.packs):
+        raise ValueError("runtime evidence pack plan item count is stale")
+    if (
+        plan.run_id != manifest.run_id
+        or as_kst(plan.cutoff_at) != as_kst(manifest.cutoff_at)
+        or plan.memory_snapshot_id != manifest.memory_snapshot_id
+        or plan.policy_version != manifest.policy_version
+        or plan.max_prompt_chars != manifest.max_prompt_chars
+        or plan.assignment_count != manifest.assignment_count
+        or plan.unique_record_count != manifest.unique_record_count
+        or plan.unpacked_payload_occurrence_count
+        != manifest.unpacked_payload_occurrence_count
+        or plan.planned_payload_occurrence_count
+        != manifest.packed_payload_occurrence_count
+        or plan.avoided_payload_occurrence_count
+        != manifest.avoided_payload_occurrence_count
+        or plan.assignment_root_sha256 != manifest.assignment_root_sha256
+        or plan.source_record_root_sha256 != manifest.source_record_root_sha256
+        or len(plan.packs) != len(manifest.packs)
+    ):
+        raise ValueError("runtime evidence pack plan differs from its manifest")
+    checkpoint_count = 0
+    for planned, completed in zip(plan.packs, manifest.packs, strict=True):
+        completed_plan_fields = {
+            "pack_id": completed.pack_id,
+            "purpose": completed.purpose,
+            "prompt_sha256": completed.prompt_sha256,
+            "prompt_chars": completed.prompt_chars,
+            "cluster_ids": completed.cluster_ids,
+            "source_record_ids": completed.source_record_ids,
+            "assignment_count": completed.assignment_count,
+            "assignment_root_sha256": completed.assignment_root_sha256,
+        }
+        if planned.model_dump(mode="json") != completed_plan_fields:
+            raise ValueError("runtime evidence completed pack differs from its plan")
+        _output_path, output_bytes = _read_verified_runtime_artifact(
+            root,
+            artifact_path=completed.output.artifact_path,
+            artifact_sha256=completed.output.sha256,
+            label="runtime evidence normalized pack output",
+        )
+        output = RuntimeEvidenceMemoPack.model_validate(
+            _decode_json_bytes(
+                output_bytes,
+                label="runtime evidence normalized pack output",
+            )
+        )
+        if (
+            completed.output.item_count != len(output.batches)
+            or output.cluster_ids != completed.cluster_ids
+            or output.source_record_ids != completed.source_record_ids
+        ):
+            raise ValueError("runtime evidence normalized pack output is stale")
+        checkpoint = completed.provider_checkpoint
+        if checkpoint is None:
+            continue
+        checkpoint_path, checkpoint_bytes = _read_verified_runtime_artifact(
+            root,
+            artifact_path=checkpoint.artifact_path,
+            artifact_sha256=checkpoint.sha256,
+            label="runtime evidence provider checkpoint",
+        )
+        checkpoint_payload = _decode_json_bytes(
+            checkpoint_bytes,
+            label="runtime evidence provider checkpoint",
+        )
+        if not isinstance(checkpoint_payload, dict):
+            raise ValueError("runtime evidence provider checkpoint is not an object")
+        checkpoint_input = checkpoint_payload.get("input")
+        checkpoint_output = checkpoint_payload.get("output")
+        if not isinstance(checkpoint_input, dict) or not isinstance(
+            checkpoint_output, dict
+        ):
+            raise ValueError("runtime evidence provider checkpoint payload is invalid")
+        if (
+            checkpoint.item_count != 1
+            or checkpoint_path.stem != completed.provider_checkpoint_id
+            or checkpoint_payload.get("schema_version")
+            != "nslab.llm_checkpoint.v1"
+            or checkpoint_payload.get("checkpoint_id")
+            != completed.provider_checkpoint_id
+            or checkpoint_payload.get("operation") != "generate_structured"
+            or checkpoint_payload.get("purpose") != completed.purpose
+            or checkpoint_payload.get("status") != "ok"
+            or checkpoint_input.get("prompt_sha256")
+            != completed.prompt_sha256
+            or checkpoint_input.get("prompt_chars") != completed.prompt_chars
+            or checkpoint_input.get("response_model")
+            != RuntimeEvidenceMemoPack.__name__
+            or checkpoint_payload.get("input_sha256")
+            != sha256_text(canonical_json(checkpoint_input))
+            or checkpoint_payload.get("output_sha256")
+            != completed.provider_output_sha256
+            or sha256_text(canonical_json(checkpoint_output))
+            != completed.provider_output_sha256
+        ):
+            raise ValueError("runtime evidence provider checkpoint commitment drifted")
+        RuntimeEvidenceMemoPack.model_validate(checkpoint_output)
+        checkpoint_count += 1
+    return checkpoint_count
 
 
 def _read_verified_runtime_artifact(

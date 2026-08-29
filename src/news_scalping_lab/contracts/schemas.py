@@ -62,6 +62,9 @@ from news_scalping_lab.contracts.production import (
 from news_scalping_lab.contracts.runtime_retrieval import (
     RuntimeEvidenceMemo,
     RuntimeEvidenceMemoBatch,
+    RuntimeEvidenceMemoPack,
+    RuntimeEvidencePackManifest,
+    RuntimeEvidencePackPlan,
     RuntimeRetrievalTrace,
 )
 from news_scalping_lab.contracts.shadow_evaluation import (
@@ -113,6 +116,9 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "daily_memory_context.schema.json": DailyMemoryContext,
     "runtime_evidence_memo.schema.json": RuntimeEvidenceMemo,
     "runtime_evidence_memo_batch.schema.json": RuntimeEvidenceMemoBatch,
+    "runtime_evidence_memo_pack.schema.json": RuntimeEvidenceMemoPack,
+    "runtime_evidence_pack_manifest.schema.json": RuntimeEvidencePackManifest,
+    "runtime_evidence_pack_plan.schema.json": RuntimeEvidencePackPlan,
     "runtime_retrieval_trace.schema.json": RuntimeRetrievalTrace,
     "shadow_replay_dataset.schema.json": ShadowReplayDataset,
     "shadow_evaluation_manifest.schema.json": ShadowEvaluationManifest,

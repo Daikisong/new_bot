@@ -137,7 +137,7 @@ from news_scalping_lab.memory.runtime import production_embedding_method
 from news_scalping_lab.memory.runtime_v4 import (
     RuntimeEvidenceBuildResult,
     RuntimeRetrievalBuildResult,
-    build_runtime_evidence_memos,
+    build_runtime_evidence_memos_packed,
     finalize_runtime_retrieval_trace,
 )
 from news_scalping_lab.policies import EvidencePolicy, web_required_for_policy
@@ -4599,7 +4599,7 @@ class DailyAnalyzer:
             retrieval_cluster_ids=retrieval_cluster_ids,
             allow_distribution_shortfall=(manifest.llm_model_config.get("evaluation_profile") == "QUALITY_FULL"),
         )
-        evidence_results: list[RuntimeEvidenceBuildResult] = []
+        retrieval_results: list[RuntimeRetrievalBuildResult] = []
         for reference in context.runtime_retrieval_traces:
             trace_path = self.root / reference.artifact_path
             trace = RuntimeRetrievalTrace.model_validate(read_json(trace_path))
@@ -4610,19 +4610,25 @@ class DailyAnalyzer:
             )
             if not retrieval_result.selected_record_ids:
                 raise ValueError(f"runtime retrieval trace selected no cutoff-safe evidence: {trace.cluster_id}")
-            evidence_results.append(
-                await build_runtime_evidence_memos(
-                    self.root,
-                    retrieval=retrieval_result,
-                    memory_index=memory_index,
-                    llm=self.llm,
-                )
+            retrieval_results.append(retrieval_result)
+        evidence_results: list[RuntimeEvidenceBuildResult] = []
+        packed_evidence = None
+        if retrieval_results:
+            packed_evidence = await build_runtime_evidence_memos_packed(
+                self.root,
+                retrievals=retrieval_results,
+                memory_index=memory_index,
+                llm=self.llm,
             )
+            evidence_results = list(packed_evidence.evidence_results)
         if evidence_results:
+            assert packed_evidence is not None
             context, path = attach_runtime_evidence_to_daily_context(
                 self.root,
                 context_path=path,
                 evidence_results=evidence_results,
+                pack_manifest=packed_evidence.manifest,
+                pack_manifest_path=packed_evidence.manifest_path,
             )
         manifest.bind_daily_memory_context(
             artifact_path=relative_to_root(path, self.root),
@@ -4645,6 +4651,18 @@ class DailyAnalyzer:
                 "runtime_evidence_trace_count": len(context.runtime_evidence_traces),
                 "runtime_evidence_memo_count": sum(
                     reference.item_count for reference in context.runtime_evidence_memos
+                ),
+                "runtime_evidence_assignment_count": (
+                    context.runtime_evidence_assignment_count
+                ),
+                "runtime_evidence_unique_record_count": (
+                    context.runtime_evidence_unique_record_count
+                ),
+                "runtime_evidence_packed_call_count": (
+                    context.runtime_evidence_packed_call_count
+                ),
+                "runtime_evidence_avoided_payload_occurrence_count": (
+                    context.runtime_evidence_avoided_payload_occurrence_count
                 ),
                 "runtime_selected_record_count": sum(
                     sum("LANE_SELECTED" in row.stages for row in result.trace.rows) for result in evidence_results

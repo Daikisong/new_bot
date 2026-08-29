@@ -403,6 +403,18 @@
       "title": "Run Id",
       "type": "string"
     },
+    "runtime_evidence_assignment_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Runtime Evidence Assignment Count",
+      "type": "integer"
+    },
+    "runtime_evidence_avoided_payload_occurrence_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Runtime Evidence Avoided Payload Occurrence Count",
+      "type": "integer"
+    },
     "runtime_evidence_memos": {
       "items": {
         "$ref": "#/$defs/ArtifactReference"
@@ -410,12 +422,35 @@
       "title": "Runtime Evidence Memos",
       "type": "array"
     },
+    "runtime_evidence_pack_manifest": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ArtifactReference"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "runtime_evidence_packed_call_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Runtime Evidence Packed Call Count",
+      "type": "integer"
+    },
     "runtime_evidence_traces": {
       "items": {
         "$ref": "#/$defs/ArtifactReference"
       },
       "title": "Runtime Evidence Traces",
       "type": "array"
+    },
+    "runtime_evidence_unique_record_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Runtime Evidence Unique Record Count",
+      "type": "integer"
     },
     "runtime_retrieval_cluster_ids": {
       "items": {

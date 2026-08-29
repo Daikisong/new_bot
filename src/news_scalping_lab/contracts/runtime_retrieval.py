@@ -117,6 +117,212 @@ class RuntimeEvidenceMemoBatch(StrictMemoryContextModel):
         return self
 
 
+class RuntimeEvidenceMemoPack(StrictMemoryContextModel):
+    """Structured response for one prompt-packed, multi-cluster evidence call."""
+
+    schema_version: Literal["nslab.runtime_evidence_memo_pack.v1"] = (
+        "nslab.runtime_evidence_memo_pack.v1"
+    )
+    cluster_ids: list[str] = Field(default_factory=list, min_length=1)
+    source_record_ids: list[str] = Field(default_factory=list, min_length=1)
+    batches: list[RuntimeEvidenceMemoBatch] = Field(
+        default_factory=list,
+        min_length=1,
+    )
+
+    @model_validator(mode="after")
+    def validate_pack(self) -> Self:
+        if (
+            self.cluster_ids != sorted(set(self.cluster_ids))
+            or self.source_record_ids != sorted(set(self.source_record_ids))
+        ):
+            raise ValueError("runtime evidence pack identities must be sorted and unique")
+        batch_clusters = [batch.cluster_id for batch in self.batches]
+        if batch_clusters != sorted(set(batch_clusters)):
+            raise ValueError("runtime evidence pack batches must be sorted by unique cluster")
+        if batch_clusters != self.cluster_ids:
+            raise ValueError("runtime evidence pack batch cluster coverage is incomplete")
+        covered = {
+            record_id
+            for batch in self.batches
+            for record_id in batch.source_record_ids
+        }
+        if covered != set(self.source_record_ids):
+            raise ValueError("runtime evidence pack record coverage is incomplete")
+        return self
+
+
+class RuntimeEvidencePackPlanNode(StrictMemoryContextModel):
+    pack_id: str
+    purpose: str
+    prompt_sha256: Sha256
+    prompt_chars: int = Field(ge=1)
+    cluster_ids: list[str] = Field(default_factory=list, min_length=1)
+    source_record_ids: list[str] = Field(default_factory=list, min_length=1)
+    assignment_count: int = Field(ge=1)
+    assignment_root_sha256: Sha256
+
+    @model_validator(mode="after")
+    def validate_node(self) -> Self:
+        if not self.pack_id.strip() or not self.purpose.strip():
+            raise ValueError("runtime evidence pack plan identity cannot be blank")
+        if (
+            self.cluster_ids != sorted(set(self.cluster_ids))
+            or self.source_record_ids != sorted(set(self.source_record_ids))
+        ):
+            raise ValueError("runtime evidence pack plan identities must be sorted and unique")
+        if self.assignment_count < len(self.source_record_ids):
+            raise ValueError("runtime evidence pack plan assignments trail record coverage")
+        return self
+
+
+class RuntimeEvidencePackPlan(StrictMemoryContextModel):
+    """Immutable call topology written before the first packed LLM request."""
+
+    schema_version: Literal["nslab.runtime_evidence_pack_plan.v1"] = (
+        "nslab.runtime_evidence_pack_plan.v1"
+    )
+    run_id: str
+    cutoff_at: AwareDatetime
+    memory_snapshot_id: str
+    policy_version: Literal["runtime_evidence_cross_cluster_pack.v1"] = (
+        "runtime_evidence_cross_cluster_pack.v1"
+    )
+    max_prompt_chars: int = Field(ge=1)
+    assignment_count: int = Field(ge=1)
+    unique_record_count: int = Field(ge=1)
+    unpacked_payload_occurrence_count: int = Field(ge=1)
+    planned_payload_occurrence_count: int = Field(ge=1)
+    avoided_payload_occurrence_count: int = Field(ge=0)
+    assignment_root_sha256: Sha256
+    source_record_root_sha256: Sha256
+    packs: list[RuntimeEvidencePackPlanNode] = Field(default_factory=list, min_length=1)
+    first_n_shortcut_used: Literal[False] = False
+    silent_truncation_used: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_plan(self) -> Self:
+        pack_ids = [pack.pack_id for pack in self.packs]
+        if len(pack_ids) != len(set(pack_ids)):
+            raise ValueError("runtime evidence pack plan identifiers must be unique")
+        if any(pack.prompt_chars > self.max_prompt_chars for pack in self.packs):
+            raise ValueError("runtime evidence pack plan exceeds the prompt budget")
+        if self.assignment_count != sum(pack.assignment_count for pack in self.packs):
+            raise ValueError("runtime evidence pack plan assignment count is stale")
+        if self.unpacked_payload_occurrence_count != self.assignment_count:
+            raise ValueError("runtime evidence pack plan unpacked count is stale")
+        if self.planned_payload_occurrence_count != sum(
+            len(pack.source_record_ids) for pack in self.packs
+        ):
+            raise ValueError("runtime evidence pack plan payload count is stale")
+        if self.avoided_payload_occurrence_count != (
+            self.unpacked_payload_occurrence_count
+            - self.planned_payload_occurrence_count
+        ):
+            raise ValueError("runtime evidence pack plan avoided count is stale")
+        if self.unique_record_count > self.planned_payload_occurrence_count:
+            raise ValueError("runtime evidence pack plan unique count exceeds payloads")
+        return self
+
+
+class RuntimeEvidencePackNode(StrictMemoryContextModel):
+    pack_id: str
+    purpose: str
+    prompt_sha256: Sha256
+    prompt_chars: int = Field(ge=1)
+    cluster_ids: list[str] = Field(default_factory=list, min_length=1)
+    source_record_ids: list[str] = Field(default_factory=list, min_length=1)
+    assignment_count: int = Field(ge=1)
+    assignment_root_sha256: Sha256
+    output: ArtifactReference
+    provider_checkpoint: ArtifactReference | None = None
+    provider_checkpoint_id: str | None = None
+    provider_output_sha256: Sha256 | None = None
+
+    @model_validator(mode="after")
+    def validate_node(self) -> Self:
+        if not self.pack_id.strip() or not self.purpose.strip():
+            raise ValueError("runtime evidence pack node identity cannot be blank")
+        if (
+            self.cluster_ids != sorted(set(self.cluster_ids))
+            or self.source_record_ids != sorted(set(self.source_record_ids))
+        ):
+            raise ValueError("runtime evidence pack node identities must be sorted and unique")
+        if self.output.item_count != len(self.cluster_ids):
+            raise ValueError("runtime evidence pack node output count is stale")
+        if self.assignment_count < len(self.source_record_ids):
+            raise ValueError("runtime evidence pack assignments cannot trail record coverage")
+        checkpoint_fields = (
+            self.provider_checkpoint is not None,
+            self.provider_checkpoint_id is not None,
+            self.provider_output_sha256 is not None,
+        )
+        if any(checkpoint_fields) and not all(checkpoint_fields):
+            raise ValueError("runtime evidence pack checkpoint commitment is incomplete")
+        if self.provider_checkpoint is not None and self.provider_checkpoint.item_count != 1:
+            raise ValueError("runtime evidence pack checkpoint count is stale")
+        return self
+
+
+class RuntimeEvidencePackManifest(StrictMemoryContextModel):
+    schema_version: Literal["nslab.runtime_evidence_pack_manifest.v1"] = (
+        "nslab.runtime_evidence_pack_manifest.v1"
+    )
+    run_id: str
+    cutoff_at: AwareDatetime
+    memory_snapshot_id: str
+    policy_version: Literal["runtime_evidence_cross_cluster_pack.v1"] = (
+        "runtime_evidence_cross_cluster_pack.v1"
+    )
+    max_prompt_chars: int = Field(ge=1)
+    cluster_ids: list[str] = Field(default_factory=list, min_length=1)
+    assignment_count: int = Field(ge=1)
+    unique_record_count: int = Field(ge=1)
+    unpacked_payload_occurrence_count: int = Field(ge=1)
+    packed_payload_occurrence_count: int = Field(ge=1)
+    avoided_payload_occurrence_count: int = Field(ge=0)
+    assignment_root_sha256: Sha256
+    source_record_root_sha256: Sha256
+    plan: ArtifactReference
+    packs: list[RuntimeEvidencePackNode] = Field(default_factory=list, min_length=1)
+    first_n_shortcut_used: Literal[False] = False
+    silent_truncation_used: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_manifest(self) -> Self:
+        if not self.run_id.strip() or not self.memory_snapshot_id.strip():
+            raise ValueError("runtime evidence pack manifest identity cannot be blank")
+        if self.plan.item_count != len(self.packs):
+            raise ValueError("runtime evidence pack plan count is stale")
+        if self.cluster_ids != sorted(set(self.cluster_ids)):
+            raise ValueError("runtime evidence pack clusters must be sorted and unique")
+        pack_ids = [pack.pack_id for pack in self.packs]
+        if len(pack_ids) != len(set(pack_ids)):
+            raise ValueError("runtime evidence pack identifiers must be unique")
+        if any(pack.prompt_chars > self.max_prompt_chars for pack in self.packs):
+            raise ValueError("runtime evidence pack exceeds the prompt budget")
+        if set(self.cluster_ids) != {
+            cluster_id for pack in self.packs for cluster_id in pack.cluster_ids
+        }:
+            raise ValueError("runtime evidence pack cluster coverage is incomplete")
+        if self.assignment_count != sum(pack.assignment_count for pack in self.packs):
+            raise ValueError("runtime evidence pack assignment count is stale")
+        if self.unpacked_payload_occurrence_count != self.assignment_count:
+            raise ValueError("runtime evidence unpacked occurrence count is stale")
+        if self.packed_payload_occurrence_count != sum(
+            len(pack.source_record_ids) for pack in self.packs
+        ):
+            raise ValueError("runtime evidence packed occurrence count is stale")
+        if self.avoided_payload_occurrence_count != (
+            self.unpacked_payload_occurrence_count
+            - self.packed_payload_occurrence_count
+        ):
+            raise ValueError("runtime evidence avoided occurrence count is stale")
+        if self.unique_record_count > self.packed_payload_occurrence_count:
+            raise ValueError("runtime evidence unique record count exceeds packed payloads")
+        return self
+
+
 class RuntimeRetrievalTraceRow(StrictMemoryContextModel):
     schema_version: Literal["nslab.runtime_retrieval_trace_row.v1"] = "nslab.runtime_retrieval_trace_row.v1"
     record_id: str

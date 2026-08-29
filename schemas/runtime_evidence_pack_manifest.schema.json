@@ -1,0 +1,250 @@
+{
+  "$defs": {
+    "ArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "item_count": {
+          "minimum": 0,
+          "title": "Item Count",
+          "type": "integer"
+        },
+        "schema_version": {
+          "const": "nslab.memory_artifact_reference.v1",
+          "default": "nslab.memory_artifact_reference.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_path",
+        "sha256",
+        "item_count"
+      ],
+      "title": "ArtifactReference",
+      "type": "object"
+    },
+    "RuntimeEvidencePackNode": {
+      "additionalProperties": false,
+      "properties": {
+        "assignment_count": {
+          "minimum": 1,
+          "title": "Assignment Count",
+          "type": "integer"
+        },
+        "assignment_root_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Assignment Root Sha256",
+          "type": "string"
+        },
+        "cluster_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Cluster Ids",
+          "type": "array"
+        },
+        "output": {
+          "$ref": "#/$defs/ArtifactReference"
+        },
+        "pack_id": {
+          "title": "Pack Id",
+          "type": "string"
+        },
+        "prompt_chars": {
+          "minimum": 1,
+          "title": "Prompt Chars",
+          "type": "integer"
+        },
+        "prompt_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Prompt Sha256",
+          "type": "string"
+        },
+        "provider_checkpoint": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactReference"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "provider_checkpoint_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Checkpoint Id"
+        },
+        "provider_output_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider Output Sha256"
+        },
+        "purpose": {
+          "title": "Purpose",
+          "type": "string"
+        },
+        "source_record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Source Record Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "pack_id",
+        "purpose",
+        "prompt_sha256",
+        "prompt_chars",
+        "assignment_count",
+        "assignment_root_sha256",
+        "output"
+      ],
+      "title": "RuntimeEvidencePackNode",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assignment_count": {
+      "minimum": 1,
+      "title": "Assignment Count",
+      "type": "integer"
+    },
+    "assignment_root_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Assignment Root Sha256",
+      "type": "string"
+    },
+    "avoided_payload_occurrence_count": {
+      "minimum": 0,
+      "title": "Avoided Payload Occurrence Count",
+      "type": "integer"
+    },
+    "cluster_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Cluster Ids",
+      "type": "array"
+    },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "first_n_shortcut_used": {
+      "const": false,
+      "default": false,
+      "title": "First N Shortcut Used",
+      "type": "boolean"
+    },
+    "max_prompt_chars": {
+      "minimum": 1,
+      "title": "Max Prompt Chars",
+      "type": "integer"
+    },
+    "memory_snapshot_id": {
+      "title": "Memory Snapshot Id",
+      "type": "string"
+    },
+    "packed_payload_occurrence_count": {
+      "minimum": 1,
+      "title": "Packed Payload Occurrence Count",
+      "type": "integer"
+    },
+    "packs": {
+      "items": {
+        "$ref": "#/$defs/RuntimeEvidencePackNode"
+      },
+      "minItems": 1,
+      "title": "Packs",
+      "type": "array"
+    },
+    "plan": {
+      "$ref": "#/$defs/ArtifactReference"
+    },
+    "policy_version": {
+      "const": "runtime_evidence_cross_cluster_pack.v1",
+      "default": "runtime_evidence_cross_cluster_pack.v1",
+      "title": "Policy Version",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.runtime_evidence_pack_manifest.v1",
+      "default": "nslab.runtime_evidence_pack_manifest.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "silent_truncation_used": {
+      "const": false,
+      "default": false,
+      "title": "Silent Truncation Used",
+      "type": "boolean"
+    },
+    "source_record_root_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Record Root Sha256",
+      "type": "string"
+    },
+    "unique_record_count": {
+      "minimum": 1,
+      "title": "Unique Record Count",
+      "type": "integer"
+    },
+    "unpacked_payload_occurrence_count": {
+      "minimum": 1,
+      "title": "Unpacked Payload Occurrence Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "run_id",
+    "cutoff_at",
+    "memory_snapshot_id",
+    "max_prompt_chars",
+    "assignment_count",
+    "unique_record_count",
+    "unpacked_payload_occurrence_count",
+    "packed_payload_occurrence_count",
+    "avoided_payload_occurrence_count",
+    "assignment_root_sha256",
+    "source_record_root_sha256",
+    "plan"
+  ],
+  "title": "RuntimeEvidencePackManifest",
+  "type": "object"
+}

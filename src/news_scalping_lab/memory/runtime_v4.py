@@ -11,10 +11,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+from news_scalping_lab.contracts.memory_context import ArtifactReference
 from news_scalping_lab.contracts.models import BlindPrediction
 from news_scalping_lab.contracts.runtime_retrieval import (
     RuntimeEvidenceMemo,
     RuntimeEvidenceMemoBatch,
+    RuntimeEvidenceMemoPack,
+    RuntimeEvidencePackManifest,
+    RuntimeEvidencePackNode,
+    RuntimeEvidencePackPlan,
+    RuntimeEvidencePackPlanNode,
     RuntimeRetrievalBudget,
     RuntimeRetrievalLane,
     RuntimeRetrievalStage,
@@ -22,6 +28,7 @@ from news_scalping_lab.contracts.runtime_retrieval import (
     RuntimeRetrievalTraceRow,
 )
 from news_scalping_lab.llm.base import LLMProvider
+from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.memory.index import ProductionMemoryIndex
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.records.routing import (
@@ -35,6 +42,7 @@ from news_scalping_lab.utils import (
     file_sha256,
     read_json,
     relative_to_root,
+    sha256_bytes,
     sha256_text,
     stable_id,
 )
@@ -44,6 +52,7 @@ RUNTIME_DAILY_CONTEXT_VERSION = "daily_population_context.v2"
 RUNTIME_EVIDENCE_MAP_REDUCE_VERSION = "runtime_evidence_map_reduce.v1"
 RUNTIME_RETRIEVAL_ROOT = Path("runs/checkpoints/runtime_retrieval_v4")
 RUNTIME_EVIDENCE_ROOT = Path("runs/checkpoints/runtime_evidence_memos")
+RUNTIME_EVIDENCE_PACK_ROOT = Path("runs/checkpoints/runtime_evidence_packs")
 RUNTIME_INITIAL_MIN_RECORDS = 16
 RUNTIME_INITIAL_MAX_RECORDS = 32
 RUNTIME_DEEP_MAX_RECORDS = 128
@@ -51,6 +60,8 @@ RUNTIME_DEEP_DEFAULT_RECORDS = 96
 RUNTIME_MAX_DEPTH = 3
 RUNTIME_EVIDENCE_BATCH_SIZE = 16
 RUNTIME_EVIDENCE_MAX_PROMPT_CHARS = 240_000
+RUNTIME_EVIDENCE_MAX_RESPONSE_CHARS = 240_000
+RUNTIME_EVIDENCE_PACK_POLICY_VERSION = "runtime_evidence_cross_cluster_pack.v1"
 
 RUNTIME_LANES: tuple[RuntimeRetrievalLane, ...] = (
     "POSITIVE_ANALOG",
@@ -128,6 +139,33 @@ class RuntimeEvidenceBuildResult:
     memo_path: Path
     trace: RuntimeRetrievalTrace
     trace_path: Path
+
+
+@dataclass(frozen=True)
+class RuntimeEvidencePackedBuildResult:
+    evidence_results: tuple[RuntimeEvidenceBuildResult, ...]
+    manifest: RuntimeEvidencePackManifest
+    manifest_path: Path
+
+
+@dataclass(frozen=True)
+class _RuntimeEvidenceAssignment:
+    cluster_id: str
+    query_text: str
+    record_id: str
+    lane: RuntimeRetrievalLane
+
+
+@dataclass(frozen=True)
+class _RuntimeEvidencePackWork:
+    assignments: tuple[_RuntimeEvidenceAssignment, ...]
+    prompt: str
+    prompt_sha256: str
+    pack_id: str
+    purpose: str
+    cluster_ids: tuple[str, ...]
+    source_record_ids: tuple[str, ...]
+    assignment_root_sha256: str
 
 
 def runtime_record_lanes(
@@ -323,47 +361,277 @@ async def build_runtime_evidence_memos(
     memory_index: ProductionMemoryIndex,
     llm: LLMProvider,
 ) -> RuntimeEvidenceBuildResult:
+    """Compatibility wrapper for one trace through the packed evidence path."""
+
+    packed = await build_runtime_evidence_memos_packed(
+        root,
+        retrievals=[retrieval],
+        memory_index=memory_index,
+        llm=llm,
+    )
+    return packed.evidence_results[0]
+
+
+async def build_runtime_evidence_memos_packed(
+    root: Path,
+    *,
+    retrievals: list[RuntimeRetrievalBuildResult],
+    memory_index: ProductionMemoryIndex,
+    llm: LLMProvider,
+) -> RuntimeEvidencePackedBuildResult:
+    """Expose each cluster-record assignment while packing duplicate payloads once."""
+
     root = root.resolve()
-    trace = retrieval.trace
-    selected_rows = [row for row in trace.rows if "LANE_SELECTED" in row.stages]
-    if not selected_rows:
-        raise ValueError("runtime evidence mapping requires selected records")
-    selected_record_ids = [row.record_id for row in selected_rows]
+    if not retrievals:
+        raise ValueError("runtime evidence packing requires retrieval traces")
+    retrieval_by_cluster = {
+        retrieval.trace.cluster_id: retrieval for retrieval in retrievals
+    }
+    if len(retrieval_by_cluster) != len(retrievals):
+        raise ValueError("runtime evidence packing requires unique clusters")
+    first_trace = retrievals[0].trace
+    if any(
+        retrieval.trace.run_id != first_trace.run_id
+        or retrieval.trace.cutoff_at != first_trace.cutoff_at
+        or retrieval.trace.memory_snapshot_id != first_trace.memory_snapshot_id
+        for retrieval in retrievals
+    ):
+        raise ValueError("runtime evidence packing trace identity mismatch")
+    assignments: list[_RuntimeEvidenceAssignment] = []
+    for retrieval in retrievals:
+        selected_rows = [
+            row for row in retrieval.trace.rows if "LANE_SELECTED" in row.stages
+        ]
+        if not selected_rows:
+            raise ValueError("runtime evidence mapping requires selected records")
+        if tuple(row.record_id for row in selected_rows) != (
+            retrieval.selected_record_ids
+        ):
+            raise ValueError("runtime evidence selected record closure mismatch")
+        for row in selected_rows:
+            if row.lane is None:
+                raise ValueError("runtime evidence selected record has no lane")
+            assignments.append(
+                _RuntimeEvidenceAssignment(
+                    cluster_id=retrieval.trace.cluster_id,
+                    query_text=retrieval.trace.query_text,
+                    record_id=row.record_id,
+                    lane=row.lane,
+                )
+            )
+    assignments.sort(
+        key=lambda item: (item.record_id, item.cluster_id, item.lane)
+    )
+    assignment_identities = [_assignment_payload(item) for item in assignments]
+    if len(assignment_identities) != len(
+        {
+            canonical_json(identity)
+            for identity in assignment_identities
+        }
+    ):
+        raise ValueError("runtime evidence cluster-record assignments are duplicated")
+    selected_record_ids = sorted({item.record_id for item in assignments})
     _snapshot, source_records = memory_index.representative_source_records(
         selected_record_ids,
-        cutoff_at=trace.cutoff_at,
+        cutoff_at=first_trace.cutoff_at,
     )
     if {item.record_id for item in source_records} != set(selected_record_ids):
         raise ValueError("runtime evidence records are not closed over the memory snapshot")
     records = _load_records_by_ids(root, set(selected_record_ids))
-    memos: list[RuntimeEvidenceMemo] = []
-    for start in range(0, len(selected_rows), trace.budget.batch_size):
-        batch_rows = selected_rows[start : start + trace.budget.batch_size]
-        prompt = _runtime_evidence_prompt(
-            trace,
-            batch_rows=batch_rows,
+    trace_by_cluster = {
+        retrieval.trace.cluster_id: retrieval.trace for retrieval in retrievals
+    }
+    assignment_packs = _pack_runtime_evidence_assignments(
+        assignments,
+        records=records,
+    )
+    memos_by_cluster: dict[str, list[RuntimeEvidenceMemo]] = defaultdict(list)
+    pack_nodes: list[RuntimeEvidencePackNode] = []
+    pack_dir = (
+        root
+        / RUNTIME_EVIDENCE_PACK_ROOT
+        / _safe_segment(first_trace.run_id)
+    )
+    pack_work: list[_RuntimeEvidencePackWork] = []
+    for pack_assignments in assignment_packs:
+        prompt = _runtime_evidence_pack_prompt(
+            pack_assignments,
             records=records,
         )
-        if len(prompt) > RUNTIME_EVIDENCE_MAX_PROMPT_CHARS:
-            raise ValueError("runtime evidence mini-map prompt exceeds its character budget")
+        prompt_sha256 = sha256_text(prompt)
+        assignment_root_sha256 = _assignment_root(pack_assignments)
+        pack_id = stable_id(
+            "REPACK",
+            RUNTIME_EVIDENCE_PACK_POLICY_VERSION,
+            prompt_sha256,
+            assignment_root_sha256,
+            length=20,
+        )
+        purpose = f"runtime_evidence_pack:{pack_id}"
+        pack_work.append(
+            _RuntimeEvidencePackWork(
+                assignments=tuple(pack_assignments),
+                prompt=prompt,
+                prompt_sha256=prompt_sha256,
+                pack_id=pack_id,
+                purpose=purpose,
+                cluster_ids=tuple(
+                    sorted({item.cluster_id for item in pack_assignments})
+                ),
+                source_record_ids=tuple(
+                    sorted({item.record_id for item in pack_assignments})
+                ),
+                assignment_root_sha256=assignment_root_sha256,
+            )
+        )
+    plan = RuntimeEvidencePackPlan(
+        run_id=first_trace.run_id,
+        cutoff_at=first_trace.cutoff_at,
+        memory_snapshot_id=first_trace.memory_snapshot_id,
+        max_prompt_chars=RUNTIME_EVIDENCE_MAX_PROMPT_CHARS,
+        assignment_count=len(assignments),
+        unique_record_count=len(selected_record_ids),
+        unpacked_payload_occurrence_count=len(assignments),
+        planned_payload_occurrence_count=sum(
+            len(work.source_record_ids) for work in pack_work
+        ),
+        avoided_payload_occurrence_count=(
+            len(assignments)
+            - sum(len(work.source_record_ids) for work in pack_work)
+        ),
+        assignment_root_sha256=_assignment_root(assignments),
+        source_record_root_sha256=_record_hash_root(
+            selected_record_ids,
+            records,
+        ),
+        packs=[
+            RuntimeEvidencePackPlanNode(
+                pack_id=work.pack_id,
+                purpose=work.purpose,
+                prompt_sha256=work.prompt_sha256,
+                prompt_chars=len(work.prompt),
+                cluster_ids=list(work.cluster_ids),
+                source_record_ids=list(work.source_record_ids),
+                assignment_count=len(work.assignments),
+                assignment_root_sha256=work.assignment_root_sha256,
+            )
+            for work in pack_work
+        ],
+    )
+    plan_path = pack_dir / "runtime_evidence_pack_plan.json"
+    _write_immutable_model(plan_path, plan)
+
+    for work in pack_work:
         try:
             generated = await llm.generate_structured(
-                prompt=prompt,
-                response_model=RuntimeEvidenceMemoBatch,
-                purpose=(f"runtime_evidence_map:{trace.cluster_id}:{start // trace.budget.batch_size + 1:03d}"),
+                prompt=work.prompt,
+                response_model=RuntimeEvidenceMemoPack,
+                purpose=work.purpose,
             )
         except NotImplementedError:
-            generated = _fallback_memo_batch(trace, batch_rows=batch_rows, records=records)
-        memos.extend(
-            _normalize_memo_batch(
-                generated,
-                trace=trace,
-                batch_rows=batch_rows,
+            generated = _fallback_memo_pack(
+                list(work.assignments),
                 records=records,
-            ).memos
+            )
+        (
+            provider_checkpoint,
+            provider_checkpoint_id,
+            provider_output_sha256,
+        ) = _runtime_evidence_checkpoint_commitment(
+            root,
+            llm=llm,
+            prompt=work.prompt,
+            purpose=work.purpose,
+            generated=generated,
         )
+        normalized = _normalize_memo_pack(
+            generated,
+            assignments=list(work.assignments),
+            trace_by_cluster=trace_by_cluster,
+            records=records,
+        )
+        output_path = pack_dir / f"{work.pack_id}.json"
+        _write_immutable_model(output_path, normalized)
+        pack_nodes.append(
+            RuntimeEvidencePackNode(
+                pack_id=work.pack_id,
+                purpose=work.purpose,
+                prompt_sha256=work.prompt_sha256,
+                prompt_chars=len(work.prompt),
+                cluster_ids=list(work.cluster_ids),
+                source_record_ids=list(work.source_record_ids),
+                assignment_count=len(work.assignments),
+                assignment_root_sha256=work.assignment_root_sha256,
+                output=_artifact_reference(
+                    root,
+                    output_path,
+                    item_count=len(normalized.batches),
+                ),
+                provider_checkpoint=provider_checkpoint,
+                provider_checkpoint_id=provider_checkpoint_id,
+                provider_output_sha256=provider_output_sha256,
+            )
+        )
+        for batch in normalized.batches:
+            memos_by_cluster[batch.cluster_id].extend(batch.memos)
+
+    evidence_results = tuple(
+        _materialize_runtime_evidence_result(
+            root,
+            retrieval=retrieval_by_cluster[cluster_id],
+            memos=memos_by_cluster[cluster_id],
+        )
+        for cluster_id in sorted(retrieval_by_cluster)
+    )
+    manifest = RuntimeEvidencePackManifest(
+        run_id=first_trace.run_id,
+        cutoff_at=first_trace.cutoff_at,
+        memory_snapshot_id=first_trace.memory_snapshot_id,
+        max_prompt_chars=RUNTIME_EVIDENCE_MAX_PROMPT_CHARS,
+        cluster_ids=sorted(retrieval_by_cluster),
+        assignment_count=len(assignments),
+        unique_record_count=len(selected_record_ids),
+        unpacked_payload_occurrence_count=len(assignments),
+        packed_payload_occurrence_count=sum(
+            len(node.source_record_ids) for node in pack_nodes
+        ),
+        avoided_payload_occurrence_count=(
+            len(assignments)
+            - sum(len(node.source_record_ids) for node in pack_nodes)
+        ),
+        assignment_root_sha256=_assignment_root(assignments),
+        source_record_root_sha256=_record_hash_root(
+            selected_record_ids,
+            records,
+        ),
+        plan=_artifact_reference(
+            root,
+            plan_path,
+            item_count=len(plan.packs),
+        ),
+        packs=pack_nodes,
+    )
+    manifest_path = pack_dir / "runtime_evidence_pack_manifest.json"
+    _write_immutable_model(manifest_path, manifest)
+    return RuntimeEvidencePackedBuildResult(
+        evidence_results=evidence_results,
+        manifest=manifest,
+        manifest_path=manifest_path,
+    )
+
+
+def _materialize_runtime_evidence_result(
+    root: Path,
+    *,
+    retrieval: RuntimeRetrievalBuildResult,
+    memos: list[RuntimeEvidenceMemo],
+) -> RuntimeEvidenceBuildResult:
+    trace = retrieval.trace
+    selected_rows = [row for row in trace.rows if "LANE_SELECTED" in row.stages]
     memo_by_record: dict[str, list[str]] = defaultdict(list)
     for memo in memos:
+        if memo.cluster_id != trace.cluster_id:
+            raise ValueError("packed runtime evidence memo crossed cluster identity")
         for record_id in memo.source_record_ids:
             memo_by_record[record_id].append(memo.memo_id)
     if set(memo_by_record) != {row.record_id for row in selected_rows}:
@@ -797,6 +1065,226 @@ def _candidate_source_stages(
     return stages
 
 
+def _assignment_payload(
+    assignment: _RuntimeEvidenceAssignment,
+) -> dict[str, str]:
+    return {
+        "cluster_id": assignment.cluster_id,
+        "query_sha256": sha256_text(assignment.query_text),
+        "record_id": assignment.record_id,
+        "lane": assignment.lane,
+    }
+
+
+def _assignment_root(assignments: list[_RuntimeEvidenceAssignment]) -> str:
+    return sha256_text(
+        canonical_json([_assignment_payload(item) for item in assignments])
+    )
+
+
+def _pack_runtime_evidence_assignments(
+    assignments: list[_RuntimeEvidenceAssignment],
+    *,
+    records: dict[str, BrainRecordEnvelope],
+) -> list[list[_RuntimeEvidenceAssignment]]:
+    packs: list[list[_RuntimeEvidenceAssignment]] = []
+    current: list[_RuntimeEvidenceAssignment] = []
+    for assignment in assignments:
+        tentative = [*current, assignment]
+        if current and not _runtime_evidence_pack_fits(
+            tentative,
+            records=records,
+        ):
+            packs.append(current)
+            current = [assignment]
+            if not _runtime_evidence_pack_fits(
+                current,
+                records=records,
+            ):
+                raise ValueError(
+                    "one runtime evidence assignment exceeds the model context budget"
+                )
+        else:
+            current = tentative
+    if current:
+        packs.append(current)
+    flattened = [item for pack in packs for item in pack]
+    if flattened != assignments:
+        raise ValueError("runtime evidence packing changed assignment coverage")
+    if any(
+        not _runtime_evidence_pack_fits(
+            pack,
+            records=records,
+        )
+        for pack in packs
+    ):
+        raise ValueError("runtime evidence packing exceeded a context budget")
+    return packs
+
+
+def _runtime_evidence_pack_fits(
+    assignments: list[_RuntimeEvidenceAssignment],
+    *,
+    records: dict[str, BrainRecordEnvelope],
+) -> bool:
+    prompt = _runtime_evidence_pack_prompt(assignments, records=records)
+    if len(prompt) > RUNTIME_EVIDENCE_MAX_PROMPT_CHARS:
+        return False
+    fallback = _fallback_memo_pack(
+        assignments,
+        records=records,
+    )
+    return (
+        len(canonical_json(fallback.model_dump(mode="json")))
+        <= RUNTIME_EVIDENCE_MAX_RESPONSE_CHARS
+    )
+
+
+def _runtime_evidence_pack_prompt(
+    assignments: list[_RuntimeEvidenceAssignment],
+    *,
+    records: dict[str, BrainRecordEnvelope],
+) -> str:
+    cluster_queries = {
+        item.cluster_id: item.query_text for item in assignments
+    }
+    if any(
+        item.query_text != cluster_queries[item.cluster_id]
+        for item in assignments
+    ):
+        raise ValueError("runtime evidence cluster query identity drifted")
+    record_ids = sorted({item.record_id for item in assignments})
+    payload = {
+        "schema_version": "nslab.runtime_evidence_pack_input.v1",
+        "pack_policy_version": RUNTIME_EVIDENCE_PACK_POLICY_VERSION,
+        "requirements": {
+            "cover_every_cluster_record_assignment_at_least_once": True,
+            "read_each_unique_record_payload_once_in_this_prompt": True,
+            "compare_each_record_against_every_assigned_current_event": True,
+            "separate_support_from_failure_and_unresolved_conflict": True,
+            "do_not_infer_from_counts_or_hashes": True,
+            "do_not_use_information_after_cutoff": True,
+        },
+        "clusters": [
+            {
+                "cluster_id": cluster_id,
+                "current_event_query": cluster_queries[cluster_id],
+            }
+            for cluster_id in sorted(cluster_queries)
+        ],
+        "records": [
+            {
+                "record_id": record_id,
+                "payload_sha256": sha256_text(
+                    canonical_json(records[record_id].payload)
+                ),
+                "payload": records[record_id].payload,
+            }
+            for record_id in record_ids
+        ],
+        "assignments": [_assignment_payload(item) for item in assignments],
+    }
+    return (
+        "Map the supplied cutoff-safe historical payloads into compact evidence "
+        "memos for every assigned current-event cluster. A record payload appears "
+        "once even when several clusters must compare against it. Return "
+        "RuntimeEvidenceMemoPack JSON with one RuntimeEvidenceMemoBatch per cluster; "
+        "every assignment must be covered. Evidence is not a vote.\n"
+        "---RUNTIME_EVIDENCE_PACK_INPUT---\n"
+        + canonical_json(payload)
+    )
+
+
+def _normalize_memo_pack(
+    generated: RuntimeEvidenceMemoPack,
+    *,
+    assignments: list[_RuntimeEvidenceAssignment],
+    trace_by_cluster: dict[str, RuntimeRetrievalTrace],
+    records: dict[str, BrainRecordEnvelope],
+) -> RuntimeEvidenceMemoPack:
+    generated_by_cluster = {
+        batch.cluster_id: batch for batch in generated.batches
+    }
+    rows_by_cluster: dict[str, list[RuntimeRetrievalTraceRow]] = defaultdict(list)
+    for assignment in assignments:
+        rows_by_cluster[assignment.cluster_id].append(
+            next(
+                row
+                for row in trace_by_cluster[assignment.cluster_id].rows
+                if row.record_id == assignment.record_id
+                and "LANE_SELECTED" in row.stages
+            )
+        )
+    batches: list[RuntimeEvidenceMemoBatch] = []
+    for cluster_id in sorted(rows_by_cluster):
+        trace = trace_by_cluster[cluster_id]
+        batch_rows = rows_by_cluster[cluster_id]
+        generated_batch = generated_by_cluster.get(cluster_id)
+        if generated_batch is None:
+            generated_batch = _fallback_memo_batch(
+                trace,
+                batch_rows=batch_rows,
+                records=records,
+            )
+        batches.append(
+            _normalize_memo_batch(
+                generated_batch,
+                trace=trace,
+                batch_rows=batch_rows,
+                records=records,
+            )
+        )
+    return RuntimeEvidenceMemoPack(
+        cluster_ids=sorted(rows_by_cluster),
+        source_record_ids=sorted({item.record_id for item in assignments}),
+        batches=batches,
+    )
+
+
+def _fallback_memo_pack(
+    assignments: list[_RuntimeEvidenceAssignment],
+    *,
+    records: dict[str, BrainRecordEnvelope],
+) -> RuntimeEvidenceMemoPack:
+    records_by_cluster_lane: dict[
+        str,
+        dict[RuntimeRetrievalLane, list[str]],
+    ] = defaultdict(lambda: defaultdict(list))
+    for assignment in assignments:
+        records_by_cluster_lane[assignment.cluster_id][assignment.lane].append(
+            assignment.record_id
+        )
+    batches = [
+        RuntimeEvidenceMemoBatch(
+            cluster_id=cluster_id,
+            source_record_ids=sorted(
+                {
+                    record_id
+                    for record_ids in records_by_cluster_lane[cluster_id].values()
+                    for record_id in record_ids
+                }
+            ),
+            memos=[
+                _fallback_memo(
+                    cluster_id,
+                    lane=lane,
+                    record_ids=record_ids,
+                    records=records,
+                )
+                for lane, record_ids in sorted(
+                    records_by_cluster_lane[cluster_id].items()
+                )
+            ],
+        )
+        for cluster_id in sorted(records_by_cluster_lane)
+    ]
+    return RuntimeEvidenceMemoPack(
+        cluster_ids=sorted(records_by_cluster_lane),
+        source_record_ids=sorted({item.record_id for item in assignments}),
+        batches=batches,
+    )
+
+
 def _runtime_evidence_prompt(
     trace: RuntimeRetrievalTrace,
     *,
@@ -1044,6 +1532,105 @@ def _safe_segment(value: str) -> str:
     ):
         raise ValueError("runtime retrieval identity contains unsafe path characters")
     return stripped
+
+
+def _runtime_evidence_checkpoint_commitment(
+    root: Path,
+    *,
+    llm: LLMProvider,
+    prompt: str,
+    purpose: str,
+    generated: RuntimeEvidenceMemoPack,
+) -> tuple[ArtifactReference | None, str | None, str | None]:
+    """Bind the exact tracing checkpoint used for an authenticated packed call."""
+
+    if not isinstance(llm, TracingLLMProvider):
+        return None, None, None
+    input_payload = {
+        "prompt_sha256": sha256_text(prompt),
+        "prompt_chars": len(prompt),
+        "prompt_utf8_bytes": len(prompt.encode("utf-8")),
+        "prompt_tokens_counted": llm.count_tokens(prompt),
+        "response_model": RuntimeEvidenceMemoPack.__name__,
+    }
+    checkpoint_id = llm._checkpoint_id(
+        operation="generate_structured",
+        purpose=purpose,
+        input_payload=input_payload,
+    )
+    checkpoint_path = llm._checkpoint_path(
+        operation="generate_structured",
+        purpose=purpose,
+        input_payload=input_payload,
+    ).resolve()
+    try:
+        checkpoint_path.relative_to(llm.checkpoint_dir.resolve())
+        artifact_path = relative_to_root(checkpoint_path, root)
+    except ValueError as exc:
+        raise ValueError(
+            "runtime evidence provider checkpoint escapes the project store"
+        ) from exc
+    try:
+        checkpoint_bytes = checkpoint_path.read_bytes()
+        payload = json.loads(checkpoint_bytes)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("runtime evidence provider checkpoint is unreadable") from exc
+    expected_output = generated.model_dump(mode="json")
+    expected_output_sha256 = sha256_text(canonical_json(expected_output))
+    token_usage = payload.get("token_usage") if isinstance(payload, dict) else None
+    prompt_tokens = (
+        token_usage.get("prompt_tokens_estimate")
+        if isinstance(token_usage, dict)
+        else None
+    )
+    completion_tokens = (
+        token_usage.get("completion_tokens_estimate")
+        if isinstance(token_usage, dict)
+        else None
+    )
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != "nslab.llm_checkpoint.v1"
+        or payload.get("checkpoint_id") != checkpoint_id
+        or checkpoint_path.stem != checkpoint_id
+        or payload.get("operation") != "generate_structured"
+        or payload.get("purpose") != purpose
+        or payload.get("status") != "ok"
+        or payload.get("input") != input_payload
+        or payload.get("input_sha256")
+        != sha256_text(canonical_json(input_payload))
+        or payload.get("output") != expected_output
+        or payload.get("output_sha256") != expected_output_sha256
+        or isinstance(prompt_tokens, bool)
+        or not isinstance(prompt_tokens, int)
+        or prompt_tokens < 0
+        or isinstance(completion_tokens, bool)
+        or not isinstance(completion_tokens, int)
+        or completion_tokens < 0
+    ):
+        raise ValueError("runtime evidence provider checkpoint commitment drifted")
+    return (
+        ArtifactReference(
+            artifact_path=artifact_path,
+            sha256=sha256_bytes(checkpoint_bytes),
+            item_count=1,
+        ),
+        checkpoint_id,
+        expected_output_sha256,
+    )
+
+
+def _artifact_reference(
+    root: Path,
+    path: Path,
+    *,
+    item_count: int = 1,
+) -> ArtifactReference:
+    return ArtifactReference(
+        artifact_path=relative_to_root(path, root),
+        sha256=file_sha256(path),
+        item_count=item_count,
+    )
 
 
 def _write_immutable_model(path: Path, model: Any) -> None:

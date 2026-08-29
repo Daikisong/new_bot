@@ -84,7 +84,7 @@ from news_scalping_lab.memory.diversity import (
 from news_scalping_lab.memory.index import ProductionMemoryIndex
 from news_scalping_lab.memory.runtime_v4 import (
     RuntimeRetrievalBuildResult,
-    build_runtime_evidence_memos,
+    build_runtime_evidence_memos_packed,
     finalize_runtime_retrieval_trace,
 )
 from news_scalping_lab.phase7_transport import (
@@ -1017,19 +1017,22 @@ def test_runtime_evidence_and_final_graph_stages_resume_without_rewrite(
         "news_scalping_lab.memory.runtime_v4._load_records_by_ids",
         lambda _root, record_ids: dict.fromkeys(record_ids, source_record),
     )
-    evidence = asyncio.run(
-        build_runtime_evidence_memos(
+    packed_evidence = asyncio.run(
+        build_runtime_evidence_memos_packed(
             tmp_path,
-            retrieval=retrieval,
+            retrievals=[retrieval],
             memory_index=index,
             llm=DeterministicMockLLMProvider(),
         )
     )
+    evidence = packed_evidence.evidence_results[0]
 
     evidence_context, evidence_path = attach_runtime_evidence_to_daily_context(
         tmp_path,
         context_path=context_path,
         evidence_results=[evidence],
+        pack_manifest=packed_evidence.manifest,
+        pack_manifest_path=packed_evidence.manifest_path,
     )
     evidence_context_bytes = evidence_path.read_bytes()
     evidence_compact_path = (
@@ -1041,12 +1044,24 @@ def test_runtime_evidence_and_final_graph_stages_resume_without_rewrite(
             tmp_path,
             context_path=context_path,
             evidence_results=[evidence],
+            pack_manifest=packed_evidence.manifest,
+            pack_manifest_path=packed_evidence.manifest_path,
         )
     )
 
     assert evidence_path.name == "daily_memory_context.runtime_evidence.json"
     assert repeated_evidence_path == evidence_path
     assert repeated_evidence == evidence_context
+    assert evidence_context.runtime_evidence_pack_manifest is not None
+    assert evidence_context.runtime_evidence_assignment_count == len(
+        selected_record_ids
+    )
+    assert evidence_context.runtime_evidence_unique_record_count == len(
+        set(selected_record_ids)
+    )
+    assert evidence_context.runtime_evidence_packed_call_count == len(
+        packed_evidence.manifest.packs
+    )
     assert evidence_path.read_bytes() == evidence_context_bytes
     assert context_path.read_bytes() == initial_context_bytes
     assert initial_compact_path.read_bytes() == initial_compact_bytes
@@ -1166,6 +1181,10 @@ def test_runtime_evidence_and_final_graph_stages_resume_without_rewrite(
     assert trace_stats["runtime_final_candidate_ids"] == {
         "candidate:1:TEST-001"
     }
+    assert trace_stats["evidence_assignment_count"] == 1
+    assert trace_stats["evidence_unique_record_count"] == 1
+    assert trace_stats["evidence_packed_call_count"] == 1
+    assert trace_stats["retrieval_observation"]["evidence_pack_manifest_path"]
 
 
 def test_trace_contains_no_future_record(

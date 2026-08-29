@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import date, datetime, time
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from pydantic import BaseModel
 
@@ -40,8 +40,14 @@ from news_scalping_lab.contracts.models import (
 from news_scalping_lab.contracts.quality_evaluation import (
     SharedOpenWorldReduceOutput,
 )
+from news_scalping_lab.contracts.runtime_retrieval import (
+    RuntimeEvidenceMemo,
+    RuntimeEvidenceMemoBatch,
+    RuntimeEvidenceMemoPack,
+    RuntimeRetrievalLane,
+)
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
-from news_scalping_lab.utils import KST, now_kst, sha256_text, stable_id
+from news_scalping_lab.utils import KST, canonical_json, now_kst, sha256_text, stable_id
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -94,10 +100,92 @@ class DeterministicMockLLMProvider:
         if response_model is SharedOpenWorldReduceOutput:
             reduction = self._shared_open_world_reduce(prompt)
             return reduction  # type: ignore[return-value]
+        if response_model is RuntimeEvidenceMemoPack:
+            memo_pack = self._runtime_evidence_memo_pack(prompt)
+            return memo_pack  # type: ignore[return-value]
         if response_model is SemanticResearchDraft:
             draft = self._semantic_research_draft(prompt)
             return draft  # type: ignore[return-value]
         raise NotImplementedError(f"mock structured output not registered for {response_model}")
+
+    def _runtime_evidence_memo_pack(
+        self,
+        prompt: str,
+    ) -> RuntimeEvidenceMemoPack:
+        marker = "---RUNTIME_EVIDENCE_PACK_INPUT---"
+        payload: dict[str, Any] = {}
+        if marker in prompt:
+            try:
+                parsed = json.loads(prompt.split(marker, maxsplit=1)[-1].strip())
+            except json.JSONDecodeError:
+                parsed = {}
+            if isinstance(parsed, dict):
+                payload = parsed
+        raw_assignments = payload.get("assignments")
+        assignments = [
+            row
+            for row in raw_assignments
+            if isinstance(row, dict)
+            and isinstance(row.get("cluster_id"), str)
+            and isinstance(row.get("record_id"), str)
+            and isinstance(row.get("lane"), str)
+        ] if isinstance(raw_assignments, list) else []
+        by_cluster_lane: dict[str, dict[str, list[str]]] = {}
+        for row in assignments:
+            cluster_id = str(row["cluster_id"])
+            lane = str(row["lane"])
+            record_id = str(row["record_id"])
+            by_cluster_lane.setdefault(cluster_id, {}).setdefault(lane, []).append(
+                record_id
+            )
+        batches: list[RuntimeEvidenceMemoBatch] = []
+        for cluster_id, lanes in sorted(by_cluster_lane.items()):
+            memos = [
+                RuntimeEvidenceMemo(
+                    memo_id=stable_id(
+                        "MOCKRMEMO",
+                        cluster_id,
+                        lane,
+                        canonical_json(sorted(set(record_ids))),
+                    ),
+                    cluster_id=cluster_id,
+                    lane=cast(RuntimeRetrievalLane, lane),
+                    source_record_ids=sorted(set(record_ids)),
+                    source_record_hash_root=sha256_text(
+                        canonical_json(sorted(set(record_ids)))
+                    ),
+                    current_vs_history_similarities=[
+                        "Deterministic mock compared the assigned historical payload."
+                    ],
+                    current_vs_history_differences=[
+                        "Final synthesis must retain current-event-specific uncertainty."
+                    ],
+                    unresolved_conflicts=[
+                        "Deterministic mock evidence requires final synthesis review."
+                    ],
+                )
+                for lane, record_ids in sorted(lanes.items())
+            ]
+            batches.append(
+                RuntimeEvidenceMemoBatch(
+                    cluster_id=cluster_id,
+                    source_record_ids=sorted(
+                        {
+                            record_id
+                            for record_ids in lanes.values()
+                            for record_id in record_ids
+                        }
+                    ),
+                    memos=memos,
+                )
+            )
+        return RuntimeEvidenceMemoPack(
+            cluster_ids=sorted(by_cluster_lane),
+            source_record_ids=sorted(
+                {str(row["record_id"]) for row in assignments}
+            ),
+            batches=batches,
+        )
 
     def _shared_open_world_reduce(
         self,

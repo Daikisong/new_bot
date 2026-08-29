@@ -1398,6 +1398,14 @@ class DailyMemoryContext(StrictMemoryContextModel):
     runtime_retrieval_traces: list[ArtifactReference] = Field(default_factory=list)
     runtime_evidence_traces: list[ArtifactReference] = Field(default_factory=list)
     runtime_evidence_memos: list[ArtifactReference] = Field(default_factory=list)
+    runtime_evidence_pack_manifest: ArtifactReference | None = None
+    runtime_evidence_assignment_count: int = Field(default=0, ge=0)
+    runtime_evidence_unique_record_count: int = Field(default=0, ge=0)
+    runtime_evidence_packed_call_count: int = Field(default=0, ge=0)
+    runtime_evidence_avoided_payload_occurrence_count: int = Field(
+        default=0,
+        ge=0,
+    )
     category_brain_manifest: ArtifactReference
     category_brain_index_manifest: ArtifactReference
     category_selected_claims: ArtifactReference
@@ -1488,6 +1496,23 @@ class DailyMemoryContext(StrictMemoryContextModel):
         memo_paths = [item.artifact_path for item in self.runtime_evidence_memos]
         if len(memo_paths) != len(set(memo_paths)):
             raise ValueError("runtime evidence memo references must be unique")
+        pack_counts = (
+            self.runtime_evidence_assignment_count,
+            self.runtime_evidence_unique_record_count,
+            self.runtime_evidence_packed_call_count,
+        )
+        if self.runtime_evidence_pack_manifest is None:
+            if any(pack_counts) or self.runtime_evidence_avoided_payload_occurrence_count:
+                raise ValueError("runtime evidence pack counts require a manifest")
+        elif (
+            self.runtime_evidence_pack_manifest.item_count != 1
+            or any(count < 1 for count in pack_counts)
+            or self.runtime_evidence_unique_record_count
+            > self.runtime_evidence_assignment_count
+            or self.runtime_evidence_avoided_payload_occurrence_count
+            > self.runtime_evidence_assignment_count
+        ):
+            raise ValueError("runtime evidence pack manifest counts are invalid")
         if self.beneficiary_graph.item_count != 1:
             raise ValueError("daily memory beneficiary graph must contain one artifact")
         if (

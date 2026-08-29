@@ -120,6 +120,17 @@ python -m news_scalping_lab.cli memory score-runtime-variants \
   expected variant seal and paired-case closure is complete.
 - Do not build semantic compiler v8, rebuild the full corpus brain, or activate
   production unless the preceding registered gate passes.
+- Runtime V1 evidence must be assembled with the cross-cluster packed path. It
+  preserves every selected `(cluster_id, record_id, lane)` assignment while
+  emitting a repeated record payload only once per bounded pack. Before the
+  first provider call it writes
+  `runtime_evidence_pack_plan.json`; the completed manifest binds that plan,
+  normalized outputs, and every tracing-provider checkpoint. Never restore the
+  former per-cluster loop, first-N shortcuts, or silent truncation.
+- Use the pack plan's exact call count to forecast the remaining provider time.
+  Interrupted calls may resume only from content-addressed `ok` checkpoints;
+  a partially written plan or missing checkpoint is not a completed quality
+  result.
 - The 2026-08-28/29 artifacts descended from
   `QPRED-4ecc6155c077cb5b092c` are permanently
   `INVALIDATED_DIAGNOSTIC_ONLY`. Their prediction-input preparation read a

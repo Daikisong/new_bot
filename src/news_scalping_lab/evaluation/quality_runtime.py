@@ -2785,6 +2785,14 @@ def _quality_case_observation(
     if raw_retrieval is None:
         raise ValueError("quality observation has no typed retrieval ledger")
     retrieval = RetrievalCaseObservation.model_validate(raw_retrieval)
+    if (
+        retrieval.evidence_packed_call_count
+        and retrieval.evidence_provider_checkpoint_count
+        != retrieval.evidence_packed_call_count
+    ):
+        raise ValueError(
+            "quality evidence packs are not fully bound to authenticated provider checkpoints"
+        )
     daily_artifact = context.daily_memory_context_artifact
     daily_sha256 = context.daily_memory_context_sha256
     if not daily_artifact or not daily_sha256:
