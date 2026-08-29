@@ -409,6 +409,10 @@ def _lookup_identity(
         "similarity_threshold": settings.limits.event_cluster_similarity_threshold,
         "max_semantic_variants": settings.limits.event_cluster_max_semantic_variants,
         "max_prompt_chars": settings.limits.open_world_max_prompt_chars,
+        "open_world_cluster_batch_size": (
+            settings.limits.open_world_cluster_batch_size
+        ),
+        "novelty_cluster_batch_size": settings.limits.novelty_cluster_batch_size,
         "packing_policy": "CONTEXT_CHARS_AND_CONFIGURED_CLUSTER_LIMIT.v2",
         "novelty_packing_policy": ("CONTEXT_CHARS_AND_CONFIGURED_CLUSTER_LIMIT.v2"),
         "prompt_renderer_sha256": _prompt_renderer_sha256(),
@@ -1256,7 +1260,7 @@ async def _run_shared_novelty_review(
         "reviewed_cluster_count": normalized.reviewed_cluster_count,
         "review_mode": normalized.review_mode,
         "novelty_counts": novelty_counts,
-        "packing_policy": "CONTEXT_CHARS_ONLY_NO_CLUSTER_COUNT_LIMIT.v1",
+        "packing_policy": "CONTEXT_CHARS_AND_CONFIGURED_CLUSTER_LIMIT.v2",
         "batch_count": len(batches),
     }
     return normalized, aggregate_prompt_sha256, prompt_tokens, prompt_hashes

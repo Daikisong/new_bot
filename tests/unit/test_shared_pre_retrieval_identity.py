@@ -53,6 +53,38 @@ def test_shared_map_batches_honor_configured_cluster_limit() -> None:
     ] == [cluster.cluster_id for cluster in clusters]
 
 
+def test_shared_novelty_batches_honor_configured_cluster_limit() -> None:
+    settings = Settings()
+    settings.limits.novelty_cluster_batch_size = 3
+
+    class _Analyzer:
+        def __init__(self) -> None:
+            self.settings = settings
+
+        def _build_news_novelty_review_prompt(
+            self,
+            *,
+            cluster_rows: list[dict[str, object]],
+            manifest: object,
+            cutoff_at: datetime,
+        ) -> str:
+            del manifest, cutoff_at
+            return "|".join(str(row["cluster_id"]) for row in cluster_rows)
+
+    rows = [{"cluster_id": f"CLUSTER-{index:02d}"} for index in range(8)]
+    batches = shared_module._novelty_batches(
+        _Analyzer(),
+        manifest=SimpleNamespace(),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+        cluster_rows=rows,
+    )
+
+    assert [len(batch) for batch in batches] == [3, 3, 2]
+    assert [row["cluster_id"] for batch in batches for row in batch] == [
+        row["cluster_id"] for row in rows
+    ]
+
+
 def test_event_clustering_transitive_helper_changes_semantic_root(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
