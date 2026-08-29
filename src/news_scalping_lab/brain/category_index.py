@@ -64,17 +64,26 @@ class CategoryBrainIndex:
     def close(self) -> None:
         self.connection.close()
 
-    def query(self, *, cluster_id: str, query: str, limit: int = 3) -> CategoryBrainQueryPlan:
+    def query(
+        self,
+        *,
+        cluster_id: str,
+        query: str,
+        limit: int = 3,
+        query_vector: list[float] | None = None,
+    ) -> CategoryBrainQueryPlan:
         provider = self.embedding_provider
         if provider is None:
             raise ValueError("category brain query requires an embedding provider")
         if provider.embedding_method != self.manifest.embedding_model:
             raise ValueError("category brain query embedding model mismatch")
-        query_vectors = provider.embed_texts([query])
-        if len(query_vectors) != 1:
-            raise ValueError("category brain query embedding count mismatch")
-        query_vector = _float32_vector(query_vectors[0])
-        if len(query_vector) != self.manifest.embedding_dimensions:
+        if query_vector is None:
+            query_vectors = provider.embed_texts([query])
+            if len(query_vectors) != 1:
+                raise ValueError("category brain query embedding count mismatch")
+            query_vector = query_vectors[0]
+        normalized_query_vector = _float32_vector(query_vector)
+        if len(normalized_query_vector) != self.manifest.embedding_dimensions:
             raise ValueError("category brain query embedding dimension mismatch")
         vector_type = f"FLOAT[{self.manifest.embedding_dimensions}]"
         rows = self.connection.execute(
@@ -87,7 +96,11 @@ class CategoryBrainIndex:
             ORDER BY array_cosine_distance(embedding, ?::{vector_type}), claim_id
             LIMIT ?
             """,
-            [query_vector, query_vector, min(max(1, limit), 3)],
+            [
+                normalized_query_vector,
+                normalized_query_vector,
+                min(max(1, limit), 3),
+            ],
         ).fetchall()
         selected_claims = [
             CompiledBrainClaim.model_validate(json.loads(str(row[3]))) for row in rows
@@ -97,7 +110,7 @@ class CategoryBrainIndex:
             cluster_id=cluster_id,
             original_query=query,
             original_query_sha256=sha256_text(query),
-            query_embedding_sha256=sha256_text(canonical_json(query_vector)),
+            query_embedding_sha256=sha256_text(canonical_json(normalized_query_vector)),
             embedding_model=self.manifest.embedding_model,
             selected_claim_ids=[str(row[0]) for row in rows],
             claim_embedding_sha256s={

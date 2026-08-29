@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+import struct
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -37,21 +41,66 @@ from news_scalping_lab.contracts.runtime_retrieval import (
     RuntimeEvidenceMemo,
     RuntimeRetrievalTrace,
 )
-from news_scalping_lab.memory.adaptive_retrieval import AdaptiveRetriever
+from news_scalping_lab.memory.adaptive_retrieval import (
+    ADAPTIVE_CELLS_PER_ITERATION,
+    ADAPTIVE_MAX_CELL_COUNT,
+    ADAPTIVE_MAX_DEPTH,
+    ADAPTIVE_MAX_RECORD_COUNT,
+    ADAPTIVE_MAX_TOKEN_COUNT,
+    ADAPTIVE_MIN_INFORMATION_GAIN,
+    ADAPTIVE_RETRIEVAL_POLICY_VERSION,
+    ADAPTIVE_SMALL_EFFECTIVE_SAMPLE_SIZE,
+    AdaptiveRetriever,
+    _inspect_built_adaptive,
+)
 from news_scalping_lab.memory.beneficiary import (
     beneficiary_trigger_evidence,
     beneficiary_trigger_evidence_from_artifact,
     inspect_beneficiary_graph,
 )
-from news_scalping_lab.memory.diversity import RepresentativeSelector
-from news_scalping_lab.memory.index import MemoryCellCandidate, ProductionMemoryIndex
-from news_scalping_lab.memory.population import PopulationRetriever
+from news_scalping_lab.memory.diversity import (
+    REPRESENTATIVE_CONTEXT_EXCERPT_CHARS,
+    REPRESENTATIVE_DISTRIBUTION_SHARE_ERROR_TOLERANCE,
+    REPRESENTATIVE_FACILITY_ANCHOR_COUNT,
+    REPRESENTATIVE_INITIAL_MAX_RECORDS,
+    REPRESENTATIVE_INITIAL_MIN_RECORDS,
+    REPRESENTATIVE_MAX_CANDIDATE_POOL,
+    REPRESENTATIVE_MAX_SELECTED_RECORDS,
+    REPRESENTATIVE_MAX_STRATUM_RESERVE,
+    REPRESENTATIVE_MAX_TOKEN_COUNT,
+    REPRESENTATIVE_MAX_TRADE_DATE_CONCENTRATION,
+    REPRESENTATIVE_MAX_UNIT_KEY_CONCENTRATION,
+    REPRESENTATIVE_QUALITY_FULL_MAX_TOKEN_COUNT,
+    REPRESENTATIVE_QUALITY_FULL_SELECTION_VERSION,
+    REPRESENTATIVE_SELECTION_VERSION,
+    RepresentativeSelectionBudgetError,
+    RepresentativeSelector,
+)
+from news_scalping_lab.memory.index import (
+    MEMORY_INDEX_RUNTIME_QUERY_VERSION,
+    MemoryCellCandidate,
+    ProductionMemoryIndex,
+)
+from news_scalping_lab.memory.population import (
+    POPULATION_CUBE_VERSION,
+    POPULATION_MAX_CUBE_ROWS,
+    POPULATION_MAX_SELECTED_RECORDS,
+    POPULATION_PURPOSE_CLASSIFIER_VERSION,
+    POPULATION_SELECTION_BUDGET_VERSION,
+    PopulationRetriever,
+    _purpose_record_types_sha256,
+)
 from news_scalping_lab.memory.runtime_v4 import (
     RuntimeEvidenceBuildResult,
     build_runtime_retrieval_trace,
     candidates_from_daily_artifacts,
 )
+from news_scalping_lab.memory.statistics import (
+    BLOCK_BOOTSTRAP_VERSION,
+    POPULATION_STATISTICS_VERSION,
+)
 from news_scalping_lab.records.models import CompiledBrainClaim
+from news_scalping_lab.retrieval.production_embedding import embedding_identity
 from news_scalping_lab.utils import (
     as_kst,
     canonical_json,
@@ -59,6 +108,7 @@ from news_scalping_lab.utils import (
     parse_datetime,
     read_json,
     relative_to_root,
+    sha256_text,
 )
 
 DAILY_MEMORY_CONTEXT_VERSION = "daily_population_context.v2"
@@ -75,6 +125,9 @@ DAILY_MEMORY_COMPACT_RUNTIME_EVIDENCE_FILENAME = (
 DAILY_MEMORY_COMPACT_FINAL_FILENAME = "compact_final_beneficiary_context.json"
 DAILY_MEMORY_CONTEXT_MAX_BYTES = 48_000
 DAILY_CATEGORY_GUIDANCE_MAX_COUNT = 24
+QUALITY_FULL_MAX_CLUSTER_WORKERS = 2
+DAILY_CLUSTER_CHECKPOINT_VERSION = "daily_cluster_artifacts.v2"
+DAILY_CLUSTER_CHECKPOINT_SCHEMA = "nslab.daily_cluster_checkpoint.v2"
 DAILY_POPULATION_PURPOSE_UNITS: dict[
     PopulationPurpose,
     tuple[IndependentUnitType, ...],
@@ -94,6 +147,151 @@ DAILY_POPULATION_PURPOSE_UNITS: dict[
 }
 
 
+@dataclass(frozen=True)
+class _DailyClusterBuild:
+    cluster_id: str
+    populations: list[ArtifactReference]
+    representatives: list[ArtifactReference]
+    adaptive_traces: list[ArtifactReference]
+    population_paths: list[Path]
+    representative_paths: list[Path]
+    ann_ranks: dict[str, int]
+    fts_ranks: dict[str, int]
+    built_population_keys: list[str]
+    uncovered_purposes: list[PopulationPurpose]
+
+
+def _normalized_query_vector(vector: list[float]) -> list[float]:
+    if not vector or any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        for value in vector
+    ):
+        raise ValueError("daily memory query embedding must be non-empty and finite")
+    return [struct.unpack("!f", struct.pack("!f", value))[0] for value in vector]
+
+
+def _daily_input_cluster_roots(
+    manifest: EventClusterManifest,
+    cluster_rows: list[dict[str, Any]],
+) -> dict[str, str]:
+    rows_by_id: dict[str, dict[str, Any]] = {}
+    for row in cluster_rows:
+        cluster_id = row.get("cluster_id")
+        if not isinstance(cluster_id, str) or not cluster_id.strip():
+            raise ValueError("daily memory event cluster row identity is invalid")
+        if cluster_id in rows_by_id:
+            raise ValueError("daily memory event cluster rows are duplicated")
+        rows_by_id[cluster_id] = row
+    event_policy = {
+        "schema_version": manifest.schema_version,
+        "clustering_version": manifest.clustering_version,
+        "embedding_provider": manifest.embedding_provider,
+        "embedding_model": manifest.embedding_model,
+        "embedding_revision": manifest.embedding_revision,
+        "embedding_artifact_sha256": manifest.embedding_artifact_sha256,
+        "production_runtime_identity": manifest.production_runtime_identity,
+    }
+    roots: dict[str, str] = {}
+    for cluster in manifest.clusters:
+        if cluster.disposition != "MATERIAL_FULL_RETRIEVAL":
+            continue
+        cluster_row = rows_by_id.get(cluster.cluster_id)
+        if cluster_row is None:
+            raise ValueError(
+                f"daily memory event cluster row is missing: {cluster.cluster_id}"
+            )
+        roots[cluster.cluster_id] = sha256_text(
+            canonical_json(
+                {
+                    "schema_version": "nslab.daily_input_cluster_root.v1",
+                    "event_policy": event_policy,
+                    "cluster": cluster.model_dump(mode="json"),
+                    "cluster_row_sha256": sha256_text(
+                        canonical_json(cluster_row)
+                    ),
+                }
+            )
+        )
+    return roots
+
+
+def _daily_cluster_semantic_policy_root(
+    *,
+    allow_distribution_shortfall: bool,
+) -> str:
+    population_purpose_hashes = {
+        purpose: _purpose_record_types_sha256(purpose)
+        for purpose in DAILY_POPULATION_PURPOSE_UNITS
+    }
+    payload = {
+        "schema_version": "nslab.daily_cluster_semantic_policy.v1",
+        "daily_context_version": DAILY_MEMORY_CONTEXT_VERSION,
+        "checkpoint_version": DAILY_CLUSTER_CHECKPOINT_VERSION,
+        "memory_query_version": MEMORY_INDEX_RUNTIME_QUERY_VERSION,
+        "purpose_units": {
+            purpose: list(unit_types)
+            for purpose, unit_types in DAILY_POPULATION_PURPOSE_UNITS.items()
+        },
+        "purpose_lanes": {
+            purpose: list(lanes)
+            for purpose, lanes in POPULATION_PURPOSE_LANES.items()
+        },
+        "population": {
+            "statistics_version": POPULATION_STATISTICS_VERSION,
+            "cube_version": POPULATION_CUBE_VERSION,
+            "selection_budget_version": POPULATION_SELECTION_BUDGET_VERSION,
+            "max_selected_record_count": POPULATION_MAX_SELECTED_RECORDS,
+            "max_cube_row_count": POPULATION_MAX_CUBE_ROWS,
+            "purpose_classifier_version": POPULATION_PURPOSE_CLASSIFIER_VERSION,
+            "purpose_record_types_sha256": population_purpose_hashes,
+            "bootstrap_version": BLOCK_BOOTSTRAP_VERSION,
+        },
+        "representative": {
+            "selection_version": REPRESENTATIVE_SELECTION_VERSION,
+            "quality_full_selection_version": (
+                REPRESENTATIVE_QUALITY_FULL_SELECTION_VERSION
+            ),
+            "allow_distribution_shortfall": allow_distribution_shortfall,
+            "max_selected_record_count": REPRESENTATIVE_MAX_SELECTED_RECORDS,
+            "max_candidate_pool_count": REPRESENTATIVE_MAX_CANDIDATE_POOL,
+            "max_token_count": REPRESENTATIVE_MAX_TOKEN_COUNT,
+            "quality_full_max_token_count": (
+                REPRESENTATIVE_QUALITY_FULL_MAX_TOKEN_COUNT
+            ),
+            "max_trade_date_concentration": (
+                REPRESENTATIVE_MAX_TRADE_DATE_CONCENTRATION
+            ),
+            "max_unit_key_concentration": (
+                REPRESENTATIVE_MAX_UNIT_KEY_CONCENTRATION
+            ),
+            "context_excerpt_chars": REPRESENTATIVE_CONTEXT_EXCERPT_CHARS,
+            "initial_min_records": REPRESENTATIVE_INITIAL_MIN_RECORDS,
+            "initial_max_records": REPRESENTATIVE_INITIAL_MAX_RECORDS,
+            "facility_anchor_count": REPRESENTATIVE_FACILITY_ANCHOR_COUNT,
+            "max_stratum_reserve": REPRESENTATIVE_MAX_STRATUM_RESERVE,
+            "distribution_share_error_tolerance": (
+                REPRESENTATIVE_DISTRIBUTION_SHARE_ERROR_TOLERANCE
+            ),
+        },
+        "adaptive": {
+            "policy_version": ADAPTIVE_RETRIEVAL_POLICY_VERSION,
+            "max_depth": ADAPTIVE_MAX_DEPTH,
+            "max_cell_count": ADAPTIVE_MAX_CELL_COUNT,
+            "max_record_count": ADAPTIVE_MAX_RECORD_COUNT,
+            "max_token_count": ADAPTIVE_MAX_TOKEN_COUNT,
+            "quality_full_max_token_count": (
+                REPRESENTATIVE_QUALITY_FULL_MAX_TOKEN_COUNT
+            ),
+            "min_information_gain": ADAPTIVE_MIN_INFORMATION_GAIN,
+            "cells_per_iteration": ADAPTIVE_CELLS_PER_ITERATION,
+            "small_effective_sample_size": ADAPTIVE_SMALL_EFFECTIVE_SAMPLE_SIZE,
+        },
+    }
+    return sha256_text(canonical_json(payload))
+
+
 def build_daily_memory_context(
     root: Path,
     *,
@@ -108,20 +306,30 @@ def build_daily_memory_context(
     memory_coverage_manifest_path: Path,
     beneficiary_graph_path: Path,
     retrieval_cluster_ids: set[str] | None = None,
+    max_cluster_workers: int = 1,
+    allow_distribution_shortfall: bool = False,
 ) -> tuple[DailyMemoryContext, Path]:
     root = root.resolve()
-    event_manifest = read_json(event_cluster_manifest_path)
-    if not isinstance(event_manifest, dict) or event_manifest.get("run_id") != run_id:
+    if max_cluster_workers < 1 or max_cluster_workers > QUALITY_FULL_MAX_CLUSTER_WORKERS:
+        raise ValueError("daily memory cluster workers must be between 1 and 2")
+    event_manifest = EventClusterManifest.model_validate(
+        read_json(event_cluster_manifest_path)
+    )
+    if event_manifest.run_id != run_id:
         raise ValueError("daily memory event cluster manifest is invalid")
-    if parse_datetime(str(event_manifest.get("cutoff_at"))) != as_kst(cutoff_at):
+    if as_kst(event_manifest.cutoff_at) != as_kst(cutoff_at):
         raise ValueError("daily memory event cluster cutoff mismatch")
     graph = BeneficiaryGraphArtifact.model_validate(read_json(beneficiary_graph_path))
     if graph.run_id != run_id or as_kst(graph.cutoff_at) != as_kst(cutoff_at):
         raise ValueError("daily memory beneficiary graph identity mismatch")
     cluster_rows = _read_jsonl(event_cluster_artifact_path)
-    all_cluster_queries = _material_cluster_queries(
-        event_cluster_manifest_path,
-        event_cluster_artifact_path,
+    all_cluster_queries = material_cluster_queries_from_sources(
+        event_manifest,
+        cluster_rows,
+    )
+    input_cluster_roots = _daily_input_cluster_roots(
+        event_manifest,
+        cluster_rows,
     )
     known_cluster_ids = {cluster_id for cluster_id, _query in all_cluster_queries}
     if retrieval_cluster_ids is not None:
@@ -133,7 +341,11 @@ def build_daily_memory_context(
         cluster_queries = [item for item in all_cluster_queries if item[0] in retrieval_cluster_ids]
     else:
         cluster_queries = all_cluster_queries
-    if not cluster_queries and retrieval_cluster_ids is None and int(event_manifest.get("material_cluster_count") or 0):
+    if (
+        not cluster_queries
+        and retrieval_cluster_ids is None
+        and event_manifest.material_cluster_count
+    ):
         raise ValueError("daily memory material cluster queries are missing")
     snapshot = memory_index.resolve_snapshot(cutoff_at=cutoff_at)
     if snapshot.corpus_manifest_sha256 != corpus_manifest_sha256:
@@ -145,6 +357,8 @@ def build_daily_memory_context(
         corpus_manifest_sha256=snapshot.corpus_manifest_sha256,
         source_generation_sha256=snapshot.source_generation_sha256,
     )
+    category_manifest_reference = _artifact_reference(root, category_manifest_path)
+    category_index_reference = _artifact_reference(root, category_index_path)
     populations: list[ArtifactReference] = []
     representatives: list[ArtifactReference] = []
     adaptive_traces: list[ArtifactReference] = []
@@ -159,103 +373,133 @@ def build_daily_memory_context(
         embedding_provider=memory_index.embedding_provider,
     )
     try:
+        query_vectors = [
+            _normalized_query_vector(vector)
+            for vector in memory_index.embedding_provider.embed_texts(
+                [query for _cluster_id, query in cluster_queries]
+            )
+        ]
+        if len(query_vectors) != len(cluster_queries):
+            raise ValueError("daily memory query embedding coverage mismatch")
         category_query_plans = [
-            category_index.query(cluster_id=cluster_id, query=query) for cluster_id, query in cluster_queries
+            category_index.query(
+                cluster_id=cluster_id,
+                query=query,
+                query_vector=query_vector,
+            )
+            for (cluster_id, query), query_vector in zip(
+                cluster_queries,
+                query_vectors,
+                strict=True,
+            )
         ]
     finally:
         category_index.close()
+    expanded_query_vectors = [
+        _normalized_query_vector(vector)
+        for vector in memory_index.embedding_provider.embed_texts(
+            [plan.expanded_query for plan in category_query_plans]
+        )
+    ]
+    if len(expanded_query_vectors) != len(category_query_plans):
+        raise ValueError("daily memory expanded query embedding coverage mismatch")
+    embedding_runtime_identity = {
+        **embedding_identity(memory_index.embedding_provider),
+        "runtime_embedding_dimensions": getattr(
+            memory_index.embedding_provider,
+            "dimensions",
+            0,
+        ),
+        "snapshot_embedding_provider": snapshot.embedding_provider,
+        "snapshot_embedding_model": snapshot.embedding_model,
+        "snapshot_embedding_dimensions": snapshot.embedding_dimensions,
+    }
+    if (
+        embedding_runtime_identity.get("embedding_method")
+        != snapshot.embedding_model
+        or embedding_runtime_identity.get("runtime_embedding_dimensions")
+        != snapshot.embedding_dimensions
+    ):
+        raise ValueError("daily memory embedding runtime differs from its snapshot")
+    for query_plan, query_vector in zip(
+        category_query_plans,
+        query_vectors,
+        strict=True,
+    ):
+        if (
+            query_plan.query_embedding_sha256
+            != sha256_text(canonical_json(query_vector))
+            or query_plan.embedding_model != snapshot.embedding_model
+        ):
+            raise ValueError("daily memory category query embedding identity mismatch")
+    semantic_policy_root = _daily_cluster_semantic_policy_root(
+        allow_distribution_shortfall=allow_distribution_shortfall,
+    )
     uncovered_material_cluster_ids: list[str] = []
     built_population_keys: list[str] = []
     uncovered_population_purposes: dict[str, list[PopulationPurpose]] = {}
     material_cluster_ids = [cluster_id for cluster_id, _query in cluster_queries]
-    for (cluster_id, query), query_plan in zip(
-        cluster_queries,
-        category_query_plans,
-        strict=True,
-    ):
-        graph_trigger = beneficiary_trigger_evidence(
-            root,
-            beneficiary_graph_path,
-            cluster_id=cluster_id,
+    cluster_inputs = list(
+        zip(
+            cluster_queries,
+            category_query_plans,
+            query_vectors,
+            expanded_query_vectors,
+            strict=True,
         )
-        uncovered_purposes: list[PopulationPurpose] = []
-        for population_purpose, unit_types in DAILY_POPULATION_PURPOSE_UNITS.items():
-            lanes = POPULATION_PURPOSE_LANES[population_purpose]
-            base_cells = memory_index.search_cells(
-                query,
-                cutoff_at=cutoff_at,
-                limit=4,
-                included_memory_lanes=lanes,
-            )
-            planned_cells = memory_index.search_cells(
-                query_plan.expanded_query,
-                cutoff_at=cutoff_at,
-                limit=4,
-                included_memory_lanes=lanes,
-            )
-            ann_rank_by_cluster.setdefault(cluster_id, {}).update(
-                _minimum_channel_ranks([*base_cells, *planned_cells], channel="ann")
-            )
-            fts_rank_by_cluster.setdefault(cluster_id, {}).update(
-                _minimum_channel_ranks([*base_cells, *planned_cells], channel="fts")
-            )
-            cells = _cell_candidate_union(base_cells, planned_cells, limit=8)
-            if not cells:
-                uncovered_purposes.append(population_purpose)
-                continue
-            selected_cell_ids = [item.cell_id for item in cells]
-            purpose_population_count = 0
-            for unit_type in unit_types:
-                try:
-                    population_result = PopulationRetriever(
-                        root,
-                        memory_index=memory_index,
-                    ).build(
-                        run_id=run_id,
-                        cluster_id=cluster_id,
-                        cutoff_at=cutoff_at,
-                        selected_cell_ids=selected_cell_ids,
-                        independent_unit_type=unit_type,
-                        population_purpose=population_purpose,
-                    )
-                except ValueError as exc:
-                    if str(exc).startswith("selected cells contain no records"):
-                        continue
-                    raise
-                representative_result = RepresentativeSelector(
-                    root,
-                    memory_index=memory_index,
-                ).build(
-                    population_manifest_path=population_result.manifest_path,
-                    query=query,
-                )
-                trigger_evidence = (
-                    [graph_trigger] if population_purpose == "catalyst_response" and graph_trigger is not None else []
-                )
-                trace, trace_path = AdaptiveRetriever(
-                    root,
-                    memory_index=memory_index,
-                ).run(
-                    initial_population_manifest_path=population_result.manifest_path,
-                    initial_representative_set_manifest_path=(representative_result.manifest_path),
-                    query=query,
-                    trigger_evidence=trigger_evidence,
-                )
-                populations.append(trace.final_population_manifest)
-                representatives.append(trace.final_representative_set_manifest)
-                adaptive_traces.append(_artifact_reference(root, trace_path))
-                population_paths_by_cluster.setdefault(cluster_id, []).append(
-                    root / trace.final_population_manifest.artifact_path
-                )
-                representative_paths_by_cluster.setdefault(cluster_id, []).append(
-                    root / trace.final_representative_set_manifest.artifact_path
-                )
-                built_population_keys.append(_population_key(cluster_id, population_purpose, unit_type))
-                purpose_population_count += 1
-            if purpose_population_count == 0:
-                uncovered_purposes.append(population_purpose)
-        uncovered_population_purposes[cluster_id] = sorted(set(uncovered_purposes))
-        if "catalyst_response" in uncovered_purposes:
+    )
+
+    def build_cluster(
+        item: tuple[
+            tuple[str, str],
+            CategoryBrainQueryPlan,
+            list[float],
+            list[float],
+        ],
+    ) -> _DailyClusterBuild:
+        (cluster_id, query), query_plan, query_vector, expanded_query_vector = item
+        return _build_daily_cluster_artifacts(
+            root,
+            memory_index=memory_index,
+            run_id=run_id,
+            cutoff_at=cutoff_at,
+            beneficiary_graph_path=beneficiary_graph_path,
+            cluster_id=cluster_id,
+            input_cluster_root=input_cluster_roots[cluster_id],
+            query=query,
+            query_plan=query_plan,
+            query_vector=query_vector,
+            expanded_query_vector=expanded_query_vector,
+            memory_snapshot_id=snapshot.snapshot_id,
+            source_generation_sha256=snapshot.source_generation_sha256,
+            corpus_manifest_sha256=snapshot.corpus_manifest_sha256,
+            semantic_policy_root=semantic_policy_root,
+            category_brain_manifest=category_manifest_reference,
+            category_brain_index_manifest=category_index_reference,
+            embedding_runtime_identity=embedding_runtime_identity,
+            allow_distribution_shortfall=allow_distribution_shortfall,
+        )
+
+    if max_cluster_workers == 1 or len(cluster_inputs) < 2:
+        cluster_builds = [build_cluster(item) for item in cluster_inputs]
+    else:
+        with ThreadPoolExecutor(
+            max_workers=min(max_cluster_workers, len(cluster_inputs)),
+            thread_name_prefix="nslab-daily-memory",
+        ) as executor:
+            cluster_builds = list(executor.map(build_cluster, cluster_inputs))
+    for cluster_build in cluster_builds:
+        cluster_id = cluster_build.cluster_id
+        populations.extend(cluster_build.populations)
+        representatives.extend(cluster_build.representatives)
+        adaptive_traces.extend(cluster_build.adaptive_traces)
+        population_paths_by_cluster[cluster_id] = cluster_build.population_paths
+        representative_paths_by_cluster[cluster_id] = cluster_build.representative_paths
+        ann_rank_by_cluster[cluster_id] = cluster_build.ann_ranks
+        fts_rank_by_cluster[cluster_id] = cluster_build.fts_ranks
+        built_population_keys.extend(cluster_build.built_population_keys)
+        uncovered_population_purposes[cluster_id] = cluster_build.uncovered_purposes
+        if "catalyst_response" in cluster_build.uncovered_purposes:
             uncovered_material_cluster_ids.append(cluster_id)
     from news_scalping_lab.audits.semantic_exposure import SemanticExposureIndex
 
@@ -405,6 +649,709 @@ def build_daily_memory_context(
     )
     _write_immutable_json(context_path, context.model_dump(mode="json"))
     return context, context_path
+
+
+def _build_daily_cluster_artifacts(
+    root: Path,
+    *,
+    memory_index: ProductionMemoryIndex,
+    run_id: str,
+    cutoff_at: datetime,
+    beneficiary_graph_path: Path,
+    cluster_id: str,
+    input_cluster_root: str,
+    query: str,
+    query_plan: CategoryBrainQueryPlan,
+    query_vector: list[float],
+    expanded_query_vector: list[float],
+    memory_snapshot_id: str,
+    source_generation_sha256: str,
+    corpus_manifest_sha256: str,
+    semantic_policy_root: str,
+    category_brain_manifest: ArtifactReference,
+    category_brain_index_manifest: ArtifactReference,
+    embedding_runtime_identity: dict[str, Any],
+    allow_distribution_shortfall: bool,
+) -> _DailyClusterBuild:
+    query_embedding_sha256 = sha256_text(canonical_json(query_vector))
+    checkpoint_identity = {
+        "schema_version": "nslab.daily_cluster_checkpoint_identity.v2",
+        "checkpoint_version": DAILY_CLUSTER_CHECKPOINT_VERSION,
+        "run_id": run_id,
+        "cluster_id": cluster_id,
+        "input_cluster_root": input_cluster_root,
+        "cutoff_at": as_kst(cutoff_at).isoformat(),
+        "query_sha256": sha256_text(query),
+        "query_plan_sha256": sha256_text(
+            canonical_json(query_plan.model_dump(mode="json"))
+        ),
+        "query_embedding_sha256": query_embedding_sha256,
+        "expanded_query_embedding_sha256": sha256_text(
+            canonical_json(expanded_query_vector)
+        ),
+        "memory_snapshot_id": memory_snapshot_id,
+        "source_generation_sha256": source_generation_sha256,
+        "corpus_manifest_sha256": corpus_manifest_sha256,
+        "beneficiary_graph_sha256": file_sha256(beneficiary_graph_path),
+        "semantic_policy_root": semantic_policy_root,
+        "category_brain_manifest": category_brain_manifest.model_dump(
+            mode="json"
+        ),
+        "category_brain_index_manifest": (
+            category_brain_index_manifest.model_dump(mode="json")
+        ),
+        "embedding_runtime_identity": embedding_runtime_identity,
+        "allow_distribution_shortfall": allow_distribution_shortfall,
+    }
+    checkpoint_id = "DCL-" + sha256_text(canonical_json(checkpoint_identity))[
+        :20
+    ].upper()
+    checkpoint_path = (
+        root
+        / DAILY_MEMORY_CONTEXT_ROOT
+        / run_id
+        / "clusters"
+        / cluster_id
+        / checkpoint_id
+        / "cluster_checkpoint.json"
+    )
+    cached = _load_daily_cluster_checkpoint(
+        root,
+        checkpoint_path=checkpoint_path,
+        expected_identity=checkpoint_identity,
+        expected_checkpoint_id=checkpoint_id,
+    )
+    if cached is not None:
+        return cached
+    graph_trigger = beneficiary_trigger_evidence(
+        root,
+        beneficiary_graph_path,
+        cluster_id=cluster_id,
+    )
+    populations: list[ArtifactReference] = []
+    representatives: list[ArtifactReference] = []
+    adaptive_traces: list[ArtifactReference] = []
+    population_paths: list[Path] = []
+    representative_paths: list[Path] = []
+    ann_ranks: dict[str, int] = {}
+    fts_ranks: dict[str, int] = {}
+    built_population_keys: list[str] = []
+    uncovered_purposes: list[PopulationPurpose] = []
+    for population_purpose, unit_types in DAILY_POPULATION_PURPOSE_UNITS.items():
+        lanes = POPULATION_PURPOSE_LANES[population_purpose]
+        base_cells = memory_index.search_cells(
+            query,
+            cutoff_at=cutoff_at,
+            limit=4,
+            query_vector=query_vector,
+            included_memory_lanes=lanes,
+        )
+        planned_cells = memory_index.search_cells(
+            query_plan.expanded_query,
+            cutoff_at=cutoff_at,
+            limit=4,
+            query_vector=expanded_query_vector,
+            included_memory_lanes=lanes,
+        )
+        ann_ranks.update(
+            _minimum_channel_ranks([*base_cells, *planned_cells], channel="ann")
+        )
+        fts_ranks.update(
+            _minimum_channel_ranks([*base_cells, *planned_cells], channel="fts")
+        )
+        cells = _cell_candidate_union(base_cells, planned_cells, limit=8)
+        if not cells:
+            uncovered_purposes.append(population_purpose)
+            continue
+        selected_cell_ids = [item.cell_id for item in cells]
+        purpose_population_count = 0
+        for unit_type in unit_types:
+            try:
+                population_result = PopulationRetriever(
+                    root,
+                    memory_index=memory_index,
+                ).build(
+                    run_id=run_id,
+                    cluster_id=cluster_id,
+                    cutoff_at=cutoff_at,
+                    selected_cell_ids=selected_cell_ids,
+                    independent_unit_type=unit_type,
+                    population_purpose=population_purpose,
+                )
+            except ValueError as exc:
+                if str(exc).startswith("selected cells contain no records"):
+                    continue
+                raise
+            representative_selector = RepresentativeSelector(
+                root,
+                memory_index=memory_index,
+            )
+            try:
+                representative_result = representative_selector.build(
+                    population_manifest_path=population_result.manifest_path,
+                    query=query,
+                    query_vector=query_vector,
+                )
+            except RepresentativeSelectionBudgetError:
+                if not allow_distribution_shortfall:
+                    raise
+                representative_result = representative_selector.build(
+                    population_manifest_path=population_result.manifest_path,
+                    query=query,
+                    query_vector=query_vector,
+                    allow_distribution_shortfall=True,
+                )
+            trigger_evidence = (
+                [graph_trigger]
+                if population_purpose == "catalyst_response"
+                and graph_trigger is not None
+                else []
+            )
+            trace, trace_path = AdaptiveRetriever(
+                root,
+                memory_index=memory_index,
+            ).run(
+                initial_population_manifest_path=population_result.manifest_path,
+                initial_representative_set_manifest_path=(
+                    representative_result.manifest_path
+                ),
+                query=query,
+                query_vector=query_vector,
+                max_token_count=(
+                    representative_result.manifest.max_token_count
+                ),
+                trigger_evidence=trigger_evidence,
+            )
+            if (
+                representative_result.manifest.query_embedding_sha256
+                != query_embedding_sha256
+                or trace.query_embedding_sha256 != query_embedding_sha256
+            ):
+                raise ValueError(
+                    "daily cluster query embedding artifact chain mismatch"
+                )
+            populations.append(trace.final_population_manifest)
+            representatives.append(trace.final_representative_set_manifest)
+            adaptive_traces.append(_artifact_reference(root, trace_path))
+            population_paths.append(
+                root / trace.final_population_manifest.artifact_path
+            )
+            representative_paths.append(
+                root / trace.final_representative_set_manifest.artifact_path
+            )
+            built_population_keys.append(
+                _population_key(cluster_id, population_purpose, unit_type)
+            )
+            purpose_population_count += 1
+        if purpose_population_count == 0:
+            uncovered_purposes.append(population_purpose)
+    result = _DailyClusterBuild(
+        cluster_id=cluster_id,
+        populations=populations,
+        representatives=representatives,
+        adaptive_traces=adaptive_traces,
+        population_paths=population_paths,
+        representative_paths=representative_paths,
+        ann_ranks=ann_ranks,
+        fts_ranks=fts_ranks,
+        built_population_keys=built_population_keys,
+        uncovered_purposes=sorted(set(uncovered_purposes)),
+    )
+    _write_immutable_json(
+        checkpoint_path,
+        {
+            "schema_version": DAILY_CLUSTER_CHECKPOINT_SCHEMA,
+            "checkpoint_id": checkpoint_id,
+            "identity": checkpoint_identity,
+            "cluster_id": result.cluster_id,
+            "population_manifests": [
+                reference.model_dump(mode="json") for reference in result.populations
+            ],
+            "representative_set_manifests": [
+                reference.model_dump(mode="json")
+                for reference in result.representatives
+            ],
+            "adaptive_retrieval_traces": [
+                reference.model_dump(mode="json")
+                for reference in result.adaptive_traces
+            ],
+            "ann_ranks": result.ann_ranks,
+            "fts_ranks": result.fts_ranks,
+            "built_population_keys": result.built_population_keys,
+            "uncovered_purposes": result.uncovered_purposes,
+        },
+    )
+    validated = _load_daily_cluster_checkpoint(
+        root,
+        checkpoint_path=checkpoint_path,
+        expected_identity=checkpoint_identity,
+        expected_checkpoint_id=checkpoint_id,
+    )
+    if validated is None:
+        raise ValueError("daily cluster checkpoint was not persisted")
+    return validated
+
+
+def _load_daily_cluster_checkpoint(
+    root: Path,
+    *,
+    checkpoint_path: Path,
+    expected_identity: dict[str, Any],
+    expected_checkpoint_id: str,
+) -> _DailyClusterBuild | None:
+    if not checkpoint_path.is_file():
+        return None
+    try:
+        payload = read_json(checkpoint_path)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"daily cluster checkpoint is invalid: {exc}") from exc
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != DAILY_CLUSTER_CHECKPOINT_SCHEMA
+        or payload.get("checkpoint_id") != expected_checkpoint_id
+        or payload.get("identity") != expected_identity
+    ):
+        raise ValueError("daily cluster checkpoint identity differs from the active request")
+    allow_distribution_shortfall = expected_identity.get(
+        "allow_distribution_shortfall"
+    )
+    if not isinstance(allow_distribution_shortfall, bool) or (
+        expected_identity.get("semantic_policy_root")
+        != _daily_cluster_semantic_policy_root(
+            allow_distribution_shortfall=allow_distribution_shortfall,
+        )
+    ):
+        raise ValueError("daily cluster checkpoint semantic policy is stale")
+    expected_query_sha256 = str(expected_identity.get("query_sha256") or "")
+    expected_query_embedding_sha256 = str(
+        expected_identity.get("query_embedding_sha256") or ""
+    )
+    if any(
+        len(value) != 64
+        for value in (
+            str(expected_identity.get("input_cluster_root") or ""),
+            expected_query_sha256,
+            expected_query_embedding_sha256,
+            str(expected_identity.get("expanded_query_embedding_sha256") or ""),
+            str(expected_identity.get("semantic_policy_root") or ""),
+        )
+    ):
+        raise ValueError("daily cluster checkpoint hash identity is invalid")
+    for identity_key in (
+        "category_brain_manifest",
+        "category_brain_index_manifest",
+    ):
+        try:
+            identity_reference = ArtifactReference.model_validate(
+                expected_identity[identity_key]
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "daily cluster checkpoint category identity is invalid"
+            ) from exc
+        _verify_checkpoint_reference(root, identity_reference)
+    embedding_runtime_identity = expected_identity.get(
+        "embedding_runtime_identity"
+    )
+    if (
+        not isinstance(embedding_runtime_identity, dict)
+        or not isinstance(
+            embedding_runtime_identity.get("embedding_method"),
+            str,
+        )
+        or embedding_runtime_identity.get("embedding_method")
+        != embedding_runtime_identity.get("snapshot_embedding_model")
+        or embedding_runtime_identity.get("runtime_embedding_dimensions")
+        != embedding_runtime_identity.get("snapshot_embedding_dimensions")
+        or not isinstance(
+            embedding_runtime_identity.get("snapshot_embedding_provider"),
+            str,
+        )
+    ):
+        raise ValueError("daily cluster checkpoint embedding identity is invalid")
+    try:
+        populations = [
+            ArtifactReference.model_validate(item)
+            for item in cast(list[object], payload["population_manifests"])
+        ]
+        representatives = [
+            ArtifactReference.model_validate(item)
+            for item in cast(list[object], payload["representative_set_manifests"])
+        ]
+        adaptive_traces = [
+            ArtifactReference.model_validate(item)
+            for item in cast(list[object], payload["adaptive_retrieval_traces"])
+        ]
+        cluster_id = str(payload["cluster_id"])
+        raw_ann_ranks = cast(dict[object, object], payload["ann_ranks"])
+        raw_fts_ranks = cast(dict[object, object], payload["fts_ranks"])
+        if any(
+            not isinstance(key, str)
+            or isinstance(value, bool)
+            or not isinstance(value, int)
+            for ranks in (raw_ann_ranks, raw_fts_ranks)
+            for key, value in ranks.items()
+        ):
+            raise ValueError("daily cluster checkpoint channel ranks are invalid")
+        ann_ranks = cast(dict[str, int], raw_ann_ranks)
+        fts_ranks = cast(dict[str, int], raw_fts_ranks)
+        built_population_keys = [
+            str(value)
+            for value in cast(list[object], payload["built_population_keys"])
+        ]
+        uncovered_purposes = [
+            cast(PopulationPurpose, str(value))
+            for value in cast(list[object], payload["uncovered_purposes"])
+        ]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"daily cluster checkpoint payload is invalid: {exc}") from exc
+    if cluster_id != expected_identity["cluster_id"]:
+        raise ValueError("daily cluster checkpoint cluster identity mismatch")
+    if any(value < 1 for value in [*ann_ranks.values(), *fts_ranks.values()]):
+        raise ValueError("daily cluster checkpoint channel ranks are invalid")
+    if any(value not in DAILY_POPULATION_PURPOSE_UNITS for value in uncovered_purposes):
+        raise ValueError("daily cluster checkpoint population purpose is invalid")
+    expected_run_id = str(expected_identity["run_id"])
+    expected_cutoff = parse_datetime(str(expected_identity["cutoff_at"]))
+    expected_snapshot_id = str(expected_identity["memory_snapshot_id"])
+    expected_source_generation_sha256 = str(
+        expected_identity["source_generation_sha256"]
+    )
+    expected_corpus_manifest_sha256 = str(
+        expected_identity["corpus_manifest_sha256"]
+    )
+    allowed_selection_versions = {REPRESENTATIVE_SELECTION_VERSION}
+    allowed_adaptive_token_counts = {REPRESENTATIVE_MAX_TOKEN_COUNT}
+    if allow_distribution_shortfall:
+        allowed_selection_versions.add(
+            REPRESENTATIVE_QUALITY_FULL_SELECTION_VERSION
+        )
+        allowed_adaptive_token_counts.add(
+            REPRESENTATIVE_QUALITY_FULL_MAX_TOKEN_COUNT
+        )
+    population_cache: dict[str, PopulationManifest] = {}
+    representative_cache: dict[str, RepresentativeSetManifest] = {}
+
+    def load_population(reference: ArtifactReference) -> PopulationManifest:
+        reference_key = canonical_json(reference.model_dump(mode="json"))
+        cached_manifest = population_cache.get(reference_key)
+        if cached_manifest is not None:
+            return cached_manifest
+        if reference.item_count != 1:
+            raise ValueError(
+                "daily cluster checkpoint population reference count is invalid"
+            )
+        manifest_path = _verify_checkpoint_reference(root, reference)
+        manifest = PopulationManifest.model_validate(read_json(manifest_path))
+        _verify_cluster_manifest_identity(
+            run_id=manifest.run_id,
+            cluster_id=manifest.cluster_id,
+            cutoff_at=manifest.cutoff_at,
+            memory_snapshot_id=manifest.memory_snapshot_id,
+            source_generation_sha256=manifest.source_generation_sha256,
+            corpus_manifest_sha256=manifest.corpus_manifest_sha256,
+            expected_run_id=expected_run_id,
+            expected_cluster_id=cluster_id,
+            expected_cutoff=expected_cutoff,
+            expected_snapshot_id=expected_snapshot_id,
+            expected_source_generation_sha256=(
+                expected_source_generation_sha256
+            ),
+            expected_corpus_manifest_sha256=expected_corpus_manifest_sha256,
+        )
+        if (
+            manifest.statistics_version != POPULATION_STATISTICS_VERSION
+            or manifest.cube_version != POPULATION_CUBE_VERSION
+            or manifest.selection_budget_version
+            != POPULATION_SELECTION_BUDGET_VERSION
+            or manifest.max_selected_record_count
+            != POPULATION_MAX_SELECTED_RECORDS
+            or manifest.max_cube_row_count != POPULATION_MAX_CUBE_ROWS
+            or manifest.purpose_classifier_version
+            != POPULATION_PURPOSE_CLASSIFIER_VERSION
+            or manifest.purpose_record_types_sha256
+            != _purpose_record_types_sha256(manifest.population_purpose)
+            or manifest.bootstrap_version != BLOCK_BOOTSTRAP_VERSION
+        ):
+            raise ValueError("daily cluster checkpoint population policy is stale")
+        for nested in (
+            manifest.member_records,
+            manifest.independent_units,
+            manifest.cube_rows,
+        ):
+            _verify_checkpoint_reference(root, nested)
+        population_cache[reference_key] = manifest
+        return manifest
+
+    def load_representative(
+        reference: ArtifactReference,
+    ) -> RepresentativeSetManifest:
+        reference_key = canonical_json(reference.model_dump(mode="json"))
+        cached_manifest = representative_cache.get(reference_key)
+        if cached_manifest is not None:
+            return cached_manifest
+        if reference.item_count != 1:
+            raise ValueError(
+                "daily cluster checkpoint representative reference count is invalid"
+            )
+        manifest_path = _verify_checkpoint_reference(root, reference)
+        manifest = RepresentativeSetManifest.model_validate(
+            read_json(manifest_path)
+        )
+        expected_representative_max_token_count = (
+            REPRESENTATIVE_QUALITY_FULL_MAX_TOKEN_COUNT
+            if manifest.selection_version
+            == REPRESENTATIVE_QUALITY_FULL_SELECTION_VERSION
+            else REPRESENTATIVE_MAX_TOKEN_COUNT
+        )
+        _verify_cluster_manifest_identity(
+            run_id=manifest.run_id,
+            cluster_id=manifest.cluster_id,
+            cutoff_at=manifest.cutoff_at,
+            memory_snapshot_id=manifest.memory_snapshot_id,
+            source_generation_sha256=manifest.source_generation_sha256,
+            corpus_manifest_sha256=manifest.corpus_manifest_sha256,
+            expected_run_id=expected_run_id,
+            expected_cluster_id=cluster_id,
+            expected_cutoff=expected_cutoff,
+            expected_snapshot_id=expected_snapshot_id,
+            expected_source_generation_sha256=(
+                expected_source_generation_sha256
+            ),
+            expected_corpus_manifest_sha256=expected_corpus_manifest_sha256,
+        )
+        if (
+            manifest.query_sha256 != expected_query_sha256
+            or manifest.query_embedding_sha256
+            != expected_query_embedding_sha256
+            or manifest.embedding_model
+            != embedding_runtime_identity["embedding_method"]
+            or manifest.selection_version not in allowed_selection_versions
+            or manifest.max_selected_record_count
+            != REPRESENTATIVE_MAX_SELECTED_RECORDS
+            or manifest.max_candidate_pool_count
+            != REPRESENTATIVE_MAX_CANDIDATE_POOL
+            or manifest.max_token_count
+            != expected_representative_max_token_count
+            or manifest.max_trade_date_concentration
+            != REPRESENTATIVE_MAX_TRADE_DATE_CONCENTRATION
+            or manifest.max_unit_key_concentration
+            != REPRESENTATIVE_MAX_UNIT_KEY_CONCENTRATION
+        ):
+            raise ValueError(
+                "daily cluster checkpoint representative policy or query is stale"
+            )
+        _verify_checkpoint_reference(root, manifest.representative_records)
+        representative_cache[reference_key] = manifest
+        return manifest
+
+    def validate_pair(
+        population_reference: ArtifactReference,
+        representative_reference: ArtifactReference,
+    ) -> tuple[PopulationManifest, RepresentativeSetManifest]:
+        population_manifest = load_population(population_reference)
+        representative_manifest = load_representative(
+            representative_reference
+        )
+        if (
+            representative_manifest.population_id
+            != population_manifest.population_id
+            or representative_manifest.population_manifest_sha256
+            != population_reference.sha256
+        ):
+            raise ValueError(
+                "daily cluster checkpoint population representative chain is invalid"
+            )
+        return population_manifest, representative_manifest
+
+    final_population_keys: list[str] = []
+    if len(populations) != len(representatives):
+        raise ValueError("daily cluster checkpoint artifact counts conflict")
+    for population_reference, representative_reference in zip(
+        populations,
+        representatives,
+        strict=True,
+    ):
+        population_manifest, _representative_manifest = validate_pair(
+            population_reference,
+            representative_reference,
+        )
+        final_population_keys.append(
+            _population_key(
+                cluster_id,
+                population_manifest.population_purpose,
+                population_manifest.independent_unit_type,
+            )
+        )
+    final_population_references = {
+        canonical_json(reference.model_dump(mode="json"))
+        for reference in populations
+    }
+    final_representative_references = {
+        canonical_json(reference.model_dump(mode="json"))
+        for reference in representatives
+    }
+    observed_final_population_references: set[str] = set()
+    observed_final_representative_references: set[str] = set()
+    for reference in adaptive_traces:
+        if reference.item_count != 1:
+            raise ValueError(
+                "daily cluster checkpoint adaptive reference count is invalid"
+            )
+        trace_path = _verify_checkpoint_reference(root, reference)
+        trace = AdaptiveRetrievalTrace.model_validate(read_json(trace_path))
+        _verify_cluster_manifest_identity(
+            run_id=trace.run_id,
+            cluster_id=trace.cluster_id,
+            cutoff_at=trace.cutoff_at,
+            memory_snapshot_id=None,
+            source_generation_sha256=None,
+            corpus_manifest_sha256=None,
+            expected_run_id=expected_run_id,
+            expected_cluster_id=cluster_id,
+            expected_cutoff=expected_cutoff,
+            expected_snapshot_id=expected_snapshot_id,
+            expected_source_generation_sha256=(
+                expected_source_generation_sha256
+            ),
+            expected_corpus_manifest_sha256=expected_corpus_manifest_sha256,
+        )
+        if (
+            trace.query_sha256 != expected_query_sha256
+            or trace.query_embedding_sha256
+            != expected_query_embedding_sha256
+            or trace.policy_version != ADAPTIVE_RETRIEVAL_POLICY_VERSION
+            or trace.max_depth != ADAPTIVE_MAX_DEPTH
+            or trace.max_cell_count != ADAPTIVE_MAX_CELL_COUNT
+            or trace.max_record_count != ADAPTIVE_MAX_RECORD_COUNT
+            or trace.max_token_count not in allowed_adaptive_token_counts
+            or trace.min_information_gain != ADAPTIVE_MIN_INFORMATION_GAIN
+        ):
+            raise ValueError(
+                "daily cluster checkpoint adaptive policy or query is stale"
+            )
+        adaptive_inspection = _inspect_built_adaptive(
+            root,
+            trace_path=trace_path,
+            expected_trace=trace,
+        )
+        if adaptive_inspection["passed"] is not True:
+            raise ValueError(
+                "daily cluster checkpoint adaptive artifact closure is invalid"
+            )
+        _initial_population, initial_representative = validate_pair(
+            trace.initial_population_manifest,
+            trace.initial_representative_set_manifest,
+        )
+        if trace.max_token_count != initial_representative.max_token_count:
+            raise ValueError(
+                "daily cluster checkpoint adaptive representative budget is stale"
+            )
+        for iteration in trace.iterations:
+            validate_pair(
+                iteration.population_manifest,
+                iteration.representative_set_manifest,
+            )
+        validate_pair(
+            trace.final_population_manifest,
+            trace.final_representative_set_manifest,
+        )
+        observed_final_population_references.add(
+            canonical_json(trace.final_population_manifest.model_dump(mode="json"))
+        )
+        observed_final_representative_references.add(
+            canonical_json(
+                trace.final_representative_set_manifest.model_dump(mode="json")
+            )
+        )
+    if (
+        len(populations) != len(adaptive_traces)
+        or len(final_population_references) != len(populations)
+        or len(final_representative_references) != len(representatives)
+        or observed_final_population_references != final_population_references
+        or observed_final_representative_references
+        != final_representative_references
+    ):
+        raise ValueError("daily cluster checkpoint adaptive closure is invalid")
+    if (
+        len(set(built_population_keys)) != len(built_population_keys)
+        or sorted(built_population_keys) != sorted(final_population_keys)
+    ):
+        raise ValueError("daily cluster checkpoint population keys are invalid")
+    observed_purposes = {
+        manifest.population_purpose for manifest in population_cache.values()
+    }
+    expected_uncovered_purposes = sorted(
+        set(DAILY_POPULATION_PURPOSE_UNITS) - observed_purposes
+    )
+    if (
+        uncovered_purposes != sorted(set(uncovered_purposes))
+        or uncovered_purposes != expected_uncovered_purposes
+    ):
+        raise ValueError(
+            "daily cluster checkpoint uncovered purposes are invalid"
+        )
+    return _DailyClusterBuild(
+        cluster_id=cluster_id,
+        populations=populations,
+        representatives=representatives,
+        adaptive_traces=adaptive_traces,
+        population_paths=[root / reference.artifact_path for reference in populations],
+        representative_paths=[
+            root / reference.artifact_path for reference in representatives
+        ],
+        ann_ranks=ann_ranks,
+        fts_ranks=fts_ranks,
+        built_population_keys=built_population_keys,
+        uncovered_purposes=uncovered_purposes,
+    )
+
+
+def _verify_checkpoint_reference(root: Path, reference: ArtifactReference) -> Path:
+    path = (root / reference.artifact_path).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("daily cluster checkpoint artifact escapes project root") from exc
+    if not path.is_file() or file_sha256(path) != reference.sha256:
+        raise ValueError("daily cluster checkpoint artifact closure is invalid")
+    return path
+
+
+def _verify_cluster_manifest_identity(
+    *,
+    run_id: str,
+    cluster_id: str,
+    cutoff_at: datetime,
+    memory_snapshot_id: str | None,
+    source_generation_sha256: str | None,
+    corpus_manifest_sha256: str | None,
+    expected_run_id: str,
+    expected_cluster_id: str,
+    expected_cutoff: datetime,
+    expected_snapshot_id: str,
+    expected_source_generation_sha256: str,
+    expected_corpus_manifest_sha256: str,
+) -> None:
+    if (
+        run_id != expected_run_id
+        or cluster_id != expected_cluster_id
+        or as_kst(cutoff_at) != as_kst(expected_cutoff)
+        or (
+            memory_snapshot_id is not None
+            and memory_snapshot_id != expected_snapshot_id
+        )
+        or (
+            source_generation_sha256 is not None
+            and source_generation_sha256
+            != expected_source_generation_sha256
+        )
+        or (
+            corpus_manifest_sha256 is not None
+            and corpus_manifest_sha256 != expected_corpus_manifest_sha256
+        )
+    ):
+        raise ValueError("daily cluster checkpoint manifest identity mismatch")
 
 
 def inspect_daily_memory_context(

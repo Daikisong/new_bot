@@ -69,6 +69,7 @@ class BrainCompilerMetadata:
 @dataclass(frozen=True)
 class _EvaluationContextPopulation:
     snapshot_id: str
+    accepted_episode_ids: tuple[str, ...]
     accepted_episodes: tuple[ResearchEpisode, ...]
     available_record_ids: tuple[str, ...]
     training_eligible_record_ids: tuple[str, ...]
@@ -110,6 +111,7 @@ class ContextAssembler:
         raw_retrieved_record_ids = retrieved_record_ids or []
         web_query_list = web_queries or []
         evaluation = _evaluation_context_population(self.root, self.store)
+        evaluation_episode_ids: list[str] | None = None
         if evaluation is None:
             all_records = BrainRecordStore(self.root).list_records()
             all_accepted, accepted_store_findings = _read_accepted_episodes_for_context(
@@ -165,6 +167,7 @@ class ContextAssembler:
             all_records = []
             accepted_store_findings = []
             accepted = list(evaluation.accepted_episodes)
+            evaluation_episode_ids = list(evaluation.accepted_episode_ids)
             all_accepted = accepted
             unavailable = []
             available_records = []
@@ -189,8 +192,16 @@ class ContextAssembler:
                 evaluation.counterexample_record_ids
             )
             accepted_record_count = len(available_record_ids)
-        accepted_ids = [episode.episode_id for episode in accepted]
-        all_accepted_ids = [episode.episode_id for episode in all_accepted]
+        accepted_ids = (
+            evaluation_episode_ids
+            if evaluation_episode_ids is not None
+            else [episode.episode_id for episode in accepted]
+        )
+        all_accepted_ids = (
+            list(evaluation_episode_ids)
+            if evaluation_episode_ids is not None
+            else [episode.episode_id for episode in all_accepted]
+        )
         unavailable_ids = [episode.episode_id for episode in unavailable]
         retrieved_ids, excluded_retrieved_ids = _filter_retrieved_ids_available_as_of(
             raw_retrieved_ids,
@@ -238,6 +249,7 @@ class ContextAssembler:
             run_id=run_id,
             cutoff_at=cutoff_at,
             accepted=accepted,
+            required_episode_ids=accepted_ids,
         )
         manifest = ContextManifest(
             run_id=run_id,
@@ -258,7 +270,7 @@ class ContextAssembler:
             shard_brain_files=list(brain_context.shard_brain_file_hashes.keys()),
             shard_brain_file_hashes=brain_context.shard_brain_file_hashes,
             accepted_episode_count=len(accepted_ids),
-            total_accepted_episode_count=len(all_accepted),
+            total_accepted_episode_count=len(all_accepted_ids),
             total_accepted_episode_ids=all_accepted_ids,
             available_episode_count=len(accepted_ids),
             unavailable_episode_count=len(unavailable_ids),
@@ -269,7 +281,7 @@ class ContextAssembler:
             excluded_retrieved_episode_ids=excluded_retrieved_ids,
             counterexample_episode_ids=counterexample_ids,
             accepted_record_count=accepted_record_count,
-            available_record_count=len(available_records),
+            available_record_count=len(available_record_ids),
             available_record_ids=available_record_ids,
             training_eligible_available_record_count=len(training_eligible_available_record_ids),
             training_eligible_available_record_ids=training_eligible_available_record_ids,
@@ -308,10 +320,13 @@ class ContextAssembler:
         run_id: str,
         cutoff_at: datetime,
         accepted: list[ResearchEpisode],
+        required_episode_ids: list[str] | None = None,
     ) -> BrainContextFiles:
         current_hashes = current_brain_file_hashes(self.root)
         current_shard_hashes = current_shard_brain_file_hashes(self.root)
-        accepted_ids = [episode.episode_id for episode in accepted]
+        accepted_ids = required_episode_ids or [
+            episode.episode_id for episode in accepted
+        ]
         if self._current_context_is_safe_and_complete(
             cutoff_at=cutoff_at,
             accepted_ids=accepted_ids,
@@ -323,6 +338,11 @@ class ContextAssembler:
                 brain_version=current_brain_version(self.root),
                 brain_file_hashes=current_hashes,
                 shard_brain_file_hashes=current_shard_hashes,
+            )
+        active_snapshot = active_memory_snapshot_manifest(self.root)
+        if active_snapshot is not None and active_snapshot.evaluation_only:
+            raise ValueError(
+                "evaluation context cannot synthesize a replacement brain"
             )
         return self._write_as_of_brain_context(
             run_id=run_id,
@@ -340,16 +360,24 @@ class ContextAssembler:
     ) -> bool:
         if accepted_ids and not brain_file_hashes:
             return False
+        active_snapshot = active_memory_snapshot_manifest(self.root)
+        if active_snapshot is not None and active_snapshot.evaluation_only:
+            coverage_ids = self._current_brain_coverage_ids()
+            brain = read_json(
+                self.root / "brain" / "current" / "brain_manifest.json"
+            )
+            return (
+                coverage_ids is not None
+                and set(coverage_ids) == set(accepted_ids)
+                and len(coverage_ids) == len(accepted_ids)
+                and isinstance(brain, dict)
+                and brain.get("production_memory_snapshot_id")
+                == active_snapshot.snapshot_id
+            )
         if accepted_ids and not shard_brain_file_hashes:
             return False
         if self._current_shard_episode_count() != self.shard_episode_count:
             return False
-        active_snapshot = active_memory_snapshot_manifest(self.root)
-        if active_snapshot is not None and active_snapshot.evaluation_only:
-            coverage_ids = self._current_brain_coverage_ids()
-            return coverage_ids is not None and set(coverage_ids) == set(
-                accepted_ids
-            ) and len(coverage_ids) == len(accepted_ids)
         all_accepted = _read_accepted_episodes_for_current_context_check(self.store)
         if all_accepted is None:
             return False
@@ -595,6 +623,12 @@ def _evaluation_context_population(
     replay = load_snapshot_replay_availability(root, snapshot)
     if replay is None:
         raise ValueError("evaluation context requires replay availability")
+    missing_replay_ids = sorted(covered_ids - set(replay))
+    if missing_replay_ids:
+        raise ValueError(
+            "evaluation brain coverage is missing replay availability: "
+            + ", ".join(missing_replay_ids[:10])
+        )
     accepted: list[ResearchEpisode] = []
     for episode in store.list_accepted():
         if episode.episode_id not in covered_ids:
@@ -609,8 +643,6 @@ def _evaluation_context_population(
                 update={"available_from": override.replay_available_from}
             )
         )
-    if {episode.episode_id for episode in accepted} != covered_ids:
-        raise ValueError("evaluation context episode set differs from the brain")
     connection = duckdb.connect(
         str(root / snapshot.database.artifact_path),
         read_only=True,
@@ -629,6 +661,7 @@ def _evaluation_context_population(
         raise ValueError("evaluation context record set differs from the snapshot")
     population = _EvaluationContextPopulation(
         snapshot_id=snapshot.snapshot_id,
+        accepted_episode_ids=tuple(sorted(covered_ids)),
         accepted_episodes=tuple(
             sorted(accepted, key=lambda item: (item.trade_date, item.episode_id))
         ),

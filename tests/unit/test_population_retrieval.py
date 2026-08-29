@@ -204,6 +204,43 @@ def test_population_artifact_tamper_fails_independent_inspection(
     assert "cube_rows_hash_mismatch" in inspection["errors"]
     assert "cube_rows_recompute_mismatch" in inspection["errors"]
 
+    with pytest.raises(ValueError, match="cached population closure is invalid"):
+        retriever.build(
+            run_id="RUN-TAMPER",
+            cluster_id="EVT-TAMPER",
+            cutoff_at=datetime(2030, 1, 11, tzinfo=KST),
+            selected_cell_ids=_cell_ids(index),
+            independent_unit_type="issuer-day",
+        )
+
+
+def test_population_build_reuses_verified_content_addressed_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index, _current = _build_index(
+        tmp_path,
+        monkeypatch,
+        [_record("REC-CACHED", ticker="000001")],
+    )
+    retriever = PopulationRetriever(tmp_path, memory_index=index)
+    kwargs = {
+        "run_id": "RUN-CACHED",
+        "cluster_id": "EVT-CACHED",
+        "cutoff_at": datetime(2030, 1, 11, tzinfo=KST),
+        "selected_cell_ids": _cell_ids(index),
+        "independent_unit_type": "issuer-day",
+    }
+    first = retriever.build(**kwargs)  # type: ignore[arg-type]
+
+    def fail_source_query(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("verified population resume must not repeat the source query")
+
+    monkeypatch.setattr(index, "population_members_for_cells", fail_source_query)
+    resumed = retriever.build(**kwargs)  # type: ignore[arg-type]
+
+    assert resumed == first
+
 
 def test_population_rejects_cell_not_present_in_snapshot(
     tmp_path: Path,
@@ -347,6 +384,40 @@ def test_population_budget_fails_before_member_materialization(
             independent_unit_type="issuer-day",
             max_records=1,
         )
+
+
+def test_population_member_query_reuses_bounded_runtime_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index, _current = _build_index(
+        tmp_path,
+        monkeypatch,
+        [
+            _record("REC-A", ticker="000001"),
+            _record("REC-B", ticker="000002"),
+        ],
+    )
+    kwargs = {
+        "cutoff_at": datetime(2030, 1, 11, tzinfo=KST),
+        "independent_unit_type": "issuer-day",
+    }
+    first_snapshot, first_members = index.population_members_for_cells(
+        _cell_ids(index),
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+    def fail_database_connection(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("identical population member query must use its runtime cache")
+
+    monkeypatch.setattr(index, "_runtime_connection", fail_database_connection)
+    second_snapshot, second_members = index.population_members_for_cells(
+        _cell_ids(index),
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+    assert second_snapshot == first_snapshot
+    assert second_members == first_members
 
 
 def test_cube_preserves_actual_record_dimension_combinations() -> None:

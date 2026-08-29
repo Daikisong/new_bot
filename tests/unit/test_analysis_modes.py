@@ -954,13 +954,44 @@ async def test_exhaustive_mode_sweeps_available_brain_records(tmp_path) -> None:
     assert {row["retrieval_lane"] for row in cluster_coverage_rows} == set(cluster_coverage_lanes)
     assert {row["category"] for row in cluster_coverage_rows} == set(cluster_coverage_lanes)
     cluster_context = synthesis_payload["semantic_cluster_coverage"]
-    assert cluster_context["rows"] == cluster_coverage_rows
-    assert cluster_context["covered_cluster_ids"] == cluster_coverage_ids
+    cluster_coverage_identities = [
+        {
+            "cluster_id": row["cluster_id"],
+            "category": row["category"],
+            "query_sha256": row["query_sha256"],
+            "included_episode_ids": row["included_episode_ids"],
+            "excluded_episode_ids": row["excluded_episode_ids"],
+            "included_record_ids": row["included_record_ids"],
+            "excluded_record_ids": row["excluded_record_ids"],
+        }
+        for row in cluster_coverage_rows
+    ]
+    expected_hit_rows = [
+        row
+        for row in cluster_coverage_identities
+        if any(
+            row[key]
+            for key in (
+                "included_episode_ids",
+                "excluded_episode_ids",
+                "included_record_ids",
+                "excluded_record_ids",
+            )
+        )
+    ]
+    assert cluster_context["full_row_count"] == len(cluster_coverage_rows)
+    assert cluster_context["full_row_identity_root_sha256"] == sha256_text(
+        canonical_json(cluster_coverage_identities)
+    )
+    assert cluster_context["hit_rows"] == expected_hit_rows
+    assert cluster_context["covered_cluster_count"] == len(cluster_coverage_ids)
+    assert cluster_context["covered_cluster_root_sha256"] == sha256_text(
+        canonical_json(cluster_coverage_ids)
+    )
+    assert "rows" not in cluster_context
+    assert "promoted_records" not in cluster_context
     assert cluster_context["missing_cluster_ids"] == []
     assert cluster_context["promoted_record_ids"] == manifest.semantic_cluster_coverage_promoted_record_ids
-    assert [record["record_id"] for record in cluster_context["promoted_records"]] == (
-        manifest.semantic_cluster_coverage_promoted_record_ids
-    )
     assert synthesis_payload["semantic_cluster_coverage_ids"] == manifest.semantic_cluster_coverage_ids
     assert synthesis_payload["semantic_cluster_coverage_missing_ids"] == []
     assert synthesis_context["input_summary"]["semantic_cluster_coverage_row_count"] == len(cluster_coverage_rows)
