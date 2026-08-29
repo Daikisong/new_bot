@@ -1,0 +1,84 @@
+{
+  "schema_version": "nslab.quality_full_shared_batch_closure_fix.v1",
+  "created_date_kst": "2026-08-30",
+  "safe_selection_id": "QSEL-19b3c80ba392db8564c9",
+  "safe_selection_sha256": "bfcc21e433ab36cf457254f7587f7fb71d2a12e4a332a12c0fead0b0554d3f9c",
+  "observed_failure": {
+    "trade_date": "2026-03-24",
+    "material_cluster_count": 1567,
+    "purpose": "shared_open_world_map.batch_0001",
+    "dispatched_cluster_count": 28,
+    "returned_cluster_finding_count": 25,
+    "missing_cluster_finding_count": 3,
+    "failure": "open-world Pass 0 cluster findings do not match the dispatched batch",
+    "shared_context_sealed": false,
+    "prediction_created": false,
+    "score_created": false,
+    "production_mutation_count": 0
+  },
+  "root_cause": {
+    "configured_open_world_cluster_batch_size": 12,
+    "configured_novelty_cluster_batch_size": 12,
+    "configured_max_prompt_chars": 120000,
+    "former_map_batching_used_cluster_limit": false,
+    "former_novelty_batching_used_cluster_limit": false,
+    "verdict": "CONFIGURED_CLUSTER_LIMIT_WAS_NOT_ENFORCED_BY_SHARED_BATCHING"
+  },
+  "fix": {
+    "packing_policy": "CONTEXT_CHARS_AND_CONFIGURED_CLUSTER_LIMIT.v2",
+    "map_cluster_limit_enforced": true,
+    "novelty_cluster_limit_enforced": true,
+    "cluster_limits_bound_into_lookup_identity": true,
+    "error_checkpoint_replay_policy": "NON_OK_CHECKPOINT_REQUIRES_LIVE_RETRY",
+    "first_n_shortcut_used": false,
+    "silent_truncation_used": false
+  },
+  "measured_new_topology": [
+    {
+      "trade_date": "2026-01-02",
+      "material_cluster_count": 478,
+      "map_batch_count": 40,
+      "novelty_batch_count": 40,
+      "reduce_batch_count": "PENDING_MAP_OUTPUTS",
+      "map_prompt_char_min": 28612,
+      "map_prompt_char_max": 69804,
+      "novelty_prompt_char_min": 44299,
+      "novelty_prompt_char_max": 103612
+    },
+    {
+      "trade_date": "2026-03-24",
+      "material_cluster_count": 1567,
+      "map_batch_count": 131,
+      "novelty_batch_count": 132,
+      "reduce_batch_count": "PENDING_MAP_OUTPUTS",
+      "map_prompt_char_min": 24478,
+      "map_prompt_char_max": 86625,
+      "novelty_prompt_char_min": 38535,
+      "novelty_prompt_char_max": 119149
+    }
+  ],
+  "provider_recovery": {
+    "temporary_error": "Your workspace is out of credits. Add credits to continue.",
+    "error_checkpoint_id": "LLMCKPT-c13f15fff4839840",
+    "error_checkpoint_retried": true,
+    "recovered_status": "ok",
+    "recovered_purpose": "shared_open_world_map.batch_0003",
+    "recovered_prompt_tokens_estimate": 65087,
+    "recovered_completion_tokens_estimate": 7450,
+    "recovered_retries": 0
+  },
+  "commits": [
+    "fd5eefe",
+    "6ccb394",
+    "90780ac"
+  ],
+  "verification": {
+    "ruff": "PASS",
+    "mypy_source_file_count": 135,
+    "full_pytest": "PASS",
+    "full_pytest_passed_count": 1847,
+    "full_pytest_elapsed_seconds": 395.15
+  },
+  "quality_verdict": "NOT_EVALUATED",
+  "production_activation": "HOLD"
+}

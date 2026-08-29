@@ -66,6 +66,12 @@ PRODUCTION_HOLD
    record payload is serialized only once per bounded pack. An immutable call
    plan is written before the first provider call; the completed manifest binds
    that plan, normalized outputs, and authenticated tracing checkpoints.
+10. A live safe run exposed a separate shared-map closure issue: the character
+    budget packed 28 clusters despite a configured 12-cluster limit, and the
+    provider omitted three cluster findings. The strict verifier stopped the
+    run before sealing. Map and novelty batching now enforce both character and
+    configured cluster limits, bind the numeric limits into cache identity, and
+    treat non-`ok` checkpoints as live-retry candidates rather than successes.
 
 ## Safe Input Anchors
 
@@ -93,6 +99,10 @@ production mutation          0
 
 The full suite completed in 342.28 seconds. Warnings were existing/runtime
 deprecation and audit-fixture warnings, not test failures.
+
+After the live closure fix, the current gate is 1,847 passed in 395.15 seconds,
+with Ruff and Mypy (135 source files) also passing. See
+`diagnostics/quality_full_shared_batch_closure_fix.{json,md}`.
 
 ## Why The Safe Attempt Was Stopped
 
