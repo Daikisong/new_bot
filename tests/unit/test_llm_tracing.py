@@ -67,6 +67,25 @@ class FlakyTextProvider:
         return await DeterministicMockLLMProvider().embed(texts=texts, purpose=purpose)
 
 
+class StructuredValue(BaseModel):
+    value: int
+
+
+class SequencedStructuredProvider:
+    def __init__(self) -> None:
+        self.structured_calls = 0
+
+    async def generate_text(self, *, prompt: str, purpose: str) -> str:
+        return f"text:{purpose}:{prompt}"
+
+    async def generate_structured(self, *, prompt: str, response_model: type[T], purpose: str) -> T:
+        self.structured_calls += 1
+        return response_model.model_validate({"value": self.structured_calls})
+
+    async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
+        return await DeterministicMockLLMProvider().embed(texts=texts, purpose=purpose)
+
+
 @pytest.mark.asyncio
 async def test_tracing_llm_provider_records_text_structured_and_embed_calls(tmp_path) -> None:
     provider = TracingLLMProvider(
@@ -311,3 +330,57 @@ async def test_tracing_llm_provider_records_exhausted_retry_count(tmp_path) -> N
         {"type": "RuntimeError", "message": "temporary text failure 2"},
     ]
     assert traces[0]["error"]["message"] == "temporary text failure 3"
+
+
+@pytest.mark.asyncio
+async def test_structured_domain_validation_replaces_invalid_ok_checkpoint(tmp_path) -> None:
+    provider_impl = SequencedStructuredProvider()
+    provider = TracingLLMProvider(
+        provider_impl,
+        trace_dir=tmp_path / "traces",
+        checkpoint_dir=tmp_path / "checkpoints",
+        max_retries=1,
+    )
+    prompt = "domain-validated structured checkpoint"
+    purpose = "trace.domain_validation"
+
+    invalid = await provider.generate_structured(
+        prompt=prompt,
+        response_model=StructuredValue,
+        purpose=purpose,
+    )
+
+    def require_second_value(candidate: StructuredValue) -> StructuredValue:
+        if candidate.value != 2:
+            raise ValueError("structured domain coverage mismatch")
+        return candidate
+
+    recovered = await provider.generate_structured(
+        prompt=prompt,
+        response_model=StructuredValue,
+        purpose=purpose,
+        validator=require_second_value,
+    )
+    replayed = await provider.generate_structured(
+        prompt=prompt,
+        response_model=StructuredValue,
+        purpose=purpose,
+        validator=require_second_value,
+    )
+
+    assert invalid.value == 1
+    assert recovered.value == replayed.value == 2
+    assert provider_impl.structured_calls == 2
+    checkpoint = read_json(next((tmp_path / "checkpoints").glob("LLMCKPT-*.json")))
+    assert checkpoint["status"] == "ok"
+    assert checkpoint["output"] == {"value": 2}
+    assert checkpoint["retries"] == 1
+    assert checkpoint["retry_errors"] == [{"type": "ValueError", "message": "structured domain coverage mismatch"}]
+    traces = sorted(
+        [read_json(path) for path in (tmp_path / "traces").glob("TRACE-*.json")],
+        key=lambda trace: str(trace["started_at"]),
+    )
+    assert [trace["status"] for trace in traces] == ["ok", "ok", "checkpoint_hit"]
+    assert traces[1]["retries"] == 1
+    assert traces[1]["retry_errors"] == checkpoint["retry_errors"]
+    assert traces[2]["retries"] == 1

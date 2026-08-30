@@ -143,7 +143,15 @@ class TracingLLMProvider:
         )
         return provider_output
 
-    async def generate_structured(self, *, prompt: str, response_model: type[T], purpose: str) -> T:
+    async def generate_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[T],
+        purpose: str,
+        validator: Callable[[T], T] | None = None,
+        prior_retry_errors: tuple[Exception, ...] = (),
+    ) -> T:
         started_at = now_kst()
         input_payload = {
             "prompt_sha256": sha256_text(prompt),
@@ -157,35 +165,53 @@ class TracingLLMProvider:
             purpose=purpose,
             input_payload=input_payload,
         )
+        checkpoint_retry_errors = [_error_payload(error) for error in prior_retry_errors]
+        checkpoint_retries = len(checkpoint_retry_errors)
         if checkpoint is not None:
             output = checkpoint.get("output")
             if isinstance(output, dict):
-                restored = response_model.model_validate(output)
-                self._write_trace(
-                    operation="generate_structured",
-                    purpose=purpose,
-                    started_at=started_at,
-                    status="checkpoint_hit",
-                    input_payload=input_payload,
-                    output=output,
-                    token_usage={
-                        "prompt_tokens_estimate": self.count_tokens(prompt),
-                        "completion_tokens_estimate": _estimate_tokens(canonical_json(output)),
-                    },
-                    checkpoint_id=str(checkpoint["checkpoint_id"]),
-                    retries=_checkpoint_retries(checkpoint),
-                    retry_errors=_checkpoint_retry_errors(checkpoint),
-                )
-                return restored
+                try:
+                    restored = response_model.model_validate(output)
+                    validated = validator(restored) if validator is not None else restored
+                except Exception as exc:
+                    if validator is None:
+                        raise
+                    checkpoint_retry_errors.append(_error_payload(exc))
+                    checkpoint_retries += 1
+                else:
+                    self._write_trace(
+                        operation="generate_structured",
+                        purpose=purpose,
+                        started_at=started_at,
+                        status="checkpoint_hit",
+                        input_payload=input_payload,
+                        output=output,
+                        token_usage={
+                            "prompt_tokens_estimate": self.count_tokens(prompt),
+                            "completion_tokens_estimate": _estimate_tokens(canonical_json(output)),
+                        },
+                        checkpoint_id=str(checkpoint["checkpoint_id"]),
+                        retries=_checkpoint_retries(checkpoint),
+                        retry_errors=_checkpoint_retry_errors(checkpoint),
+                    )
+                    return validated
+
+        async def generate_and_validate() -> tuple[T, T]:
+            provider_output = await self.provider.generate_structured(
+                prompt=prompt,
+                response_model=response_model,
+                purpose=purpose,
+            )
+            validated_output = validator(provider_output) if validator is not None else provider_output
+            return provider_output, validated_output
+
         try:
-            provider_output, retries, retry_errors = await self._call_with_retries(
-                lambda: self.provider.generate_structured(
-                    prompt=prompt,
-                    response_model=response_model,
-                    purpose=purpose,
-                )
+            (provider_output, validated_output), retries, retry_errors = await self._call_with_retries(
+                generate_and_validate
             )
         except _RetryExhausted as exc:
+            retries = checkpoint_retries + exc.retries
+            retry_errors = [*checkpoint_retry_errors, *exc.retry_errors]
             checkpoint_id = self._write_checkpoint(
                 operation="generate_structured",
                 purpose=purpose,
@@ -193,8 +219,8 @@ class TracingLLMProvider:
                 input_payload=input_payload,
                 error=exc.original,
                 token_usage={"prompt_tokens_estimate": self.count_tokens(prompt)},
-                retries=exc.retries,
-                retry_errors=exc.retry_errors,
+                retries=retries,
+                retry_errors=retry_errors,
             )
             self._write_trace(
                 operation="generate_structured",
@@ -205,10 +231,12 @@ class TracingLLMProvider:
                 token_usage={"prompt_tokens_estimate": self.count_tokens(prompt)},
                 error=exc.original,
                 checkpoint_id=checkpoint_id,
-                retries=exc.retries,
-                retry_errors=exc.retry_errors,
+                retries=retries,
+                retry_errors=retry_errors,
             )
             raise exc.original from exc
+        retries += checkpoint_retries
+        retry_errors = [*checkpoint_retry_errors, *retry_errors]
         json_output = provider_output.model_dump(mode="json")
         checkpoint_id = self._write_checkpoint(
             operation="generate_structured",
@@ -238,7 +266,7 @@ class TracingLLMProvider:
             retries=retries,
             retry_errors=retry_errors,
         )
-        return provider_output
+        return validated_output
 
     async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
         started_at = now_kst()

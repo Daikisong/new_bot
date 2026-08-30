@@ -46,6 +46,24 @@ retry 0, prompt 65,087 tokens, completion 7,450 tokens의 `ok` 상태로
 ## 검증과 판정
 
 커밋은 `fd5eefe`, `6ccb394`, `90780ac`이며 원격 브랜치에 push됐다.
-`ruff`, `mypy` 135 source files, 전체 `pytest` 1,847개가 통과했다. 실제
+`ruff`, `mypy` 135 source files, 전체 `pytest` 1,849개가 통과했다. 실제
 3-case prediction과 score는 계속 진행 중이므로 predictive quality는
 `NOT_EVALUATED`, production activation은 `HOLD`다.
+
+## 도메인 검증 체크포인트 복구
+
+두 번째 날짜의 새 map 배치 28개가 도메인 검증까지 통과한 뒤,
+`shared_open_world_map.batch_0029` 응답은 구조화 스키마에는 맞았지만 배정된
+cluster coverage와 일치하지 않았다. 기존 순서는 provider 응답을 `ok`로 저장한 뒤
+coverage를 검사했기 때문에 단순 재시작 시 같은 잘못된 체크포인트를 반복 재생할 수
+있었다.
+
+복구 후에는 인증된 기존 체크포인트와 새 provider 응답 모두 map, reduce, novelty의
+도메인 정규화·coverage 검증을 통과해야 재사용된다. 도메인 검증 실패는 bounded
+provider retry에 포함되고, 성공한 교체 응답의 checkpoint와 trace에 `retries`와
+`retry_errors`가 보존된다. 이미 도메인 검증을 통과한 앞선 배치는 다시 호출하지
+않는다.
+
+중간 build 재개와 pre-seal 재개가 기존 immutable node bytes를 유지하는 회귀도 함께
+통과했다. predictive quality는 아직 `NOT_EVALUATED`, production activation은 계속
+`HOLD`다.

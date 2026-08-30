@@ -1,5 +1,5 @@
 {
-  "schema_version": "nslab.quality_full_shared_batch_closure_fix.v1",
+  "schema_version": "nslab.quality_full_shared_batch_closure_fix.v2",
   "created_date_kst": "2026-08-30",
   "safe_selection_id": "QSEL-19b3c80ba392db8564c9",
   "safe_selection_sha256": "bfcc21e433ab36cf457254f7587f7fb71d2a12e4a332a12c0fead0b0554d3f9c",
@@ -11,6 +11,19 @@
     "returned_cluster_finding_count": 25,
     "missing_cluster_finding_count": 3,
     "failure": "open-world Pass 0 cluster findings do not match the dispatched batch",
+    "shared_context_sealed": false,
+    "prediction_created": false,
+    "score_created": false,
+    "production_mutation_count": 0
+  },
+  "observed_domain_validation_failure": {
+    "observed_at_kst": "2026-08-30T14:15:00+09:00",
+    "trade_date": "2026-03-24",
+    "purpose": "shared_open_world_map.batch_0029",
+    "completed_domain_valid_map_batches_before_failure": 28,
+    "provider_checkpoint_status_before_domain_validation": "ok",
+    "failure": "open-world Pass 0 cluster coverage does not match the dispatched batch",
+    "root_cause": "STRUCTURED_SCHEMA_SUCCESS_WAS_CHECKPOINTED_BEFORE_DOMAIN_COVERAGE_VALIDATION",
     "shared_context_sealed": false,
     "prediction_created": false,
     "score_created": false,
@@ -30,6 +43,11 @@
     "novelty_cluster_limit_enforced": true,
     "cluster_limits_bound_into_lookup_identity": true,
     "error_checkpoint_replay_policy": "NON_OK_CHECKPOINT_REQUIRES_LIVE_RETRY",
+    "structured_checkpoint_acceptance_policy": "DOMAIN_VALIDATION_MUST_PASS_BEFORE_REUSABLE_OK",
+    "authenticated_checkpoint_domain_validation": true,
+    "domain_invalid_ok_checkpoint_live_replacement": true,
+    "domain_validation_failure_counted_as_retry": true,
+    "map_reduce_novelty_validators_use_bounded_provider_retry": true,
     "first_n_shortcut_used": false,
     "silent_truncation_used": false
   },
@@ -76,8 +94,12 @@
     "ruff": "PASS",
     "mypy_source_file_count": 135,
     "full_pytest": "PASS",
-    "full_pytest_passed_count": 1847,
-    "full_pytest_elapsed_seconds": 395.15
+    "full_pytest_passed_count": 1849,
+    "full_pytest_elapsed_seconds": 384.03,
+    "targeted_shared_and_tracing_test_count": 70,
+    "domain_invalid_ok_checkpoint_regression_test": "PASS",
+    "midbuild_resume_regression_test": "PASS",
+    "preseal_resume_regression_test": "PASS"
   },
   "quality_verdict": "NOT_EVALUATED",
   "production_activation": "HOLD"

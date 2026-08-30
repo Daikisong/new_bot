@@ -137,6 +137,12 @@ class _ProviderCheckpointCommitment:
     completion_tokens_estimate: int
 
 
+class _CheckpointDomainValidationError(Exception):
+    def __init__(self, original: Exception) -> None:
+        super().__init__(str(original))
+        self.original = original
+
+
 @contextmanager
 def _without_mutable_llm_checkpoint_reuse(
     analyzer: DailyAnalyzer,
@@ -409,9 +415,7 @@ def _lookup_identity(
         "similarity_threshold": settings.limits.event_cluster_similarity_threshold,
         "max_semantic_variants": settings.limits.event_cluster_max_semantic_variants,
         "max_prompt_chars": settings.limits.open_world_max_prompt_chars,
-        "open_world_cluster_batch_size": (
-            settings.limits.open_world_cluster_batch_size
-        ),
+        "open_world_cluster_batch_size": (settings.limits.open_world_cluster_batch_size),
         "novelty_cluster_batch_size": settings.limits.novelty_cluster_batch_size,
         "packing_policy": "CONTEXT_CHARS_AND_CONFIGURED_CLUSTER_LIMIT.v2",
         "novelty_packing_policy": ("CONTEXT_CHARS_AND_CONFIGURED_CLUSTER_LIMIT.v2"),
@@ -1201,28 +1205,21 @@ async def _run_shared_novelty_review(
         prompt_sha256 = sha256_text(prompt)
         prompt_hashes.append(prompt_sha256)
         purpose = f"shared_news_novelty_review.batch_{batch_index:04d}"
-        review = _replay_provider_checkpoint_if_available(
+        review = await _generate_validated_structured(
             analyzer,
             prompt=prompt,
-            purpose=purpose,
             response_model=NewsNoveltyReview,
-        )
-        if review is None:
-            review = await analyzer.llm.generate_structured(
-                prompt=prompt,
-                response_model=NewsNoveltyReview,
-                purpose=purpose,
-            )
-        prompt_tokens += count_provider_tokens(analyzer.llm, prompt)
-        partial_reviews.append(
-            analyzer._normalize_news_novelty_review(
-                review,
+            purpose=purpose,
+            validator=_news_novelty_validator(
+                analyzer,
                 manifest=manifest,
                 cutoff_at=cutoff_at,
                 prompt_sha256=prompt_sha256,
                 cluster_rows=batch_rows,
-            )
+            ),
         )
+        prompt_tokens += count_provider_tokens(analyzer.llm, prompt)
+        partial_reviews.append(review)
     findings = sorted(
         [finding for review in partial_reviews for finding in review.findings],
         key=lambda finding: finding.cluster_index,
@@ -1291,10 +1288,7 @@ def _novelty_batches(
             manifest=manifest,
             cutoff_at=cutoff_at,
         )
-        if current and (
-            len(current) >= max_clusters
-            or len(tentative_prompt) > max_chars
-        ):
+        if current and (len(current) >= max_clusters or len(tentative_prompt) > max_chars):
             batches.append(current)
             current = []
         current.append(row)
@@ -1462,6 +1456,64 @@ def _map_output(state: _NodeState) -> OpenWorldFirstAnalysis:
     return state.output
 
 
+def _news_novelty_validator(
+    analyzer: DailyAnalyzer,
+    *,
+    manifest: ContextManifest,
+    cutoff_at: datetime,
+    prompt_sha256: str,
+    cluster_rows: list[dict[str, Any]],
+) -> Callable[[NewsNoveltyReview], NewsNoveltyReview]:
+    def validate(candidate: NewsNoveltyReview) -> NewsNoveltyReview:
+        return analyzer._normalize_news_novelty_review(
+            candidate,
+            manifest=manifest,
+            cutoff_at=cutoff_at,
+            prompt_sha256=prompt_sha256,
+            cluster_rows=cluster_rows,
+        )
+
+    return validate
+
+
+async def _generate_validated_structured[TModel: BaseModel](
+    analyzer: DailyAnalyzer,
+    *,
+    prompt: str,
+    response_model: type[TModel],
+    purpose: str,
+    validator: Callable[[TModel], TModel],
+) -> TModel:
+    if isinstance(analyzer.llm, TracingLLMProvider):
+        prior_retry_errors: tuple[Exception, ...] = ()
+        try:
+            restored = _replay_provider_checkpoint_if_available(
+                analyzer,
+                prompt=prompt,
+                purpose=purpose,
+                response_model=response_model,
+                validator=validator,
+            )
+        except _CheckpointDomainValidationError as exc:
+            prior_retry_errors = (exc.original,)
+        else:
+            if restored is not None:
+                return restored
+        return await analyzer.llm.generate_structured(
+            prompt=prompt,
+            response_model=response_model,
+            purpose=purpose,
+            validator=validator,
+            prior_retry_errors=prior_retry_errors,
+        )
+    output = await analyzer.llm.generate_structured(
+        prompt=prompt,
+        response_model=response_model,
+        purpose=purpose,
+    )
+    return validator(output)
+
+
 async def _map_call(
     analyzer: DailyAnalyzer,
     *,
@@ -1471,26 +1523,20 @@ async def _map_call(
     cutoff_at: datetime,
 ) -> tuple[OpenWorldFirstAnalysis, _CallReceipt]:
     before = _trace_paths(analyzer.settings)
-    output = _replay_provider_checkpoint_if_available(
+    cluster_ids = [cluster.cluster_id for cluster in clusters]
+    output = await _generate_validated_structured(
         analyzer,
         prompt=prompt,
-        purpose=purpose,
         response_model=OpenWorldFirstAnalysis,
-    )
-    if output is None:
-        output = await analyzer.llm.generate_structured(
-            prompt=prompt,
-            response_model=OpenWorldFirstAnalysis,
-            purpose=purpose,
-        )
-    cluster_ids = [cluster.cluster_id for cluster in clusters]
-    output = analyzer._normalize_open_world_first_analysis(
-        output,
-        news_texts=[cluster.representative_text for cluster in clusters],
-        event_ids=[event_id for cluster in clusters for event_id in cluster.event_ids],
-        cluster_ids=cluster_ids,
-        cutoff_at=cutoff_at,
-        prompt_sha256=sha256_text(prompt),
+        purpose=purpose,
+        validator=lambda candidate: analyzer._normalize_open_world_first_analysis(
+            candidate,
+            news_texts=[cluster.representative_text for cluster in clusters],
+            event_ids=[event_id for cluster in clusters for event_id in cluster.event_ids],
+            cluster_ids=cluster_ids,
+            cutoff_at=cutoff_at,
+            prompt_sha256=sha256_text(prompt),
+        ),
     )
     trace = _single_new_trace(analyzer.settings, before=before, purpose=purpose)
     return output, _call_receipt(trace)
@@ -1506,23 +1552,17 @@ async def _reduce_call(
     covered_cluster_ids: list[str],
 ) -> tuple[SharedOpenWorldReduceOutput, _CallReceipt]:
     before = _trace_paths(analyzer.settings)
-    output = _replay_provider_checkpoint_if_available(
+    output = await _generate_validated_structured(
         analyzer,
         prompt=prompt,
-        purpose=purpose,
         response_model=SharedOpenWorldReduceOutput,
-    )
-    if output is None:
-        output = await analyzer.llm.generate_structured(
-            prompt=prompt,
-            response_model=SharedOpenWorldReduceOutput,
-            purpose=purpose,
-        )
-    output = _normalize_reduce_output(
-        output,
-        node_id=node_id,
-        child_node_ids=child_node_ids,
-        covered_cluster_ids=covered_cluster_ids,
+        purpose=purpose,
+        validator=lambda candidate: _normalize_reduce_output(
+            candidate,
+            node_id=node_id,
+            child_node_ids=child_node_ids,
+            covered_cluster_ids=covered_cluster_ids,
+        ),
     )
     trace = _single_new_trace(analyzer.settings, before=before, purpose=purpose)
     return output, _call_receipt(trace)
@@ -1577,8 +1617,7 @@ def _map_batches(
         tentative = [*current, cluster]
         if current and (
             len(current) >= max_clusters
-            or
-            len(
+            or len(
                 _map_prompt(
                     node_id="probe",
                     clusters=tentative,
@@ -2250,9 +2289,7 @@ def _provider_checkpoint_output[TModel: BaseModel](
     if not isinstance(payload, dict):
         raise ValueError("shared provider checkpoint payload is invalid")
     if payload.get("status") != "ok":
-        raise FileNotFoundError(
-            "shared provider checkpoint exists but is not reusable"
-        )
+        raise FileNotFoundError("shared provider checkpoint exists but is not reusable")
     checkpoint_id = tracer._checkpoint_id(
         operation="generate_structured",
         purpose=purpose,
@@ -2301,6 +2338,7 @@ def _replay_provider_checkpoint_if_available[TModel: BaseModel](
     prompt: str,
     purpose: str,
     response_model: type[TModel],
+    validator: Callable[[TModel], TModel] | None = None,
 ) -> TModel | None:
     try:
         restored, commitment = _provider_checkpoint_output(
@@ -2311,6 +2349,10 @@ def _replay_provider_checkpoint_if_available[TModel: BaseModel](
         )
     except FileNotFoundError:
         return None
+    try:
+        validated = validator(restored) if validator is not None else restored
+    except Exception as exc:
+        raise _CheckpointDomainValidationError(exc) from exc
     tracer = analyzer.llm
     if not isinstance(tracer, TracingLLMProvider):
         raise ValueError("authenticated checkpoint replay requires tracing")
@@ -2338,7 +2380,7 @@ def _replay_provider_checkpoint_if_available[TModel: BaseModel](
         },
         checkpoint_id=commitment["checkpoint_id"],
     )
-    return restored
+    return validated
 
 
 def _verify_provider_checkpoint_authenticity(
