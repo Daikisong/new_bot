@@ -1338,9 +1338,10 @@ class DailyAnalyzer:
     ) -> OpenWorldFirstAnalysis:
         if (
             analysis.source_cluster_ids != cluster_ids
-            or analysis.analyzed_cluster_ids != cluster_ids
             or analysis.uncovered_cluster_ids
             or analysis.analysis_batch_count != 1
+            or len(analysis.analyzed_cluster_ids) != len(cluster_ids)
+            or len(set(analysis.analyzed_cluster_ids)) != len(cluster_ids)
         ):
             raise OpenWorldCoverageError("open-world Pass 0 cluster coverage does not match the dispatched batch")
 
@@ -1360,6 +1361,21 @@ class DailyAnalyzer:
                 "open-world Pass 0 omitted both mechanisms and uncertainties for a material batch"
             )
 
+        notes = list(analysis.notes)
+        if analysis.analyzed_cluster_ids != cluster_ids:
+            model_echo_sha256 = sha256_text(
+                canonical_json(
+                    {
+                        "analyzed_cluster_ids": analysis.analyzed_cluster_ids,
+                        "required_cluster_ids": cluster_ids,
+                    }
+                )
+            )
+            notes.append(
+                "Analyzed-cluster identity is bound from the deterministic batch ledger; "
+                f"the non-authoritative model echo is committed as {model_echo_sha256}."
+            )
+
         return analysis.model_copy(
             update={
                 "run_id": analysis.run_id,
@@ -1367,10 +1383,10 @@ class DailyAnalyzer:
                 "prompt_sha256": prompt_sha256,
                 "cutoff_at": cutoff_at,
                 "event_ids": _unique_preserving_order(event_ids),
-                "source_cluster_ids": analysis.source_cluster_ids,
-                "analyzed_cluster_ids": analysis.analyzed_cluster_ids,
-                "uncovered_cluster_ids": analysis.uncovered_cluster_ids,
-                "analysis_batch_count": analysis.analysis_batch_count,
+                "source_cluster_ids": cluster_ids,
+                "analyzed_cluster_ids": cluster_ids,
+                "uncovered_cluster_ids": [],
+                "analysis_batch_count": 1,
                 "cluster_findings": analysis.cluster_findings,
                 "event_clusters": event_clusters,
                 "direct_company_events": cleaned(analysis.direct_company_events),
@@ -1382,6 +1398,7 @@ class DailyAnalyzer:
                 "potential_sectors": cleaned(analysis.potential_sectors),
                 "beneficiary_investigation_questions": cleaned(analysis.beneficiary_investigation_questions),
                 "uncertainties": uncertainties,
+                "notes": cleaned(notes),
             }
         )
 
@@ -2163,7 +2180,9 @@ class DailyAnalyzer:
         }
         if shared_current_event is not None:
             payload["shared_current_event_digest"] = shared_current_event
-            payload["required_inputs"] = list(FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V2)
+            payload["required_inputs"] = list(
+                FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V2
+            )
         else:
             payload["current_news"] = news_texts
             payload["open_world_first_analysis"] = (
@@ -4196,9 +4215,7 @@ class DailyAnalyzer:
         }
         if shared_current_event is not None:
             payload["shared_current_event_digest"] = shared_current_event
-            payload["required_inputs"] = list(
-                FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V2
-            )
+            payload["required_inputs"] = list(FINAL_SYNTHESIS_REQUIRED_INPUTS_SHARED_V2)
         else:
             payload["current_news"] = news_texts
             payload["open_world_first_analysis"] = (

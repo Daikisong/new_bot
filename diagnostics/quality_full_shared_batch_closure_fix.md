@@ -46,7 +46,7 @@ retry 0, prompt 65,087 tokens, completion 7,450 tokens의 `ok` 상태로
 ## 검증과 판정
 
 커밋은 `fd5eefe`, `6ccb394`, `90780ac`이며 원격 브랜치에 push됐다.
-`ruff`, `mypy` 135 source files, 전체 `pytest` 1,849개가 통과했다. 실제
+`ruff`, `mypy` 135 source files, 전체 `pytest` 1,851개가 통과했다. 실제
 3-case prediction과 score는 계속 진행 중이므로 predictive quality는
 `NOT_EVALUATED`, production activation은 `HOLD`다.
 
@@ -67,3 +67,28 @@ provider retry에 포함되고, 성공한 교체 응답의 checkpoint와 trace�
 중간 build 재개와 pre-seal 재개가 기존 immutable node bytes를 유지하는 회귀도 함께
 통과했다. predictive quality는 아직 `NOT_EVALUATED`, production activation은 계속
 `HOLD`다.
+
+### 실제 실패 내용
+
+원본 checkpoint와 deterministic batch ledger를 대조한 결과, source cluster ID 12개와
+`cluster_findings` 12개는 개수·값·순서가 모두 정확했다. 실패한 필드는 중복 envelope인
+`analyzed_cluster_ids` 한 항목의 마지막 문자 `d`가 빠진 것뿐이었다. 따라서 실제 의미
+coverage 누락은 없었다.
+
+정규화는 source ID와 finding ID가 정확하고, uncovered가 비어 있으며, analyzed echo의
+개수와 유일성이 배치 개수와 같을 때만 analyzed identity를 deterministic ledger로
+재결속한다. 원본 echo는
+`b20522a5852f53bcfc71413f83c6309a6197ee63db3cb9601b91a769eff6b3f0`으로
+notes에 commitment된다. finding 하나라도 빠지거나 순서가 다르면 계속 fail-closed다.
+
+### Identity drift 복구
+
+첫 수정에서 formatter가 `_map_batches`와 `_novelty_batches`의 소스 표현을 바꿔
+prompt renderer fingerprint가 `e8f07bf7…4e06`으로 달라졌다. 이 때문에 미봉인 partial
+context `SHAREDCTX-323b4abbef7f79580f10`이 생기고 첫 날짜 novelty 13회가 중복
+호출됐다. 이를 발견한 즉시 PID `59256` 트리만 중단했으며 prediction·score·production
+변경은 없었다.
+
+두 renderer 함수의 소스 표현을 원래대로 복구한 뒤 현재와 baseline의
+`prompt_renderer_sha256`는 모두 `b46b58e5…ad0a`로 일치한다. 위 partial context와
+중복 호출은 품질 점수에 사용하지 않는다.

@@ -22,6 +22,7 @@ from news_scalping_lab.contracts.quality_evaluation import (
     SharedMapReduceNode,
     SharedPreRetrievalContext,
 )
+from news_scalping_lab.inference.analyzer import DailyAnalyzer, OpenWorldCoverageError
 from news_scalping_lab.inference.event_clustering import OpenWorldClusterInput
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
@@ -53,6 +54,83 @@ def test_shared_map_batches_honor_configured_cluster_limit() -> None:
     assert [
         cluster.cluster_id for batch in batches for cluster in batch
     ] == [cluster.cluster_id for cluster in clusters]
+
+
+def test_open_world_normalization_rebinds_only_redundant_analyzed_id_echo() -> None:
+    cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    cluster_ids = ["CLUSTER-1", "CLUSTER-2"]
+    analysis = OpenWorldFirstAnalysis(
+        run_id="RUN-provider",
+        prompt_version="provider",
+        prompt_sha256="provider",
+        created_at=cutoff,
+        cutoff_at=cutoff,
+        source_cluster_ids=cluster_ids,
+        analyzed_cluster_ids=["CLUSTER-1", "CLUSTER-2-typo"],
+        uncovered_cluster_ids=[],
+        analysis_batch_count=1,
+        cluster_findings=[
+            OpenWorldClusterFinding(
+                cluster_id=cluster_id,
+                event_summary=f"summary {cluster_id}",
+                mechanisms=["current event -> beneficiary review"],
+            )
+            for cluster_id in cluster_ids
+        ],
+        event_clusters=["event cluster"],
+        mechanisms=["current event -> beneficiary review"],
+    )
+
+    normalized = DailyAnalyzer._normalize_open_world_first_analysis(
+        cast(DailyAnalyzer, SimpleNamespace()),
+        analysis,
+        news_texts=["news 1", "news 2"],
+        event_ids=["EVENT-1", "EVENT-2"],
+        cluster_ids=cluster_ids,
+        cutoff_at=cutoff,
+        prompt_sha256="a" * 64,
+    )
+
+    assert normalized.source_cluster_ids == cluster_ids
+    assert normalized.analyzed_cluster_ids == cluster_ids
+    assert [finding.cluster_id for finding in normalized.cluster_findings] == cluster_ids
+    assert any("non-authoritative model echo" in note for note in normalized.notes)
+
+
+def test_open_world_normalization_still_rejects_missing_cluster_finding() -> None:
+    cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    cluster_ids = ["CLUSTER-1", "CLUSTER-2"]
+    analysis = OpenWorldFirstAnalysis(
+        run_id="RUN-provider",
+        prompt_version="provider",
+        prompt_sha256="provider",
+        created_at=cutoff,
+        cutoff_at=cutoff,
+        source_cluster_ids=cluster_ids,
+        analyzed_cluster_ids=["CLUSTER-1", "CLUSTER-2-typo"],
+        uncovered_cluster_ids=[],
+        analysis_batch_count=1,
+        cluster_findings=[
+            OpenWorldClusterFinding(
+                cluster_id="CLUSTER-1",
+                event_summary="summary",
+                mechanisms=["current event -> beneficiary review"],
+            )
+        ],
+        event_clusters=["event cluster"],
+        mechanisms=["current event -> beneficiary review"],
+    )
+
+    with pytest.raises(OpenWorldCoverageError, match="cluster findings"):
+        DailyAnalyzer._normalize_open_world_first_analysis(
+            cast(DailyAnalyzer, SimpleNamespace()),
+            analysis,
+            news_texts=["news 1", "news 2"],
+            event_ids=["EVENT-1", "EVENT-2"],
+            cluster_ids=cluster_ids,
+            cutoff_at=cutoff,
+            prompt_sha256="a" * 64,
+        )
 
 
 def test_shared_novelty_batches_honor_configured_cluster_limit() -> None:

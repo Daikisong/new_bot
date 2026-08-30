@@ -1288,7 +1288,10 @@ def _novelty_batches(
             manifest=manifest,
             cutoff_at=cutoff_at,
         )
-        if current and (len(current) >= max_clusters or len(tentative_prompt) > max_chars):
+        if current and (
+            len(current) >= max_clusters
+            or len(tentative_prompt) > max_chars
+        ):
             batches.append(current)
             current = []
         current.append(row)
@@ -1617,7 +1620,8 @@ def _map_batches(
         tentative = [*current, cluster]
         if current and (
             len(current) >= max_clusters
-            or len(
+            or
+            len(
                 _map_prompt(
                     node_id="probe",
                     clusters=tentative,
