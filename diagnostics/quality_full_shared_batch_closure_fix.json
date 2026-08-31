@@ -79,6 +79,42 @@
     "restored_matches_baseline": true,
     "use_for_quality_score": false
   },
+  "usage_limit_interruption": {
+    "observed_at_kst": "2026-08-30T21:46:55+09:00",
+    "process_pid": 22472,
+    "process_terminal": true,
+    "provider": "codex-oauth",
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "xhigh",
+    "error_checkpoint_id": "LLMCKPT-4220c9a95859f54b",
+    "failed_purpose": "shared_open_world_reduce.level_02.batch_0002",
+    "checkpoint_status": "error",
+    "checkpoint_retries": 1,
+    "provider_message": "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 6th, 2026 10:47 AM.",
+    "retry_after_as_reported": "Sep 6th, 2026 10:47 AM",
+    "durable_progress": {
+      "first_case_shared_context_sealed": true,
+      "second_case_material_cluster_count": 1567,
+      "second_case_map_completed": 131,
+      "second_case_map_expected": 131,
+      "second_case_map_ordered_coverage_exact": true,
+      "second_case_map_unique_finding_count": 1567,
+      "second_case_reduce_level_1_completed": 9,
+      "second_case_reduce_level_1_expected": 9,
+      "second_case_reduce_level_2_completed": 1,
+      "second_case_reduce_level_2_expected": 3,
+      "second_case_shared_context_sealed": false,
+      "second_case_novelty_started": false,
+      "v0_v1_prediction_started": false,
+      "outcome_opened": false,
+      "score_created": false,
+      "production_mutation_count": 0
+    },
+    "resume_policy": "REPLAY_AUTHENTICATED_OK_CHECKPOINTS_AND_LIVE_RETRY_NON_OK_CHECKPOINT",
+    "next_live_purpose": "shared_open_world_reduce.level_02.batch_0002",
+    "quality_verdict": "NOT_EVALUATED",
+    "production_activation": "HOLD"
+  },
   "measured_new_topology": [
     {
       "trade_date": "2026-01-02",

@@ -92,3 +92,22 @@ context `SHAREDCTX-323b4abbef7f79580f10`이 생기고 첫 날짜 novelty 13회�
 두 renderer 함수의 소스 표현을 원래대로 복구한 뒤 현재와 baseline의
 `prompt_renderer_sha256`는 모두 `b46b58e5…ad0a`로 일치한다. 위 partial context와
 중복 호출은 품질 점수에 사용하지 않는다.
+
+## 사용량 한도 중단과 재개 지점
+
+2026-08-30 21:46:55 KST에 Codex OAuth provider가 사용량 한도를 반환해 PID
+`22472`가 종료됐다. 마지막 성공은
+`shared_open_world_reduce.level_02.batch_0001`의 checkpoint
+`LLMCKPT-5fab122ab539a1d1`이며, 다음 batch 2의 checkpoint
+`LLMCKPT-4220c9a95859f54b`는 `error`, retry 1로 보존됐다. provider 메시지는
+추가 사용량 구매 또는 2026-09-06 10:47 AM 이후 재시도를 안내한다.
+
+중단 시점의 durable progress는 두 번째 날짜 map 131/131, finding 1,567/1,567,
+reduce 1단계 9/9, reduce 2단계 1/3이다. 첫 날짜 shared context는 이미 봉인됐지만
+두 번째 날짜의 novelty·context seal과 모든 V0/V1 prediction·score는 아직 시작되지
+않았다. outcome open과 production mutation도 0이다.
+
+동일 코드·설정·blind selection으로 같은 명령을 재실행하면 authenticated `ok`
+checkpoint를 재생하고, non-ok인 reduce 2단계 batch 2만 live 재시도한다. 따라서
+처음부터 다시 계산하지 않는다. predictive quality는 계속 `NOT_EVALUATED`,
+production activation은 `HOLD`다.
