@@ -10,7 +10,7 @@ from news_scalping_lab.llm.base import conservative_token_upper_bound
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
-from news_scalping_lab.utils import canonical_json, read_json, sha256_text
+from news_scalping_lab.utils import canonical_json, read_json, sha256_text, write_json
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -170,9 +170,121 @@ def test_pre_retrieval_checkpoint_identity_is_shared_across_runtime_variants(
     assert v0._checkpoint_id(purpose="open_world_first_analysis.batch_0001", **common) == v1._checkpoint_id(
         purpose="open_world_first_analysis.batch_0001", **common
     )
+    assert v0._checkpoint_id(purpose="shared_open_world_reduce.level_01.batch_0001", **common) == (
+        v1._checkpoint_id(purpose="shared_open_world_reduce.level_01.batch_0001", **common)
+    )
     assert v0._checkpoint_id(purpose="candidate_expansion", **common) != (
         v1._checkpoint_id(purpose="candidate_expansion", **common)
     )
+
+
+def test_checkpoint_identity_ignores_runtime_agent_identity(tmp_path) -> None:
+    common_config = {
+        "configured_provider": "codex-oauth",
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "xhigh",
+    }
+    older = TracingLLMProvider(
+        DeterministicMockLLMProvider(),
+        trace_dir=tmp_path / "older",
+        model_config={
+            **common_config,
+            "agent_identity": {
+                "codex_cli_version": "codex-cli 0.150.1",
+                "cache_hit_count": 0,
+            },
+        },
+    )
+    newer = TracingLLMProvider(
+        DeterministicMockLLMProvider(),
+        trace_dir=tmp_path / "newer",
+        model_config={
+            **common_config,
+            "agent_identity": {
+                "codex_cli_version": "codex-cli 0.151.0",
+                "cache_hit_count": 99,
+            },
+        },
+    )
+
+    common = {
+        "operation": "generate_structured",
+        "purpose": "shared_open_world_map.batch_0001",
+        "input_payload": {"prompt_sha256": "a" * 64},
+    }
+    assert older._checkpoint_id(**common) == newer._checkpoint_id(**common)
+
+
+@pytest.mark.asyncio
+async def test_tracing_replays_legacy_checkpoint_after_agent_identity_change(tmp_path) -> None:
+    checkpoint_dir = tmp_path / "checkpoints"
+    prompt = "legacy checkpoint survives a Codex CLI update"
+    purpose = "shared_open_world_map.batch_0001"
+    old_config = {
+        "configured_provider": "codex-oauth",
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "xhigh",
+        "runtime_retrieval_variant": "legacy",
+        "agent_identity": {"codex_cli_version": "codex-cli 0.150.1"},
+    }
+    old_impl = SequencedStructuredProvider()
+    old = TracingLLMProvider(
+        old_impl,
+        trace_dir=tmp_path / "old-traces",
+        checkpoint_dir=checkpoint_dir,
+        model_config=old_config,
+    )
+    expected = await old.generate_structured(
+        prompt=prompt,
+        response_model=StructuredValue,
+        purpose=purpose,
+    )
+    input_payload = {
+        "prompt_sha256": sha256_text(prompt),
+        "prompt_chars": len(prompt),
+        "prompt_utf8_bytes": len(prompt.encode("utf-8")),
+        "prompt_tokens_counted": old.count_tokens(prompt),
+        "response_model": StructuredValue.__name__,
+    }
+    stable_path = old._checkpoint_path(
+        operation="generate_structured",
+        purpose=purpose,
+        input_payload=input_payload,
+    )
+    legacy_path = old._legacy_checkpoint_path(
+        operation="generate_structured",
+        purpose=purpose,
+        input_payload=input_payload,
+        model_config=old_config,
+    )
+    legacy_payload = read_json(stable_path)
+    legacy_payload["checkpoint_id"] = legacy_path.stem
+    write_json(legacy_path, legacy_payload)
+    stable_path.unlink()
+
+    new_impl = SequencedStructuredProvider()
+    newer = TracingLLMProvider(
+        new_impl,
+        trace_dir=tmp_path / "new-traces",
+        checkpoint_dir=checkpoint_dir,
+        model_config={
+            **old_config,
+            "runtime_retrieval_variant": "v4",
+            "agent_identity": {"codex_cli_version": "codex-cli 0.151.0"},
+        },
+    )
+    restored = await newer.generate_structured(
+        prompt=prompt,
+        response_model=StructuredValue,
+        purpose=purpose,
+    )
+
+    assert restored == expected
+    assert new_impl.structured_calls == 0
+    traces = [read_json(path) for path in (tmp_path / "new-traces").glob("TRACE-*.json")]
+    assert len(traces) == 1
+    assert traces[0]["status"] == "checkpoint_hit"
+    assert traces[0]["checkpoint_id"] == legacy_path.stem
 
 
 @pytest.mark.asyncio

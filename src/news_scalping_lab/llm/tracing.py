@@ -21,10 +21,16 @@ from news_scalping_lab.utils import (
 T = TypeVar("T", bound=BaseModel)
 U = TypeVar("U")
 TRACE_SCHEMA_VERSION = "nslab.llm_trace.v1"
-_PRE_RETRIEVAL_VARIANT_INVARIANT_PURPOSES = (
+_LEGACY_PRE_RETRIEVAL_VARIANT_INVARIANT_PURPOSES = (
     "daily_event_clustering",
     "open_world_first_analysis",
     "news_novelty_review",
+)
+_PRE_RETRIEVAL_VARIANT_INVARIANT_PURPOSES = (
+    *_LEGACY_PRE_RETRIEVAL_VARIANT_INVARIANT_PURPOSES,
+    "shared_open_world_map",
+    "shared_open_world_reduce",
+    "shared_news_novelty_review",
 )
 
 
@@ -51,6 +57,7 @@ class TracingLLMProvider:
         self.purpose_metadata = purpose_metadata or {}
         self.resume_from_checkpoints = resume_from_checkpoints
         self.max_retries = max(0, max_retries)
+        self._legacy_checkpoint_model_configs: list[dict[str, Any]] = []
         self.trace_dir.mkdir(parents=True, exist_ok=True)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
@@ -417,25 +424,13 @@ class TracingLLMProvider:
         purpose: str,
         input_payload: dict[str, Any],
     ) -> str:
-        metadata = self._metadata_for(purpose)
-        checkpoint_model_config = dict(self.model_config)
-        if _purpose_matches_any(
-            purpose,
-            _PRE_RETRIEVAL_VARIANT_INVARIANT_PURPOSES,
-        ):
-            checkpoint_model_config.pop("runtime_retrieval_variant", None)
-        return stable_id(
-            "LLMCKPT",
-            canonical_json(
-                {
-                    "operation": operation,
-                    "purpose": purpose,
-                    "input": input_payload,
-                    "model_config": checkpoint_model_config,
-                    "metadata": metadata,
-                }
-            ),
-            length=16,
+        return _checkpoint_id_from_components(
+            operation=operation,
+            purpose=purpose,
+            input_payload=input_payload,
+            model_config=self.model_config,
+            metadata=self._metadata_for(purpose),
+            semantic_identity=True,
         )
 
     def _checkpoint_path(
@@ -454,6 +449,153 @@ class TracingLLMProvider:
             + ".json"
         )
 
+    def _resolve_ok_checkpoint(
+        self,
+        *,
+        operation: str,
+        purpose: str,
+        input_payload: dict[str, Any],
+    ) -> tuple[Path, dict[str, Any]] | None:
+        primary_path = self._checkpoint_path(
+            operation=operation,
+            purpose=purpose,
+            input_payload=input_payload,
+        )
+        primary = self._read_compatible_ok_checkpoint(
+            primary_path,
+            operation=operation,
+            purpose=purpose,
+            input_payload=input_payload,
+        )
+        if primary is not None:
+            return primary_path, primary
+
+        for legacy_config in self._legacy_checkpoint_model_configs:
+            candidate_path = self._legacy_checkpoint_path(
+                operation=operation,
+                purpose=purpose,
+                input_payload=input_payload,
+                model_config=legacy_config,
+            )
+            if not candidate_path.exists():
+                continue
+            candidate = self._read_compatible_ok_checkpoint(
+                candidate_path,
+                operation=operation,
+                purpose=purpose,
+                input_payload=input_payload,
+            )
+            return (candidate_path, candidate) if candidate is not None else None
+
+        # Pre-fix checkpoints included mutable Codex CLI identity. Discover one
+        # compatible frozen config, then derive all remaining legacy paths from it.
+        for seed_path in sorted(
+            self.checkpoint_dir.glob("LLMCKPT-*.json"),
+            key=lambda path: (path.stat().st_size, path.name),
+        ):
+            try:
+                seed = read_json(seed_path)
+            except (OSError, ValueError):
+                continue
+            seed_config = seed.get("model_config") if isinstance(seed, dict) else None
+            if not isinstance(seed_config, dict) or not _checkpoint_model_configs_match(
+                seed_config,
+                self.model_config,
+                purpose=purpose,
+            ):
+                continue
+            candidate_path = self._legacy_checkpoint_path(
+                operation=operation,
+                purpose=purpose,
+                input_payload=input_payload,
+                model_config=seed_config,
+            )
+            if not candidate_path.exists():
+                continue
+            self._legacy_checkpoint_model_configs.append(dict(seed_config))
+            candidate = self._read_compatible_ok_checkpoint(
+                candidate_path,
+                operation=operation,
+                purpose=purpose,
+                input_payload=input_payload,
+            )
+            return (candidate_path, candidate) if candidate is not None else None
+        return None
+
+    def _legacy_checkpoint_path(
+        self,
+        *,
+        operation: str,
+        purpose: str,
+        input_payload: dict[str, Any],
+        model_config: dict[str, Any],
+    ) -> Path:
+        checkpoint_id = _checkpoint_id_from_components(
+            operation=operation,
+            purpose=purpose,
+            input_payload=input_payload,
+            model_config=model_config,
+            metadata=self._metadata_for(purpose),
+            semantic_identity=False,
+        )
+        return self.checkpoint_dir / f"{checkpoint_id}.json"
+
+    def _read_compatible_ok_checkpoint(
+        self,
+        path: Path,
+        *,
+        operation: str,
+        purpose: str,
+        input_payload: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if not path.is_file():
+            return None
+        payload = read_json(path)
+        if not isinstance(payload, dict) or payload.get("status") != "ok":
+            return None
+        stored_config = payload.get("model_config")
+        stored_metadata = payload.get("metadata")
+        output = payload.get("output")
+        if not isinstance(stored_config, dict) or not isinstance(stored_metadata, dict):
+            return None
+        valid_checkpoint_ids = {
+            _checkpoint_id_from_components(
+                operation=operation,
+                purpose=purpose,
+                input_payload=input_payload,
+                model_config=stored_config,
+                metadata=stored_metadata,
+                semantic_identity=True,
+            ),
+            _checkpoint_id_from_components(
+                operation=operation,
+                purpose=purpose,
+                input_payload=input_payload,
+                model_config=stored_config,
+                metadata=stored_metadata,
+                semantic_identity=False,
+            ),
+        }
+        if (
+            payload.get("schema_version") != "nslab.llm_checkpoint.v1"
+            or payload.get("operation") != operation
+            or payload.get("purpose") != purpose
+            or payload.get("input") != input_payload
+            or payload.get("input_sha256") != sha256_text(canonical_json(input_payload))
+            or payload.get("metadata") != self._metadata_for(purpose)
+            or payload.get("checkpoint_id") not in valid_checkpoint_ids
+            or path.stem != payload.get("checkpoint_id")
+            or not _checkpoint_model_configs_match(
+                stored_config,
+                self.model_config,
+                purpose=purpose,
+            )
+            or payload.get("output_sha256")
+            != (sha256_text(canonical_json(output)) if output is not None else None)
+        ):
+            return None
+        return payload
+
     def _read_ok_checkpoint(
         self,
         *,
@@ -463,17 +605,12 @@ class TracingLLMProvider:
     ) -> dict[str, Any] | None:
         if not self.resume_from_checkpoints:
             return None
-        path = self._checkpoint_path(
+        resolved = self._resolve_ok_checkpoint(
             operation=operation,
             purpose=purpose,
             input_payload=input_payload,
         )
-        if not path.exists():
-            return None
-        payload = read_json(path)
-        if not isinstance(payload, dict) or payload.get("status") != "ok":
-            return None
-        return payload
+        return resolved[1] if resolved is not None else None
 
     def _write_checkpoint(
         self,
@@ -525,7 +662,70 @@ class TracingLLMProvider:
 
 
 def _purpose_matches_any(purpose: str, prefixes: tuple[str, ...]) -> bool:
-    return any(purpose == prefix or purpose.startswith(prefix + ".batch_") for prefix in prefixes)
+    return any(purpose == prefix or purpose.startswith(prefix + ".") for prefix in prefixes)
+
+
+def _checkpoint_model_config_identity(
+    model_config: dict[str, Any],
+    *,
+    purpose: str,
+    semantic_identity: bool,
+) -> dict[str, Any]:
+    checkpoint_model_config = dict(model_config)
+    invariant_purposes: tuple[str, ...]
+    if semantic_identity:
+        checkpoint_model_config.pop("agent_identity", None)
+        invariant_purposes = _PRE_RETRIEVAL_VARIANT_INVARIANT_PURPOSES
+    else:
+        invariant_purposes = _LEGACY_PRE_RETRIEVAL_VARIANT_INVARIANT_PURPOSES
+    if _purpose_matches_any(purpose, invariant_purposes):
+        checkpoint_model_config.pop("runtime_retrieval_variant", None)
+    return checkpoint_model_config
+
+
+def _checkpoint_model_configs_match(
+    left: dict[str, Any],
+    right: dict[str, Any],
+    *,
+    purpose: str,
+) -> bool:
+    return _checkpoint_model_config_identity(
+        left,
+        purpose=purpose,
+        semantic_identity=True,
+    ) == _checkpoint_model_config_identity(
+        right,
+        purpose=purpose,
+        semantic_identity=True,
+    )
+
+
+def _checkpoint_id_from_components(
+    *,
+    operation: str,
+    purpose: str,
+    input_payload: dict[str, Any],
+    model_config: dict[str, Any],
+    metadata: dict[str, Any],
+    semantic_identity: bool,
+) -> str:
+    return stable_id(
+        "LLMCKPT",
+        canonical_json(
+            {
+                "operation": operation,
+                "purpose": purpose,
+                "input": input_payload,
+                "model_config": _checkpoint_model_config_identity(
+                    model_config,
+                    purpose=purpose,
+                    semantic_identity=semantic_identity,
+                ),
+                "metadata": metadata,
+            }
+        ),
+        length=16,
+    )
 
 
 def _estimate_tokens(text: str) -> int:

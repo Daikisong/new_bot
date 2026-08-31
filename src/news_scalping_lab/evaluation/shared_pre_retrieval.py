@@ -2272,11 +2272,16 @@ def _provider_checkpoint_output[TModel: BaseModel](
         "prompt_tokens_counted": tracer.count_tokens(prompt),
         "response_model": response_model.__name__,
     }
-    checkpoint_path = tracer._checkpoint_path(
+    resolved_checkpoint = tracer._resolve_ok_checkpoint(
         operation="generate_structured",
         purpose=purpose,
         input_payload=input_payload,
-    ).resolve()
+    )
+    if resolved_checkpoint is None:
+        raise FileNotFoundError(
+            "shared provider checkpoint is missing or not reusable; verification will not make a live OAuth call"
+        )
+    checkpoint_path = resolved_checkpoint[0].resolve()
     checkpoint_root = tracer.checkpoint_dir.resolve()
     project_root = analyzer.root.resolve()
     try:
@@ -2286,19 +2291,13 @@ def _provider_checkpoint_output[TModel: BaseModel](
         raise ValueError("shared provider checkpoint escapes the independent checkpoint store") from exc
     if "shared_pre_retrieval" in checkpoint_path.parts:
         raise ValueError("shared provider checkpoint cannot live inside the shared package")
-    if not checkpoint_path.is_file():
-        raise FileNotFoundError("shared provider checkpoint is missing; verification will not make a live OAuth call")
     artifact = _read_blind_artifact(checkpoint_path)
     payload = _blind_json_payload(artifact)
     if not isinstance(payload, dict):
         raise ValueError("shared provider checkpoint payload is invalid")
     if payload.get("status") != "ok":
         raise FileNotFoundError("shared provider checkpoint exists but is not reusable")
-    checkpoint_id = tracer._checkpoint_id(
-        operation="generate_structured",
-        purpose=purpose,
-        input_payload=input_payload,
-    )
+    checkpoint_id = payload.get("checkpoint_id")
     output = payload.get("output")
     output_sha256 = sha256_text(canonical_json(output))
     token_usage = payload.get("token_usage")
@@ -2306,7 +2305,8 @@ def _provider_checkpoint_output[TModel: BaseModel](
     completion_tokens = token_usage.get("completion_tokens_estimate") if isinstance(token_usage, dict) else None
     if (
         payload.get("schema_version") != "nslab.llm_checkpoint.v1"
-        or payload.get("checkpoint_id") != checkpoint_id
+        or not isinstance(checkpoint_id, str)
+        or not checkpoint_id
         or checkpoint_path.stem != checkpoint_id
         or payload.get("operation") != "generate_structured"
         or payload.get("purpose") != purpose
