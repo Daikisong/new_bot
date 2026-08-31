@@ -1,0 +1,110 @@
+{
+  "schema_version": "nslab.quality_full_interruption_anchor.v1",
+  "anchored_at_kst": "2026-08-31T14:05:58.330655+09:00",
+  "repository_commit": "764006c",
+  "branch": "codex/quality-full-pr126",
+  "safe_selection_id": "QSEL-19b3c80ba392db8564c9",
+  "selection": {
+    "artifact_path": "runs/semantic_brain_upgrade/quality_full/selections/QSEL-19b3c80ba392db8564c9/blind_runtime_selection.json",
+    "sha256": "bfcc21e433ab36cf457254f7587f7fb71d2a12e4a332a12c0fead0b0554d3f9c",
+    "size_bytes": 3929
+  },
+  "first_case": {
+    "context_id": "SHAREDCTX-e1223be1dff5739d872c",
+    "sealed": true,
+    "manifest_path": "runs/semantic_brain_upgrade/quality_full/shared_pre_retrieval/SHAREDCTX-e1223be1dff5739d872c/shared_pre_retrieval_context_manifest.json",
+    "manifest_sha256": "a535e7bf624ce1b5e5693ece53a13c08db8827c17f334d5be22cb41e2b5f3822",
+    "manifest_size_bytes": 1836
+  },
+  "second_case": {
+    "context_id": "SHAREDCTX-43526498ebe9339063b4",
+    "sealed": false,
+    "material_cluster_count": 1567,
+    "input_artifact_count": 5,
+    "input_artifact_root_sha256": "01cb01d941a04a229d74c7a1d561822fce9a83f27c31c223c41dcc8b2dfd973f",
+    "input_artifacts": [
+      {
+        "path": "event_cluster_capsules.jsonl",
+        "sha256": "6c6a6c66dbcc8885ad7a7d44a92c6596e1d8b4702e729594a5077130a4f0c64c",
+        "size_bytes": 10587576
+      },
+      {
+        "path": "event_cluster_manifest.json",
+        "sha256": "3c171742ae672bb15b2d3d7eeaf3895a518a5274f48bb003ca770ebf2e41e8f6",
+        "size_bytes": 808449
+      },
+      {
+        "path": "event_clustering_result.json",
+        "sha256": "dc5957b7bdab63fb45d58137721b0d1549d1bcdf7c6f2f1c12abbf66c37301c0",
+        "size_bytes": 7266157
+      },
+      {
+        "path": "news_coverage_manifest.json",
+        "sha256": "49ddc7cdf471ce926834fa13a3ab2bad2d7eab908a01ba4b42f654ac04a43d1f",
+        "size_bytes": 426148
+      },
+      {
+        "path": "row_disposition_ledger.jsonl",
+        "sha256": "9ce464cd3700e04f56cb8c40eba073949dad33274ca41937043fb3e226404a41",
+        "size_bytes": 872801
+      }
+    ],
+    "map": {
+      "completed_count": 131,
+      "expected_count": 131,
+      "artifact_root_sha256": "471a7f04154a67e6f6ff9398db877c8840fae7ab6c7d0605ee7380169c3ca0e4",
+      "total_size_bytes": 3648096,
+      "finding_count": 1567,
+      "unique_finding_count": 1567,
+      "ordered_coverage_exact": true
+    },
+    "reduce": {
+      "completed_node_count": 10,
+      "level_1_completed": 9,
+      "level_1_expected": 9,
+      "level_2_completed": 1,
+      "level_2_expected": 3,
+      "artifact_root_sha256": "98f66314c5f2634cae96ab1067a6964bf15190ea31b1c947e0392a4b2c1ac20e",
+      "total_size_bytes": 416734
+    },
+    "novelty_started": false
+  },
+  "checkpoint_boundary": {
+    "last_ok": {
+      "checkpoint_id": "LLMCKPT-5fab122ab539a1d1",
+      "purpose": "shared_open_world_reduce.level_02.batch_0001",
+      "sha256": "94d66bb713f2d1d5fbe6f99b40d005572f8b465375cd5b2450ef66276e05d800",
+      "size_bytes": 57006
+    },
+    "failed": {
+      "checkpoint_id": "LLMCKPT-4220c9a95859f54b",
+      "purpose": "shared_open_world_reduce.level_02.batch_0002",
+      "status": "error",
+      "retries": 1,
+      "sha256": "56d09727a65012dc2cd82e447e684662653abd7aed68089e35bff379f1a7f32e",
+      "size_bytes": 2715
+    },
+    "next_live_purpose": "shared_open_world_reduce.level_02.batch_0002"
+  },
+  "process_log": {
+    "path": "runs/semantic_brain_upgrade/quality_full/process_logs/predict-20260830-152742.stderr.log",
+    "sha256": "1408eabe8e15c821f71f7a925f7fca1284b5c5450a328ca942d4c348903944d2",
+    "size_bytes": 350
+  },
+  "root_construction": {
+    "algorithm": "SHA256_CANONICAL_JSON_SORTED_ARTIFACT_ROWS",
+    "row_fields": [
+      "path",
+      "sha256",
+      "size_bytes"
+    ],
+    "path_order": "ASCENDING_POSIX_RELATIVE_PATH",
+    "canonical_json": "UTF8_SORT_KEYS_NO_WHITESPACE"
+  },
+  "prediction_started": false,
+  "outcome_opened": false,
+  "score_created": false,
+  "production_mutation_count": 0,
+  "quality_verdict": "NOT_EVALUATED",
+  "production_activation": "HOLD"
+}
