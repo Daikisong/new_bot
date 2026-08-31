@@ -20,6 +20,7 @@ from news_scalping_lab.contracts.models import (
 from news_scalping_lab.contracts.quality_evaluation import (
     QualityArtifactReference,
     SharedMapReduceNode,
+    SharedOpenWorldReduceOutput,
     SharedPreRetrievalContext,
 )
 from news_scalping_lab.inference.analyzer import DailyAnalyzer, OpenWorldCoverageError
@@ -163,6 +164,149 @@ def test_shared_novelty_batches_honor_configured_cluster_limit() -> None:
     assert [row["cluster_id"] for batch in batches for row in batch] == [
         row["cluster_id"] for row in rows
     ]
+
+
+def _reduce_state(
+    node_id: str,
+    *,
+    covered_cluster_ids: list[str],
+    semantic_text: str,
+) -> shared_module._NodeState:
+    child_node_id = f"CHILD-{node_id}"
+    output = SharedOpenWorldReduceOutput(
+        node_id=node_id,
+        child_node_ids=[child_node_id],
+        covered_cluster_ids=covered_cluster_ids,
+        mechanisms=[semantic_text],
+        uncertainties=[f"uncertainty {semantic_text}"],
+    )
+    contract = SharedMapReduceNode(
+        node_id=node_id,
+        level=3,
+        kind="REDUCE",
+        child_node_ids=[child_node_id],
+        covered_cluster_ids=covered_cluster_ids,
+        prompt_sha256="a" * 64,
+        output=QualityArtifactReference(
+            artifact_path=f"runs/{node_id}.json",
+            sha256="b" * 64,
+        ),
+        prompt_tokens=1,
+        completion_tokens=1,
+        checkpoint_hit=False,
+        live_call_count=1,
+    )
+    return shared_module._NodeState(contract=contract, output=output)
+
+
+def test_reduce_overflow_deduplicates_only_coverage_ids() -> None:
+    settings = Settings()
+    cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    states = [
+        _reduce_state(
+            "NODE-1",
+            covered_cluster_ids=[f"CLUSTER-A-{index:04d}" for index in range(250)],
+            semantic_text="alpha mechanism " * 300,
+        ),
+        _reduce_state(
+            "NODE-2",
+            covered_cluster_ids=[f"CLUSTER-B-{index:04d}" for index in range(250)],
+            semantic_text="beta mechanism " * 300,
+        ),
+    ]
+    primary = shared_module._reduce_prompt(
+        node_id="probe",
+        children=states,
+        cutoff_at=cutoff,
+    )
+    compact = shared_module._compact_reduce_prompt(
+        node_id="probe",
+        children=states,
+        cutoff_at=cutoff,
+    )
+    assert len(compact) < len(primary)
+    assert "alpha mechanism" in compact
+    assert "beta mechanism" in compact
+    assert all(cluster_id in compact for state in states for cluster_id in state.contract.covered_cluster_ids)
+
+    settings.limits.open_world_max_prompt_chars = (len(primary) + len(compact)) // 2
+    batches, compact_coverage, semantic_compaction = (
+        shared_module._planned_reduce_batches(
+            SimpleNamespace(settings=settings),
+            states=states,
+            level=4,
+            cutoff_at=cutoff,
+        )
+    )
+
+    assert batches == [states]
+    assert compact_coverage is True
+    assert semantic_compaction is False
+
+
+def test_reduce_overflow_uses_strict_single_child_compaction_when_needed() -> None:
+    settings = Settings()
+    cutoff = datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST)
+    states = [
+        _reduce_state(
+            "NODE-1",
+            covered_cluster_ids=[f"CLUSTER-A-{index:04d}" for index in range(40)],
+            semantic_text="alpha semantic detail " * 900,
+        ),
+        _reduce_state(
+            "NODE-2",
+            covered_cluster_ids=[f"CLUSTER-B-{index:04d}" for index in range(40)],
+            semantic_text="beta semantic detail " * 900,
+        ),
+    ]
+    pair_chars = len(
+        shared_module._compact_reduce_prompt(
+            node_id="probe",
+            children=states,
+            cutoff_at=cutoff,
+        )
+    )
+    singleton_chars = max(
+        len(
+            shared_module._planned_reduce_prompt(
+                node_id="probe",
+                children=[state],
+                cutoff_at=cutoff,
+                compact_coverage=True,
+                semantic_compaction_limit=(
+                    shared_module._reduce_output_semantic_chars(state.output)
+                ),
+            )
+        )
+        for state in states
+    )
+    assert singleton_chars < pair_chars
+    settings.limits.open_world_max_prompt_chars = (
+        singleton_chars + pair_chars
+    ) // 2
+
+    batches, compact_coverage, semantic_compaction = (
+        shared_module._planned_reduce_batches(
+            SimpleNamespace(settings=settings),
+            states=states,
+            level=4,
+            cutoff_at=cutoff,
+        )
+    )
+    compaction_prompt = shared_module._planned_reduce_prompt(
+        node_id="NODE-COMPACT",
+        children=batches[0],
+        cutoff_at=cutoff,
+        compact_coverage=compact_coverage,
+        semantic_compaction_limit=(
+            shared_module._reduce_output_semantic_chars(batches[0][0].output)
+        ),
+    )
+
+    assert batches == [[states[0]], [states[1]]]
+    assert compact_coverage is True
+    assert semantic_compaction is True
+    assert "STRICT_SEMANTIC_SHRINK.v1" in compaction_prompt
 
 
 def test_shared_replay_skips_error_checkpoint_for_live_retry(

@@ -1359,7 +1359,7 @@ async def _run_map_reduce(
     level = 1
     while len(states) > 1:
         next_states: list[_NodeState] = []
-        batches = _reduce_batches(
+        batches, compact_coverage, semantic_compaction = _planned_reduce_batches(
             analyzer,
             states=states,
             level=level,
@@ -1377,10 +1377,17 @@ async def _run_map_reduce(
                 canonical_json([level, child_ids]),
                 length=16,
             )
-            prompt = _reduce_prompt(
+            semantic_compaction_limit = (
+                _reduce_output_semantic_chars(children[0].output)
+                if semantic_compaction
+                else None
+            )
+            prompt = _planned_reduce_prompt(
                 node_id=node_id,
                 children=children,
                 cutoff_at=cutoff_at,
+                compact_coverage=compact_coverage,
+                semantic_compaction_limit=semantic_compaction_limit,
             )
             reduce_output, receipt = await _reduce_call(
                 analyzer,
@@ -1389,6 +1396,7 @@ async def _run_map_reduce(
                 node_id=node_id,
                 child_node_ids=child_ids,
                 covered_cluster_ids=covered_cluster_ids,
+                semantic_compaction_limit=semantic_compaction_limit,
             )
             output_path = output_dir / "map_reduce" / f"{node_id}.json"
             _write_immutable_json(
@@ -1410,7 +1418,9 @@ async def _run_map_reduce(
             )
             next_states.append(_NodeState(contract=contract, output=reduce_output))
             all_contracts.append(contract)
-        if len(next_states) >= len(states):
+        if len(next_states) > len(states) or (
+            len(next_states) == len(states) and not semantic_compaction
+        ):
             raise OpenWorldCoverageError("shared reduce tree did not reduce the child population")
         states = next_states
         level += 1
@@ -1553,19 +1563,33 @@ async def _reduce_call(
     node_id: str,
     child_node_ids: list[str],
     covered_cluster_ids: list[str],
+    semantic_compaction_limit: int | None = None,
 ) -> tuple[SharedOpenWorldReduceOutput, _CallReceipt]:
     before = _trace_paths(analyzer.settings)
+
+    def validate(candidate: SharedOpenWorldReduceOutput) -> SharedOpenWorldReduceOutput:
+        normalized = _normalize_reduce_output(
+            candidate,
+            node_id=node_id,
+            child_node_ids=child_node_ids,
+            covered_cluster_ids=covered_cluster_ids,
+        )
+        if (
+            semantic_compaction_limit is not None
+            and _reduce_output_semantic_chars(normalized)
+            >= semantic_compaction_limit
+        ):
+            raise OpenWorldCoverageError(
+                "single-child reduce compaction did not shrink the semantic projection"
+            )
+        return normalized
+
     output = await _generate_validated_structured(
         analyzer,
         prompt=prompt,
         response_model=SharedOpenWorldReduceOutput,
         purpose=purpose,
-        validator=lambda candidate: _normalize_reduce_output(
-            candidate,
-            node_id=node_id,
-            child_node_ids=child_node_ids,
-            covered_cluster_ids=covered_cluster_ids,
-        ),
+        validator=validate,
     )
     trace = _single_new_trace(analyzer.settings, before=before, purpose=purpose)
     return output, _call_receipt(trace)
@@ -1668,6 +1692,214 @@ def _reduce_batches(
     if any(len(batch) == 1 for batch in batches) and len(batches) == len(states):
         raise OpenWorldCoverageError("shared reduce summaries cannot fit a reducing batch")
     return batches
+
+
+def _planned_reduce_batches(
+    analyzer: DailyAnalyzer,
+    *,
+    states: list[_NodeState],
+    level: int,
+    cutoff_at: datetime,
+) -> tuple[list[list[_NodeState]], bool, bool]:
+    try:
+        return (
+            _reduce_batches(
+                analyzer,
+                states=states,
+                level=level,
+                cutoff_at=cutoff_at,
+            ),
+            False,
+            False,
+        )
+    except OpenWorldCoverageError as exc:
+        if str(exc) != "shared reduce summaries cannot fit a reducing batch":
+            raise
+    compact_batches = _compact_reduce_batches(
+        analyzer,
+        states=states,
+        level=level,
+        cutoff_at=cutoff_at,
+    )
+    semantic_compaction = len(compact_batches) == len(states)
+    if semantic_compaction:
+        max_chars = max(1, analyzer.settings.limits.open_world_max_prompt_chars)
+        for children in compact_batches:
+            child_ids = [child.contract.node_id for child in children]
+            node_id = stable_id(
+                "OWREDUCE",
+                canonical_json([level, child_ids]),
+                length=16,
+            )
+            prompt = _planned_reduce_prompt(
+                node_id=node_id,
+                children=children,
+                cutoff_at=cutoff_at,
+                compact_coverage=True,
+                semantic_compaction_limit=(
+                    _reduce_output_semantic_chars(children[0].output)
+                ),
+            )
+            if len(prompt) > max_chars:
+                raise OpenWorldCoverageError(
+                    "one shared reduce semantic summary exceeds the compact prompt budget"
+                )
+    return compact_batches, True, semantic_compaction
+
+
+def _compact_reduce_batches(
+    analyzer: DailyAnalyzer,
+    *,
+    states: list[_NodeState],
+    level: int,
+    cutoff_at: datetime,
+) -> list[list[_NodeState]]:
+    max_chars = max(1, analyzer.settings.limits.open_world_max_prompt_chars)
+    batches: list[list[_NodeState]] = []
+    current: list[_NodeState] = []
+    for state in states:
+        tentative = [*current, state]
+        prompt_chars = len(
+            _compact_reduce_prompt(
+                node_id=f"probe-{level}",
+                children=tentative,
+                cutoff_at=cutoff_at,
+            )
+        )
+        if current and prompt_chars > max_chars:
+            batches.append(current)
+            current = []
+        current.append(state)
+    if current:
+        batches.append(current)
+    if [state.contract.node_id for batch in batches for state in batch] != [
+        state.contract.node_id for state in states
+    ]:
+        raise OpenWorldCoverageError("compact shared reduce batching changed child coverage")
+    return batches
+
+
+def _planned_reduce_prompt(
+    *,
+    node_id: str,
+    children: list[_NodeState],
+    cutoff_at: datetime,
+    compact_coverage: bool,
+    semantic_compaction_limit: int | None,
+) -> str:
+    prompt = (
+        _compact_reduce_prompt(
+            node_id=node_id,
+            children=children,
+            cutoff_at=cutoff_at,
+        )
+        if compact_coverage
+        else _reduce_prompt(
+            node_id=node_id,
+            children=children,
+            cutoff_at=cutoff_at,
+        )
+    )
+    if semantic_compaction_limit is None:
+        return prompt
+    compaction_contract = {
+        "policy": "STRICT_SEMANTIC_SHRINK.v1",
+        "input_semantic_chars": semantic_compaction_limit,
+        "requirements": [
+            "read the complete child semantic projection",
+            "deduplicate repeated wording aggressively",
+            (
+                "preserve mechanisms, contradictions, uncertainties, beneficiary "
+                "paths, and investigation questions"
+            ),
+            "do not repeat administrative coverage notes",
+            (
+                "return a semantic projection strictly shorter than "
+                "input_semantic_chars"
+            ),
+        ],
+    }
+    return (
+        f"{prompt}\n---SINGLE_CHILD_SEMANTIC_COMPACTION_CONTRACT---\n"
+        f"{canonical_json(compaction_contract)}"
+    )
+
+
+def _compact_reduce_prompt(
+    *,
+    node_id: str,
+    children: list[_NodeState],
+    cutoff_at: datetime,
+) -> str:
+    required_cluster_ids = [
+        cluster_id
+        for child in children
+        for cluster_id in child.contract.covered_cluster_ids
+    ]
+    payload = {
+        "schema": "nslab.shared_open_world_reduce.coverage_deduplicated.v1",
+        "prompt_version": SHARED_REDUCE_PROMPT_VERSION,
+        "node_id": node_id,
+        "cutoff_at": cutoff_at.isoformat(),
+        "required_child_node_ids": [child.contract.node_id for child in children],
+        "required_cluster_ids": required_cluster_ids,
+        "children": [_compact_reduction_projection(child) for child in children],
+        "coverage_projection_policy": (
+            "EXACT_TOP_LEVEL_IDS_WITH_ORDERED_CHILD_COUNT_AND_ROOT.v1"
+        ),
+        "requirements": [
+            "preserve every child_node_id and covered cluster ID in order",
+            "read every semantic field from every child without first-N selection",
+            "synthesize mechanisms without dropping contradiction or uncertainty",
+            "do not introduce memory, outcomes, or cutoff-after evidence",
+        ],
+    }
+    return (
+        "Reduce the child open-world summaries into SharedOpenWorldReduceOutput. "
+        "Return node_id, child_node_ids, and covered_cluster_ids exactly as required. "
+        "Each child coverage list is represented once by its ordered count/root because "
+        "the complete ordered IDs are already present in required_cluster_ids; no semantic "
+        "child content is omitted. This is a complete tree reduction, not a first-N summary.\n"
+        "---SHARED_OPEN_WORLD_REDUCE_COVERAGE_DEDUPLICATED_PAYLOAD---\n"
+        f"{canonical_json(payload)}"
+    )
+
+
+def _compact_reduction_projection(state: _NodeState) -> dict[str, Any]:
+    projection = _reduction_projection(state)
+    covered_cluster_ids = list(state.contract.covered_cluster_ids)
+    projection.pop("covered_cluster_ids", None)
+    projection["covered_cluster_count"] = len(covered_cluster_ids)
+    projection["covered_cluster_root_sha256"] = sha256_text(
+        canonical_json(covered_cluster_ids)
+    )
+    return projection
+
+
+def _reduce_output_semantic_chars(
+    output: OpenWorldFirstAnalysis | SharedOpenWorldReduceOutput,
+) -> int:
+    return len(
+        canonical_json(
+            {
+                "event_clusters": output.event_clusters,
+                "direct_company_events": output.direct_company_events,
+                "policy_industry_events": output.policy_industry_events,
+                "mechanisms": output.mechanisms,
+                "beneficiary_transmission_paths": (
+                    output.beneficiary_transmission_paths
+                ),
+                "narrative_conversion_points": output.narrative_conversion_points,
+                "direct_candidates": output.direct_candidates,
+                "potential_sectors": output.potential_sectors,
+                "beneficiary_investigation_questions": (
+                    output.beneficiary_investigation_questions
+                ),
+                "uncertainties": output.uncertainties,
+                "notes": output.notes,
+            }
+        )
+    )
 
 
 def _map_prompt(
@@ -2456,7 +2688,7 @@ def _verify_provider_checkpoint_authenticity(
     level = 1
     while len(states) > 1:
         next_states: list[_NodeState] = []
-        batches = _reduce_batches(
+        batches, compact_coverage, semantic_compaction = _planned_reduce_batches(
             analyzer,
             states=states,
             level=level,
@@ -2476,10 +2708,17 @@ def _verify_provider_checkpoint_authenticity(
                 canonical_json([level, child_ids]),
                 length=16,
             )
-            prompt = _reduce_prompt(
+            semantic_compaction_limit = (
+                _reduce_output_semantic_chars(children[0].output)
+                if semantic_compaction
+                else None
+            )
+            prompt = _planned_reduce_prompt(
                 node_id=expected_node_id,
                 children=children,
                 cutoff_at=cutoff_at,
+                compact_coverage=compact_coverage,
+                semantic_compaction_limit=semantic_compaction_limit,
             )
             if (
                 node.node_id != expected_node_id
@@ -2501,6 +2740,14 @@ def _verify_provider_checkpoint_authenticity(
                 child_node_ids=child_ids,
                 covered_cluster_ids=covered_cluster_ids,
             )
+            if (
+                semantic_compaction_limit is not None
+                and _reduce_output_semantic_chars(expected_reduce_output)
+                >= semantic_compaction_limit
+            ):
+                raise ValueError(
+                    "shared provider checkpoint single-child compaction did not shrink"
+                )
             actual_state = node_states.get(node.node_id)
             if actual_state is None or actual_state.output.model_dump(mode="json") != expected_reduce_output.model_dump(
                 mode="json"
