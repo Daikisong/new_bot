@@ -11,7 +11,7 @@
     "world_model": 482
   },
   "chunked_representative_record_count": 203,
-  "compiler_version": "nslab.offline_semantic_brain.compiler.v4",
+  "compiler_version": "nslab.offline_semantic_brain.compiler.v5",
   "dynamic_representative_count": 181979,
   "embedding_dimensions": 384,
   "embedding_identity": "local_production:sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2@e8f8c211226b894fcb81acc59f3b34ba3efd5f42:sha256:e0da458bb4f008d3c9fbf6dbff0fe0a482c025dfd7b759ef0294fb978d9eeca0:l2",
@@ -27,7 +27,7 @@
   "model": "gpt-5.6-sol",
   "offline_max_concurrency": 4,
   "oversized_semantic_unit_count": 38,
-  "plan_id": "OFFLINE-PLAN-8dcbee09dee3fb9fe7ca",
+  "plan_id": "OFFLINE-PLAN-149450301220655b94fe",
   "planning_llm_call_count": 0,
   "production_activated": false,
   "provider": "codex-oauth",
@@ -52,5 +52,5 @@
   "source_project": "C:/Users/eorb9/projects/news_bot/production/staging/P9IMPORT-3D770A7DD72457C97098/project",
   "split_max_cosine_distance": 0.55,
   "split_p90_cosine_distance": 0.28,
-  "wall_clock_seconds": 965.611139
+  "wall_clock_seconds": 1060.072602
 }
