@@ -1,0 +1,228 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "brain_version": {
+      "title": "Brain Version",
+      "type": "string"
+    },
+    "category_root_count": {
+      "title": "Category Root Count",
+      "type": "integer"
+    },
+    "child_omission_count": {
+      "title": "Child Omission Count",
+      "type": "integer"
+    },
+    "chunked_representative_record_count": {
+      "title": "Chunked Representative Record Count",
+      "type": "integer"
+    },
+    "compile_id": {
+      "title": "Compile Id",
+      "type": "string"
+    },
+    "completed_at": {
+      "format": "date-time",
+      "title": "Completed At",
+      "type": "string"
+    },
+    "embedding_identity": {
+      "title": "Embedding Identity",
+      "type": "string"
+    },
+    "embedding_reused": {
+      "title": "Embedding Reused",
+      "type": "boolean"
+    },
+    "first_n_shortcut_used": {
+      "title": "First N Shortcut Used",
+      "type": "boolean"
+    },
+    "full_population_embedding_geometry": {
+      "title": "Full Population Embedding Geometry",
+      "type": "boolean"
+    },
+    "import_reused": {
+      "title": "Import Reused",
+      "type": "boolean"
+    },
+    "leaf_node_count": {
+      "title": "Leaf Node Count",
+      "type": "integer"
+    },
+    "llm_call_count": {
+      "title": "Llm Call Count",
+      "type": "integer"
+    },
+    "long_payload_chunk_count": {
+      "title": "Long Payload Chunk Count",
+      "type": "integer"
+    },
+    "long_payload_chunk_map_call_count": {
+      "title": "Long Payload Chunk Map Call Count",
+      "type": "integer"
+    },
+    "max_concurrency": {
+      "minimum": 1,
+      "title": "Max Concurrency",
+      "type": "integer"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "prompt_token_count": {
+      "title": "Prompt Token Count",
+      "type": "integer"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "reasoning_effort": {
+      "title": "Reasoning Effort",
+      "type": "string"
+    },
+    "recompiled_reduce_node_count": {
+      "default": 0,
+      "title": "Recompiled Reduce Node Count",
+      "type": "integer"
+    },
+    "recompiled_semantic_capsule_count": {
+      "default": 0,
+      "title": "Recompiled Semantic Capsule Count",
+      "type": "integer"
+    },
+    "record_corpus_root": {
+      "title": "Record Corpus Root",
+      "type": "string"
+    },
+    "record_count": {
+      "title": "Record Count",
+      "type": "integer"
+    },
+    "reduce_node_count": {
+      "title": "Reduce Node Count",
+      "type": "integer"
+    },
+    "representative_payload_char_count": {
+      "title": "Representative Payload Char Count",
+      "type": "integer"
+    },
+    "representative_payload_full_read_count": {
+      "title": "Representative Payload Full Read Count",
+      "type": "integer"
+    },
+    "representative_payload_truncated_count": {
+      "title": "Representative Payload Truncated Count",
+      "type": "integer"
+    },
+    "reused_reduce_node_count": {
+      "default": 0,
+      "title": "Reused Reduce Node Count",
+      "type": "integer"
+    },
+    "reused_semantic_capsule_count": {
+      "default": 0,
+      "title": "Reused Semantic Capsule Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "nslab.offline_compile_manifest.v2",
+      "default": "nslab.offline_compile_manifest.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "semantic_splitter_version": {
+      "title": "Semantic Splitter Version",
+      "type": "string"
+    },
+    "semantic_unit_count": {
+      "title": "Semantic Unit Count",
+      "type": "integer"
+    },
+    "silent_truncation_count": {
+      "title": "Silent Truncation Count",
+      "type": "integer"
+    },
+    "source_manifest_override_attested": {
+      "title": "Source Manifest Override Attested",
+      "type": "boolean"
+    },
+    "source_memory_manifest_sha256": {
+      "title": "Source Memory Manifest Sha256",
+      "type": "string"
+    },
+    "source_memory_snapshot_id": {
+      "title": "Source Memory Snapshot Id",
+      "type": "string"
+    },
+    "source_pointer_manifest_hash_match": {
+      "title": "Source Pointer Manifest Hash Match",
+      "type": "boolean"
+    },
+    "source_pointer_manifest_sha256": {
+      "title": "Source Pointer Manifest Sha256",
+      "type": "string"
+    },
+    "source_project": {
+      "title": "Source Project",
+      "type": "string"
+    },
+    "split_max_cosine_distance": {
+      "title": "Split Max Cosine Distance",
+      "type": "number"
+    },
+    "split_p90_cosine_distance": {
+      "title": "Split P90 Cosine Distance",
+      "type": "number"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "compile_id",
+    "brain_version",
+    "source_project",
+    "source_memory_snapshot_id",
+    "source_memory_manifest_sha256",
+    "source_pointer_manifest_sha256",
+    "source_pointer_manifest_hash_match",
+    "source_manifest_override_attested",
+    "record_corpus_root",
+    "record_count",
+    "embedding_identity",
+    "embedding_reused",
+    "import_reused",
+    "semantic_splitter_version",
+    "full_population_embedding_geometry",
+    "split_p90_cosine_distance",
+    "split_max_cosine_distance",
+    "semantic_unit_count",
+    "leaf_node_count",
+    "reduce_node_count",
+    "category_root_count",
+    "child_omission_count",
+    "first_n_shortcut_used",
+    "silent_truncation_count",
+    "representative_payload_char_count",
+    "representative_payload_full_read_count",
+    "representative_payload_truncated_count",
+    "chunked_representative_record_count",
+    "long_payload_chunk_count",
+    "long_payload_chunk_map_call_count",
+    "llm_call_count",
+    "prompt_token_count",
+    "provider",
+    "model",
+    "reasoning_effort",
+    "max_concurrency",
+    "started_at",
+    "completed_at"
+  ],
+  "title": "OfflineCompileManifest",
+  "type": "object"
+}

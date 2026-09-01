@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
 
 from news_scalping_lab.contracts.models import BlindPrediction, StrictModel
+
+CompactDigestText = Annotated[str, Field(min_length=1, max_length=120)]
 
 
 class ExactWitness(StrictModel):
@@ -100,6 +102,211 @@ class SynthesizedMechanismClaim(StrictModel):
     embedding: list[float] = Field(default_factory=list)
 
 
+class SemanticCapsuleDraft(StrictModel):
+    semantic_unit_id: str
+    event_or_mechanism_summary: str
+    economic_transmission: list[str] = Field(default_factory=list)
+    market_narrative: list[str] = Field(default_factory=list)
+    applicable_conditions: list[str] = Field(default_factory=list)
+    failure_conditions: list[str] = Field(default_factory=list)
+    boundary_conditions: list[str] = Field(default_factory=list)
+    novelty_modality_distinctions: list[str] = Field(default_factory=list)
+    leader_selection_implications: list[str] = Field(default_factory=list)
+    beneficiary_implications: list[str] = Field(default_factory=list)
+    continuation_implications: list[str] = Field(default_factory=list)
+
+
+class SemanticCapsuleDraftBatch(StrictModel):
+    schema_version: Literal["nslab.semantic_capsule_draft_batch.v1"] = (
+        "nslab.semantic_capsule_draft_batch.v1"
+    )
+    node_id: str
+    semantic_unit_ids: list[str]
+    capsules: list[SemanticCapsuleDraft]
+
+    @model_validator(mode="after")
+    def validate_unit_closure(self) -> Self:
+        expected = self.semantic_unit_ids
+        actual = [row.semantic_unit_id for row in self.capsules]
+        if len(expected) != len(set(expected)) or len(actual) != len(set(actual)):
+            raise ValueError("semantic capsule draft unit IDs must be unique")
+        if set(expected) != set(actual):
+            raise ValueError("semantic capsule draft batch omitted or added units")
+        return self
+
+
+class LongPayloadChunkDigest(StrictModel):
+    chunk_id: str
+    semantic_unit_id: str
+    record_id: str
+    chunk_index: int = Field(ge=0)
+    chunk_count: int = Field(ge=1)
+    document_sha256: str
+    chunk_sha256: str
+    summary: str = Field(min_length=1, max_length=240)
+    material_facts: list[CompactDigestText] = Field(default_factory=list, max_length=2)
+    mechanisms: list[CompactDigestText] = Field(default_factory=list, max_length=2)
+    entities: list[CompactDigestText] = Field(default_factory=list, max_length=2)
+    numeric_and_time_facts: list[CompactDigestText] = Field(default_factory=list, max_length=2)
+    caveats: list[CompactDigestText] = Field(default_factory=list, max_length=2)
+
+
+class LongPayloadDigestBatch(StrictModel):
+    schema_version: Literal["nslab.long_payload_digest_batch.v1"] = (
+        "nslab.long_payload_digest_batch.v1"
+    )
+    node_id: str
+    chunk_ids: list[str]
+    digests: list[LongPayloadChunkDigest]
+
+    @model_validator(mode="after")
+    def validate_chunk_closure(self) -> Self:
+        actual = [row.chunk_id for row in self.digests]
+        if len(self.chunk_ids) != len(set(self.chunk_ids)) or len(actual) != len(set(actual)):
+            raise ValueError("long payload chunk IDs must be unique")
+        if set(self.chunk_ids) != set(actual):
+            raise ValueError("long payload digest batch omitted or added chunks")
+        return self
+
+
+class MechanismClaimDraft(StrictModel):
+    statement: str
+    mechanism: str
+    conditions: list[str] = Field(default_factory=list)
+    boundary_conditions: list[str] = Field(default_factory=list)
+    failure_modes: list[str] = Field(default_factory=list)
+    supporting_capsule_ids: list[str] = Field(default_factory=list)
+    contradicting_capsule_ids: list[str] = Field(default_factory=list)
+    confidence: str
+    status: str
+
+
+class SemanticReduceNode(StrictModel):
+    schema_version: Literal["nslab.semantic_reduce_node.v1"] = (
+        "nslab.semantic_reduce_node.v1"
+    )
+    node_id: str
+    child_node_ids: list[str]
+    covered_capsule_ids: list[str]
+    synthesis: str
+    mechanisms: list[str] = Field(default_factory=list)
+    conditions: list[str] = Field(default_factory=list)
+    boundary_conditions: list[str] = Field(default_factory=list)
+    failure_modes: list[str] = Field(default_factory=list)
+    contradictions: list[str] = Field(default_factory=list)
+    claims: list[MechanismClaimDraft] = Field(default_factory=list)
+
+
+class OfflineCompileManifest(StrictModel):
+    schema_version: Literal["nslab.offline_compile_manifest.v2"] = (
+        "nslab.offline_compile_manifest.v2"
+    )
+    compile_id: str
+    brain_version: str
+    source_project: str
+    source_memory_snapshot_id: str
+    source_memory_manifest_sha256: str
+    source_pointer_manifest_sha256: str
+    source_pointer_manifest_hash_match: bool
+    source_manifest_override_attested: bool
+    record_corpus_root: str
+    record_count: int
+    embedding_identity: str
+    embedding_reused: bool
+    import_reused: bool
+    semantic_splitter_version: str
+    full_population_embedding_geometry: bool
+    split_p90_cosine_distance: float
+    split_max_cosine_distance: float
+    semantic_unit_count: int
+    leaf_node_count: int
+    reduce_node_count: int
+    category_root_count: int
+    child_omission_count: int
+    first_n_shortcut_used: bool
+    silent_truncation_count: int
+    representative_payload_char_count: int
+    representative_payload_full_read_count: int
+    representative_payload_truncated_count: int
+    chunked_representative_record_count: int
+    long_payload_chunk_count: int
+    long_payload_chunk_map_call_count: int
+    llm_call_count: int
+    prompt_token_count: int
+    reused_semantic_capsule_count: int = 0
+    recompiled_semantic_capsule_count: int = 0
+    reused_reduce_node_count: int = 0
+    recompiled_reduce_node_count: int = 0
+    provider: str
+    model: str
+    reasoning_effort: str
+    max_concurrency: int = Field(ge=1)
+    started_at: datetime
+    completed_at: datetime
+
+
+class SemanticInfluenceManifest(StrictModel):
+    schema_version: Literal["nslab.semantic_influence_manifest.v2"] = (
+        "nslab.semantic_influence_manifest.v2"
+    )
+    brain_version: str
+    record_count: int
+    primary_assignment_count: int
+    distinct_primary_assigned_record_count: int
+    unassigned_record_count: int
+    duplicate_primary_assignment_count: int
+    semantic_unit_count: int
+    rare_outlier_unit_count: int
+    rare_outlier_represented_unit_count: int
+    unrepresented_reasoning_unit_count: int
+    leaf_covered_semantic_unit_count: int
+    reduce_covered_capsule_count: int
+    final_covered_capsule_count: int
+    population_contribution_record_count: int
+    representative_payload_exposed_record_count: int
+    representative_payload_not_exposed_record_count: int
+    representative_payload_exposure_ratio: float
+    representative_payload_char_count: int
+    representative_payload_full_read_count: int
+    representative_payload_truncated_count: int
+    chunked_representative_record_count: int
+    long_payload_chunk_count: int
+    record_membership_root: str
+    representative_record_root: str
+    representative_payload_read_root: str
+    leaf_coverage_root: str
+    reduce_tree_root: str
+
+    @model_validator(mode="after")
+    def validate_semantic_exposure_accounting(self) -> Self:
+        if self.population_contribution_record_count != self.record_count:
+            raise ValueError("semantic population contribution must cover every record")
+        if (
+            self.representative_payload_exposed_record_count
+            + self.representative_payload_not_exposed_record_count
+            != self.record_count
+        ):
+            raise ValueError("representative payload exposure counts do not close")
+        if self.representative_payload_full_read_count != (
+            self.representative_payload_exposed_record_count
+        ):
+            raise ValueError("every representative payload must be fully read")
+        if self.representative_payload_truncated_count:
+            raise ValueError("representative payload truncation is forbidden")
+        return self
+
+
+class BrainPackagePointer(StrictModel):
+    schema_version: Literal["nslab.brain_package_pointer.v1"] = (
+        "nslab.brain_package_pointer.v1"
+    )
+    brain_version: str
+    package_path: str
+    manifest_sha256: str
+    package_root: str
+    production_activated: bool = False
+
+
 class BrainPackageManifest(StrictModel):
     schema_version: Literal["nslab.brain_package_manifest.v2"] = (
         "nslab.brain_package_manifest.v2"
@@ -111,6 +318,16 @@ class BrainPackageManifest(StrictModel):
     semantic_unit_count: int
     semantic_capsule_count: int
     synthesized_mechanism_claim_count: int
+    population_contribution_record_count: int
+    representative_payload_exposed_record_count: int
+    representative_payload_not_exposed_record_count: int
+    representative_payload_exposure_ratio: float
+    representative_payload_read_root: str
+    representative_payload_char_count: int
+    representative_payload_full_read_count: int
+    representative_payload_truncated_count: int
+    chunked_representative_record_count: int
+    long_payload_chunk_count: int
     record_corpus_root: str
     memory_snapshot_root: str
     warehouse_root: str
@@ -129,7 +346,28 @@ class BrainPackageManifest(StrictModel):
     rare_outlier_unit_coverage_ratio: float
     unrepresented_reasoning_unit_count: int
     child_omission_count: int
+    semantic_capsule_hnsw_index_ready: bool
+    mechanism_claim_hnsw_index_ready: bool
+    daily_ann_query_plan_verified: bool
     production_eligible: bool = False
+
+    @model_validator(mode="after")
+    def validate_payload_accounting(self) -> Self:
+        if self.population_contribution_record_count != self.record_count:
+            raise ValueError("BrainPackage population contribution is incomplete")
+        if (
+            self.representative_payload_exposed_record_count
+            + self.representative_payload_not_exposed_record_count
+            != self.record_count
+        ):
+            raise ValueError("BrainPackage representative exposure counts do not close")
+        if self.representative_payload_full_read_count != (
+            self.representative_payload_exposed_record_count
+        ):
+            raise ValueError("BrainPackage did not fully read every representative payload")
+        if self.representative_payload_truncated_count:
+            raise ValueError("BrainPackage contains truncated representative payloads")
+        return self
 
 
 class CurrentEventCapsule(StrictModel):

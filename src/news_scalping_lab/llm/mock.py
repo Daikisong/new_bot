@@ -37,7 +37,15 @@ from news_scalping_lab.contracts.models import (
     SemanticRetrievalPlan,
     SemanticRetrievalQuery,
 )
-from news_scalping_lab.contracts.offline_brain import CurrentDayInterpretation
+from news_scalping_lab.contracts.offline_brain import (
+    CurrentDayInterpretation,
+    LongPayloadChunkDigest,
+    LongPayloadDigestBatch,
+    MechanismClaimDraft,
+    SemanticCapsuleDraft,
+    SemanticCapsuleDraftBatch,
+    SemanticReduceNode,
+)
 from news_scalping_lab.contracts.quality_evaluation import (
     SharedOpenWorldReduceOutput,
 )
@@ -77,6 +85,15 @@ class DeterministicMockLLMProvider:
         if response_model is CurrentDayInterpretation:
             interpretation = self._current_day_interpretation(prompt)
             return interpretation  # type: ignore[return-value]
+        if response_model is LongPayloadDigestBatch:
+            long_payload_batch = self._long_payload_digest_batch(prompt)
+            return long_payload_batch  # type: ignore[return-value]
+        if response_model is SemanticCapsuleDraftBatch:
+            capsule_batch = self._semantic_capsule_draft_batch(prompt)
+            return capsule_batch  # type: ignore[return-value]
+        if response_model is SemanticReduceNode:
+            node = self._semantic_reduce_node(prompt)
+            return node  # type: ignore[return-value]
         if response_model is BlindPrediction and purpose == "final_synthesis":
             prediction = self._final_synthesis_prediction(prompt)
             return prediction  # type: ignore[return-value]
@@ -111,6 +128,122 @@ class DeterministicMockLLMProvider:
             draft = self._semantic_research_draft(prompt)
             return draft  # type: ignore[return-value]
         raise NotImplementedError(f"mock structured output not registered for {response_model}")
+
+    def _semantic_capsule_draft_batch(
+        self,
+        prompt: str,
+    ) -> SemanticCapsuleDraftBatch:
+        payload = self._marked_payload(prompt, "---OFFLINE_SEMANTIC_LEAF---")
+        node_id = str(payload.get("node_id") or "LEAF-mock")
+        category = str(payload.get("category") or "world_model")
+        raw_units = payload.get("semantic_units")
+        units = raw_units if isinstance(raw_units, list) else []
+        semantic_unit_ids = [
+            str(row.get("semantic_unit_id"))
+            for row in units
+            if isinstance(row, dict) and row.get("semantic_unit_id")
+        ]
+        capsules = [
+            SemanticCapsuleDraft(
+                semantic_unit_id=unit_id,
+                event_or_mechanism_summary=(
+                    f"{category} semantic unit {unit_id} preserves its dynamic representatives."
+                ),
+                economic_transmission=["event -> economic exposure -> market response"],
+                market_narrative=["current evidence must be compared with historical boundaries"],
+                applicable_conditions=["cutoff-safe and economically attributable"],
+                failure_conditions=["historical counterevidence dominates"],
+                boundary_conditions=["novelty or directness is weak"],
+                novelty_modality_distinctions=["confirmed evidence differs from planned activity"],
+                leader_selection_implications=["compare purity, directness, and prior leadership"],
+                beneficiary_implications=["validate direct and indirect economic transmission"],
+                continuation_implications=["check D-1 absorption and remaining catalyst"],
+            )
+            for unit_id in semantic_unit_ids
+        ]
+        return SemanticCapsuleDraftBatch(
+            node_id=node_id,
+            semantic_unit_ids=semantic_unit_ids,
+            capsules=capsules,
+        )
+
+    def _long_payload_digest_batch(self, prompt: str) -> LongPayloadDigestBatch:
+        payload = self._marked_payload(prompt, "---OFFLINE_LONG_PAYLOAD_MAP---")
+        node_id = str(payload.get("node_id") or "LONG-PAYLOAD-mock")
+        raw_chunks = payload.get("chunks")
+        chunks = raw_chunks if isinstance(raw_chunks, list) else []
+        digests = [
+            LongPayloadChunkDigest(
+                chunk_id=str(row["chunk_id"]),
+                semantic_unit_id=str(row["semantic_unit_id"]),
+                record_id=str(row["record_id"]),
+                chunk_index=int(row["chunk_index"]),
+                chunk_count=int(row["chunk_count"]),
+                document_sha256=str(row["document_sha256"]),
+                chunk_sha256=str(row["chunk_sha256"]),
+                summary="Mock full-payload chunk digest.",
+                material_facts=["complete chunk was read"],
+                mechanisms=["source evidence -> mechanism"],
+                entities=[],
+                numeric_and_time_facts=[],
+                caveats=["combine every chunk before leaf synthesis"],
+            )
+            for row in chunks
+            if isinstance(row, dict)
+        ]
+        return LongPayloadDigestBatch(
+            node_id=node_id,
+            chunk_ids=[row.chunk_id for row in digests],
+            digests=digests,
+        )
+
+    def _semantic_reduce_node(self, prompt: str) -> SemanticReduceNode:
+        payload = self._marked_payload(prompt, "---OFFLINE_SEMANTIC_REDUCE---")
+        node_id = str(payload.get("node_id") or "REDUCE-mock")
+        category = str(payload.get("category") or "world_model")
+        raw_child_ids = payload.get("required_child_node_ids")
+        child_ids = [str(value) for value in raw_child_ids] if isinstance(raw_child_ids, list) else []
+        raw_capsule_ids = payload.get("required_capsule_ids")
+        capsule_ids = [str(value) for value in raw_capsule_ids] if isinstance(raw_capsule_ids, list) else []
+        claims = (
+            [
+                MechanismClaimDraft(
+                    statement=f"{category} evidence requires condition and boundary checks.",
+                    mechanism="current catalyst -> economic exposure -> ranked market response",
+                    conditions=["cutoff-safe evidence"],
+                    boundary_conditions=["weak novelty or attribution"],
+                    failure_modes=["counterexamples dominate"],
+                    supporting_capsule_ids=capsule_ids[:1],
+                    contradicting_capsule_ids=capsule_ids[-1:] if len(capsule_ids) > 1 else [],
+                    confidence="medium",
+                    status="supported",
+                )
+            ]
+            if capsule_ids
+            else []
+        )
+        return SemanticReduceNode(
+            node_id=node_id,
+            child_node_ids=child_ids,
+            covered_capsule_ids=capsule_ids,
+            synthesis=f"Mock complete reduction for {category}.",
+            mechanisms=["event -> exposure -> response"],
+            conditions=["cutoff-safe evidence"],
+            boundary_conditions=["weak relation"],
+            failure_modes=["counterevidence"],
+            contradictions=["positive and negative evidence must remain visible"],
+            claims=claims,
+        )
+
+    @staticmethod
+    def _marked_payload(prompt: str, marker: str) -> dict[str, Any]:
+        if marker not in prompt:
+            return {}
+        try:
+            payload = json.loads(prompt.split(marker, maxsplit=1)[-1].strip())
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
 
     def _current_day_interpretation(self, prompt: str) -> CurrentDayInterpretation:
         marker = "---CURRENT_EVENT_CAPSULES---"

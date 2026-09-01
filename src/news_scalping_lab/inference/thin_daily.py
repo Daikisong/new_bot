@@ -106,9 +106,7 @@ class MissingBrainPackageProvider:
     def ensure_ready(self) -> None:
         pointer = self.root / "brain" / "current" / "brain_package_pointer.json"
         if pointer.is_file():
-            raise RuntimeError(
-                "the selected BrainPackage exists but its bounded daily index reader is unavailable"
-            )
+            raise RuntimeError("the selected BrainPackage exists but its bounded daily index reader is unavailable")
         raise FileNotFoundError(
             "Offline Semantic Brain V2 is not built or selected; analyze-daily will not fall back "
             "to the legacy historical raw-record path"
@@ -139,9 +137,7 @@ class ThinDailyAnalyzer:
         brain_context_provider: DailyBrainContextProvider | None = None,
     ) -> None:
         if settings.llm.max_retries > 1:
-            raise ValueError(
-                "analyze-daily allows at most one structured repair per logical call"
-            )
+            raise ValueError("analyze-daily allows at most one structured repair per logical call")
         self.settings = settings
         self.root = settings.project_root
         base_llm = llm or create_llm_provider(settings)
@@ -152,9 +148,16 @@ class ThinDailyAnalyzer:
             production=(settings.event_cluster_fallback_policy.value == "fail-closed"),
             llm_provider=base_llm,
         )
-        self.brain_context_provider = brain_context_provider or MissingBrainPackageProvider(
-            self.root
-        )
+        if brain_context_provider is None:
+            from news_scalping_lab.brain.offline_v2 import (
+                BrainPackageDailyContextProvider,
+            )
+
+            brain_context_provider = BrainPackageDailyContextProvider(
+                settings,
+                embedding_provider=self.embedding_provider,
+            )
+        self.brain_context_provider = brain_context_provider
 
     async def analyze(
         self,
@@ -252,9 +255,7 @@ class ThinDailyAnalyzer:
             cutoff_at=cutoff_at,
             max_exact_witnesses=MAX_EXACT_WITNESSES,
         )
-        interpretation_sha256 = sha256_text(
-            canonical_json(interpretation.model_dump(mode="json"))
-        )
+        interpretation_sha256 = sha256_text(canonical_json(interpretation.model_dump(mode="json")))
         if brain_context.interpretation_sha256 != interpretation_sha256:
             raise ValueError("daily brain context is bound to a different interpretation")
         _validate_brain_context_as_of(brain_context, cutoff_at=cutoff_at)
@@ -293,12 +294,12 @@ class ThinDailyAnalyzer:
         )
         report_path.write_text(report_text, encoding="utf-8", newline="\n")
 
-        canonical_prediction_path = self.settings.path(
-            self.settings.output_dirs.predictions
-        ) / f"{trade_date.isoformat()}.json"
-        canonical_report_path = self.settings.path(
-            self.settings.output_dirs.reports
-        ) / f"{trade_date.isoformat()}_preopen.md"
+        canonical_prediction_path = (
+            self.settings.path(self.settings.output_dirs.predictions) / f"{trade_date.isoformat()}.json"
+        )
+        canonical_report_path = (
+            self.settings.path(self.settings.output_dirs.reports) / f"{trade_date.isoformat()}_preopen.md"
+        )
         write_json(canonical_prediction_path, prediction.model_dump(mode="json"))
         canonical_report_path.parent.mkdir(parents=True, exist_ok=True)
         canonical_report_path.write_text(report_text, encoding="utf-8", newline="\n")
@@ -308,9 +309,7 @@ class ThinDailyAnalyzer:
             "final_market_decision": sha256_text(final_prompt),
         }
         token_counts = {
-            "current_day_interpretation": count_provider_tokens(
-                self.llm, interpretation_prompt
-            ),
+            "current_day_interpretation": count_provider_tokens(self.llm, interpretation_prompt),
             "final_market_decision": count_provider_tokens(self.llm, final_prompt),
         }
         manifest = ThinDailyRunManifest(
@@ -327,14 +326,10 @@ class ThinDailyAnalyzer:
             material_event_cluster_count=len(clustering.material_clusters),
             current_event_capsule_count=len(capsules),
             current_event_capsule_bytes=len(
-                canonical_json([row.model_dump(mode="json") for row in capsules]).encode(
-                    "utf-8"
-                )
+                canonical_json([row.model_dump(mode="json") for row in capsules]).encode("utf-8")
             ),
             current_event_prompt_bytes=len(interpretation_prompt.encode("utf-8")),
-            daily_brain_context_bytes=len(
-                canonical_json(brain_context.model_dump(mode="json")).encode("utf-8")
-            ),
+            daily_brain_context_bytes=len(canonical_json(brain_context.model_dump(mode="json")).encode("utf-8")),
             historical_raw_witness_count=len(brain_context.exact_witnesses),
             logical_llm_call_count=2,
             maximum_live_agent_call_count=2 * (1 + self.settings.llm.max_retries),
@@ -350,9 +345,7 @@ class ThinDailyAnalyzer:
             brain_package_root=brain_context.brain_package_root,
             current_event_capsules_artifact=relative_to_root(capsules_path, self.root),
             current_event_capsules_sha256=file_sha256(capsules_path),
-            current_day_interpretation_artifact=relative_to_root(
-                interpretation_path, self.root
-            ),
+            current_day_interpretation_artifact=relative_to_root(interpretation_path, self.root),
             current_day_interpretation_sha256=file_sha256(interpretation_path),
             daily_brain_context_artifact=relative_to_root(brain_context_path, self.root),
             daily_brain_context_sha256=file_sha256(brain_context_path),
@@ -365,9 +358,7 @@ class ThinDailyAnalyzer:
             prompt_hashes=prompt_hashes,
             token_counts=token_counts,
         )
-        manifest_path = self.settings.path(self.settings.output_dirs.manifests) / (
-            f"{run_id}.json"
-        )
+        manifest_path = self.settings.path(self.settings.output_dirs.manifests) / (f"{run_id}.json")
         write_json(manifest_path, manifest.model_dump(mode="json"))
         return ThinDailyAnalysis(
             run_id=run_id,
@@ -429,9 +420,7 @@ def project_current_event_capsules(
         for row in full
     ]
     if _capsule_bytes(identity_only) > max_bytes:
-        raise ValueError(
-            "all current material clusters cannot fit the single-call identity projection"
-        )
+        raise ValueError("all current material clusters cannot fit the single-call identity projection")
     return identity_only
 
 
@@ -440,13 +429,8 @@ def _current_event_capsule(cluster: EventCluster) -> CurrentEventCapsule:
     exact_sentences = _predicate_sentences(representative.title, representative.body)
     combined_projection = "\n".join([representative.title, *exact_sentences])
     member_combined = "\n".join(item.combined_text for item in cluster.members)
-    number_sets = {
-        tuple(_unique(_NUMBER_UNIT_RE.findall(item.combined_text)))
-        for item in cluster.members
-    }
-    polarity_states = {
-        bool(_PREDICATE_RE.search(item.combined_text)) for item in cluster.members
-    }
+    number_sets = {tuple(_unique(_NUMBER_UNIT_RE.findall(item.combined_text))) for item in cluster.members}
+    polarity_states = {bool(_PREDICATE_RE.search(item.combined_text)) for item in cluster.members}
     conflicts: list[str] = []
     if len(number_sets) > 1:
         conflicts.append("NUMERIC_VARIANT")
@@ -489,11 +473,7 @@ def _predicate_sentences(title: str, body: str) -> list[str]:
 
 def _issuer_literals(title: str) -> list[str]:
     prefix = re.split(r"[,;:|]", title, maxsplit=1)[0]
-    return _unique(
-        value
-        for value in _KOREAN_LITERAL_RE.findall(prefix)
-        if not value.isdigit()
-    )[:6]
+    return _unique(value for value in _KOREAN_LITERAL_RE.findall(prefix) if not value.isdigit())[:6]
 
 
 def _counterparties(text: str) -> list[str]:
@@ -542,10 +522,7 @@ def _build_final_market_decision_prompt(
     capsule_ids = [row.capsule_id for row in brain_context.selected_semantic_capsules]
     claim_ids = [row.claim_id for row in brain_context.selected_mechanism_claims]
     record_ids = sorted(
-        {
-            witness.record_id
-            for witness in brain_context.exact_witnesses
-        }
+        {witness.record_id for witness in brain_context.exact_witnesses}
         | {
             record_id
             for row in brain_context.selected_semantic_capsules
@@ -624,13 +601,9 @@ def _validate_and_seal_prediction(
 ) -> BlindPrediction:
     allowed_events = {event_id for row in capsules for event_id in row.event_ids}
     allowed_rows = {row_id for row in capsules for row_id in row.source_row_ids}
-    allowed_capsules = {
-        row.capsule_id for row in brain_context.selected_semantic_capsules
-    }
+    allowed_capsules = {row.capsule_id for row in brain_context.selected_semantic_capsules}
     allowed_claims = {row.claim_id for row in brain_context.selected_mechanism_claims}
-    allowed_records = {
-        witness.record_id for witness in brain_context.exact_witnesses
-    } | {
+    allowed_records = {witness.record_id for witness in brain_context.exact_witnesses} | {
         record_id
         for row in brain_context.selected_semantic_capsules
         for record_id in [
@@ -659,9 +632,7 @@ def _validate_and_seal_prediction(
             raise ValueError("final decision cited an unselected semantic capsule")
         if not set(candidate.mechanism_claim_ids).issubset(allowed_claims):
             raise ValueError("final decision cited an unselected mechanism claim")
-        if not set(candidate.population_manifest_roots).issubset(
-            allowed_population_roots
-        ):
+        if not set(candidate.population_manifest_roots).issubset(allowed_population_roots):
             raise ValueError("final decision cited an unselected population root")
         cited_records = {
             *candidate.memory_record_ids,
@@ -679,9 +650,7 @@ def _validate_and_seal_prediction(
             raise ValueError("sector decision cited an unselected semantic capsule")
         if not set(sector.mechanism_claim_ids).issubset(allowed_claims):
             raise ValueError("sector decision cited an unselected mechanism claim")
-        if not set(sector.population_manifest_roots).issubset(
-            allowed_population_roots
-        ):
+        if not set(sector.population_manifest_roots).issubset(allowed_population_roots):
             raise ValueError("sector decision cited an unselected population root")
         if not {
             *sector.supporting_record_ids,
@@ -711,24 +680,12 @@ def _validate_brain_context_as_of(
     *,
     cutoff_at: datetime,
 ) -> None:
-    future_capsules = [
-        row.capsule_id
-        for row in context.selected_semantic_capsules
-        if row.available_from > cutoff_at
-    ]
-    future_claims = [
-        row.claim_id
-        for row in context.selected_mechanism_claims
-        if row.available_from > cutoff_at
-    ]
-    future_witnesses = [
-        row.record_id for row in context.exact_witnesses if row.available_from > cutoff_at
-    ]
+    future_capsules = [row.capsule_id for row in context.selected_semantic_capsules if row.available_from > cutoff_at]
+    future_claims = [row.claim_id for row in context.selected_mechanism_claims if row.available_from > cutoff_at]
+    future_witnesses = [row.record_id for row in context.exact_witnesses if row.available_from > cutoff_at]
     if future_capsules or future_claims or future_witnesses:
         raise ValueError("daily brain context contains cutoff-after knowledge")
-    selected_capsule_ids = {
-        row.capsule_id for row in context.selected_semantic_capsules
-    }
+    selected_capsule_ids = {row.capsule_id for row in context.selected_semantic_capsules}
     selected_record_ids = {
         record_id
         for row in context.selected_semantic_capsules
@@ -784,11 +741,7 @@ def _row_disposition_payload(
     window_start: datetime,
     cutoff_at: datetime,
 ) -> dict[str, Any]:
-    cluster_by_event = {
-        item.event_id: cluster
-        for cluster in clustering.clusters
-        for item in cluster.members
-    }
+    cluster_by_event = {item.event_id: cluster for cluster in clustering.clusters for item in cluster.members}
     rows = []
     for item in sorted(full_batch.items, key=lambda row: row.row_number):
         cluster = cluster_by_event.get(item.event_id)
@@ -865,11 +818,7 @@ def _render_thin_daily_report(
 
 
 def _capsule_bytes(capsules: Sequence[CurrentEventCapsule]) -> int:
-    return len(
-        canonical_json([row.model_dump(mode="json") for row in capsules]).encode(
-            "utf-8"
-        )
-    )
+    return len(canonical_json([row.model_dump(mode="json") for row in capsules]).encode("utf-8"))
 
 
 def _unique(values: Sequence[str] | Any) -> list[str]:
@@ -890,9 +839,7 @@ def _trace_daily_llm(
 ) -> LLMProvider:
     if isinstance(provider, TracingLLMProvider):
         if provider.max_retries > 0:
-            raise ValueError(
-                "analyze-daily requires a tracing provider with zero outer retries"
-            )
+            raise ValueError("analyze-daily requires a tracing provider with zero outer retries")
         return provider
     return TracingLLMProvider(
         provider,
@@ -900,12 +847,8 @@ def _trace_daily_llm(
         model_config=model_config,
         default_metadata={"architecture_version": THIN_DAILY_ARCHITECTURE_VERSION},
         purpose_metadata={
-            "current_day_interpretation": {
-                "prompt_version": CURRENT_DAY_INTERPRETATION_PROMPT_VERSION
-            },
-            "final_market_decision": {
-                "prompt_version": FINAL_MARKET_DECISION_PROMPT_VERSION
-            },
+            "current_day_interpretation": {"prompt_version": CURRENT_DAY_INTERPRETATION_PROMPT_VERSION},
+            "final_market_decision": {"prompt_version": FINAL_MARKET_DECISION_PROMPT_VERSION},
         },
         max_retries=0,
     )
@@ -915,9 +858,7 @@ def _llm_model_config(settings: Settings, provider: LLMProvider) -> dict[str, An
     return {
         "provider": str(getattr(provider, "provider_name", settings.llm_provider)),
         "model": str(getattr(provider, "model", settings.llm.model)),
-        "reasoning_effort": getattr(
-            provider, "reasoning_effort", settings.llm.reasoning_effort
-        ),
+        "reasoning_effort": getattr(provider, "reasoning_effort", settings.llm.reasoning_effort),
         "structured_repair_retries": settings.llm.max_retries,
         "architecture_version": THIN_DAILY_ARCHITECTURE_VERSION,
     }

@@ -48,6 +48,18 @@ from news_scalping_lab.contracts.models import (
     ResearchEpisode,
     SemanticRetrievalPlan,
 )
+from news_scalping_lab.contracts.offline_brain import (
+    BrainPackageManifest,
+    BrainPackagePointer,
+    CurrentEventCapsule,
+    DailyBrainContext,
+    OfflineCompileManifest,
+    SemanticInfluenceManifest,
+    SemanticMemoryCapsule,
+    SynthesizedMechanismClaim,
+    ThinDailyAnalysis,
+    ThinDailyRunManifest,
+)
 from news_scalping_lab.contracts.production import (
     ProductionBatchImportReceipt,
     ProductionCompanyMemoryAttestation,
@@ -141,6 +153,16 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     ),
     "production_release_manifest.schema.json": ProductionReleaseManifest,
     "production_current_pointer.schema.json": ProductionCurrentPointer,
+    "semantic_memory_capsule.schema.json": SemanticMemoryCapsule,
+    "synthesized_mechanism_claim.schema.json": SynthesizedMechanismClaim,
+    "brain_package_manifest.schema.json": BrainPackageManifest,
+    "brain_package_pointer.schema.json": BrainPackagePointer,
+    "offline_compile_manifest.schema.json": OfflineCompileManifest,
+    "semantic_influence_manifest.schema.json": SemanticInfluenceManifest,
+    "current_event_capsule.schema.json": CurrentEventCapsule,
+    "daily_brain_context_v2.schema.json": DailyBrainContext,
+    "thin_daily_run_manifest.schema.json": ThinDailyRunManifest,
+    "thin_daily_analysis.schema.json": ThinDailyAnalysis,
 }
 
 

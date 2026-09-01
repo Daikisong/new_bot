@@ -1,0 +1,242 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "blind_web_search_call_count": {
+      "title": "Blind Web Search Call Count",
+      "type": "integer"
+    },
+    "brain_package_root": {
+      "title": "Brain Package Root",
+      "type": "string"
+    },
+    "brain_version": {
+      "title": "Brain Version",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "current_day_interpretation_artifact": {
+      "title": "Current Day Interpretation Artifact",
+      "type": "string"
+    },
+    "current_day_interpretation_sha256": {
+      "title": "Current Day Interpretation Sha256",
+      "type": "string"
+    },
+    "current_event_capsule_bytes": {
+      "title": "Current Event Capsule Bytes",
+      "type": "integer"
+    },
+    "current_event_capsule_count": {
+      "title": "Current Event Capsule Count",
+      "type": "integer"
+    },
+    "current_event_capsules_artifact": {
+      "title": "Current Event Capsules Artifact",
+      "type": "string"
+    },
+    "current_event_capsules_sha256": {
+      "title": "Current Event Capsules Sha256",
+      "type": "string"
+    },
+    "current_event_prompt_bytes": {
+      "title": "Current Event Prompt Bytes",
+      "type": "integer"
+    },
+    "cutoff_at": {
+      "format": "date-time",
+      "title": "Cutoff At",
+      "type": "string"
+    },
+    "cutoff_safe_news_row_count": {
+      "title": "Cutoff Safe News Row Count",
+      "type": "integer"
+    },
+    "daily_brain_context_artifact": {
+      "title": "Daily Brain Context Artifact",
+      "type": "string"
+    },
+    "daily_brain_context_bytes": {
+      "title": "Daily Brain Context Bytes",
+      "type": "integer"
+    },
+    "daily_brain_context_sha256": {
+      "title": "Daily Brain Context Sha256",
+      "type": "string"
+    },
+    "daily_brain_rebuild_call_count": {
+      "title": "Daily Brain Rebuild Call Count",
+      "type": "integer"
+    },
+    "daily_import_call_count": {
+      "title": "Daily Import Call Count",
+      "type": "integer"
+    },
+    "evidence_policy": {
+      "const": "CSV_MEMORY_ONLY_STRICT",
+      "default": "CSV_MEMORY_ONLY_STRICT",
+      "title": "Evidence Policy",
+      "type": "string"
+    },
+    "future_record_count": {
+      "title": "Future Record Count",
+      "type": "integer"
+    },
+    "historical_raw_daily_map_call_count": {
+      "title": "Historical Raw Daily Map Call Count",
+      "type": "integer"
+    },
+    "historical_raw_witness_count": {
+      "title": "Historical Raw Witness Count",
+      "type": "integer"
+    },
+    "llm_model_config": {
+      "additionalProperties": true,
+      "title": "Llm Model Config",
+      "type": "object"
+    },
+    "llm_purposes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Llm Purposes",
+      "type": "array"
+    },
+    "logical_llm_call_count": {
+      "title": "Logical Llm Call Count",
+      "type": "integer"
+    },
+    "material_event_cluster_count": {
+      "title": "Material Event Cluster Count",
+      "type": "integer"
+    },
+    "maximum_live_agent_call_count": {
+      "title": "Maximum Live Agent Call Count",
+      "type": "integer"
+    },
+    "news_file": {
+      "title": "News File",
+      "type": "string"
+    },
+    "news_sha256": {
+      "title": "News Sha256",
+      "type": "string"
+    },
+    "online_full_corpus_scan_count": {
+      "title": "Online Full Corpus Scan Count",
+      "type": "integer"
+    },
+    "prediction_artifact": {
+      "title": "Prediction Artifact",
+      "type": "string"
+    },
+    "prediction_sha256": {
+      "title": "Prediction Sha256",
+      "type": "string"
+    },
+    "prompt_hashes": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Prompt Hashes",
+      "type": "object"
+    },
+    "report_artifact": {
+      "title": "Report Artifact",
+      "type": "string"
+    },
+    "report_sha256": {
+      "title": "Report Sha256",
+      "type": "string"
+    },
+    "row_disposition_artifact": {
+      "title": "Row Disposition Artifact",
+      "type": "string"
+    },
+    "row_disposition_count": {
+      "title": "Row Disposition Count",
+      "type": "integer"
+    },
+    "row_disposition_sha256": {
+      "title": "Row Disposition Sha256",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.thin_daily_run_manifest.v1",
+      "default": "nslab.thin_daily_run_manifest.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "token_counts": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Token Counts",
+      "type": "object"
+    },
+    "total_news_row_count": {
+      "title": "Total News Row Count",
+      "type": "integer"
+    },
+    "trade_date": {
+      "format": "date",
+      "title": "Trade Date",
+      "type": "string"
+    },
+    "wall_clock_seconds": {
+      "title": "Wall Clock Seconds",
+      "type": "number"
+    }
+  },
+  "required": [
+    "run_id",
+    "trade_date",
+    "cutoff_at",
+    "created_at",
+    "wall_clock_seconds",
+    "news_file",
+    "news_sha256",
+    "total_news_row_count",
+    "cutoff_safe_news_row_count",
+    "row_disposition_count",
+    "material_event_cluster_count",
+    "current_event_capsule_count",
+    "current_event_capsule_bytes",
+    "current_event_prompt_bytes",
+    "daily_brain_context_bytes",
+    "historical_raw_witness_count",
+    "logical_llm_call_count",
+    "maximum_live_agent_call_count",
+    "historical_raw_daily_map_call_count",
+    "daily_import_call_count",
+    "daily_brain_rebuild_call_count",
+    "blind_web_search_call_count",
+    "online_full_corpus_scan_count",
+    "future_record_count",
+    "llm_purposes",
+    "llm_model_config",
+    "brain_version",
+    "brain_package_root",
+    "current_event_capsules_artifact",
+    "current_event_capsules_sha256",
+    "current_day_interpretation_artifact",
+    "current_day_interpretation_sha256",
+    "daily_brain_context_artifact",
+    "daily_brain_context_sha256",
+    "row_disposition_artifact",
+    "row_disposition_sha256",
+    "prediction_artifact",
+    "prediction_sha256",
+    "report_artifact",
+    "report_sha256"
+  ],
+  "title": "ThinDailyRunManifest",
+  "type": "object"
+}

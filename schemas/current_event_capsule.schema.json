@@ -1,0 +1,126 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "cluster_id": {
+      "title": "Cluster Id",
+      "type": "string"
+    },
+    "conflict_flags": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Conflict Flags",
+      "type": "array"
+    },
+    "counterparty_literals": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Counterparty Literals",
+      "type": "array"
+    },
+    "event_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Event Ids",
+      "type": "array"
+    },
+    "exact_duplicate_count": {
+      "default": 0,
+      "title": "Exact Duplicate Count",
+      "type": "integer"
+    },
+    "issuer_company_literals": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Issuer Company Literals",
+      "type": "array"
+    },
+    "modality_literals": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Modality Literals",
+      "type": "array"
+    },
+    "numeric_unit_literals": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Numeric Unit Literals",
+      "type": "array"
+    },
+    "predicate_exact_sentences": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Predicate Exact Sentences",
+      "type": "array"
+    },
+    "projection_tier": {
+      "default": "FULL",
+      "enum": [
+        "FULL",
+        "COMPACT",
+        "IDENTITY_ONLY"
+      ],
+      "title": "Projection Tier",
+      "type": "string"
+    },
+    "published_times": {
+      "items": {
+        "format": "date-time",
+        "type": "string"
+      },
+      "title": "Published Times",
+      "type": "array"
+    },
+    "representative_title": {
+      "title": "Representative Title",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.current_event_capsule.v1",
+      "default": "nslab.current_event_capsule.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "semantic_duplicate_count": {
+      "default": 0,
+      "title": "Semantic Duplicate Count",
+      "type": "integer"
+    },
+    "source_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Ids",
+      "type": "array"
+    },
+    "source_row_ids": {
+      "items": {
+        "type": "integer"
+      },
+      "title": "Source Row Ids",
+      "type": "array"
+    },
+    "ticker_literals": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Ticker Literals",
+      "type": "array"
+    }
+  },
+  "required": [
+    "cluster_id",
+    "source_row_ids",
+    "event_ids",
+    "source_ids",
+    "representative_title"
+  ],
+  "title": "CurrentEventCapsule",
+  "type": "object"
+}

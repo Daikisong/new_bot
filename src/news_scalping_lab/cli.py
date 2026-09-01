@@ -31,6 +31,10 @@ from news_scalping_lab.audits.semantic_exposure import (
 from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff_markdown
+from news_scalping_lab.brain.offline_v2 import (
+    OfflineSemanticBrainCompiler,
+    select_brain_package,
+)
 from news_scalping_lab.config import ensure_project_dirs, load_settings, write_default_config_files
 from news_scalping_lab.context.episode_scope import inspect_manifest_episode_scope
 from news_scalping_lab.context.final_synthesis import (
@@ -1264,6 +1268,118 @@ def brain_diff(version_a: str, version_b: str) -> None:
     except (FileNotFoundError, ValueError) as exc:
         _exit_with_error(exc)
     _echo({**diff, "markdown_path": markdown_path.as_posix()})
+
+
+@brain_app.command("build-offline")
+def brain_build_offline(
+    source_project: Annotated[Path, typer.Option("--source-project")],
+    output_root: Annotated[Path | None, typer.Option("--output-root")] = None,
+    expected_manifest_sha256: Annotated[
+        str | None,
+        typer.Option("--expected-manifest-sha256"),
+    ] = None,
+) -> None:
+    """Build an evaluation-only Semantic Brain V2 from an existing memory snapshot."""
+
+    settings = load_settings()
+    try:
+        result = asyncio.run(
+            OfflineSemanticBrainCompiler(settings).build(
+                source_project=source_project,
+                output_root=output_root,
+                expected_manifest_sha256=expected_manifest_sha256,
+            )
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            **result.package_manifest.model_dump(mode="json"),
+            "package_dir": result.package_dir.as_posix(),
+            "package_manifest": result.package_manifest_path.as_posix(),
+            "production_activated": False,
+        }
+    )
+
+
+@brain_app.command("plan-offline")
+def brain_plan_offline(
+    source_project: Annotated[Path, typer.Option("--source-project")],
+    output: Annotated[Path | None, typer.Option("--output")] = None,
+    expected_manifest_sha256: Annotated[
+        str | None,
+        typer.Option("--expected-manifest-sha256"),
+    ] = None,
+) -> None:
+    """Plan semantic units and exact LLM topology without invoking an LLM."""
+
+    settings = load_settings()
+    try:
+        plan = OfflineSemanticBrainCompiler(settings).plan(
+            source_project=source_project,
+            output_path=output,
+            expected_manifest_sha256=expected_manifest_sha256,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(plan)
+
+
+@brain_app.command("update-offline")
+def brain_update_offline(
+    source_project: Annotated[Path, typer.Option("--source-project")],
+    previous_package: Annotated[Path, typer.Option("--previous-package")],
+    output_root: Annotated[Path | None, typer.Option("--output-root")] = None,
+    expected_manifest_sha256: Annotated[
+        str | None,
+        typer.Option("--expected-manifest-sha256"),
+    ] = None,
+) -> None:
+    """Increment an offline brain with content-addressed node reuse."""
+
+    settings = load_settings()
+    try:
+        result = asyncio.run(
+            OfflineSemanticBrainCompiler(settings).build(
+                source_project=source_project,
+                output_root=output_root,
+                previous_package=previous_package,
+                expected_manifest_sha256=expected_manifest_sha256,
+            )
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            **result.package_manifest.model_dump(mode="json"),
+            "package_dir": result.package_dir.as_posix(),
+            "previous_package": previous_package.as_posix(),
+            "production_activated": False,
+        }
+    )
+
+
+@brain_app.command("select-offline-evaluation")
+def brain_select_offline_evaluation(
+    package: Annotated[Path, typer.Option("--package")],
+) -> None:
+    """Select a V2 package for evaluation without production activation."""
+
+    settings = load_settings()
+    try:
+        pointer = select_brain_package(
+            settings.project_root,
+            package_dir=package,
+            production_activated=False,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "pointer": relative_to_root(pointer, settings.project_root),
+            "production_activated": False,
+        }
+    )
 
 
 @app.command(

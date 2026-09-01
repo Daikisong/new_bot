@@ -69,6 +69,33 @@ Production daily blind analysis (requires a selected Offline Semantic Brain V2):
 nslab analyze-daily --news path/to/news.csv --trade-date YYYY-MM-DD --cutoff YYYY-MM-DDT08:59:59+09:00
 ```
 
+Offline Semantic Brain V2는 먼저 LLM 0회 planner로 실제 전수 topology를
+확정한 뒤 build한다. legacy memory pointer의 manifest SHA가 외부감사에서
+고정한 실제 SHA와 다를 때만 `--expected-manifest-sha256`에 그 감사 SHA를
+명시한다. 이 옵션 없이 pointer drift를 묵인하면 안 된다.
+
+```bash
+nslab brain plan-offline --source-project <immutable-project> \
+  --expected-manifest-sha256 <externally-attested-actual-sha> \
+  --output diagnostics/offline_brain_v2_full_plan.json
+nslab brain build-offline --source-project <immutable-project> \
+  --expected-manifest-sha256 <externally-attested-actual-sha>
+nslab brain update-offline --source-project <immutable-project> \
+  --previous-package <brain-package> \
+  --expected-manifest-sha256 <externally-attested-actual-sha>
+nslab brain select-offline-evaluation --package <brain-package>
+```
+
+- `plan-offline`과 build의 local geometry는 모든 source embedding을 사용한다.
+  앞 N개 표본만으로 split 경계를 정하지 않는다.
+- build는 import와 record embedding을 재실행하지 않는다.
+- 대표 payload가 leaf 예산을 넘으면 앞부분을 자르지 않고 UTF-8 무손실
+  chunk-map을 수행하며, 모든 chunk ID/hash/node를 exposure ledger에 남긴다.
+- 중단 뒤 같은 content-addressed LLM checkpoint만 재사용한다.
+- capsule과 mechanism claim ANN은 실제 DuckDB HNSW 실행 계획이 확인되지
+  않으면 package build를 fail-closed한다.
+- `select-offline-evaluation`은 production 활성화를 하지 않는다.
+
 `nslab analyze` is the legacy exhaustive/diagnostic graph. It may batch current
 clusters and map historical runtime evidence, so it is forbidden as the
 production 08:00 path. `analyze-daily` fails closed when the V2 package or its

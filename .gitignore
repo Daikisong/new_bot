@@ -55,6 +55,8 @@ runs/checkpoints/brain_context/SESSION-*/**
 !runs/checkpoints/phase_state/**
 brain/snapshots/*
 brain/diffs/*
+brain/.work/
+brain/packages/
 !brain/snapshots/.gitkeep
 !brain/diffs/.gitkeep
 warehouse/*

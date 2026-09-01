@@ -1,0 +1,150 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "brain_version": {
+      "title": "Brain Version",
+      "type": "string"
+    },
+    "chunked_representative_record_count": {
+      "title": "Chunked Representative Record Count",
+      "type": "integer"
+    },
+    "distinct_primary_assigned_record_count": {
+      "title": "Distinct Primary Assigned Record Count",
+      "type": "integer"
+    },
+    "duplicate_primary_assignment_count": {
+      "title": "Duplicate Primary Assignment Count",
+      "type": "integer"
+    },
+    "final_covered_capsule_count": {
+      "title": "Final Covered Capsule Count",
+      "type": "integer"
+    },
+    "leaf_coverage_root": {
+      "title": "Leaf Coverage Root",
+      "type": "string"
+    },
+    "leaf_covered_semantic_unit_count": {
+      "title": "Leaf Covered Semantic Unit Count",
+      "type": "integer"
+    },
+    "long_payload_chunk_count": {
+      "title": "Long Payload Chunk Count",
+      "type": "integer"
+    },
+    "population_contribution_record_count": {
+      "title": "Population Contribution Record Count",
+      "type": "integer"
+    },
+    "primary_assignment_count": {
+      "title": "Primary Assignment Count",
+      "type": "integer"
+    },
+    "rare_outlier_represented_unit_count": {
+      "title": "Rare Outlier Represented Unit Count",
+      "type": "integer"
+    },
+    "rare_outlier_unit_count": {
+      "title": "Rare Outlier Unit Count",
+      "type": "integer"
+    },
+    "record_count": {
+      "title": "Record Count",
+      "type": "integer"
+    },
+    "record_membership_root": {
+      "title": "Record Membership Root",
+      "type": "string"
+    },
+    "reduce_covered_capsule_count": {
+      "title": "Reduce Covered Capsule Count",
+      "type": "integer"
+    },
+    "reduce_tree_root": {
+      "title": "Reduce Tree Root",
+      "type": "string"
+    },
+    "representative_payload_char_count": {
+      "title": "Representative Payload Char Count",
+      "type": "integer"
+    },
+    "representative_payload_exposed_record_count": {
+      "title": "Representative Payload Exposed Record Count",
+      "type": "integer"
+    },
+    "representative_payload_exposure_ratio": {
+      "title": "Representative Payload Exposure Ratio",
+      "type": "number"
+    },
+    "representative_payload_full_read_count": {
+      "title": "Representative Payload Full Read Count",
+      "type": "integer"
+    },
+    "representative_payload_not_exposed_record_count": {
+      "title": "Representative Payload Not Exposed Record Count",
+      "type": "integer"
+    },
+    "representative_payload_read_root": {
+      "title": "Representative Payload Read Root",
+      "type": "string"
+    },
+    "representative_payload_truncated_count": {
+      "title": "Representative Payload Truncated Count",
+      "type": "integer"
+    },
+    "representative_record_root": {
+      "title": "Representative Record Root",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.semantic_influence_manifest.v2",
+      "default": "nslab.semantic_influence_manifest.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "semantic_unit_count": {
+      "title": "Semantic Unit Count",
+      "type": "integer"
+    },
+    "unassigned_record_count": {
+      "title": "Unassigned Record Count",
+      "type": "integer"
+    },
+    "unrepresented_reasoning_unit_count": {
+      "title": "Unrepresented Reasoning Unit Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "brain_version",
+    "record_count",
+    "primary_assignment_count",
+    "distinct_primary_assigned_record_count",
+    "unassigned_record_count",
+    "duplicate_primary_assignment_count",
+    "semantic_unit_count",
+    "rare_outlier_unit_count",
+    "rare_outlier_represented_unit_count",
+    "unrepresented_reasoning_unit_count",
+    "leaf_covered_semantic_unit_count",
+    "reduce_covered_capsule_count",
+    "final_covered_capsule_count",
+    "population_contribution_record_count",
+    "representative_payload_exposed_record_count",
+    "representative_payload_not_exposed_record_count",
+    "representative_payload_exposure_ratio",
+    "representative_payload_char_count",
+    "representative_payload_full_read_count",
+    "representative_payload_truncated_count",
+    "chunked_representative_record_count",
+    "long_payload_chunk_count",
+    "record_membership_root",
+    "representative_record_root",
+    "representative_payload_read_root",
+    "leaf_coverage_root",
+    "reduce_tree_root"
+  ],
+  "title": "SemanticInfluenceManifest",
+  "type": "object"
+}

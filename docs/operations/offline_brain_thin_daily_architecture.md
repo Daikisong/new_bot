@@ -86,9 +86,29 @@ diagnostics/daily_llm_call_graph_after.json
 diagnostics/daily_llm_call_graph_after.md
 ```
 
+## PR-B Implementation
+
+`OfflineSemanticBrainCompiler`과 `BrainPackageDailyContextProvider`가 추가됐다.
+compiler는 기존 record와 384차원 실임베딩을 재사용하고, 모든 record를
+전수 geometry로 semantic unit에 배정한다. package에는 capsule과 synthesized
+claim, category/world reduce, population cube, provenance ledger와 실제 HNSW
+index가 포함된다.
+
+```powershell
+python -m news_scalping_lab.cli brain plan-offline --source-project <project>
+python -m news_scalping_lab.cli brain build-offline --source-project <project>
+python -m news_scalping_lab.cli brain update-offline `
+  --source-project <project> --previous-package <package>
+python -m news_scalping_lab.cli brain select-offline-evaluation --package <package>
+```
+
+구현과 첫 전수 계획의 상세 감사 기준은
+`docs/operations/offline_semantic_brain_v2.md`에 기록한다.
+
 ## Activation State
 
-PR-A establishes the product boundary and contracts. It does not claim that the brain is built or quality is proven.
+PR-A establishes the product boundary. PR-B implements and fixture-tests the V2
+compiler and reader, but a full package and predictive quality are not yet proven.
 
 ```text
 DAILY_PRODUCT_PATH_IMPLEMENTED = true
@@ -100,4 +120,6 @@ PREDICTIVE_QUALITY_EVALUATED = false
 PRODUCTION_ACTIVATED = false
 ```
 
-The default provider fails closed until PR-B/PR-C build and select the immutable V2 package and implement its bounded DuckDB/ANN reader. Falling back to the legacy heavy path is forbidden.
+The production path fails closed until PR-C builds the full immutable package and
+PR-D passes the same-path quality gates. Falling back to the legacy heavy path is
+forbidden.
