@@ -122,7 +122,7 @@ representative records             181,979
 logical calls                        5,660
 문제                                대표 document 앞 4,000자만 사용
 
-authoritative v4
+authoritative v5
 semantic units                     52,644
 representative records             181,979
 representative payload chars  231,021,740
@@ -136,14 +136,18 @@ reduce/review calls                       158
 total logical calls                     7,671
 max concurrency                              4
 truncated representative payloads            0
-wall clock                           965.61초
+wall clock                          1,060.07초
 production activated                    false
 ```
 
 authoritative 파일은 `diagnostics/offline_brain_v2_full_plan.json`이며 SHA-256은
-`5d4e9766a9f3ffe4a54d3db7c93e7032f1b93f7b577aecaff0d2c72278b6c53a`다.
+`1de209106188cf8b402d7ebfef2abcd7e6b53f262990889f9a840ed7161847f9`다.
 strict와 candidate는 과분할·payload 절단 결함을 숨기지 않기 위한 진단
 증거로만 보존하며 build 입력으로 사용하지 않는다.
+
+v5 plan ID는 `OFFLINE-PLAN-149450301220655b94fe`다. v4와 semantic unit,
+대표 원문, chunk, LLM topology 수가 동일하므로 source identity 결속 수정이
+연구 원료의 의미 범위를 줄이지 않았음을 확인했다.
 
 181,979개 대표 record는 짧은 payload를 leaf가 전부 읽거나, oversized
 payload를 UTF-8 무손실 chunk-map한 뒤 leaf가 모든 digest를 읽는다. 나머지
@@ -189,7 +193,7 @@ DAILY_CALL_GRAPH_BOUNDED             true
 HISTORICAL_RAW_DAILY_REMAP_ZERO      true
 OFFLINE_V2_COMPILER_FIXTURE_TESTED   true
 FULL_823279_PLAN_STRICT_COMPLETED     true
-FULL_823279_PLAN_V4_COMPLETED         true
+FULL_823279_PLAN_V5_COMPLETED         true
 FULL_823279_BUILD_V4_FAILED_CLOSED    true
 FULL_823279_BUILD_V5_RETRY_PENDING    true
 FULL_823279_BUILD_COMPLETED           false

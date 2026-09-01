@@ -1,6 +1,6 @@
 {
   "schema_version": "nslab.offline_brain_v2_implementation_report.v1",
-  "status": "V4_FULL_BUILD_FAILED_CLOSED_V5_FIX_IMPLEMENTED_PLAN_REFRESH_PENDING",
+  "status": "V4_FULL_BUILD_FAILED_CLOSED_V5_PLAN_COMPLETED_FULL_BUILD_RETRY_PENDING",
   "source": {
     "record_count": 823279,
     "record_corpus_root": "2d25581cdc98d89cb0f1d2fa00bec917442171ee279c001edfc764e2941f6d75",
@@ -28,9 +28,9 @@
   },
   "authoritative_plan": {
     "path": "diagnostics/offline_brain_v2_full_plan.json",
-    "sha256": "5d4e9766a9f3ffe4a54d3db7c93e7032f1b93f7b577aecaff0d2c72278b6c53a",
-    "plan_id": "OFFLINE-PLAN-8dcbee09dee3fb9fe7ca",
-    "compiler_version": "nslab.offline_semantic_brain.compiler.v4",
+    "sha256": "1de209106188cf8b402d7ebfef2abcd7e6b53f262990889f9a840ed7161847f9",
+    "plan_id": "OFFLINE-PLAN-149450301220655b94fe",
+    "compiler_version": "nslab.offline_semantic_brain.compiler.v5",
     "splitter_version": "recursive_full_population_cosine_radius.v3",
     "split_p90_cosine_distance": 0.28,
     "split_max_cosine_distance": 0.55,
@@ -48,7 +48,7 @@
     "total_logical_llm_call_count": 7671,
     "planning_llm_call_count": 0,
     "offline_max_concurrency": 4,
-    "wall_clock_seconds": 965.611139,
+    "wall_clock_seconds": 1060.072602,
     "production_activated": false
   },
   "failed_full_build_attempt": {
@@ -71,7 +71,7 @@
     "llm_writes_immutable_source_identity": false,
     "source_identity_materialized_from_ledger": true,
     "v4_checkpoints_reused": false,
-    "v5_authoritative_plan_refreshed": false
+    "v5_authoritative_plan_refreshed": true
   },
   "rejected_diagnostic_plans": [
     {
