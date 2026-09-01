@@ -29,6 +29,7 @@ from news_scalping_lab.contracts.offline_brain import (
     DailyBrainContext,
     ExactWitness,
     LongPayloadChunkDigest,
+    LongPayloadChunkDigestDraft,
     LongPayloadDigestBatch,
     OfflineCompileManifest,
     SemanticCapsuleDraftBatch,
@@ -54,9 +55,9 @@ from news_scalping_lab.utils import (
     write_json,
 )
 
-OFFLINE_COMPILER_VERSION = "nslab.offline_semantic_brain.compiler.v4"
+OFFLINE_COMPILER_VERSION = "nslab.offline_semantic_brain.compiler.v5"
 SEMANTIC_SPLITTER_VERSION = "recursive_full_population_cosine_radius.v3"
-LONG_PAYLOAD_PROMPT_VERSION = "offline_long_payload_chunk_map.v1"
+LONG_PAYLOAD_PROMPT_VERSION = "offline_long_payload_chunk_map.v2"
 LEAF_PROMPT_VERSION = "offline_semantic_unit_leaf_map.v2"
 REDUCE_PROMPT_VERSION = "offline_semantic_reduce.v1"
 CATEGORY_REVIEW_PROMPT_VERSION = "offline_semantic_category_review.v1"
@@ -759,18 +760,13 @@ class OfflineSemanticBrainCompiler:
             if result.node_id != node_id or result.chunk_ids != chunk_ids:
                 raise ValueError("long payload digest output identity drifted")
             source_by_id = {str(row["chunk_id"]): row for row in batch}
-            for digest in result.digests:
-                source_row = source_by_id[digest.chunk_id]
-                if (
-                    digest.semantic_unit_id != source_row["semantic_unit_id"]
-                    or digest.record_id != source_row["record_id"]
-                    or digest.chunk_index != source_row["chunk_index"]
-                    or digest.chunk_count != source_row["chunk_count"]
-                    or digest.document_sha256 != source_row["document_sha256"]
-                    or digest.chunk_sha256 != source_row["chunk_sha256"]
-                ):
-                    raise ValueError("long payload digest mutated source identity")
-            return result.digests
+            return [
+                _materialize_long_payload_chunk_digest(
+                    source_row=source_by_id[digest.chunk_id],
+                    draft=digest,
+                )
+                for digest in result.digests
+            ]
 
         queue: asyncio.Queue[list[dict[str, Any]]] = asyncio.Queue()
         for batch in batches:
@@ -2032,9 +2028,29 @@ def _long_payload_prompt(
         "You are performing one-time offline semantic digestion of complete representative "
         "payload chunks. Read every supplied chunk. Preserve material facts, mechanisms, "
         "entities, numeric/time facts, and caveats without inventing missing context. Return "
-        "one digest for every required_chunk_id exactly once and copy all identity and hash "
-        "fields unchanged.\n---OFFLINE_LONG_PAYLOAD_MAP---\n"
+        "one semantic digest for every required_chunk_id exactly once. Return chunk_id only "
+        "for association; source record identity, ordering, and hashes are attached from the "
+        "immutable input ledger by the compiler and must not be generated."
+        "\n---OFFLINE_LONG_PAYLOAD_MAP---\n"
         + canonical_json(payload)
+    )
+
+
+def _materialize_long_payload_chunk_digest(
+    *,
+    source_row: dict[str, Any],
+    draft: LongPayloadChunkDigestDraft,
+) -> LongPayloadChunkDigest:
+    if draft.chunk_id != str(source_row["chunk_id"]):
+        raise ValueError("long payload digest chunk identity drifted")
+    return LongPayloadChunkDigest(
+        **draft.model_dump(mode="python"),
+        semantic_unit_id=str(source_row["semantic_unit_id"]),
+        record_id=str(source_row["record_id"]),
+        chunk_index=int(source_row["chunk_index"]),
+        chunk_count=int(source_row["chunk_count"]),
+        document_sha256=str(source_row["document_sha256"]),
+        chunk_sha256=str(source_row["chunk_sha256"]),
     )
 
 

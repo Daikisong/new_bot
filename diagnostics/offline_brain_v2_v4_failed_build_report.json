@@ -1,0 +1,97 @@
+{
+  "schema_version": "nslab.offline_brain_v2_failed_build_report.v1",
+  "attempt_id": "OFFLINE-COMPILE-a91447008c5e6b33dce4",
+  "attempted_compiler_version": "nslab.offline_semantic_brain.compiler.v4",
+  "attempted_prompt_version": "offline_long_payload_chunk_map.v1",
+  "status": "TERMINATED_FAIL_CLOSED",
+  "source": {
+    "record_count": 823279,
+    "record_corpus_root": "2d25581cdc98d89cb0f1d2fa00bec917442171ee279c001edfc764e2941f6d75",
+    "memory_snapshot_id": "MEMIDX-1e64a1b6e6ba7b07b799",
+    "source_mutated": false,
+    "production_pointer_mutated": false
+  },
+  "completed_local_work": {
+    "phase": "representative_and_distribution_build",
+    "processed_record_count": 823279,
+    "semantic_unit_count": 52644,
+    "record_progress_ratio": 1.0,
+    "progress_updated_at": "2026-09-02T06:09:03.510539+09:00"
+  },
+  "failure": {
+    "error": "long payload digest mutated source identity",
+    "failing_checkpoint_id": "LLMCKPT-26cc923defd86822",
+    "failing_node_id": "LONG-PAYLOAD-MAP-42a0708fca07a8e5bb00",
+    "schema_valid_checkpoint": true,
+    "digest_count": 8,
+    "mutated_digest_count": 3,
+    "mutated_fields": [
+      "document_sha256",
+      "chunk_sha256"
+    ],
+    "root_cause": "The v1 LLM response contract required the model to copy immutable source identity and hash fields. Three hashes were shifted between neighboring records even though the structured schema and chunk-ID closure passed.",
+    "fail_closed_was_correct": true
+  },
+  "mismatches": [
+    {
+      "record_id": "NSLAB-20200827-7192cb48__BD-00592",
+      "chunk_id": "LONG-CHUNK-16cb3f30c4c31189e404",
+      "returned_document_sha256": "e5041d2f73d20fc1dda29c27eddf71273a4ed3596ea5f0423b66273a2e677b2d",
+      "ledger_document_sha256": "5531d5172f2951e25df91ecec65163ca825c1063e8ec0262d0fa2b5269ee2033"
+    },
+    {
+      "record_id": "NSLAB-20210305-4c75c29d__BD-000314",
+      "chunk_id": "LONG-CHUNK-f516ce12cff2127ad699",
+      "returned_document_sha256": "fc20010017bf042cc3d7ed2cfe3a18e611cc45e0fb0469365b1e08245e84189b",
+      "ledger_document_sha256": "e5041d2f73d20fc1dda29c27eddf71273a4ed3596ea5f0423b66273a2e677b2d"
+    },
+    {
+      "record_id": "NSLAB-20230511-D3BB0405__BD-000462",
+      "chunk_id": "LONG-CHUNK-da2738ccc15f40b84f71",
+      "returned_document_sha256": "5531d5172f2951e25df91ecec65163ca825c1063e8ec0262d0fa2b5269ee2033",
+      "ledger_document_sha256": "fc20010017bf042cc3d7ed2cfe3a18e611cc45e0fb0469365b1e08245e84189b"
+    }
+  ],
+  "preserved_v4_checkpoints": {
+    "checkpoint_count": 11,
+    "digest_count": 55,
+    "policy": "PRESERVE_FOR_FORENSICS_NEVER_REUSE_FOR_V5",
+    "checkpoint_ids": [
+      "LLMCKPT-b874593d2b779fa4",
+      "LLMCKPT-55aa3d1c8c14bb02",
+      "LLMCKPT-2f8cbb102de39144",
+      "LLMCKPT-31126017883bb72c",
+      "LLMCKPT-97b80355d322eb3e",
+      "LLMCKPT-4e623d02692d9144",
+      "LLMCKPT-cacc9cc0ac051afd",
+      "LLMCKPT-8eae06d1167b2ce3",
+      "LLMCKPT-0a18c5eba206a4a5",
+      "LLMCKPT-85dc1fdfb5bb6605",
+      "LLMCKPT-26cc923defd86822"
+    ]
+  },
+  "corrective_action": {
+    "compiler_version": "nslab.offline_semantic_brain.compiler.v5",
+    "prompt_version": "offline_long_payload_chunk_map.v2",
+    "llm_authored_fields": [
+      "chunk_id",
+      "summary",
+      "material_facts",
+      "mechanisms",
+      "entities",
+      "numeric_and_time_facts",
+      "caveats"
+    ],
+    "ledger_materialized_fields": [
+      "semantic_unit_id",
+      "record_id",
+      "chunk_index",
+      "chunk_count",
+      "document_sha256",
+      "chunk_sha256"
+    ],
+    "old_checkpoint_identity_reused": false,
+    "raw_corpus_reimported": false,
+    "record_embeddings_recomputed": false
+  }
+}

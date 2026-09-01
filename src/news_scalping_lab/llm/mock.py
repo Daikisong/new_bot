@@ -39,7 +39,7 @@ from news_scalping_lab.contracts.models import (
 )
 from news_scalping_lab.contracts.offline_brain import (
     CurrentDayInterpretation,
-    LongPayloadChunkDigest,
+    LongPayloadChunkDigestDraft,
     LongPayloadDigestBatch,
     MechanismClaimDraft,
     SemanticCapsuleDraft,
@@ -173,14 +173,8 @@ class DeterministicMockLLMProvider:
         raw_chunks = payload.get("chunks")
         chunks = raw_chunks if isinstance(raw_chunks, list) else []
         digests = [
-            LongPayloadChunkDigest(
+            LongPayloadChunkDigestDraft(
                 chunk_id=str(row["chunk_id"]),
-                semantic_unit_id=str(row["semantic_unit_id"]),
-                record_id=str(row["record_id"]),
-                chunk_index=int(row["chunk_index"]),
-                chunk_count=int(row["chunk_count"]),
-                document_sha256=str(row["document_sha256"]),
-                chunk_sha256=str(row["chunk_sha256"]),
                 summary="Mock full-payload chunk digest.",
                 material_facts=["complete chunk was read"],
                 mechanisms=["source evidence -> mechanism"],

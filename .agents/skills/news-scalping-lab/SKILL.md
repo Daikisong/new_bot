@@ -197,6 +197,10 @@ python -m news_scalping_lab.cli memory score-runtime-variants \
 - If a diagnostic pack plan is run explicitly, use its exact call count for the
   forecast and resume only content-addressed `ok` checkpoints. Never call a
   diagnostic pack run a formal prediction result.
+- Offline compiler v4 long-payload checkpoints are forensic-only. The v1
+  response contract let the LLM rewrite immutable record/hash identity and one
+  schema-valid response shifted three hashes. Compiler v5 attaches source
+  identity from the immutable chunk ledger and must never reuse v4 checkpoints.
 - `QPRED-704f15cde6e4152b6931`, `RUN-9701018d4a4e`, and their 379-pack plan are
   permanently `HALTED_MISALIGNED_DIAGNOSTIC_ONLY`. Five pack outputs are
   preserved for forensics. Never resume, score, compare, promote, or use this

@@ -12,6 +12,7 @@ import pytest
 from news_scalping_lab.brain.offline_v2 import (
     BrainPackageDailyContextProvider,
     OfflineSemanticBrainCompiler,
+    _materialize_long_payload_chunk_digest,
     _split_semantic_stratum,
     _utf8_chunks,
     _VectorRow,
@@ -22,6 +23,8 @@ from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.offline_brain import (
     CurrentDayInterpretation,
     CurrentEventCapsule,
+    LongPayloadChunkDigestDraft,
+    LongPayloadDigestBatch,
 )
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.utils import KST, file_sha256, read_json, write_json
@@ -261,6 +264,47 @@ def test_utf8_long_payload_chunking_is_lossless() -> None:
 
     assert len(chunks) > 1
     assert "".join(chunks) == payload
+
+
+def test_long_payload_digest_source_identity_is_materialized_from_ledger() -> None:
+    source_row = {
+        "chunk_id": "LONG-CHUNK-source",
+        "semantic_unit_id": "SUNIT-source",
+        "record_id": "RECORD-source",
+        "chunk_index": 2,
+        "chunk_count": 4,
+        "document_sha256": "a" * 64,
+        "chunk_sha256": "b" * 64,
+    }
+    draft = LongPayloadChunkDigestDraft(
+        chunk_id="LONG-CHUNK-source",
+        summary="Semantic content authored by the model.",
+        material_facts=["fact"],
+        mechanisms=["mechanism"],
+    )
+
+    materialized = _materialize_long_payload_chunk_digest(
+        source_row=source_row,
+        draft=draft,
+    )
+
+    assert materialized.semantic_unit_id == source_row["semantic_unit_id"]
+    assert materialized.record_id == source_row["record_id"]
+    assert materialized.chunk_index == source_row["chunk_index"]
+    assert materialized.chunk_count == source_row["chunk_count"]
+    assert materialized.document_sha256 == source_row["document_sha256"]
+    assert materialized.chunk_sha256 == source_row["chunk_sha256"]
+    digest_properties = LongPayloadDigestBatch.model_json_schema()["$defs"][
+        "LongPayloadChunkDigestDraft"
+    ]["properties"]
+    assert {
+        "semantic_unit_id",
+        "record_id",
+        "chunk_index",
+        "chunk_count",
+        "document_sha256",
+        "chunk_sha256",
+    }.isdisjoint(digest_properties)
 
 
 @pytest.mark.asyncio

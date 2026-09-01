@@ -74,6 +74,19 @@ incremental update는 이전 package의 `semantic_unit_id + member_record_root`�
 같은 capsule과 동일 content-addressed reduce node를 재사용한다. 새 연구로
 영향받은 unit과 그 조상만 다시 합성한다.
 
+### v4 장문 digest 실패와 v5 복구
+
+2026-09-02 첫 full build는 823,279개 local assignment를 끝낸 뒤 v4 장문
+digest 한 건이 서로 다른 record의 SHA를 잘못 복사해 fail-closed로 종료됐다.
+LLM이 의미뿐 아니라 immutable source identity까지 다시 작성하게 한 계약이
+원인이었다. 상세 증거는
+`diagnostics/offline_brain_v2_v4_failed_build_report.{json,md}`에 고정했다.
+
+v5 응답 schema는 LLM에 `chunk_id`와 의미 digest만 요구한다. record ID,
+semantic unit ID, chunk 순번, document/chunk SHA는 원본 chunk ledger에서
+compiler가 결정론적으로 재부착한다. v4 checkpoint 11개는 감사용으로
+보존하지만 compiler/prompt version이 달라 v5가 재사용하지 않는다.
+
 ## Production source의 legacy pointer 불일치
 
 현재 source snapshot은 다음 상태다.
@@ -177,6 +190,8 @@ HISTORICAL_RAW_DAILY_REMAP_ZERO      true
 OFFLINE_V2_COMPILER_FIXTURE_TESTED   true
 FULL_823279_PLAN_STRICT_COMPLETED     true
 FULL_823279_PLAN_V4_COMPLETED         true
+FULL_823279_BUILD_V4_FAILED_CLOSED    true
+FULL_823279_BUILD_V5_RETRY_PENDING    true
 FULL_823279_BUILD_COMPLETED           false
 PREDICTIVE_QUALITY_EVALUATED          false
 PRODUCTION_ACTIVATED                  false
