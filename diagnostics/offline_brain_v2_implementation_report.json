@@ -1,0 +1,87 @@
+{
+  "schema_version": "nslab.offline_brain_v2_implementation_report.v1",
+  "status": "PR_B_IMPLEMENTED_FULL_BUILD_NOT_STARTED",
+  "source": {
+    "record_count": 823279,
+    "record_corpus_root": "2d25581cdc98d89cb0f1d2fa00bec917442171ee279c001edfc764e2941f6d75",
+    "memory_snapshot_id": "MEMIDX-1e64a1b6e6ba7b07b799",
+    "pointer_manifest_sha256": "fc0d847d4eb0db688cf19570a3519d357a93558463797e26321a106d60040804",
+    "actual_manifest_sha256": "6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576",
+    "database_sha256": "f2933b80171226ee8ffbc63502a1d350e6153f96ddceebf4c42c4b3c2fae3b73",
+    "pointer_manifest_hash_match": false,
+    "actual_manifest_externally_attested": true,
+    "source_mutated": false,
+    "import_reused": true,
+    "embedding_reused": true
+  },
+  "daily_product": {
+    "command": "analyze-daily",
+    "normal_logical_llm_calls": 2,
+    "maximum_live_calls_with_one_schema_repair_each": 4,
+    "historical_raw_daily_llm_map_calls": 0,
+    "daily_import_calls": 0,
+    "daily_brain_rebuild_calls": 0,
+    "maximum_exact_witnesses": 24,
+    "capsule_hnsw_required": true,
+    "mechanism_claim_hnsw_required": true,
+    "hnsw_explain_plan_required": "HNSW_INDEX_SCAN"
+  },
+  "authoritative_plan": {
+    "path": "diagnostics/offline_brain_v2_full_plan.json",
+    "sha256": "5d4e9766a9f3ffe4a54d3db7c93e7032f1b93f7b577aecaff0d2c72278b6c53a",
+    "plan_id": "OFFLINE-PLAN-8dcbee09dee3fb9fe7ca",
+    "compiler_version": "nslab.offline_semantic_brain.compiler.v4",
+    "splitter_version": "recursive_full_population_cosine_radius.v3",
+    "split_p90_cosine_distance": 0.28,
+    "split_max_cosine_distance": 0.55,
+    "semantic_unit_count": 52644,
+    "representative_payload_full_read_count": 181979,
+    "representative_payload_char_count": 231021740,
+    "representative_payload_exposure_ratio": 0.22104171246928442,
+    "representative_payload_truncated_count": 0,
+    "oversized_semantic_unit_count": 38,
+    "chunked_representative_record_count": 203,
+    "long_payload_chunk_count": 341,
+    "long_payload_chunk_map_call_count": 90,
+    "leaf_map_call_count": 7423,
+    "reduce_review_call_count": 158,
+    "total_logical_llm_call_count": 7671,
+    "planning_llm_call_count": 0,
+    "offline_max_concurrency": 4,
+    "wall_clock_seconds": 965.611139,
+    "production_activated": false
+  },
+  "rejected_diagnostic_plans": [
+    {
+      "path": "diagnostics/offline_brain_v2_full_plan_strict_v2.json",
+      "sha256": "e23dfabac6f4b713960c115a11f2f04266093684c8bba98bb4734122f8809792",
+      "reason": "OVER_SPLIT_AND_FIRST_4000_CHARS_ONLY"
+    },
+    {
+      "path": "diagnostics/offline_brain_v2_full_plan_candidate_v3.json",
+      "sha256": "3d8e405cba11e3760e152d854890a8926d855bafa2c9c8279c6fd2ae12fea913",
+      "reason": "FIRST_4000_CHARS_ONLY"
+    }
+  ],
+  "historical_oauth_timing": {
+    "trace_count": 142,
+    "median_seconds": 47.71,
+    "mean_seconds": 54.39,
+    "p90_seconds": 87.13,
+    "ideal_hours_at_concurrency_4_median": 25.41,
+    "ideal_hours_at_concurrency_4_mean": 28.97,
+    "ideal_hours_at_concurrency_4_p90": 46.41,
+    "forecast_is_observation_not_gate": true
+  },
+  "verification": {
+    "ruff": "PASS",
+    "mypy_source_file_count": 138,
+    "mypy": "PASS",
+    "targeted_test_count": 18,
+    "targeted_tests": "PASS",
+    "full_pytest": "PASS_1880",
+    "full_build": "NOT_STARTED",
+    "calibration_holdout": "NOT_STARTED",
+    "production_activation": false
+  }
+}

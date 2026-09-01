@@ -49,7 +49,14 @@ from news_scalping_lab.contracts.models import (
     SemanticRetrievalPlan,
 )
 from news_scalping_lab.contracts.offline_brain import (
+    BrainPackageManifest,
+    BrainPackagePointer,
+    CurrentEventCapsule,
     DailyBrainContext,
+    OfflineCompileManifest,
+    SemanticInfluenceManifest,
+    SemanticMemoryCapsule,
+    SynthesizedMechanismClaim,
     ThinDailyAnalysis,
     ThinDailyRunManifest,
 )
@@ -67,6 +74,9 @@ from news_scalping_lab.contracts.production import (
 from news_scalping_lab.contracts.runtime_retrieval import (
     RuntimeEvidenceMemo,
     RuntimeEvidenceMemoBatch,
+    RuntimeEvidenceMemoPack,
+    RuntimeEvidencePackManifest,
+    RuntimeEvidencePackPlan,
     RuntimeRetrievalTrace,
 )
 from news_scalping_lab.contracts.shadow_evaluation import (
@@ -116,11 +126,11 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "category_claim_inclusion_proof.schema.json": CategoryClaimInclusionProof,
     "category_brain_index_manifest.schema.json": CategoryBrainIndexManifest,
     "daily_memory_context.schema.json": DailyMemoryContext,
-    "daily_brain_context_v2.schema.json": DailyBrainContext,
-    "thin_daily_analysis.schema.json": ThinDailyAnalysis,
-    "thin_daily_run_manifest.schema.json": ThinDailyRunManifest,
     "runtime_evidence_memo.schema.json": RuntimeEvidenceMemo,
     "runtime_evidence_memo_batch.schema.json": RuntimeEvidenceMemoBatch,
+    "runtime_evidence_memo_pack.schema.json": RuntimeEvidenceMemoPack,
+    "runtime_evidence_pack_manifest.schema.json": RuntimeEvidencePackManifest,
+    "runtime_evidence_pack_plan.schema.json": RuntimeEvidencePackPlan,
     "runtime_retrieval_trace.schema.json": RuntimeRetrievalTrace,
     "shadow_replay_dataset.schema.json": ShadowReplayDataset,
     "shadow_evaluation_manifest.schema.json": ShadowEvaluationManifest,
@@ -143,6 +153,16 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     ),
     "production_release_manifest.schema.json": ProductionReleaseManifest,
     "production_current_pointer.schema.json": ProductionCurrentPointer,
+    "semantic_memory_capsule.schema.json": SemanticMemoryCapsule,
+    "synthesized_mechanism_claim.schema.json": SynthesizedMechanismClaim,
+    "brain_package_manifest.schema.json": BrainPackageManifest,
+    "brain_package_pointer.schema.json": BrainPackagePointer,
+    "offline_compile_manifest.schema.json": OfflineCompileManifest,
+    "semantic_influence_manifest.schema.json": SemanticInfluenceManifest,
+    "current_event_capsule.schema.json": CurrentEventCapsule,
+    "daily_brain_context_v2.schema.json": DailyBrainContext,
+    "thin_daily_run_manifest.schema.json": ThinDailyRunManifest,
+    "thin_daily_analysis.schema.json": ThinDailyAnalysis,
 }
 
 

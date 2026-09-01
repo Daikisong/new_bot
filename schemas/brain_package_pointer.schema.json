@@ -1,0 +1,40 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "brain_version": {
+      "title": "Brain Version",
+      "type": "string"
+    },
+    "manifest_sha256": {
+      "title": "Manifest Sha256",
+      "type": "string"
+    },
+    "package_path": {
+      "title": "Package Path",
+      "type": "string"
+    },
+    "package_root": {
+      "title": "Package Root",
+      "type": "string"
+    },
+    "production_activated": {
+      "default": false,
+      "title": "Production Activated",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "nslab.brain_package_pointer.v1",
+      "default": "nslab.brain_package_pointer.v1",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "brain_version",
+    "package_path",
+    "manifest_sha256",
+    "package_root"
+  ],
+  "title": "BrainPackagePointer",
+  "type": "object"
+}
