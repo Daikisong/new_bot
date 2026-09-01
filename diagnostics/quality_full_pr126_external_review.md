@@ -1,5 +1,25 @@
 # QUALITY_FULL PR126 External Review Brief
 
+## Live Status Addendum
+
+The earlier checkpoint described below has been superseded by a live formal run.
+As of `2026-09-02T01:22:58.9005034+09:00`, the honest current label is:
+
+```text
+IMPLEMENTATION_MECHANICALLY_VERIFIED
+ACTUAL_3_CASE_PREDICTION_RUNNING_NOT_SCORED
+CASE_1_V0_SEALED
+CASE_1_V1_RUNTIME_EVIDENCE_PACKS_4_OF_379
+OUTCOME_NOT_OPENED
+PRODUCTION_HOLD
+```
+
+See `diagnostics/quality_full_pr126_live_progress.{json,md}` for the exact
+point-in-time artifact commitments, completed pack checkpoints, scope of the
+1.0554% figure, and the remaining ordered gates. The large runtime artifacts
+are intentionally local and are not made auditable merely by this Git commit;
+they require a separate hash-verified export.
+
 ## Requested Verdict
 
 Review the pushed `codex/quality-full-pr126` branch as an implementation and
@@ -9,7 +29,7 @@ The honest current label is:
 
 ```text
 IMPLEMENTATION_MECHANICALLY_VERIFIED
-ACTUAL_3_CASE_PREDICTIVE_SCORE_NOT_RUN
+ACTUAL_3_CASE_PREDICTION_RUNNING_NOT_SCORED
 PRODUCTION_HOLD
 ```
 
@@ -27,13 +47,17 @@ PRODUCTION_HOLD
   `bfcc21e433ab36cf457254f7587f7fb71d2a12e4a332a12c0fead0b0554d3f9c`.
 - Its physically separate outcome selection SHA-256 is
   `6c10f848bf6c77ebb3df0aa8fa5a9b951c419c3412db4192d9ad8ab96a114bdb`.
-- No paired prediction manifest or score report exists for that selection.
+- Paired prediction manifest `QPRED-704f15cde6e4152b6931` now exists for that
+  selection. It has one of six expected seals (`NSLAB-20260102-be50ec83/V0`),
+  no paired case closure, `all_predictions_sealed=false`, and
+  `outcome_opened=false`. No score report exists yet.
 - One safe prediction attempt created incomplete shared context
   `SHAREDCTX-9934ed4eef311fd9d5d6`. Existing map/reduce checkpoints were
   restored and seven live novelty-batch calls completed; the next call was
   interrupted, and the attempt was
-  stopped cleanly before V0/V1 prediction closure. It produced no `QPRED`, no
-  score, and no production mutation.
+  stopped cleanly before V0/V1 prediction closure. That historical attempt
+  produced no `QPRED`, no score, and no production mutation; the current safe
+  run is the separate `QPRED-704f15cde6e4152b6931` ancestry.
 - Production brain, memory, warehouse, record store, and activation pointers
   were not changed.
 
@@ -90,19 +114,22 @@ price-repository access, and zero outcome access during preparation.
 ruff                         PASS
 mypy                         PASS (135 source files)
 schema parity                PASS
-full pytest                  PASS (1,845 tests)
+full pytest                  PASS (1,863 tests)
 independent boundary audit   PASS (no HIGH/MEDIUM)
-safe-attempt OAuth calls     partial shared novelty only
-real safe 3-case evaluation  NOT_RUN
+safe-attempt OAuth calls     historical partial shared novelty only
+real safe 3-case evaluation  RUNNING_NOT_SCORED
 production mutation          0
 ```
 
-The full suite completed in 342.28 seconds. Warnings were existing/runtime
-deprecation and audit-fixture warnings, not test failures.
+The current full suite completed in 393.97 seconds. Warnings were
+existing/runtime deprecation and audit-fixture warnings, not test failures.
 
-After the live closure fix, the current gate is 1,847 passed in 395.15 seconds,
-with Ruff and Mypy (135 source files) also passing. See
-`diagnostics/quality_full_shared_batch_closure_fix.{json,md}`.
+Immediately after the earlier shared-closure fix, the gate was 1,847 passed in
+395.15 seconds. The later live-progress checkpoint supersedes that count with
+1,863 passed in 393.97 seconds; Ruff and Mypy (135 source files) also pass. See
+`diagnostics/quality_full_shared_batch_closure_fix.{json,md}` for the historical
+fix and `diagnostics/quality_full_pr126_live_progress.{json,md}` for the current
+point-in-time state.
 
 ## Why The Safe Attempt Was Stopped
 
@@ -128,6 +155,8 @@ ran second, so this is not a throughput promise.
 
 ## Evidence Files
 
+- `diagnostics/quality_full_pr126_live_progress.json`
+- `diagnostics/quality_full_pr126_live_progress.md`
 - `diagnostics/quality_full_invalidated_run_report.json`
 - `diagnostics/quality_full_invalidated_run_report.md`
 - `diagnostics/quality_full_sealed_d_minus_one_preparation.json`
@@ -150,8 +179,8 @@ ran second, so this is not a throughput promise.
 5. Are market-universe, leader, Recall@K, precision, Brier/ECE, ineligible-row,
    citation, and offline-unexposed metrics defined without fabricating unavailable
    theme/newsless truth?
-6. Is it safe to begin the real three-case `predict-runtime-variants` run, or is
-   another implementation blocker present?
+6. Does the running `QPRED-704f15cde6e4152b6931` ancestry preserve the formal
+   blind boundary and checkpoint commitments through all six prediction seals?
 7. Does the runtime-evidence pack graph prove complete assignment coverage,
    enforce prompt bounds without first-N/truncation, and reject plan/output/
    checkpoint commitment drift?

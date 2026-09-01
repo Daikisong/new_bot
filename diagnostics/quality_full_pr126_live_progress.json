@@ -1,0 +1,173 @@
+{
+  "schema_version": "nslab.quality_full_pr126_live_progress.v1",
+  "observed_at_kst": "2026-09-02T01:22:58.9005034+09:00",
+  "snapshot_semantics": "POINT_IN_TIME_NOT_A_LIVE_COUNTER",
+  "branch": "codex/quality-full-pr126",
+  "implementation_commit": "5fdbcfe594954eb8e901bf65847af5563852ef14",
+  "quality_state": "RUNNING_NOT_SCORED",
+  "production_activation": "NOT_PRODUCTION_ACTIVATED",
+  "current_operation": {
+    "command": "python -m news_scalping_lab.cli memory predict-runtime-variants --project-root <evaluation-project> --blind-selection <blind-runtime-selection.json>",
+    "worker_pid_at_observation": 49524,
+    "worker_alive_at_observation": true,
+    "provider": "codex-oauth",
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "xhigh",
+    "case_id": "NSLAB-20260102-be50ec83",
+    "variant_id": "V1",
+    "runtime_run_id": "RUN-9701018d4a4e",
+    "paired_prediction_run_id": "QPRED-704f15cde6e4152b6931",
+    "selection_id": "QSEL-19b3c80ba392db8564c9",
+    "current_pack_id_at_observation": "REPACK-220549cfef6a0e0b9d09",
+    "operation_class": "EVALUATION_TIME_RAG_EVIDENCE_DIGESTION",
+    "is_model_training": false,
+    "is_brain_rebuild": false,
+    "is_research_import": false,
+    "is_production_activation": false
+  },
+  "prediction_boundary": {
+    "expected_case_count": 3,
+    "expected_variant_count": 2,
+    "expected_prediction_seal_count": 6,
+    "completed_prediction_seal_count": 1,
+    "completed_seal": "NSLAB-20260102-be50ec83/V0",
+    "paired_case_count": 0,
+    "all_predictions_sealed": false,
+    "outcome_opened": false,
+    "score_created": false
+  },
+  "runtime_evidence_pack_stage": {
+    "pack_count": 379,
+    "completed_pack_count": 4,
+    "remaining_pack_count": 375,
+    "completed_percent": 1.0554089709762533,
+    "remaining_percent": 98.94459102902375,
+    "percent_scope": "CURRENT_CASE_V1_RUNTIME_EVIDENCE_PACK_STAGE_ONLY",
+    "assignment_count": 49984,
+    "assignment_root_sha256": "5f852183b1d9d97fcb1b8d7c733472338759402cfdb884e6f746ff86ca3fe12d",
+    "unique_record_count": 1560,
+    "planned_payload_occurrence_count": 1914,
+    "unpacked_payload_occurrence_count": 49984,
+    "avoided_payload_occurrence_count": 48070,
+    "max_prompt_chars": 240000,
+    "first_n_shortcut_used": false,
+    "silent_truncation_used": false
+  },
+  "observed_pack_efficiency": {
+    "classification": "OBSERVATION_NOT_A_GATE_OR_PROMISE",
+    "completed_pack_elapsed_minutes_approx": [
+      13.0,
+      34.3,
+      29.6,
+      14.0
+    ],
+    "median_elapsed_minutes_approx": 21.8,
+    "remaining_sequential_forecast_hours_at_observed_median_approx": 136.3,
+    "remaining_sequential_forecast_days_at_observed_median_approx": 5.7,
+    "forecast_excludes": [
+      "future structured-repair variance",
+      "provider failures",
+      "machine interruptions",
+      "restart deep verification",
+      "case 1 final synthesis",
+      "cases 2 and 3",
+      "PR127 through PR130"
+    ]
+  },
+  "artifact_commitments": [
+    {
+      "path": "runs/semantic_brain_upgrade/quality_full/selections/QSEL-19b3c80ba392db8564c9/blind_runtime_selection.json",
+      "size_bytes": 3929,
+      "sha256": "bfcc21e433ab36cf457254f7587f7fb71d2a12e4a332a12c0fead0b0554d3f9c"
+    },
+    {
+      "path": "runs/semantic_brain_upgrade/quality_full/predictions/QPRED-704f15cde6e4152b6931/paired_prediction_manifest.json",
+      "size_bytes": 8065,
+      "sha256": "bfb9b8a0923300c77b46d82e74ab0a4375d09aa68ce57775ac827f409815686b"
+    },
+    {
+      "path": "runs/checkpoints/daily_memory_context/RUN-9701018d4a4e/compact_final_context.json",
+      "size_bytes": 29973,
+      "sha256": "4d86b799a2577c16785866354025d89e0401765df2e3c92ad25e423e005d0171"
+    },
+    {
+      "path": "runs/checkpoints/daily_memory_context/RUN-9701018d4a4e/daily_memory_context.json",
+      "size_bytes": 5143966,
+      "sha256": "ad3cf2ed69e720f6ae448e5e933c6dd90b861691b29ef243e808f40138121e5b"
+    },
+    {
+      "path": "runs/checkpoints/runtime_evidence_packs/RUN-9701018d4a4e/runtime_evidence_pack_plan.json",
+      "size_bytes": 1213917,
+      "sha256": "da02ea1a4e63e114d822d95c61af4fa08e8bfcfe3b04d5cb16394f6f24858b6e"
+    }
+  ],
+  "completed_packs": [
+    {
+      "pack_id": "REPACK-944afc84f53ea6004236",
+      "size_bytes": 76918,
+      "sha256": "ef59ad172eaa040333e7e0a64dd511f818cb06a0f593d12c6a217dd1724b27f5",
+      "checkpoint_id": "LLMCKPT-6aaf7b8fbd41c426",
+      "checkpoint_status": "ok",
+      "checkpoint_sha256": "b3fdef93e43092d296f7bae9d891d4aa3905e22280f5793517890def6d878f08"
+    },
+    {
+      "pack_id": "REPACK-42e3c0dbfb182600b7d3",
+      "size_bytes": 155291,
+      "sha256": "17c2ef6f35c5e2d882bdcb9a15a9ae5111b07400d33f90273df4703e4e140326",
+      "checkpoint_id": "LLMCKPT-fa9ee96cfb38c3f9",
+      "checkpoint_status": "ok",
+      "checkpoint_sha256": "fa4fd62b580bd156cb99412706ee84d7fa59a6c709b41c911fbd5d855b9a1089"
+    },
+    {
+      "pack_id": "REPACK-b69f594789245ca709e9",
+      "size_bytes": 113858,
+      "sha256": "bfb2d72abc79e22894dfa26a902659f9602c1314854eb6a1c7437425b03e96e7",
+      "checkpoint_id": "LLMCKPT-fe520dbf446fa913",
+      "checkpoint_status": "ok",
+      "checkpoint_sha256": "401d365ca99d84d300597f83d922a486538fbb08cb47a75388f36490087e9195"
+    },
+    {
+      "pack_id": "REPACK-57cee5def1bd00c21d82",
+      "size_bytes": 146865,
+      "sha256": "180bb9b088253b2c083696df3eb4a3e781c949377be18376c2ef264af37661c0",
+      "checkpoint_id": "LLMCKPT-51513b5becbcca0f",
+      "checkpoint_status": "ok",
+      "checkpoint_sha256": "4e1562d0417e86cf1bc386f299848f8017f1267d671acff113e235573e03c886"
+    }
+  ],
+  "verification": {
+    "ruff": "PASS",
+    "mypy": "PASS_135_SOURCE_FILES",
+    "pytest": "PASS_1863",
+    "pytest_elapsed_seconds": 393.97,
+    "repository_worktree_at_observation": "CLEAN",
+    "latest_pushed_fix_commit": "5fdbcfe594954eb8e901bf65847af5563852ef14"
+  },
+  "remaining_goal_stages": [
+    "finish case 1 V1 and seal it",
+    "finish and seal case 2 V0/V1",
+    "finish and seal case 3 V0/V1",
+    "open outcomes only after all six seals and score the three cases",
+    "PR127 CALIBRATION40",
+    "PR128 semantic compiler v8 and V2",
+    "PR129 HOLDOUT40",
+    "PR130 post-cutoff forward shadow and final brain candidate",
+    "keep production activation on HOLD"
+  ],
+  "external_review_boundary": {
+    "github_contains": [
+      "implementation code",
+      "tests",
+      "this point-in-time commitment report",
+      "the external review brief"
+    ],
+    "github_does_not_contain": [
+      "the large evaluation project",
+      "the 1.2 MB immutable pack plan",
+      "daily runtime contexts",
+      "pack outputs",
+      "OAuth checkpoint payloads"
+    ],
+    "required_for_full_artifact_audit": "Export the committed local artifacts by the listed paths and verify their SHA-256 values."
+  }
+}
