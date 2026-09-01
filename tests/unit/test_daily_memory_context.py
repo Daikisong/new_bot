@@ -73,6 +73,7 @@ from news_scalping_lab.memory.daily_context import (
     compact_daily_memory_payload,
     daily_memory_artifact_chain_errors,
     daily_memory_source_chain_errors,
+    final_beneficiary_compact_payload,
     inspect_daily_memory_context,
 )
 from news_scalping_lab.memory.diversity import (
@@ -2277,6 +2278,107 @@ def test_compact_allocator_preserves_eleven_material_clusters(
     assert {
         row["cluster_id"] for row in payload["representative_records"]
     } == set(cluster_ids)
+
+
+def test_compact_allocator_commits_high_cardinality_daily_coverage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _index, _candidate_value, graph_path, _context_path, raw_context = (
+        _build_daily_fixture(tmp_path, monkeypatch)
+    )
+    context = DailyMemoryContext.model_validate(raw_context)
+    base_population = _population_summaries(
+        tmp_path,
+        context.population_manifests,
+    )[0]
+    base_representative = _representative_rows(
+        tmp_path,
+        context.representative_set_manifests,
+    )[0]
+    base_plan = CategoryBrainQueryPlan.model_validate(context.category_query_plans[0])
+    graph = BeneficiaryGraphArtifact.model_validate(read_json(graph_path))
+    cluster_ids = [f"EVT-HIGH-CARDINALITY-{index:03d}" for index in range(478)]
+    populations: list[dict[str, object]] = []
+    representatives: list[dict[str, object]] = []
+    built_keys: list[str] = []
+    for index in range(1_438):
+        cluster_id = cluster_ids[index % len(cluster_ids)]
+        population_id = f"POP-HIGH-CARDINALITY-{index:04d}"
+        populations.append(
+            {
+                **base_population,
+                "population_id": population_id,
+                "cluster_id": cluster_id,
+            }
+        )
+        representatives.append(
+            {
+                **base_representative,
+                "population_id": population_id,
+                "cluster_id": cluster_id,
+                "record_id": f"REC-HIGH-CARDINALITY-{index:04d}",
+                "independent_unit_id": f"UNIT-HIGH-CARDINALITY-{index:04d}",
+            }
+        )
+        built_keys.append(
+            f"{cluster_id}|{base_population['population_purpose']}|"
+            f"{base_population['independent_unit_type']}|{index:04d}"
+        )
+    kwargs = {
+        "run_id": RUN_ID,
+        "trade_date": TRADE_DATE,
+        "cutoff_at": CUTOFF,
+        "memory_snapshot_id": context.memory_snapshot_id,
+        "material_event_cluster_ids": cluster_ids,
+        "uncovered_material_event_cluster_ids": [],
+        "built_population_keys": built_keys,
+        "uncovered_population_purposes": {
+            cluster_id: ["candidate_error", "newsless"]
+            for cluster_id in cluster_ids
+        },
+        "population_summaries": populations,
+        "representative_records": representatives,
+        "category_query_plans": [
+            base_plan.model_copy(update={"cluster_id": cluster_id})
+            for cluster_id in cluster_ids
+        ],
+        "category_guidance": context.category_guidance,
+        "graph": graph,
+        "disagreements": [],
+        "supporting_record_ids": [
+            f"REC-HIGH-CARDINALITY-{index:04d}" for index in range(1_438)
+        ],
+        "contradicting_record_ids": [],
+        "unexplained_record_ids": [],
+    }
+
+    payload = compact_daily_memory_payload(**kwargs)  # type: ignore[arg-type]
+
+    assert payload["schema_version"] == "nslab.daily_memory_compact_context.v2"
+    assert len(canonical_json(payload).encode("utf-8")) <= 30_000
+    commitments = payload["coverage_commitments"]
+    assert commitments["material_event_cluster_ids"] == {
+        "item_count": 478,
+        "root_sha256": sha256_text(canonical_json(sorted(cluster_ids))),
+    }
+    assert commitments["population_summaries"]["item_count"] == 1_438
+    assert commitments["representative_records"]["item_count"] == 1_438
+    assert payload["omitted_counts"]["population_summaries"] > 0
+    assert payload["omitted_counts"]["representative_records"] > 0
+    assert payload["population_summaries"]
+    assert payload["representative_records"]
+    assert payload["category_brain_query_plans"]
+    assert payload == compact_daily_memory_payload(  # type: ignore[arg-type]
+        **kwargs
+    )
+    final_payload = final_beneficiary_compact_payload(payload, graph=graph)
+    assert len(canonical_json(final_payload).encode("utf-8")) <= (
+        DAILY_MEMORY_CONTEXT_MAX_BYTES
+    )
+    assert final_payload["coverage_commitments"]["beneficiary_graph_paths"][
+        "item_count"
+    ] == graph.path_count
 
 
 def test_final_v3_rejects_new_candidate_and_unselected_memory(

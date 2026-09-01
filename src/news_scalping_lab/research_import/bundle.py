@@ -55,10 +55,12 @@ from news_scalping_lab.memory.daily_context import (
     daily_memory_disagreements,
     daily_memory_record_roles,
     daily_memory_source_chain_errors,
+    final_beneficiary_compact_payload,
     material_cluster_queries_from_sources,
     population_summary_rows,
     representative_rows_from_sources,
     runtime_evidence_compact_payload,
+    runtime_evidence_record_roles,
 )
 from news_scalping_lab.phase7_transport import verify_phase7_transport_attestation
 from news_scalping_lab.records.models import CompiledBrainClaim
@@ -1039,6 +1041,9 @@ def _verify_phase7_bundle(
         graph_cluster_manifest = EventClusterManifest.model_validate(
             source_payloads.get(graph.event_cluster_manifest.artifact_path)
         )
+        retrieval_graph = BeneficiaryGraphArtifact.model_validate(
+            source_payloads.get(daily.beneficiary_graph.artifact_path)
+        )
         daily_event_manifest = EventClusterManifest.model_validate(
             source_payloads.get(daily.event_cluster_manifest.artifact_path)
         )
@@ -1127,7 +1132,7 @@ def _verify_phase7_bundle(
             representative_records=representative_rows,
             category_query_plans=daily.category_query_plans,
             category_guidance=daily.category_guidance,
-            graph=graph,
+            graph=retrieval_graph,
             disagreements=disagreements,
             supporting_record_ids=supporting,
             contradicting_record_ids=contradicting,
@@ -1145,10 +1150,24 @@ def _verify_phase7_bundle(
                 for reference in daily.runtime_evidence_memos
                 for row in source_rows.get(reference.artifact_path, [])
             ]
+            supporting, contradicting, unexplained = runtime_evidence_record_roles(
+                supporting_record_ids=supporting,
+                contradicting_record_ids=contradicting,
+                unexplained_record_ids=unexplained,
+                traces=runtime_traces,
+            )
             expected_compact_payload = runtime_evidence_compact_payload(
                 expected_compact_payload,
                 traces=runtime_traces,
                 memos=runtime_memos,
+                supporting_record_ids=supporting,
+                contradicting_record_ids=contradicting,
+                unexplained_record_ids=unexplained,
+            )
+        if daily.final_beneficiary_graph is not None:
+            expected_compact_payload = final_beneficiary_compact_payload(
+                expected_compact_payload,
+                graph=graph,
             )
         chain_traces = [
             AdaptiveRetrievalTrace.model_validate(
@@ -1315,7 +1334,10 @@ def _phase7_contract_payload_valid(source_path: str, payload: Any) -> bool:
             model: Any = CompanyMemory
         else:
             return False
-    elif schema_version == "nslab.daily_memory_compact_context.v1":
+    elif schema_version in {
+        "nslab.daily_memory_compact_context.v1",
+        "nslab.daily_memory_compact_context.v2",
+    }:
         return Path(source_path).name == "compact_final_context.json"
     else:
         model = model_by_schema.get(schema_version)

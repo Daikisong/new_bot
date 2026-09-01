@@ -6,7 +6,7 @@ import json
 import math
 import os
 import struct
-from collections import Counter
+from collections import Counter, deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -126,7 +126,10 @@ DAILY_MEMORY_COMPACT_RUNTIME_EVIDENCE_FILENAME = (
 )
 DAILY_MEMORY_COMPACT_FINAL_FILENAME = "compact_final_beneficiary_context.json"
 DAILY_MEMORY_CONTEXT_MAX_BYTES = 48_000
+DAILY_MEMORY_CONTEXT_INITIAL_MAX_BYTES = 30_000
 DAILY_CATEGORY_GUIDANCE_MAX_COUNT = 24
+DAILY_MEMORY_COMPACT_V2_SCHEMA = "nslab.daily_memory_compact_context.v2"
+DAILY_MEMORY_COMPACT_V2_POLICY = "complete_roots_bounded_semantic_rows.v1"
 QUALITY_FULL_MAX_CLUSTER_WORKERS = 2
 DAILY_CLUSTER_CHECKPOINT_VERSION = "daily_cluster_artifacts.v2"
 DAILY_CLUSTER_CHECKPOINT_SCHEMA = "nslab.daily_cluster_checkpoint.v2"
@@ -1896,7 +1899,7 @@ def inspect_daily_memory_context(
             representative_records=representative_rows,
             category_query_plans=context.category_query_plans,
             category_guidance=expected_guidance,
-            graph=compact_graph,
+            graph=graph,
             disagreements=disagreements,
             supporting_record_ids=supporting,
             contradicting_record_ids=contradicting,
@@ -1919,16 +1922,21 @@ def inspect_daily_memory_context(
                     unexplained_record_ids=unexplained,
                     traces=runtime_traces,
                 )
-                expected_compact["supporting_record_ids"] = supporting
-                expected_compact["contradicting_record_ids"] = contradicting
-                expected_compact["unexplained_record_ids"] = unexplained
                 expected_compact = runtime_evidence_compact_payload(
                     expected_compact,
                     traces=runtime_traces,
                     memos=runtime_memos,
+                    supporting_record_ids=supporting,
+                    contradicting_record_ids=contradicting,
+                    unexplained_record_ids=unexplained,
                 )
             except (OSError, ValueError) as exc:
                 errors.append(f"daily_memory_runtime_evidence_invalid:{exc}")
+        if context.final_beneficiary_graph is not None:
+            expected_compact = final_beneficiary_compact_payload(
+                expected_compact,
+                graph=compact_graph,
+            )
         for role_name, role_observed, role_expected in (
             ("supporting", context.supporting_record_ids, supporting),
             ("contradicting", context.contradicting_record_ids, contradicting),
@@ -2041,20 +2049,20 @@ def attach_runtime_evidence_to_daily_context(
     compact = read_json(source_compact_path)
     if not isinstance(compact, dict):
         raise ValueError("daily memory compact context is invalid")
-    compact = runtime_evidence_compact_payload(
-        compact,
-        traces=traces,
-        memos=memos,
-    )
     supporting, contradicting, unexplained = runtime_evidence_record_roles(
         supporting_record_ids=context.supporting_record_ids,
         contradicting_record_ids=context.contradicting_record_ids,
         unexplained_record_ids=context.unexplained_record_ids,
         traces=traces,
     )
-    compact["supporting_record_ids"] = supporting
-    compact["contradicting_record_ids"] = contradicting
-    compact["unexplained_record_ids"] = unexplained
+    compact = runtime_evidence_compact_payload(
+        compact,
+        traces=traces,
+        memos=memos,
+        supporting_record_ids=supporting,
+        contradicting_record_ids=contradicting,
+        unexplained_record_ids=unexplained,
+    )
     compact_bytes = canonical_json(compact).encode("utf-8")
     if len(compact_bytes) > DAILY_MEMORY_CONTEXT_MAX_BYTES:
         raise ValueError(
@@ -2124,27 +2132,7 @@ def bind_final_beneficiary_graph_to_daily_context(
     compact = read_json(source_compact_path)
     if not isinstance(compact, dict):
         raise ValueError("daily memory compact context is invalid")
-    graph_rows = _compact_beneficiary_graph_paths(graph)
-    compact["beneficiary_graph"] = {
-        "path_count": graph.path_count,
-        "paths": [],
-        "unresolved_candidate_ids": graph.unresolved_candidate_ids,
-    }
-    omitted = compact.get("omitted_counts")
-    if not isinstance(omitted, dict):
-        raise ValueError("daily memory compact omission counts are invalid")
-    omitted["beneficiary_graph_paths"] = len(graph_rows)
-    graph_payload = compact["beneficiary_graph"]
-    if not isinstance(graph_payload, dict):
-        raise ValueError("daily compact beneficiary graph payload is invalid")
-    _extend_compact_round_robin(
-        compact,
-        field="paths",
-        rows=graph_rows,
-        cluster_field="event_cluster_ids",
-        container=graph_payload,
-    )
-    omitted["beneficiary_graph_paths"] = len(graph_rows) - len(graph_payload["paths"])
+    compact = final_beneficiary_compact_payload(compact, graph=graph)
     compact_bytes = canonical_json(compact).encode("utf-8")
     if len(compact_bytes) > DAILY_MEMORY_CONTEXT_MAX_BYTES:
         raise ValueError("final daily memory compact context exceeds byte budget")
@@ -2162,6 +2150,59 @@ def bind_final_beneficiary_graph_to_daily_context(
         updated.model_dump(mode="json"),
     )
     return updated, final_context_path
+
+
+def final_beneficiary_compact_payload(
+    compact: dict[str, Any],
+    *,
+    graph: BeneficiaryGraphArtifact,
+) -> dict[str, Any]:
+    payload = json.loads(canonical_json(compact))
+    is_v2 = payload.get("schema_version") == DAILY_MEMORY_COMPACT_V2_SCHEMA
+    graph_rows = _compact_beneficiary_graph_paths(graph)
+    if is_v2:
+        graph_rows = sorted(graph_rows, key=canonical_json)
+    unresolved_candidate_ids = (
+        sorted(graph.unresolved_candidate_ids)
+        if is_v2
+        else graph.unresolved_candidate_ids
+    )
+    payload["beneficiary_graph"] = {
+        "path_count": graph.path_count,
+        "paths": [],
+        "unresolved_candidate_ids": [] if is_v2 else unresolved_candidate_ids,
+    }
+    omitted = payload.get("omitted_counts")
+    if not isinstance(omitted, dict):
+        raise ValueError("daily memory compact omission counts are invalid")
+    omitted["beneficiary_graph_paths"] = len(graph_rows)
+    graph_payload = payload["beneficiary_graph"]
+    if not isinstance(graph_payload, dict):
+        raise ValueError("daily compact beneficiary graph payload is invalid")
+    if is_v2:
+        commitments = payload.get("coverage_commitments")
+        if not isinstance(commitments, dict):
+            raise ValueError("daily compact v2 graph commitments are invalid")
+        commitments["beneficiary_graph_paths"] = _compact_coverage_commitment(
+            graph_rows
+        )
+        commitments["beneficiary_graph_unresolved_candidate_ids"] = (
+            _compact_coverage_commitment(unresolved_candidate_ids)
+        )
+        omitted["beneficiary_graph_unresolved_candidate_ids"] = len(
+            unresolved_candidate_ids
+        )
+    _extend_compact_round_robin(
+        payload,
+        field="paths",
+        rows=graph_rows,
+        cluster_field="event_cluster_ids",
+        container=graph_payload,
+    )
+    omitted["beneficiary_graph_paths"] = len(graph_rows) - len(
+        graph_payload["paths"]
+    )
+    return cast(dict[str, Any], payload)
 
 
 def runtime_evidence_record_roles(
@@ -2211,8 +2252,26 @@ def runtime_evidence_compact_payload(
     *,
     traces: list[RuntimeRetrievalTrace],
     memos: list[RuntimeEvidenceMemo],
+    supporting_record_ids: list[str] | None = None,
+    contradicting_record_ids: list[str] | None = None,
+    unexplained_record_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     payload = json.loads(canonical_json(compact))
+    if payload.get("schema_version") == DAILY_MEMORY_COMPACT_V2_SCHEMA:
+        return _runtime_evidence_compact_payload_v2(
+            payload,
+            traces=traces,
+            memos=memos,
+            supporting_record_ids=supporting_record_ids,
+            contradicting_record_ids=contradicting_record_ids,
+            unexplained_record_ids=unexplained_record_ids,
+        )
+    _replace_compact_record_roles(
+        payload,
+        supporting_record_ids=supporting_record_ids,
+        contradicting_record_ids=contradicting_record_ids,
+        unexplained_record_ids=unexplained_record_ids,
+    )
     payload["runtime_retrieval_version"] = "adaptive_population_drilldown.v4"
     payload["runtime_evidence_map_reduce_version"] = "runtime_evidence_map_reduce.v1"
     payload["runtime_retrieval"] = [
@@ -2278,6 +2337,180 @@ def runtime_evidence_compact_payload(
         if isinstance(omitted, dict):
             omitted["runtime_evidence_memo_text"] = len(memos)
     return cast(dict[str, Any], payload)
+
+
+def _runtime_evidence_compact_payload_v2(
+    payload: dict[str, Any],
+    *,
+    traces: list[RuntimeRetrievalTrace],
+    memos: list[RuntimeEvidenceMemo],
+    supporting_record_ids: list[str] | None,
+    contradicting_record_ids: list[str] | None,
+    unexplained_record_ids: list[str] | None,
+) -> dict[str, Any]:
+    trace_rows = sorted(
+        [
+            {
+                "trace_id": trace.trace_id,
+                "cluster_id": trace.cluster_id,
+                "memory_snapshot_id": trace.memory_snapshot_id,
+                "selected_record_count": sum(
+                    "LANE_SELECTED" in row.stages for row in trace.rows
+                ),
+                "lane_selected_counts": trace.lane_selected_counts,
+                "offline_unexposed_recovered_count": (
+                    trace.offline_unexposed_recovered_count
+                ),
+                "rare_mechanism_recovered_count": (
+                    trace.rare_mechanism_recovered_count
+                ),
+                "online_full_scan_count": trace.online_full_scan_count,
+            }
+            for trace in traces
+        ],
+        key=canonical_json,
+    )
+    memo_rows = sorted(
+        [
+            {
+                "memo_id": memo.memo_id,
+                "cluster_id": memo.cluster_id,
+                "lane": memo.lane,
+                "source_record_ids": memo.source_record_ids[:8],
+                "source_record_id_count": len(memo.source_record_ids),
+                "source_record_id_omitted_count": max(
+                    0, len(memo.source_record_ids) - 8
+                ),
+                "source_record_hash_root": memo.source_record_hash_root,
+                "current_vs_history_similarities": [
+                    _excerpt_text(value, limit=180)
+                    for value in memo.current_vs_history_similarities[:2]
+                ],
+                "current_vs_history_differences": [
+                    _excerpt_text(value, limit=180)
+                    for value in memo.current_vs_history_differences[:2]
+                ],
+                "supporting_conditions": [
+                    _excerpt_text(value, limit=160)
+                    for value in memo.supporting_conditions[:2]
+                ],
+                "failure_conditions": [
+                    _excerpt_text(value, limit=160)
+                    for value in memo.failure_conditions[:2]
+                ],
+                "unresolved_conflicts": [
+                    _excerpt_text(value, limit=160)
+                    for value in memo.unresolved_conflicts[:2]
+                ],
+            }
+            for memo in memos
+        ],
+        key=canonical_json,
+    )
+    trace_commitment_rows = sorted(
+        [
+            {
+                "trace_id": trace.trace_id,
+                "sha256": sha256_text(
+                    canonical_json(trace.model_dump(mode="json"))
+                ),
+            }
+            for trace in traces
+        ],
+        key=canonical_json,
+    )
+    memo_commitment_rows = sorted(
+        [
+            {
+                "memo_id": memo.memo_id,
+                "sha256": sha256_text(
+                    canonical_json(memo.model_dump(mode="json"))
+                ),
+            }
+            for memo in memos
+        ],
+        key=canonical_json,
+    )
+    commitments = payload.get("coverage_commitments")
+    omitted = payload.get("omitted_counts")
+    if not isinstance(commitments, dict) or not isinstance(omitted, dict):
+        raise ValueError("daily compact v2 coverage accounting is invalid")
+    commitments["runtime_retrieval"] = _compact_coverage_commitment(
+        trace_commitment_rows
+    )
+    commitments["runtime_evidence_memos"] = _compact_coverage_commitment(
+        memo_commitment_rows
+    )
+    payload["runtime_retrieval_version"] = "adaptive_population_drilldown.v4"
+    payload["runtime_evidence_map_reduce_version"] = (
+        "runtime_evidence_map_reduce.v1"
+    )
+    payload["runtime_retrieval"] = []
+    payload["runtime_evidence_memos"] = []
+    omitted["runtime_retrieval"] = len(trace_rows)
+    omitted["runtime_evidence_memos"] = len(memo_rows)
+    _replace_compact_record_roles(
+        payload,
+        supporting_record_ids=supporting_record_ids,
+        contradicting_record_ids=contradicting_record_ids,
+        unexplained_record_ids=unexplained_record_ids,
+    )
+    if len(canonical_json(payload).encode("utf-8")) > DAILY_MEMORY_CONTEXT_MAX_BYTES:
+        raise ValueError("runtime evidence commitments exceed compact byte budget")
+    _extend_compact_surfaces(
+        payload,
+        surfaces=[
+            (
+                cast(list[Any], payload["runtime_retrieval"]),
+                _compact_round_robin_order(trace_rows, "cluster_id"),
+            ),
+            (
+                cast(list[Any], payload["runtime_evidence_memos"]),
+                _compact_round_robin_order(memo_rows, "cluster_id"),
+            ),
+        ],
+        max_bytes=DAILY_MEMORY_CONTEXT_MAX_BYTES,
+    )
+    omitted["runtime_retrieval"] = len(trace_rows) - len(
+        payload["runtime_retrieval"]
+    )
+    omitted["runtime_evidence_memos"] = len(memo_rows) - len(
+        payload["runtime_evidence_memos"]
+    )
+    return payload
+
+
+def _replace_compact_record_roles(
+    payload: dict[str, Any],
+    *,
+    supporting_record_ids: list[str] | None,
+    contradicting_record_ids: list[str] | None,
+    unexplained_record_ids: list[str] | None,
+) -> None:
+    role_values = {
+        "supporting_record_ids": supporting_record_ids,
+        "contradicting_record_ids": contradicting_record_ids,
+        "unexplained_record_ids": unexplained_record_ids,
+    }
+    if all(value is None for value in role_values.values()):
+        return
+    if any(value is None for value in role_values.values()):
+        raise ValueError("daily compact record roles must be updated together")
+    normalized = {
+        name: sorted(cast(list[str], value))
+        for name, value in role_values.items()
+    }
+    if payload.get("schema_version") != DAILY_MEMORY_COMPACT_V2_SCHEMA:
+        payload.update(normalized)
+        return
+    commitments = payload.get("coverage_commitments")
+    omitted = payload.get("omitted_counts")
+    if not isinstance(commitments, dict) or not isinstance(omitted, dict):
+        raise ValueError("daily compact v2 record role accounting is invalid")
+    for name, values in normalized.items():
+        payload[name] = []
+        commitments[name] = _compact_coverage_commitment(values)
+        omitted[name] = len(values)
 
 
 def _daily_artifact_identity_errors(
@@ -2603,7 +2836,7 @@ def compact_daily_memory_payload(
         for item in category_guidance
     ]
     compact_graph_paths = _compact_beneficiary_graph_paths(graph)
-    payload: dict[str, Any] = {
+    legacy_payload: dict[str, Any] = {
         "schema_version": "nslab.daily_memory_compact_context.v1",
         "run_id": run_id,
         "trade_date": trade_date.isoformat(),
@@ -2633,42 +2866,224 @@ def compact_daily_memory_payload(
         "contradicting_record_ids": contradicting_record_ids,
         "unexplained_record_ids": unexplained_record_ids,
     }
-    _extend_compact_round_robin(
-        payload,
-        field="representative_records",
-        rows=compact_representatives,
-        cluster_field="cluster_id",
+    if len(canonical_json(legacy_payload).encode("utf-8")) <= DAILY_MEMORY_CONTEXT_MAX_BYTES:
+        _extend_compact_round_robin(
+            legacy_payload,
+            field="representative_records",
+            rows=compact_representatives,
+            cluster_field="cluster_id",
+        )
+        graph_payload = legacy_payload["beneficiary_graph"]
+        if not isinstance(graph_payload, dict):
+            raise ValueError("daily compact beneficiary graph payload is invalid")
+        _extend_compact_round_robin(
+            legacy_payload,
+            field="paths",
+            rows=compact_graph_paths,
+            cluster_field="event_cluster_ids",
+            container=graph_payload,
+        )
+        _extend_compact_rows(
+            legacy_payload,
+            field="category_brain_guidance",
+            rows=compact_guidance,
+        )
+        omitted = legacy_payload["omitted_counts"]
+        if not isinstance(omitted, dict):
+            raise ValueError("daily compact omission payload is invalid")
+        omitted["representative_records"] = len(compact_representatives) - len(
+            legacy_payload["representative_records"]
+        )
+        omitted["category_brain_guidance"] = len(compact_guidance) - len(
+            legacy_payload["category_brain_guidance"]
+        )
+        omitted["beneficiary_graph_paths"] = len(compact_graph_paths) - len(
+            graph_payload["paths"]
+        )
+        represented_clusters = {
+            str(row.get("cluster_id"))
+            for row in legacy_payload["representative_records"]
+            if isinstance(row, dict)
+        }
+        required_representative_clusters = {
+            str(row.get("cluster_id")) for row in compact_representatives
+        }
+        if required_representative_clusters.issubset(represented_clusters):
+            return legacy_payload
+
+    # Large days cannot repeat complete identity ledgers inside a 48 KB prompt
+    # projection. The immutable daily context remains authoritative; this compact
+    # view commits every complete surface and carries only bounded semantic rows.
+    return _coverage_committed_compact_payload(
+        run_id=run_id,
+        trade_date=trade_date,
+        cutoff_at=cutoff_at,
+        memory_snapshot_id=memory_snapshot_id,
+        material_event_cluster_ids=material_event_cluster_ids,
+        uncovered_material_event_cluster_ids=uncovered_material_event_cluster_ids,
+        built_population_keys=built_population_keys,
+        uncovered_population_purposes=uncovered_population_purposes,
+        compact_populations=compact_populations,
+        compact_representatives=compact_representatives,
+        compact_plans=compact_plans,
+        compact_guidance=compact_guidance,
+        compact_graph_paths=compact_graph_paths,
+        graph=graph,
+        disagreements=disagreements,
+        supporting_record_ids=supporting_record_ids,
+        contradicting_record_ids=contradicting_record_ids,
+        unexplained_record_ids=unexplained_record_ids,
     )
-    graph_payload = payload["beneficiary_graph"]
-    if not isinstance(graph_payload, dict):
-        raise ValueError("daily compact beneficiary graph payload is invalid")
-    _extend_compact_round_robin(
-        payload,
-        field="paths",
-        rows=compact_graph_paths,
-        cluster_field="event_cluster_ids",
-        container=graph_payload,
-    )
-    _extend_compact_rows(
-        payload,
-        field="category_brain_guidance",
-        rows=compact_guidance,
-    )
-    omitted = payload["omitted_counts"]
-    if not isinstance(omitted, dict):
-        raise ValueError("daily compact omission payload is invalid")
-    omitted["representative_records"] = len(compact_representatives) - len(payload["representative_records"])
-    omitted["category_brain_guidance"] = len(compact_guidance) - len(payload["category_brain_guidance"])
-    omitted["beneficiary_graph_paths"] = len(compact_graph_paths) - len(graph_payload["paths"])
-    if len(canonical_json(payload).encode("utf-8")) > DAILY_MEMORY_CONTEXT_MAX_BYTES:
-        raise ValueError("daily compact base coverage exceeds the byte budget")
-    represented_clusters = {
-        str(row.get("cluster_id")) for row in payload["representative_records"] if isinstance(row, dict)
+
+
+def _coverage_committed_compact_payload(
+    *,
+    run_id: str,
+    trade_date: date,
+    cutoff_at: datetime,
+    memory_snapshot_id: str,
+    material_event_cluster_ids: list[str],
+    uncovered_material_event_cluster_ids: list[str],
+    built_population_keys: list[str],
+    uncovered_population_purposes: dict[str, list[PopulationPurpose]],
+    compact_populations: list[dict[str, Any]],
+    compact_representatives: list[dict[str, Any]],
+    compact_plans: list[dict[str, Any]],
+    compact_guidance: list[dict[str, Any]],
+    compact_graph_paths: list[dict[str, Any]],
+    graph: BeneficiaryGraphArtifact,
+    disagreements: list[str],
+    supporting_record_ids: list[str],
+    contradicting_record_ids: list[str],
+    unexplained_record_ids: list[str],
+) -> dict[str, Any]:
+    material_ids = sorted(material_event_cluster_ids)
+    uncovered_material_ids = sorted(uncovered_material_event_cluster_ids)
+    population_keys = sorted(built_population_keys)
+    uncovered_purposes = {
+        cluster_id: sorted(purposes)
+        for cluster_id, purposes in sorted(uncovered_population_purposes.items())
     }
-    required_representative_clusters = {str(row.get("cluster_id")) for row in compact_representatives}
-    if not required_representative_clusters.issubset(represented_clusters):
-        raise ValueError("daily compact budget cannot preserve cluster representatives")
+    populations = sorted(compact_populations, key=canonical_json)
+    representatives = sorted(compact_representatives, key=canonical_json)
+    plans = sorted(compact_plans, key=canonical_json)
+    guidance = sorted(compact_guidance, key=canonical_json)
+    graph_paths = sorted(compact_graph_paths, key=canonical_json)
+    unresolved_candidate_ids = sorted(graph.unresolved_candidate_ids)
+    disagreement_rows = sorted(disagreements)
+    role_rows = {
+        "supporting_record_ids": sorted(supporting_record_ids),
+        "contradicting_record_ids": sorted(contradicting_record_ids),
+        "unexplained_record_ids": sorted(unexplained_record_ids),
+    }
+    committed_values: dict[str, Any] = {
+        "material_event_cluster_ids": material_ids,
+        "uncovered_material_event_cluster_ids": uncovered_material_ids,
+        "built_population_keys": population_keys,
+        "uncovered_population_purposes": uncovered_purposes,
+        "population_summaries": populations,
+        "representative_records": representatives,
+        "category_brain_query_plans": plans,
+        "category_brain_guidance": guidance,
+        "beneficiary_graph_paths": graph_paths,
+        "beneficiary_graph_unresolved_candidate_ids": unresolved_candidate_ids,
+        "unresolved_disagreements": disagreement_rows,
+        **role_rows,
+    }
+    payload: dict[str, Any] = {
+        "schema_version": DAILY_MEMORY_COMPACT_V2_SCHEMA,
+        "run_id": run_id,
+        "trade_date": trade_date.isoformat(),
+        "cutoff_at": as_kst(cutoff_at).isoformat(),
+        "context_version": DAILY_MEMORY_CONTEXT_VERSION,
+        "memory_snapshot_id": memory_snapshot_id,
+        "coverage_projection_policy": DAILY_MEMORY_COMPACT_V2_POLICY,
+        "coverage_commitments": {
+            name: _compact_coverage_commitment(value)
+            for name, value in committed_values.items()
+        },
+        "population_summaries": [],
+        "representative_records": [],
+        "category_brain_query_plans": [],
+        "category_brain_guidance": [],
+        "beneficiary_graph": {
+            "path_count": graph.path_count,
+            "paths": [],
+            "unresolved_candidate_ids": [],
+        },
+        "unresolved_disagreements": [],
+        "supporting_record_ids": [],
+        "contradicting_record_ids": [],
+        "unexplained_record_ids": [],
+        "omitted_counts": {
+            name: _compact_item_count(value)
+            for name, value in committed_values.items()
+        },
+    }
+    graph_payload = cast(dict[str, Any], payload["beneficiary_graph"])
+    _extend_compact_surfaces(
+        payload,
+        surfaces=[
+            (
+                cast(list[Any], payload["population_summaries"]),
+                _compact_round_robin_order(populations, "cluster_id"),
+            ),
+            (
+                cast(list[Any], payload["representative_records"]),
+                _compact_round_robin_order(representatives, "cluster_id"),
+            ),
+            (
+                cast(list[Any], payload["category_brain_query_plans"]),
+                _compact_round_robin_order(plans, "cluster_id"),
+            ),
+            (
+                cast(list[Any], payload["category_brain_guidance"]),
+                deque(guidance),
+            ),
+            (
+                cast(list[Any], graph_payload["paths"]),
+                _compact_round_robin_order(graph_paths, "event_cluster_ids"),
+            ),
+            (
+                cast(list[Any], payload["unresolved_disagreements"]),
+                deque(disagreement_rows),
+            ),
+        ],
+        max_bytes=DAILY_MEMORY_CONTEXT_INITIAL_MAX_BYTES,
+    )
+    omitted = cast(dict[str, int], payload["omitted_counts"])
+    omitted["population_summaries"] = len(populations) - len(
+        payload["population_summaries"]
+    )
+    omitted["representative_records"] = len(representatives) - len(
+        payload["representative_records"]
+    )
+    omitted["category_brain_query_plans"] = len(plans) - len(
+        payload["category_brain_query_plans"]
+    )
+    omitted["category_brain_guidance"] = len(guidance) - len(
+        payload["category_brain_guidance"]
+    )
+    omitted["beneficiary_graph_paths"] = len(graph_paths) - len(
+        graph_payload["paths"]
+    )
+    omitted["unresolved_disagreements"] = len(disagreement_rows) - len(
+        payload["unresolved_disagreements"]
+    )
+    if len(canonical_json(payload).encode("utf-8")) > DAILY_MEMORY_CONTEXT_INITIAL_MAX_BYTES:
+        raise ValueError("daily compact commitment projection exceeds its reserved byte budget")
     return payload
+
+
+def _compact_item_count(value: Any) -> int:
+    return len(value) if isinstance(value, (dict, list)) else 1
+
+
+def _compact_coverage_commitment(value: Any) -> dict[str, Any]:
+    return {
+        "item_count": _compact_item_count(value),
+        "root_sha256": sha256_text(canonical_json(value)),
+    }
 
 
 def _compact_beneficiary_graph_paths(
@@ -2688,6 +3103,57 @@ def _compact_beneficiary_graph_paths(
         }
         for item in graph.paths
     ]
+
+
+def _compact_round_robin_order(
+    rows: list[dict[str, Any]],
+    cluster_field: str,
+) -> deque[Any]:
+    groups: dict[str, deque[dict[str, Any]]] = {}
+    for row in rows:
+        raw_cluster = row.get(cluster_field)
+        cluster_ids = raw_cluster if isinstance(raw_cluster, list) else [raw_cluster]
+        cluster_id = str(cluster_ids[0]) if cluster_ids else ""
+        groups.setdefault(cluster_id, deque()).append(row)
+    for cluster_id, group in groups.items():
+        groups[cluster_id] = deque(sorted(group, key=canonical_json))
+    ordered: deque[Any] = deque()
+    while groups:
+        for cluster_id in sorted(groups):
+            group = groups[cluster_id]
+            if group:
+                ordered.append(group.popleft())
+            if not group:
+                groups.pop(cluster_id)
+    return ordered
+
+
+def _extend_compact_surfaces(
+    root_payload: dict[str, Any],
+    *,
+    surfaces: list[tuple[list[Any], deque[Any]]],
+    max_bytes: int,
+) -> None:
+    active = list(surfaces)
+    while active:
+        progressed = False
+        next_active: list[tuple[list[Any], deque[Any]]] = []
+        for target, pending in active:
+            while pending:
+                row = pending.popleft()
+                if _compact_append_fits(
+                    root_payload,
+                    target,
+                    row,
+                    max_bytes=max_bytes,
+                ):
+                    progressed = True
+                    break
+            if pending:
+                next_active.append((target, pending))
+        if not progressed:
+            return
+        active = next_active
 
 
 def _extend_compact_round_robin(
@@ -2743,11 +3209,13 @@ def _extend_compact_rows(
 
 def _compact_append_fits(
     root_payload: dict[str, Any],
-    target: list[dict[str, Any]],
-    row: dict[str, Any],
+    target: list[Any],
+    row: Any,
+    *,
+    max_bytes: int = DAILY_MEMORY_CONTEXT_MAX_BYTES,
 ) -> bool:
     target.append(row)
-    if len(canonical_json(root_payload).encode("utf-8")) <= DAILY_MEMORY_CONTEXT_MAX_BYTES:
+    if len(canonical_json(root_payload).encode("utf-8")) <= max_bytes:
         return True
     target.pop()
     return False

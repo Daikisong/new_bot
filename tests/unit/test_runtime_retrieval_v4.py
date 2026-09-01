@@ -833,3 +833,63 @@ def test_runtime_evidence_compact_payload_stays_within_budget(
     assert len(canonical_json(result).encode("utf-8")) <= (DAILY_MEMORY_CONTEXT_MAX_BYTES)
     assert result["representative_records"] == []
     assert result["runtime_evidence_memos"][0]["source_record_ids"] == ["REC-COMPACT"]
+
+
+def test_runtime_evidence_compact_v2_commits_high_cardinality_rows(
+    tmp_path: Path,
+) -> None:
+    retrieval = _build(tmp_path, [_candidate(_record("REC-COMPACT-V2"))])
+    base_memo = RuntimeEvidenceMemo(
+        memo_id="RMEMO-COMPACT-V2",
+        cluster_id=retrieval.trace.cluster_id,
+        lane="POSITIVE_ANALOG",
+        source_record_ids=["REC-COMPACT-V2"],
+        source_record_hash_root="b" * 64,
+        current_vs_history_similarities=["bounded similarity"],
+        current_vs_history_differences=["bounded difference"],
+    )
+    traces = [
+        retrieval.trace.model_copy(
+            update={
+                "trace_id": f"RTRACE-COMPACT-V2-{index:03d}",
+                "cluster_id": f"EVT-COMPACT-V2-{index:03d}",
+            }
+        )
+        for index in range(200)
+    ]
+    memos = [
+        base_memo.model_copy(
+            update={
+                "memo_id": f"RMEMO-COMPACT-V2-{index:03d}",
+                "cluster_id": f"EVT-COMPACT-V2-{index:03d}",
+            }
+        )
+        for index in range(200)
+    ]
+    compact = {
+        "schema_version": "nslab.daily_memory_compact_context.v2",
+        "coverage_commitments": {},
+        "omitted_counts": {},
+        "representative_records": [],
+        "category_brain_guidance": [],
+    }
+
+    result = runtime_evidence_compact_payload(
+        compact,
+        traces=traces,
+        memos=memos,
+    )
+
+    assert len(canonical_json(result).encode("utf-8")) <= (
+        DAILY_MEMORY_CONTEXT_MAX_BYTES
+    )
+    assert result["coverage_commitments"]["runtime_retrieval"][
+        "item_count"
+    ] == len(traces)
+    assert result["coverage_commitments"]["runtime_evidence_memos"][
+        "item_count"
+    ] == len(memos)
+    assert result["runtime_retrieval"]
+    assert result["runtime_evidence_memos"]
+    assert result["omitted_counts"]["runtime_retrieval"] > 0
+    assert result["omitted_counts"]["runtime_evidence_memos"] > 0
