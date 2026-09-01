@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.models import BrainManifest
@@ -30,6 +30,17 @@ class _StructuredResult(BaseModel):
 class _StructuredResultWithDefaults(BaseModel):
     status: Literal["ok"] = "ok"
     tags: list[str] = []
+
+
+class _StructuredResultWithValueErrorContext(BaseModel):
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def require_ok_status(cls, value: str) -> str:
+        if value != "ok":
+            raise ValueError("runtime memo coverage mismatch")
+        return value
 
 
 class _FakeCodexRunner:
@@ -147,6 +158,28 @@ def test_codex_oauth_structured_failure_fails_closed() -> None:
     assert provider.structured_validation_status == "FAILED"
     assert "Validation error detail:" in runner.call_kwargs[-1]["input"]
     assert "Input should be 'ok'" in runner.call_kwargs[-1]["input"]
+
+
+def test_codex_oauth_serializes_value_error_context_for_repair_prompt() -> None:
+    runner = _FakeCodexRunner(structured_payload='{"status":"wrong"}')
+    provider = CodexOAuthProvider(
+        runner=runner,
+        structured_repair_retries=1,
+    )
+
+    with pytest.raises(CodexOAuthError, match="runtime memo coverage mismatch"):
+        asyncio.run(
+            provider.generate_structured(
+                prompt="return a covered runtime memo",
+                response_model=_StructuredResultWithValueErrorContext,
+                purpose="runtime_evidence_pack:test",
+            )
+        )
+
+    repair_prompt = runner.call_kwargs[-1]["input"]
+    assert "Validation error type: ValidationError" in repair_prompt
+    assert '"type":"ValueError"' in repair_prompt
+    assert "runtime memo coverage mismatch" in repair_prompt
 
 
 def test_codex_oauth_noninteractive_login_reports_required() -> None:

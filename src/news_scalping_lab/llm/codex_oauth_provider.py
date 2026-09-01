@@ -348,12 +348,22 @@ def _validation_error_detail(error: Exception, *, max_chars: int = 4000) -> str:
             ensure_ascii=True,
             sort_keys=True,
             separators=(",", ":"),
+            default=_validation_error_json_default,
         )
     else:
         detail = str(error).strip() or type(error).__name__
     if len(detail) <= max_chars:
         return detail
     return detail[: max_chars - 16] + "...[truncated]"
+
+
+def _validation_error_json_default(value: Any) -> Any:
+    if isinstance(value, Exception):
+        return {
+            "message": str(value).strip() or type(value).__name__,
+            "type": type(value).__name__,
+        }
+    return str(value)
 
 
 def _strict_output_schema(schema: dict[str, Any]) -> dict[str, Any]:
