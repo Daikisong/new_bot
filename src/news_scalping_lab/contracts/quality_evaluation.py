@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections import Counter
 from datetime import date, datetime, timedelta
 from typing import Any, Literal, Self
 
@@ -549,11 +550,22 @@ class SharedPreRetrievalContext(BaseModel):
             raise ValueError("shared context model identity cannot be blank")
         if len(self.source_row_ids) != len(set(self.source_row_ids)):
             raise ValueError("shared context source row IDs must be unique")
-        if len(self.event_cluster_ids) != len(set(self.event_cluster_ids)):
-            raise ValueError("shared context cluster IDs must be unique")
+        if len(self.material_cluster_ids) != len(set(self.material_cluster_ids)):
+            raise ValueError("shared context material cluster IDs must be unique")
+        if any(
+            not cluster_id.strip()
+            for cluster_id in (
+                *self.event_cluster_ids,
+                *self.material_cluster_ids,
+                *self.low_signal_cluster_ids,
+            )
+        ):
+            raise ValueError("shared context cluster IDs cannot be blank")
         if set(self.material_cluster_ids) & set(self.low_signal_cluster_ids):
             raise ValueError("material and low-signal clusters must be disjoint")
-        if set(self.event_cluster_ids) != (set(self.material_cluster_ids) | set(self.low_signal_cluster_ids)):
+        if Counter(self.event_cluster_ids) != (
+            Counter(self.material_cluster_ids) + Counter(self.low_signal_cluster_ids)
+        ):
             raise ValueError("shared context must disposition every event cluster")
         nodes = {node.node_id: node for node in self.map_reduce_nodes}
         root = nodes.get(self.root_node_id)

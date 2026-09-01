@@ -1122,9 +1122,12 @@ async def test_audit_only_clusters_stay_in_ledger_but_out_of_blind_novelty(
 ) -> None:
     settings, news_path = _shared_builder_project(tmp_path)
     original_news = news_path.read_text(encoding="utf-8-sig")
+    repeated_audit_row = (
+        '2030-01-09,15:00:00,"Old audit event",'
+        '"Before the blind news window."\n'
+    )
     news_path.write_text(
-        original_news
-        + '2030-01-09,15:00:00,"Old audit event","Before the blind news window."\n',
+        original_news + repeated_audit_row + repeated_audit_row,
         encoding="utf-8-sig",
     )
 
@@ -1155,10 +1158,11 @@ async def test_audit_only_clusters_stay_in_ledger_but_out_of_blind_novelty(
         if line.strip()
     ]
 
-    assert result.context.low_signal_cluster_ids
+    assert len(result.context.low_signal_cluster_ids) == 2
+    assert len(set(result.context.low_signal_cluster_ids)) == 1
     assert novelty_cluster_ids == result.context.material_cluster_ids
     assert not set(novelty_cluster_ids) & set(result.context.low_signal_cluster_ids)
-    assert any(row["disposition"] == "AUDIT_ONLY" for row in ledger_rows)
+    assert sum(row["disposition"] == "AUDIT_ONLY" for row in ledger_rows) == 2
 
 
 @pytest.mark.asyncio
