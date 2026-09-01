@@ -1,0 +1,77 @@
+{
+  "schema_version": "nslab.daily_llm_call_graph_audit.v1",
+  "audit_kind": "AFTER_PR_A_ARCHITECTURE_CORRECTION",
+  "production_entrypoint": "news_scalping_lab.inference.thin_daily.ThinDailyAnalyzer.analyze",
+  "production_command": "nslab analyze-daily",
+  "architecture_version": "one_time_brain_thin_daily.v1",
+  "logical_call_count_formula": "2",
+  "normal_logical_call_count": 2,
+  "maximum_live_agent_call_count_including_schema_repairs": 4,
+  "call_sites": [
+    {
+      "function": "ThinDailyAnalyzer.analyze",
+      "source": "src/news_scalping_lab/inference/thin_daily.py:240",
+      "purpose": "current_day_interpretation",
+      "inside_loop": false,
+      "loop_dimension": null,
+      "potential_call_count_formula": "1",
+      "input_source": "all cutoff-safe CurrentEventCapsule prompt projections and optional D-1 context",
+      "historical_raw_payload": false
+    },
+    {
+      "function": "ThinDailyAnalyzer.analyze",
+      "source": "src/news_scalping_lab/inference/thin_daily.py:272",
+      "purpose": "final_market_decision",
+      "inside_loop": false,
+      "loop_dimension": null,
+      "potential_call_count_formula": "1",
+      "input_source": "current interpretation plus locally retrieved BrainPackage capsules, claims, population data, graphs, and no more than 24 exact witnesses",
+      "historical_raw_payload": false
+    }
+  ],
+  "forbidden_reachability": {
+    "build_runtime_evidence_memos": false,
+    "build_runtime_evidence_memos_packed": false,
+    "historical_record_loop_llm": false,
+    "memory_cell_loop_llm": false,
+    "retrieval_lane_loop_llm": false,
+    "daily_import": false,
+    "daily_brain_rebuild": false,
+    "blind_web": false
+  },
+  "local_steps": [
+    "CSV parse and cutoff windowing",
+    "exact and semantic event clustering with pinned embeddings",
+    "row disposition ledger",
+    "CurrentEventCapsule construction and bounded projection",
+    "BrainPackage index retrieval",
+    "citation and cutoff closure validation",
+    "artifact sealing"
+  ],
+  "tests": {
+    "test_daily_normal_call_count_is_two": "PASS",
+    "test_daily_max_call_count_with_repairs_is_four": "PASS",
+    "test_daily_llm_call_count_is_independent_of_record_count": "PASS for 10000 and 823279",
+    "test_daily_llm_call_count_is_independent_of_material_cluster_count": "PASS for 10 and 300 input rows",
+    "test_no_daily_llm_call_inside_historical_record_loop": "PASS",
+    "test_no_daily_runtime_evidence_memo_map": "PASS",
+    "test_all_news_rows_have_disposition": "PASS",
+    "test_member_news_bodies_are_not_repeated_in_prompt": "PASS"
+  },
+  "current_status": {
+    "daily_product_path_implemented": true,
+    "daily_call_graph_bounded": true,
+    "historical_raw_daily_remap_zero": true,
+    "offline_brain_v2_built": false,
+    "brain_package_daily_reader_implemented": false,
+    "predictive_quality_evaluated": false,
+    "production_activated": false,
+    "activation_status": "HOLD_OFFLINE_BRAIN_V2_NOT_BUILT"
+  },
+  "legacy_entrypoint": {
+    "command": "nslab analyze",
+    "status": "LEGACY_EXHAUSTIVE_DIAGNOSTIC_ONLY",
+    "may_reach_runtime_evidence_map_reduce": true,
+    "production_daily_use_forbidden": true
+  }
+}

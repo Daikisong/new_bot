@@ -63,7 +63,19 @@ nslab brain rebuild --mode llm-full
 nslab brain audit
 ```
 
-Daily blind analysis:
+Production daily blind analysis (requires a selected Offline Semantic Brain V2):
+
+```bash
+nslab analyze-daily --news path/to/news.csv --trade-date YYYY-MM-DD --cutoff YYYY-MM-DDT08:59:59+09:00
+```
+
+`nslab analyze` is the legacy exhaustive/diagnostic graph. It may batch current
+clusters and map historical runtime evidence, so it is forbidden as the
+production 08:00 path. `analyze-daily` fails closed when the V2 package or its
+bounded local reader is unavailable; never fall back to `analyze` to bypass
+that hold.
+
+Legacy diagnostic syntax retained for forensic reproduction only:
 
 ```bash
 nslab analyze --news path/to/news.csv --trade-date YYYY-MM-DD --cutoff YYYY-MM-DDT08:59:59+09:00 --mode exhaustive
@@ -151,6 +163,10 @@ python -m news_scalping_lab.cli memory score-runtime-variants \
   path. Preserve completeness in the offline compiler, brain roots, retrieval
   traces, and citations; do not prove it by making the daily LLM reread every
   raw relationship.
+- Production `analyze-daily` has exactly two logical LLM call sites:
+  `current_day_interpretation` and `final_market_decision`. They are outside all
+  record, cluster, memory-cell, and retrieval-lane loops. One structured repair
+  per call is the hard limit, so live agent invocations cannot exceed four.
 - If a diagnostic pack plan is run explicitly, use its exact call count for the
   forecast and resume only content-addressed `ok` checkpoints. Never call a
   diagnostic pack run a formal prediction result.

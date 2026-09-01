@@ -100,6 +100,7 @@ from news_scalping_lab.inference.analyzer import (
     DailyAnalyzer,
 )
 from news_scalping_lab.inference.event_clustering import EVENT_CLUSTERING_VERSION
+from news_scalping_lab.inference.thin_daily import ThinDailyAnalyzer
 from news_scalping_lab.ingest.news import import_news_csv, load_news_csv
 from news_scalping_lab.llm.codex_oauth_provider import (
     CodexOAuthError,
@@ -1265,7 +1266,12 @@ def brain_diff(version_a: str, version_b: str) -> None:
     _echo({**diff, "markdown_path": markdown_path.as_posix()})
 
 
-@app.command()
+@app.command(
+    help=(
+        "Legacy exhaustive/diagnostic analyzer. Production pre-open inference uses "
+        "analyze-daily."
+    )
+)
 def analyze(
     news: Annotated[Path, typer.Option("--news")],
     trade_date: Annotated[str, typer.Option("--trade-date")],
@@ -1285,6 +1291,35 @@ def analyze(
                 cutoff_at=parsed_cutoff,
                 mode=analysis_mode,
                 web_search=web_search,
+            )
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(analysis.model_dump(mode="json"))
+
+
+@app.command("analyze-daily")
+def analyze_daily(
+    news: Annotated[Path, typer.Option("--news")],
+    trade_date: Annotated[str, typer.Option("--trade-date")],
+    cutoff: Annotated[str, typer.Option("--cutoff")],
+    d_minus_one_context: Annotated[
+        Path | None,
+        typer.Option("--d-minus-one-context"),
+    ] = None,
+) -> None:
+    """Run the bounded two-call product path over an offline BrainPackage."""
+
+    settings = load_settings()
+    parsed_trade_date = _parse_date(trade_date)
+    parsed_cutoff = _parse_cutoff(cutoff)
+    try:
+        analysis = asyncio.run(
+            ThinDailyAnalyzer(settings).analyze(
+                news_csv=news,
+                trade_date=parsed_trade_date,
+                cutoff_at=parsed_cutoff,
+                d_minus_one_context_path=d_minus_one_context,
             )
         )
     except (FileNotFoundError, RuntimeError, ValueError) as exc:

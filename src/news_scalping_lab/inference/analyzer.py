@@ -402,6 +402,11 @@ class DailyAnalyzer:
         shadow_preloaded_news_batch: NewsBatch | None = None,
         shared_d_minus_one_context_path: Path | None = None,
     ) -> DailyAnalysis:
+        """Run the legacy exhaustive/diagnostic pipeline.
+
+        This graph can batch current clusters and map historical runtime evidence.
+        Production pre-open use belongs to ``ThinDailyAnalyzer.analyze``.
+        """
         mode = normalize_analysis_mode(mode)
         evidence_policy = EvidencePolicy.parse(self.settings.evidence_policy)
         if web_search:

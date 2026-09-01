@@ -361,7 +361,10 @@ async def build_runtime_evidence_memos(
     memory_index: ProductionMemoryIndex,
     llm: LLMProvider,
 ) -> RuntimeEvidenceBuildResult:
-    """Compatibility wrapper for one trace through the packed evidence path."""
+    """Compatibility wrapper for forensic/offline evidence-map diagnostics.
+
+    This function is not part of the production ``analyze-daily`` call graph.
+    """
 
     packed = await build_runtime_evidence_memos_packed(
         root,
@@ -379,7 +382,11 @@ async def build_runtime_evidence_memos_packed(
     memory_index: ProductionMemoryIndex,
     llm: LLMProvider,
 ) -> RuntimeEvidencePackedBuildResult:
-    """Expose each cluster-record assignment while packing duplicate payloads once."""
+    """Expose assignments for forensic/offline evidence-map diagnostics.
+
+    The output remains useful for external audit sampling, but production daily
+    inference must consume precompiled capsules and must never call this mapper.
+    """
 
     root = root.resolve()
     if not retrievals:

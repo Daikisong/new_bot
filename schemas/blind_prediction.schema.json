@@ -123,6 +123,13 @@
           "title": "Market Memory Evidence",
           "type": "array"
         },
+        "mechanism_claim_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Mechanism Claim Ids",
+          "type": "array"
+        },
         "memory_episode_ids": {
           "items": {
             "type": "string"
@@ -144,6 +151,13 @@
         },
         "path_type": {
           "$ref": "#/$defs/PathType"
+        },
+        "population_manifest_roots": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Population Manifest Roots",
+          "type": "array"
         },
         "prior_negative_cases": {
           "items": {
@@ -183,6 +197,20 @@
         "rank": {
           "title": "Rank",
           "type": "integer"
+        },
+        "semantic_capsule_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Semantic Capsule Ids",
+          "type": "array"
+        },
+        "source_row_ids": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Source Row Ids",
+          "type": "array"
         },
         "source_urls": {
           "items": {
@@ -272,6 +300,13 @@
           "title": "Indirect Beneficiaries",
           "type": "array"
         },
+        "mechanism_claim_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Mechanism Claim Ids",
+          "type": "array"
+        },
         "name": {
           "title": "Name",
           "type": "string"
@@ -281,6 +316,13 @@
             "type": "string"
           },
           "title": "Narrative Beneficiaries",
+          "type": "array"
+        },
+        "population_manifest_roots": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Population Manifest Roots",
           "type": "array"
         },
         "possible_leaders": {
@@ -295,6 +337,13 @@
             "$ref": "#/$defs/Provenance"
           },
           "title": "Provenance",
+          "type": "array"
+        },
+        "semantic_capsule_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Semantic Capsule Ids",
           "type": "array"
         },
         "supporting_cases": {
