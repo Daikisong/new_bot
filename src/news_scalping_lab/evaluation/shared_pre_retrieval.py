@@ -1186,7 +1186,10 @@ async def _run_shared_novelty_review(
     cutoff_at: datetime,
     output_dir: Path,
 ) -> tuple[NewsNoveltyReview, str, int, list[str]]:
-    cluster_rows = analyzer._read_event_cluster_context(manifest)
+    cluster_rows = _material_novelty_cluster_rows(
+        analyzer._read_event_cluster_context(manifest),
+        expected_count=manifest.event_cluster_count,
+    )
     batches = _novelty_batches(
         analyzer,
         manifest=manifest,
@@ -1261,6 +1264,45 @@ async def _run_shared_novelty_review(
         "batch_count": len(batches),
     }
     return normalized, aggregate_prompt_sha256, prompt_tokens, prompt_hashes
+
+
+def _material_novelty_cluster_rows(
+    cluster_rows: list[dict[str, Any]],
+    *,
+    expected_count: int,
+) -> list[dict[str, Any]]:
+    """Select the cutoff-safe material population from the complete audit ledger."""
+
+    selected: list[dict[str, Any]] = []
+    for row in cluster_rows:
+        disposition = row.get("disposition")
+        eligible = row.get("eligible_for_blind_evidence")
+        if disposition == "MATERIAL_FULL_RETRIEVAL":
+            if eligible is not True:
+                raise OpenWorldCoverageError(
+                    "material novelty cluster is not eligible for blind evidence"
+                )
+            selected.append(row)
+            continue
+        if disposition == "AUDIT_ONLY":
+            if eligible is not False:
+                raise OpenWorldCoverageError(
+                    "audit-only novelty cluster is eligible for blind evidence"
+                )
+            continue
+        raise OpenWorldCoverageError(
+            "shared novelty ledger contains an unknown cluster disposition"
+        )
+    cluster_ids = [str(row.get("cluster_id", "")) for row in selected]
+    if (
+        len(selected) != expected_count
+        or any(not cluster_id for cluster_id in cluster_ids)
+        or len(cluster_ids) != len(set(cluster_ids))
+    ):
+        raise OpenWorldCoverageError(
+            "shared novelty material population differs from the sealed manifest"
+        )
+    return selected
 
 
 def _novelty_batches(
@@ -2764,11 +2806,15 @@ def _verify_provider_checkpoint_authenticity(
     else:
         raise ValueError("shared provider checkpoint REDUCE topology has extra nodes")
 
+    material_cluster_rows = _material_novelty_cluster_rows(
+        cluster_rows,
+        expected_count=len(event_clustering.material_clusters),
+    )
     novelty_batches = _novelty_batches(
         analyzer,
         manifest=shared_manifest,
         cutoff_at=cutoff_at,
-        cluster_rows=cluster_rows,
+        cluster_rows=material_cluster_rows,
     )
     partial_reviews: list[NewsNoveltyReview] = []
     novelty_prompt_hashes: list[str] = []
@@ -2807,7 +2853,7 @@ def _verify_provider_checkpoint_authenticity(
         created_at=novelty.created_at,
         cutoff_at=cutoff_at,
         review_mode=shared_manifest.blind_context_mode,
-        cluster_count=len(cluster_rows),
+        cluster_count=len(material_cluster_rows),
         reviewed_cluster_count=len(expected_findings),
         findings=expected_findings,
         excluded_after_cutoff_source_ids=(shared_manifest.excluded_web_source_ids),

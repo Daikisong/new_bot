@@ -166,6 +166,52 @@ def test_shared_novelty_batches_honor_configured_cluster_limit() -> None:
     ]
 
 
+def test_shared_novelty_population_excludes_audit_only_clusters() -> None:
+    rows = [
+        {
+            "cluster_id": "CLUSTER-MATERIAL-1",
+            "disposition": "MATERIAL_FULL_RETRIEVAL",
+            "eligible_for_blind_evidence": True,
+        },
+        {
+            "cluster_id": "CLUSTER-MATERIAL-2",
+            "disposition": "MATERIAL_FULL_RETRIEVAL",
+            "eligible_for_blind_evidence": True,
+        },
+        {
+            "cluster_id": "CLUSTER-AUDIT-1",
+            "disposition": "AUDIT_ONLY",
+            "eligible_for_blind_evidence": False,
+        },
+    ]
+
+    selected = shared_module._material_novelty_cluster_rows(
+        rows,
+        expected_count=2,
+    )
+
+    assert [row["cluster_id"] for row in selected] == [
+        "CLUSTER-MATERIAL-1",
+        "CLUSTER-MATERIAL-2",
+    ]
+
+
+def test_shared_novelty_population_fails_closed_on_eligibility_drift() -> None:
+    rows = [
+        {
+            "cluster_id": "CLUSTER-AUDIT-1",
+            "disposition": "AUDIT_ONLY",
+            "eligible_for_blind_evidence": True,
+        }
+    ]
+
+    with pytest.raises(OpenWorldCoverageError, match="audit-only"):
+        shared_module._material_novelty_cluster_rows(
+            rows,
+            expected_count=0,
+        )
+
+
 def _reduce_state(
     node_id: str,
     *,

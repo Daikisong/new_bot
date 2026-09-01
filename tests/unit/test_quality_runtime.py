@@ -1117,6 +1117,51 @@ async def test_all_material_clusters_enter_shared_tree(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_audit_only_clusters_stay_in_ledger_but_out_of_blind_novelty(
+    tmp_path: Path,
+) -> None:
+    settings, news_path = _shared_builder_project(tmp_path)
+    original_news = news_path.read_text(encoding="utf-8-sig")
+    news_path.write_text(
+        original_news
+        + '2030-01-09,15:00:00,"Old audit event","Before the blind news window."\n',
+        encoding="utf-8-sig",
+    )
+
+    result = await build_shared_pre_retrieval_context(
+        tmp_path,
+        settings=settings,
+        profile=quality_full_profile(
+            provider=settings.llm_provider,
+            model=settings.llm.model,
+            reasoning_effort=str(settings.llm.reasoning_effort),
+        ),
+        news_csv=news_path,
+        trade_date=date(2030, 1, 10),
+        cutoff_at=datetime(2030, 1, 10, 8, 59, 59, tzinfo=KST),
+    )
+
+    novelty_payload = json.loads(
+        (tmp_path / result.context.news_novelty_review.artifact_path).read_bytes()
+    )
+    novelty_cluster_ids = [
+        finding["cluster_id"] for finding in novelty_payload["findings"]
+    ]
+    ledger_rows = [
+        json.loads(line)
+        for line in (
+            tmp_path / result.context.event_cluster_ledger.artifact_path
+        ).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    assert result.context.low_signal_cluster_ids
+    assert novelty_cluster_ids == result.context.material_cluster_ids
+    assert not set(novelty_cluster_ids) & set(result.context.low_signal_cluster_ids)
+    assert any(row["disposition"] == "AUDIT_ONLY" for row in ledger_rows)
+
+
+@pytest.mark.asyncio
 async def test_no_first_n_or_silent_truncation(tmp_path: Path) -> None:
     settings, news_path = _shared_builder_project(tmp_path)
     result = await build_shared_pre_retrieval_context(
