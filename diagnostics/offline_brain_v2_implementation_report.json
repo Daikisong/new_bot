@@ -1,6 +1,6 @@
 {
   "schema_version": "nslab.offline_brain_v2_implementation_report.v1",
-  "status": "PR_B_IMPLEMENTED_FULL_BUILD_NOT_STARTED",
+  "status": "V4_FULL_BUILD_FAILED_CLOSED_V5_FIX_IMPLEMENTED_PLAN_REFRESH_PENDING",
   "source": {
     "record_count": 823279,
     "record_corpus_root": "2d25581cdc98d89cb0f1d2fa00bec917442171ee279c001edfc764e2941f6d75",
@@ -51,6 +51,28 @@
     "wall_clock_seconds": 965.611139,
     "production_activated": false
   },
+  "failed_full_build_attempt": {
+    "attempt_id": "OFFLINE-COMPILE-a91447008c5e6b33dce4",
+    "compiler_version": "nslab.offline_semantic_brain.compiler.v4",
+    "processed_record_count": 823279,
+    "semantic_unit_count": 52644,
+    "schema_valid_checkpoint_count": 11,
+    "digest_count": 55,
+    "failing_checkpoint_id": "LLMCKPT-26cc923defd86822",
+    "mutated_digest_count": 3,
+    "error": "long payload digest mutated source identity",
+    "package_created": false,
+    "production_pointer_mutated": false,
+    "report": "diagnostics/offline_brain_v2_v4_failed_build_report.json"
+  },
+  "v5_correction": {
+    "compiler_version": "nslab.offline_semantic_brain.compiler.v5",
+    "long_payload_prompt_version": "offline_long_payload_chunk_map.v2",
+    "llm_writes_immutable_source_identity": false,
+    "source_identity_materialized_from_ledger": true,
+    "v4_checkpoints_reused": false,
+    "v5_authoritative_plan_refreshed": false
+  },
   "rejected_diagnostic_plans": [
     {
       "path": "diagnostics/offline_brain_v2_full_plan_strict_v2.json",
@@ -77,10 +99,10 @@
     "ruff": "PASS",
     "mypy_source_file_count": 138,
     "mypy": "PASS",
-    "targeted_test_count": 18,
+    "targeted_test_count": 19,
     "targeted_tests": "PASS",
-    "full_pytest": "PASS_1880",
-    "full_build": "NOT_STARTED",
+    "full_pytest": "PASS_1881",
+    "full_build": "V4_FAILED_CLOSED_V5_RETRY_PENDING",
     "calibration_holdout": "NOT_STARTED",
     "production_activation": false
   }

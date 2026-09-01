@@ -135,14 +135,8 @@ class SemanticCapsuleDraftBatch(StrictModel):
         return self
 
 
-class LongPayloadChunkDigest(StrictModel):
+class LongPayloadChunkDigestDraft(StrictModel):
     chunk_id: str
-    semantic_unit_id: str
-    record_id: str
-    chunk_index: int = Field(ge=0)
-    chunk_count: int = Field(ge=1)
-    document_sha256: str
-    chunk_sha256: str
     summary: str = Field(min_length=1, max_length=240)
     material_facts: list[CompactDigestText] = Field(default_factory=list, max_length=2)
     mechanisms: list[CompactDigestText] = Field(default_factory=list, max_length=2)
@@ -151,13 +145,22 @@ class LongPayloadChunkDigest(StrictModel):
     caveats: list[CompactDigestText] = Field(default_factory=list, max_length=2)
 
 
+class LongPayloadChunkDigest(LongPayloadChunkDigestDraft):
+    semantic_unit_id: str
+    record_id: str
+    chunk_index: int = Field(ge=0)
+    chunk_count: int = Field(ge=1)
+    document_sha256: str
+    chunk_sha256: str
+
+
 class LongPayloadDigestBatch(StrictModel):
-    schema_version: Literal["nslab.long_payload_digest_batch.v1"] = (
-        "nslab.long_payload_digest_batch.v1"
+    schema_version: Literal["nslab.long_payload_digest_batch.v2"] = (
+        "nslab.long_payload_digest_batch.v2"
     )
     node_id: str
     chunk_ids: list[str]
-    digests: list[LongPayloadChunkDigest]
+    digests: list[LongPayloadChunkDigestDraft]
 
     @model_validator(mode="after")
     def validate_chunk_closure(self) -> Self:
