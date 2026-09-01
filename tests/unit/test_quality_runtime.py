@@ -91,6 +91,61 @@ def test_quality_full_has_no_latency_abort() -> None:
     assert profile.checkpoint_resume_required is True
 
 
+def test_shared_preparation_ledger_preserves_superseded_completed_contexts(
+    tmp_path: Path,
+) -> None:
+    runtime_before = {"trace_files": set()}
+    first = quality_runtime_module._begin_shared_preparation_attempt(
+        tmp_path,
+        scope_id="QSHARED-test",
+        case_id="CASE-test",
+        runtime_before=runtime_before,
+    )
+    quality_runtime_module._complete_shared_preparation_attempt(
+        first,
+        elapsed_seconds=1.0,
+        runtime_metrics={},
+        cache_hit=False,
+        shared_context_sha256="1" * 64,
+        shared_manifest_sha256="2" * 64,
+    )
+    current = quality_runtime_module._begin_shared_preparation_attempt(
+        tmp_path,
+        scope_id="QSHARED-test",
+        case_id="CASE-test",
+        runtime_before=runtime_before,
+    )
+    quality_runtime_module._complete_shared_preparation_attempt(
+        current,
+        elapsed_seconds=2.0,
+        runtime_metrics={},
+        cache_hit=True,
+        shared_context_sha256="3" * 64,
+        shared_manifest_sha256="4" * 64,
+    )
+
+    ledger, _reference = quality_runtime_module._build_shared_preparation_ledger(
+        tmp_path,
+        run_id="QPRED-test",
+        case_id="CASE-test",
+        current_attempt=current,
+        shared_context_sha256="3" * 64,
+        shared_manifest_sha256="4" * 64,
+    )
+
+    assert [row["context_status"] for row in ledger["attempts"]] == [
+        "SUPERSEDED",
+        "CURRENT",
+    ]
+    assert ledger["attempts"][0]["shared_context_sha256"] == "1" * 64
+    assert ledger["attempts"][1]["shared_context_sha256"] == "3" * 64
+    quality_runtime_module._validate_attempt_ledger_aggregates(
+        tmp_path,
+        ledger,
+        shared=True,
+    )
+
+
 def test_existing_phase8_budget_does_not_block_quality_full() -> None:
     assert SHADOW_DAILY_P95_BUDGET_MS == 90_000
 

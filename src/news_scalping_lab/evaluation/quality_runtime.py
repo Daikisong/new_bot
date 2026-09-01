@@ -1846,6 +1846,16 @@ def _build_shared_preparation_ledger(
         )
         if completion_path.is_file():
             completion = read_json(completion_path)
+            completion_context_sha256 = (
+                completion.get("shared_context_sha256")
+                if isinstance(completion, dict)
+                else None
+            )
+            completion_manifest_sha256 = (
+                completion.get("shared_manifest_sha256")
+                if isinstance(completion, dict)
+                else None
+            )
             if (
                 not isinstance(completion, dict)
                 or completion.get("schema_version")
@@ -1854,16 +1864,24 @@ def _build_shared_preparation_ledger(
                 != QUALITY_RUNTIME_PREDICTION_CODE_VERSION
                 or completion.get("attempt_id") != start["attempt_id"]
                 or completion.get("attempt_number") != attempt_number
-                or completion.get("shared_context_sha256")
-                != shared_context_sha256
-                or completion.get("shared_manifest_sha256")
-                != shared_manifest_sha256
+                or not isinstance(completion_context_sha256, str)
+                or not _is_sha256(completion_context_sha256)
+                or not isinstance(completion_manifest_sha256, str)
+                or not _is_sha256(completion_manifest_sha256)
                 or not isinstance(completion.get("cache_hit"), bool)
                 or not isinstance(completion.get("elapsed_seconds"), int | float)
                 or not isinstance(completion.get("runtime_metrics"), dict)
             ):
                 raise ValueError(
                     "quality shared preparation completion receipt is invalid"
+                )
+            current_context = (
+                completion_context_sha256 == shared_context_sha256
+                and completion_manifest_sha256 == shared_manifest_sha256
+            )
+            if index + 1 == len(starts) and not current_context:
+                raise ValueError(
+                    "current shared preparation completion differs from the sealed context"
                 )
             exact_seconds = float(completion["elapsed_seconds"])
             if not math.isfinite(exact_seconds) or exact_seconds < 0.0:
@@ -1882,6 +1900,11 @@ def _build_shared_preparation_ledger(
                     if cache_hit
                     else "BUILD_COMPLETED_EXACT"
                 ),
+                "context_status": (
+                    "CURRENT" if current_context else "SUPERSEDED"
+                ),
+                "shared_context_sha256": completion_context_sha256,
+                "shared_manifest_sha256": completion_manifest_sha256,
                 "started_at": started_at.isoformat(),
                 "elapsed_accounting_status": "EXACT",
                 "elapsed_exact_seconds": exact_seconds,
@@ -1918,6 +1941,9 @@ def _build_shared_preparation_ledger(
                 "attempt_number": attempt_number,
                 "attempt_id": start["attempt_id"],
                 "status": "RECOVERED_INTERRUPTED_BOUNDED",
+                "context_status": "UNKNOWN_INTERRUPTED",
+                "shared_context_sha256": None,
+                "shared_manifest_sha256": None,
                 "started_at": started_at.isoformat(),
                 "elapsed_accounting_status": "BOUNDED_RECOVERY",
                 "elapsed_exact_seconds": None,
@@ -3426,6 +3452,39 @@ def _validate_attempt_ledger_aggregates(
             raise ValueError("attempt ledger row structure is invalid")
         status = row.get("status")
         recovered = status == "RECOVERED_INTERRUPTED_BOUNDED"
+        if shared:
+            context_status = row.get("context_status")
+            row_context_sha256 = row.get("shared_context_sha256")
+            row_manifest_sha256 = row.get("shared_manifest_sha256")
+            if recovered:
+                if (
+                    context_status != "UNKNOWN_INTERRUPTED"
+                    or row_context_sha256 is not None
+                    or row_manifest_sha256 is not None
+                ):
+                    raise ValueError(
+                        "recovered shared attempt has invalid context accounting"
+                    )
+            else:
+                if (
+                    context_status not in {"CURRENT", "SUPERSEDED"}
+                    or not isinstance(row_context_sha256, str)
+                    or not _is_sha256(row_context_sha256)
+                    or not isinstance(row_manifest_sha256, str)
+                    or not _is_sha256(row_manifest_sha256)
+                ):
+                    raise ValueError(
+                        "completed shared attempt has invalid context accounting"
+                    )
+                matches_current = (
+                    row_context_sha256 == ledger.get("shared_context_sha256")
+                    and row_manifest_sha256
+                    == ledger.get("shared_manifest_sha256")
+                )
+                if (context_status == "CURRENT") != matches_current:
+                    raise ValueError(
+                        "shared attempt context status differs from its receipt"
+                    )
         exact_seconds = row.get("elapsed_exact_seconds")
         lower = row.get("elapsed_lower_bound_seconds")
         upper = row.get("elapsed_upper_bound_seconds")
@@ -3485,6 +3544,8 @@ def _validate_attempt_ledger_aggregates(
                 completion_reference,
                 _resolve_reference(root, completion_reference),
             )
+    if shared and attempts[-1].get("context_status") != "CURRENT":
+        raise ValueError("shared preparation ledger does not end at the current context")
     metrics, metric_statuses = _aggregate_attempt_runtime_metrics(attempts)
     exact_completed = sum(
         float(row.get("elapsed_exact_seconds") or 0.0) for row in attempts
