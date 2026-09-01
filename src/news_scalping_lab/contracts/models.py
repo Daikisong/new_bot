@@ -149,6 +149,10 @@ class Candidate(StrictModel):
     source_urls: list[str] = Field(default_factory=list)
     memory_episode_ids: list[str] = Field(default_factory=list)
     memory_record_ids: list[str] = Field(default_factory=list)
+    source_row_ids: list[int] = Field(default_factory=list)
+    semantic_capsule_ids: list[str] = Field(default_factory=list)
+    mechanism_claim_ids: list[str] = Field(default_factory=list)
+    population_manifest_roots: list[str] = Field(default_factory=list)
     provenance: list[Provenance] = Field(default_factory=list)
 
     @field_validator("rank")
@@ -392,6 +396,9 @@ class DominantSectorHypothesis(StrictModel):
     contradicting_cases: list[str] = Field(default_factory=list)
     supporting_record_ids: list[str] = Field(default_factory=list)
     contradicting_record_ids: list[str] = Field(default_factory=list)
+    semantic_capsule_ids: list[str] = Field(default_factory=list)
+    mechanism_claim_ids: list[str] = Field(default_factory=list)
+    population_manifest_roots: list[str] = Field(default_factory=list)
     provenance: list[Provenance] = Field(default_factory=list)
 
 
