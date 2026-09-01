@@ -2,9 +2,17 @@
   "schema_version": "nslab.quality_full_pr126_live_progress.v1",
   "observed_at_kst": "2026-09-02T01:22:58.9005034+09:00",
   "snapshot_semantics": "POINT_IN_TIME_NOT_A_LIVE_COUNTER",
+  "supersession": {
+    "status": "SUPERSEDED_HALTED_MISALIGNED_DIAGNOSTIC_ONLY",
+    "confirmed_halted_at_kst": "2026-09-02T01:45:12.9172467+09:00",
+    "completed_pack_count_at_halt": 5,
+    "must_not_resume_or_score": true,
+    "report": "diagnostics/quality_full_misaligned_runtime_report.json",
+    "intent": "docs/operations/one_time_brain_daily_inference_intent.md"
+  },
   "branch": "codex/quality-full-pr126",
   "implementation_commit": "5fdbcfe594954eb8e901bf65847af5563852ef14",
-  "quality_state": "RUNNING_NOT_SCORED",
+  "quality_state": "HISTORICAL_RUNNING_NOT_SCORED_SUPERSEDED",
   "production_activation": "NOT_PRODUCTION_ACTIVATED",
   "current_operation": {
     "command": "python -m news_scalping_lab.cli memory predict-runtime-variants --project-root <evaluation-project> --blind-selection <blind-runtime-selection.json>",
@@ -23,7 +31,8 @@
     "is_model_training": false,
     "is_brain_rebuild": false,
     "is_research_import": false,
-    "is_production_activation": false
+    "is_production_activation": false,
+    "halted_later": true
   },
   "prediction_boundary": {
     "expected_case_count": 3,

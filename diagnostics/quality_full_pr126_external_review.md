@@ -1,24 +1,26 @@
 # QUALITY_FULL PR126 External Review Brief
 
-## Live Status Addendum
+## Intent Correction And Halt
 
-The earlier checkpoint described below has been superseded by a live formal run.
-As of `2026-09-02T01:22:58.9005034+09:00`, the honest current label is:
+The former live run was stopped after the user clarified the product contract:
+research interpretation is a one-time brain-build cost, while a daily pre-open
+CSV must use the already-built brain. As of
+`2026-09-02T01:45:12.9172467+09:00`, the honest current label is:
 
 ```text
 IMPLEMENTATION_MECHANICALLY_VERIFIED
-ACTUAL_3_CASE_PREDICTION_RUNNING_NOT_SCORED
-CASE_1_V0_SEALED
-CASE_1_V1_RUNTIME_EVIDENCE_PACKS_4_OF_379
+QPRED-704F_HALTED_MISALIGNED_DIAGNOSTIC_ONLY
+RUNTIME_EVIDENCE_PACKS_5_OF_379_PRESERVED_FOR_FORENSICS
 OUTCOME_NOT_OPENED
 PRODUCTION_HOLD
 ```
 
-See `diagnostics/quality_full_pr126_live_progress.{json,md}` for the exact
-point-in-time artifact commitments, completed pack checkpoints, scope of the
-1.0554% figure, and the remaining ordered gates. The large runtime artifacts
-are intentionally local and are not made auditable merely by this Git commit;
-they require a separate hash-verified export.
+Never resume, score, compare, promote, or reuse
+`QPRED-704f15cde6e4152b6931` or `RUN-9701018d4a4e` as formal cache input. See
+`diagnostics/quality_full_misaligned_runtime_report.{json,md}` for the halt
+boundary and `docs/operations/one_time_brain_daily_inference_intent.md` for the
+authoritative product intent. The prior live-progress files are historical
+point-in-time snapshots only.
 
 ## Requested Verdict
 
@@ -29,7 +31,7 @@ The honest current label is:
 
 ```text
 IMPLEMENTATION_MECHANICALLY_VERIFIED
-ACTUAL_3_CASE_PREDICTION_RUNNING_NOT_SCORED
+ACTUAL_3_CASE_EVALUATION_HALTED_MISALIGNED
 PRODUCTION_HOLD
 ```
 
@@ -56,8 +58,9 @@ PRODUCTION_HOLD
   restored and seven live novelty-batch calls completed; the next call was
   interrupted, and the attempt was
   stopped cleanly before V0/V1 prediction closure. That historical attempt
-  produced no `QPRED`, no score, and no production mutation; the current safe
-  run is the separate `QPRED-704f15cde6e4152b6931` ancestry.
+  produced no `QPRED`, no score, and no production mutation. The later separate
+  `QPRED-704f15cde6e4152b6931` ancestry is also diagnostic-only because it
+  evaluated a non-deployable 379-pack daily architecture.
 - Production brain, memory, warehouse, record store, and activation pointers
   were not changed.
 
@@ -117,7 +120,7 @@ schema parity                PASS
 full pytest                  PASS (1,863 tests)
 independent boundary audit   PASS (no HIGH/MEDIUM)
 safe-attempt OAuth calls     historical partial shared novelty only
-real safe 3-case evaluation  RUNNING_NOT_SCORED
+real safe 3-case evaluation  HALTED_MISALIGNED_DIAGNOSTIC_ONLY
 production mutation          0
 ```
 
@@ -128,8 +131,8 @@ Immediately after the earlier shared-closure fix, the gate was 1,847 passed in
 395.15 seconds. The later live-progress checkpoint supersedes that count with
 1,863 passed in 393.97 seconds; Ruff and Mypy (135 source files) also pass. See
 `diagnostics/quality_full_shared_batch_closure_fix.{json,md}` for the historical
-fix and `diagnostics/quality_full_pr126_live_progress.{json,md}` for the current
-point-in-time state.
+fix and `diagnostics/quality_full_pr126_live_progress.{json,md}` for the
+historical pre-halt snapshot.
 
 ## Why The Safe Attempt Was Stopped
 
@@ -143,7 +146,9 @@ the repeated payloads could be packed without dropping assignments.
 The replacement path writes `runtime_evidence_pack_plan.json` after local
 retrieval and before any packed OAuth request. Its pack count is the exact
 remaining runtime-evidence call count for that case and is the only supported
-basis for a provider-time forecast.
+basis for a provider-time forecast. That accounting remains mechanically useful,
+but the resulting 379-pack architecture is now invalidated for formal and daily
+use because it moved one-time research interpretation into per-day inference.
 
 ## Local Retrieval Observation
 
@@ -155,6 +160,9 @@ ran second, so this is not a throughput promise.
 
 ## Evidence Files
 
+- `docs/operations/one_time_brain_daily_inference_intent.md`
+- `diagnostics/quality_full_misaligned_runtime_report.json`
+- `diagnostics/quality_full_misaligned_runtime_report.md`
 - `diagnostics/quality_full_pr126_live_progress.json`
 - `diagnostics/quality_full_pr126_live_progress.md`
 - `diagnostics/quality_full_invalidated_run_report.json`
@@ -179,12 +187,14 @@ ran second, so this is not a throughput promise.
 5. Are market-universe, leader, Recall@K, precision, Brier/ECE, ineligible-row,
    citation, and offline-unexposed metrics defined without fabricating unavailable
    theme/newsless truth?
-6. Does the running `QPRED-704f15cde6e4152b6931` ancestry preserve the formal
-   blind boundary and checkpoint commitments through all six prediction seals?
+6. Does the replacement evaluation execute the same one-time-brain daily path
+   intended for deployment, without raw-record or assignment-proportional LLM
+   fan-out?
 7. Does the runtime-evidence pack graph prove complete assignment coverage,
    enforce prompt bounds without first-N/truncation, and reject plan/output/
    checkpoint commitment drift?
 
-Do not approve V0/V1 quality, compiler v8 work, model selection, or production
-activation from this checkpoint alone. Those require the real three-case score,
-then CALIBRATION, compiler-v8/V2, HOLDOUT, and post-cutoff stages in order.
+Do not approve V0/V1 quality, the 379-pack ancestry, model selection, or
+production activation from this checkpoint. The next evaluator must first be
+realigned with the one-time-brain daily-inference intent, then pass blind
+CALIBRATION, compiler/V2, HOLDOUT, and post-cutoff gates on that deployable path.

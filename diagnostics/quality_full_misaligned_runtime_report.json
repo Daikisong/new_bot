@@ -1,0 +1,162 @@
+{
+  "schema_version": "nslab.quality_full_misaligned_runtime_report.v1",
+  "confirmed_halted_at_kst": "2026-09-02T01:45:12.9172467+09:00",
+  "classification": "HALTED_MISALIGNED_DIAGNOSTIC_ONLY",
+  "branch": "codex/quality-full-pr126",
+  "repository_commit_at_halt": "b1760ce",
+  "must_not_resume": true,
+  "must_not_score": true,
+  "must_not_compare": true,
+  "must_not_promote": true,
+  "must_not_use_as_formal_cache_input": true,
+  "product_intent": {
+    "one_time_offline_research_import": true,
+    "one_time_offline_brain_memory_index_build": true,
+    "daily_preopen_csv_uses_existing_brain": true,
+    "daily_raw_research_llm_remap": false,
+    "daily_per_record_or_assignment_llm_fanout": false,
+    "exact_latency_sla_source": "USER_DEFINED_ONLY",
+    "daily_result_must_be_operational_before_market_open": true
+  },
+  "invalidated_ancestry": {
+    "selection_id": "QSEL-19b3c80ba392db8564c9",
+    "selection_sha256": "bfcc21e433ab36cf457254f7587f7fb71d2a12e4a332a12c0fead0b0554d3f9c",
+    "paired_prediction_run_id": "QPRED-704f15cde6e4152b6931",
+    "paired_prediction_manifest_sha256": "bfb9b8a0923300c77b46d82e74ab0a4375d09aa68ce57775ac827f409815686b",
+    "runtime_run_id": "RUN-9701018d4a4e",
+    "case_id": "NSLAB-20260102-be50ec83",
+    "variant_id": "V1",
+    "runtime_evidence_pack_plan_sha256": "da02ea1a4e63e114d822d95c61af4fa08e8bfcfe3b04d5cb16394f6f24858b6e"
+  },
+  "misalignment": {
+    "summary": "The evaluator moved one-time raw research interpretation into daily inference.",
+    "material_cluster_count": 478,
+    "assignment_count": 49984,
+    "unique_record_count": 1560,
+    "planned_payload_occurrence_count": 1914,
+    "planned_pack_count": 379,
+    "max_prompt_chars": 240000,
+    "provider": "codex-oauth",
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "xhigh",
+    "operational_failure": "One daily case required hundreds of large sequential LLM calls, so the evaluated path was not the intended deployable daily architecture.",
+    "interpretation_error": "No arbitrary latency abort was incorrectly treated as permission for an unbounded call topology."
+  },
+  "halt_boundary": {
+    "worker_pid": 49524,
+    "worker_alive_after_halt": false,
+    "completed_pack_count": 5,
+    "planned_pack_count": 379,
+    "next_interrupted_pack_id": "REPACK-709f7a0a462736b44f10",
+    "next_interrupted_pack_output_exists": false,
+    "all_predictions_sealed": false,
+    "prediction_seal_count": 1,
+    "only_prediction_seal": "NSLAB-20260102-be50ec83/V0",
+    "paired_case_count": 0,
+    "outcome_opened": false,
+    "score_created": false,
+    "production_activation_status": "NOT_PRODUCTION_ACTIVATED"
+  },
+  "completed_pack_artifacts": [
+    {
+      "pack_id": "REPACK-944afc84f53ea6004236",
+      "size_bytes": 76918,
+      "sha256": "ef59ad172eaa040333e7e0a64dd511f818cb06a0f593d12c6a217dd1724b27f5",
+      "checkpoint_id": "LLMCKPT-6aaf7b8fbd41c426",
+      "checkpoint_sha256": "b3fdef93e43092d296f7bae9d891d4aa3905e22280f5793517890def6d878f08"
+    },
+    {
+      "pack_id": "REPACK-42e3c0dbfb182600b7d3",
+      "size_bytes": 155291,
+      "sha256": "17c2ef6f35c5e2d882bdcb9a15a9ae5111b07400d33f90273df4703e4e140326",
+      "checkpoint_id": "LLMCKPT-fa9ee96cfb38c3f9",
+      "checkpoint_sha256": "fa4fd62b580bd156cb99412706ee84d7fa59a6c709b41c911fbd5d855b9a1089"
+    },
+    {
+      "pack_id": "REPACK-b69f594789245ca709e9",
+      "size_bytes": 113858,
+      "sha256": "bfb2d72abc79e22894dfa26a902659f9602c1314854eb6a1c7437425b03e96e7",
+      "checkpoint_id": "LLMCKPT-fe520dbf446fa913",
+      "checkpoint_sha256": "401d365ca99d84d300597f83d922a486538fbb08cb47a75388f36490087e9195"
+    },
+    {
+      "pack_id": "REPACK-57cee5def1bd00c21d82",
+      "size_bytes": 146865,
+      "sha256": "180bb9b088253b2c083696df3eb4a3e781c949377be18376c2ef264af37661c0",
+      "checkpoint_id": "LLMCKPT-51513b5becbcca0f",
+      "checkpoint_sha256": "4e1562d0417e86cf1bc386f299848f8017f1267d671acff113e235573e03c886"
+    },
+    {
+      "pack_id": "REPACK-220549cfef6a0e0b9d09",
+      "size_bytes": 120164,
+      "sha256": "e0c6ea0c1ff5f1930d19218638f0483fcff1ecc99e53aede75b4fc7bec42f591",
+      "checkpoint_id": "LLMCKPT-75b62460efdb031f",
+      "checkpoint_sha256": "598ea831ba94d1e334b79b721b8942e1a986d1b9c322a24d4be91f28b73317af"
+    }
+  ],
+  "work_completed_before_halt": [
+    {
+      "commit": "4aa6c1a",
+      "status": "RETAIN_MECHANICAL_SAFETY_FOUNDATION",
+      "description": "QUALITY_FULL profile, physically separated prediction/scoring inputs, and formal blind-boundary infrastructure."
+    },
+    {
+      "commit": "c9487c5",
+      "status": "RETAIN_FORENSIC_PACKER_ONLY",
+      "description": "Cross-cluster deduplication and immutable pack-plan accounting. Do not use it as the daily architecture."
+    },
+    {
+      "commit": "fd5eefe..0569bd2",
+      "status": "RETAIN_MECHANICAL_CORRECTNESS",
+      "description": "Shared map/reduce closure, duplicate-cluster accounting, and blind novelty separation fixes."
+    },
+    {
+      "commit": "d513ab2",
+      "status": "RETAIN",
+      "description": "Large daily-memory compact context v2 with full hash commitments and bounded projection."
+    },
+    {
+      "commit": "2e0427e",
+      "status": "RETAIN",
+      "description": "Content-addressed runtime retrieval trace checkpoints and safe resume verification."
+    },
+    {
+      "commit": "5fdbcfe",
+      "status": "RETAIN",
+      "description": "Safe Pydantic validation-error serialization so structured repair is not masked."
+    },
+    {
+      "commit": "b1760ce",
+      "status": "SUPERSEDED_BY_THIS_REPORT",
+      "description": "Point-in-time running report written before the product-intent correction."
+    }
+  ],
+  "mechanical_verification_before_document_only_correction": {
+    "ruff": "PASS",
+    "mypy": "PASS_135_SOURCE_FILES",
+    "pytest": "PASS_1863",
+    "pytest_elapsed_seconds": 393.97
+  },
+  "claims_explicitly_not_proven": [
+    "V1 improves prediction quality over V0",
+    "runtime retrieval v4 is suitable for daily operation",
+    "the 379-pack ancestry is a formal evaluation result",
+    "compiler v8 should be gated on completion of this ancestry",
+    "a final production brain candidate is ready",
+    "production is activated"
+  ],
+  "required_next_direction": [
+    "Audit the durable one-time brain for semantic preservation of accepted repaired research.",
+    "Design or complete the offline semantic compiler without depending on the invalidated 379-pack evaluator.",
+    "Make daily inference consume the prebuilt brain plus a small relevance-driven citation set.",
+    "Measure one-time build cost separately from per-day inference cost.",
+    "Run blind CALIBRATION and HOLDOUT on the exact deployable daily architecture.",
+    "Keep production activation on HOLD until those gates and external artifact audit pass."
+  ],
+  "authoritative_intent_document": "docs/operations/one_time_brain_daily_inference_intent.md",
+  "process_log": {
+    "path": "runs/semantic_brain_upgrade/quality_full/process_logs/predict-resume-20260901-234532.stderr.log",
+    "size_bytes": 128,
+    "sha256": "41e569e5339454a000bb2b5f554679de666baf41c854f45aebe52de51a2e324a"
+  }
+}

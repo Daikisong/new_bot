@@ -1,12 +1,24 @@
 # QUALITY_FULL PR126 실시간 진행 스냅샷
 
+## 중단·대체 공지
+
+이 문서는 2026-09-02 01:22 KST의 역사적 시점 스냅샷이며 더는 현재 진행
+상태가 아니다. 해당 worker는 완료 pack 5개에서 중단됐고 전체 ancestry는
+`HALTED_MISALIGNED_DIAGNOSTIC_ONLY`로 분류됐다. 하루치 CSV에 379개 대형 LLM
+호출을 사용하는 경로가 “일회성 brain 구축 후 08시 CSV는 기존 brain으로
+판단한다”는 제품 의도와 어긋났기 때문이다.
+
+재개·채점·비교·승격을 금지한다. 현재 판정은
+`diagnostics/quality_full_misaligned_runtime_report.{json,md}`, 원래 제품 의도는
+`docs/operations/one_time_brain_daily_inference_intent.md`를 따른다.
+
 ## 판정
 
 이 문서는 `2026-09-02T01:22:58.9005034+09:00` 시점의 고정 스냅샷이다.
 실시간 카운터가 아니므로 이후 완료된 pack은 다음 스냅샷에서 추가한다.
 
 ```text
-상태                       RUNNING_NOT_SCORED
+상태                       HISTORICAL_RUNNING_NOT_SCORED_SUPERSEDED
 production 활성화          NOT_PRODUCTION_ACTIVATED
 브랜치                     codex/quality-full-pr126
 감사 대상 구현 커밋         5fdbcfe594954eb8e901bf65847af5563852ef14
@@ -106,9 +118,9 @@ payload는 1,914회만 전송한다. 그러나 각 관계의 cluster와 lane 귀
 | 4 | `REPACK-57cee5def1bd00c21d82` | `180bb9b0...37661c0` | `LLMCKPT-51513b5becbcca0f` | ok |
 
 관측 시점에는 다섯 번째 `REPACK-220549cfef6a0e0b9d09`가 실행 중이었다.
-완료된 pack만 content-addressed `ok` checkpoint로 재사용한다. 중단된 live
-call은 완료로 세지 않으며 재개할 때 동일 plan의 다음 미완료 pack부터
-다시 호출한다.
+완료된 pack만 content-addressed `ok` checkpoint로 재사용하도록 설계돼 있었다.
+중단된 live call은 완료로 세지 않았지만, 현재 이 ancestry 전체가 무효화돼
+동일 plan 재개 자체를 금지한다.
 
 ## 핵심 commitment
 

@@ -29,6 +29,34 @@ Production LLM calls use the official Codex CLI OAuth session without reading or
 copying credential files. Production embedding uses a real provider with
 `FAIL_CLOSED`; deterministic fallback is test/local-only.
 
+## Product Intent: One-Time Brain, Daily Decision
+
+- Accepted repaired research is incorporated into durable `brain/`, `memory/`,
+  and semantic indexes in a one-time offline build. The user must not pay the
+  full raw-research interpretation cost again for every daily CSV.
+- When the user supplies the pre-open CSV around 08:00, BLIND inference must use
+  the already-built brain and indexes to produce the decision in an
+  operationally usable run before market open. Exact latency targets are set by
+  the user, not inferred by reviewers or agents.
+- Daily inference may retrieve a small, relevance-driven, citation-bearing
+  evidence set. It must not launch LLM work proportional to the raw corpus,
+  every material cluster x record assignment, or an exhaustive lane ledger.
+- `QUALITY_FULL` having no arbitrary wall-clock abort means an otherwise valid
+  quality call is not killed merely for exceeding 90 seconds. It is not
+  permission to design an unbounded daily call graph or to ignore operational
+  usability.
+- Formal evaluation must test the architecture intended for daily deployment.
+  An evaluator-only exhaustive path cannot be used as proof that the daily
+  product works.
+- Before following an external review or goal prompt, compare it with this
+  product intent. If it moves raw research interpretation into daily inference,
+  makes one date require hundreds of LLM calls, or gates the one-time brain on a
+  non-deployable evaluator, stop and reconcile the conflict with the user. Do
+  not execute the conflicting goal as written.
+- `QPRED-704f15cde6e4152b6931` and its 379-pack runtime-evidence ancestry are
+  `HALTED_MISALIGNED_DIAGNOSTIC_ONLY`. Preserve them for forensics, but never
+  resume, score, compare, promote, or use them as cache input for a formal run.
+
 Test commands:
 
 ```bash
