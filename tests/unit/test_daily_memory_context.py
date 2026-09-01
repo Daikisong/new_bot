@@ -922,6 +922,63 @@ def test_trace_uses_expected_memory_snapshot(
     }
 
 
+def test_daily_runtime_trace_adopts_interrupted_precheckpoint_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index, _candidate, graph_path, context_path, raw_context = _build_daily_fixture(
+        tmp_path,
+        monkeypatch,
+    )
+    context = DailyMemoryContext.model_validate(raw_context)
+    checkpoint_dir = (
+        tmp_path
+        / "runs"
+        / "checkpoints"
+        / "runtime_retrieval_v4"
+        / RUN_ID
+        / CLUSTER_ID
+    )
+    checkpoint_path = next(checkpoint_dir.glob("DRTC-*.json"))
+    marker_path = checkpoint_dir / "runtime_retrieval_checkpoint_adoption_closed.json"
+    assert read_json(checkpoint_path)["adopted_existing_trace"] is False
+    checkpoint_path.unlink()
+    marker_path.unlink()
+    monkeypatch.setattr(
+        daily_context_module,
+        "candidates_from_daily_artifacts",
+        lambda *_args, **_kwargs: pytest.fail(
+            "runtime candidates must not be rebuilt during checkpoint adoption"
+        ),
+    )
+
+    replayed, replayed_path = build_daily_memory_context(
+        tmp_path,
+        memory_index=index,
+        run_id=context.run_id,
+        trade_date=context.trade_date,
+        cutoff_at=context.cutoff_at,
+        corpus_manifest_sha256=context.corpus_manifest_sha256,
+        news_coverage_manifest_path=(
+            tmp_path / context.news_coverage_manifest.artifact_path
+        ),
+        event_cluster_manifest_path=(
+            tmp_path / context.event_cluster_manifest.artifact_path
+        ),
+        event_cluster_artifact_path=tmp_path / context.event_clusters.artifact_path,
+        memory_coverage_manifest_path=(
+            tmp_path / context.memory_coverage_manifest.artifact_path
+        ),
+        beneficiary_graph_path=graph_path,
+    )
+
+    adopted_path = next(checkpoint_dir.glob("DRTC-*.json"))
+    assert read_json(adopted_path)["adopted_existing_trace"] is True
+    assert marker_path.is_file()
+    assert replayed == context
+    assert replayed_path == context_path
+
+
 def test_final_graph_binding_preserves_retrieval_graph_trace_chain(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

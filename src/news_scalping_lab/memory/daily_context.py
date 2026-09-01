@@ -92,7 +92,10 @@ from news_scalping_lab.memory.population import (
     _purpose_record_types_sha256,
 )
 from news_scalping_lab.memory.runtime_v4 import (
+    RUNTIME_RETRIEVAL_POLICY_VERSION,
+    RUNTIME_RETRIEVAL_ROOT,
     RuntimeEvidenceBuildResult,
+    RuntimeRetrievalBuildResult,
     build_runtime_retrieval_trace,
     candidates_from_daily_artifacts,
 )
@@ -133,6 +136,10 @@ DAILY_MEMORY_COMPACT_V2_POLICY = "complete_roots_bounded_semantic_rows.v1"
 QUALITY_FULL_MAX_CLUSTER_WORKERS = 2
 DAILY_CLUSTER_CHECKPOINT_VERSION = "daily_cluster_artifacts.v2"
 DAILY_CLUSTER_CHECKPOINT_SCHEMA = "nslab.daily_cluster_checkpoint.v2"
+DAILY_RUNTIME_RETRIEVAL_CHECKPOINT_VERSION = "daily_runtime_retrieval.v1"
+DAILY_RUNTIME_RETRIEVAL_CHECKPOINT_SCHEMA = (
+    "nslab.daily_runtime_retrieval_checkpoint.v1"
+)
 DAILY_POPULATION_PURPOSE_UNITS: dict[
     PopulationPurpose,
     tuple[IndependentUnitType, ...],
@@ -516,38 +523,87 @@ def build_daily_memory_context(
                 "brain_version"
             ) != brain_identity.get("brain_version"):
                 raise ValueError("semantic exposure index differs from the daily brain")
+        exposure_manifest_root = sha256_text(
+            canonical_json(
+                exposure_index.manifest
+                if exposure_index is not None
+                else {"semantic_exposure_index": "ABSENT"}
+            )
+        )
         for cluster_id, query in cluster_queries:
             population_paths = population_paths_by_cluster.get(cluster_id, [])
             representative_paths = representative_paths_by_cluster.get(cluster_id, [])
-            candidates = candidates_from_daily_artifacts(
-                root,
-                cluster_id=cluster_id,
-                population_manifest_paths=population_paths,
-                representative_manifest_paths=representative_paths,
-                exposure_resolver=exposure_index,
-                ann_rank_by_cell=ann_rank_by_cluster.get(cluster_id),
-                fts_rank_by_cell=fts_rank_by_cluster.get(cluster_id),
-                memory_index=memory_index,
-                cutoff_at=cutoff_at,
-                memory_snapshot_id=snapshot.snapshot_id,
-            )
-            runtime_result = build_runtime_retrieval_trace(
-                root,
+            source_population_manifests = [
+                reference
+                for reference in populations
+                if (root / reference.artifact_path) in population_paths
+            ]
+            source_representative_manifests = [
+                reference
+                for reference in representatives
+                if (root / reference.artifact_path) in representative_paths
+            ]
+            runtime_identity = _daily_runtime_retrieval_identity(
                 run_id=run_id,
                 cluster_id=cluster_id,
-                query_text=query,
+                query=query,
                 cutoff_at=cutoff_at,
                 memory_snapshot_id=snapshot.snapshot_id,
-                candidates=candidates,
-                source_population_manifests=[
-                    reference for reference in populations if (root / reference.artifact_path) in population_paths
-                ],
-                source_representative_manifests=[
-                    reference
-                    for reference in representatives
-                    if (root / reference.artifact_path) in representative_paths
-                ],
+                population_manifests=source_population_manifests,
+                representative_manifests=source_representative_manifests,
+                ann_ranks=ann_rank_by_cluster.get(cluster_id, {}),
+                fts_ranks=fts_rank_by_cluster.get(cluster_id, {}),
+                exposure_manifest_root=exposure_manifest_root,
             )
+            runtime_result = _load_daily_runtime_retrieval_checkpoint(
+                root,
+                identity=runtime_identity,
+                query=query,
+            )
+            if runtime_result is None:
+                candidates = candidates_from_daily_artifacts(
+                    root,
+                    cluster_id=cluster_id,
+                    population_manifest_paths=population_paths,
+                    representative_manifest_paths=representative_paths,
+                    exposure_resolver=exposure_index,
+                    ann_rank_by_cell=ann_rank_by_cluster.get(cluster_id),
+                    fts_rank_by_cell=fts_rank_by_cluster.get(cluster_id),
+                    memory_index=memory_index,
+                    cutoff_at=cutoff_at,
+                    memory_snapshot_id=snapshot.snapshot_id,
+                )
+                runtime_result = build_runtime_retrieval_trace(
+                    root,
+                    run_id=run_id,
+                    cluster_id=cluster_id,
+                    query_text=query,
+                    cutoff_at=cutoff_at,
+                    memory_snapshot_id=snapshot.snapshot_id,
+                    candidates=candidates,
+                    source_population_manifests=source_population_manifests,
+                    source_representative_manifests=(
+                        source_representative_manifests
+                    ),
+                )
+                _write_daily_runtime_retrieval_checkpoint(
+                    root,
+                    identity=runtime_identity,
+                    retrieval=runtime_result,
+                    adopted_existing_trace=False,
+                )
+                validated_runtime_result = (
+                    _load_daily_runtime_retrieval_checkpoint(
+                        root,
+                        identity=runtime_identity,
+                        query=query,
+                    )
+                )
+                if validated_runtime_result is None:
+                    raise ValueError(
+                        "daily runtime retrieval checkpoint was not persisted"
+                    )
+                runtime_result = validated_runtime_result
             runtime_traces.append(_artifact_reference(root, runtime_result.trace_path))
     finally:
         if exposure_index is not None:
@@ -1309,6 +1365,251 @@ def _load_daily_cluster_checkpoint(
         fts_ranks=fts_ranks,
         built_population_keys=built_population_keys,
         uncovered_purposes=uncovered_purposes,
+    )
+
+
+def _daily_runtime_retrieval_identity(
+    *,
+    run_id: str,
+    cluster_id: str,
+    query: str,
+    cutoff_at: datetime,
+    memory_snapshot_id: str,
+    population_manifests: list[ArtifactReference],
+    representative_manifests: list[ArtifactReference],
+    ann_ranks: dict[str, int],
+    fts_ranks: dict[str, int],
+    exposure_manifest_root: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "nslab.daily_runtime_retrieval_identity.v1",
+        "checkpoint_version": DAILY_RUNTIME_RETRIEVAL_CHECKPOINT_VERSION,
+        "runtime_policy_version": RUNTIME_RETRIEVAL_POLICY_VERSION,
+        "run_id": run_id,
+        "cluster_id": cluster_id,
+        "query_sha256": sha256_text(query),
+        "cutoff_at": as_kst(cutoff_at).isoformat(),
+        "memory_snapshot_id": memory_snapshot_id,
+        "population_manifests": [
+            item.model_dump(mode="json") for item in population_manifests
+        ],
+        "representative_manifests": [
+            item.model_dump(mode="json") for item in representative_manifests
+        ],
+        "ann_ranks_root_sha256": sha256_text(canonical_json(ann_ranks)),
+        "fts_ranks_root_sha256": sha256_text(canonical_json(fts_ranks)),
+        "exposure_manifest_root_sha256": exposure_manifest_root,
+    }
+
+
+def _daily_runtime_retrieval_checkpoint_paths(
+    root: Path,
+    *,
+    run_id: str,
+    cluster_id: str,
+    identity: dict[str, Any],
+) -> tuple[Path, Path, Path]:
+    if any(
+        not value
+        or Path(value).name != value
+        or value in {".", ".."}
+        for value in (run_id, cluster_id)
+    ):
+        raise ValueError("daily runtime retrieval checkpoint segment is invalid")
+    directory = (
+        root / RUNTIME_RETRIEVAL_ROOT / run_id / cluster_id
+    ).resolve()
+    try:
+        directory.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(
+            "daily runtime retrieval checkpoint escapes project root"
+        ) from exc
+    checkpoint_id = "DRTC-" + sha256_text(canonical_json(identity))[:20].upper()
+    return (
+        directory,
+        directory / f"{checkpoint_id}.json",
+        directory / "runtime_retrieval_checkpoint_adoption_closed.json",
+    )
+
+
+def _validated_daily_runtime_trace(
+    root: Path,
+    *,
+    trace_path: Path,
+    identity: dict[str, Any],
+    query: str,
+) -> RuntimeRetrievalBuildResult | None:
+    try:
+        trace_bytes = trace_path.read_bytes()
+        trace = RuntimeRetrievalTrace.model_validate(
+            json.loads(trace_bytes.decode("utf-8"))
+        )
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise ValueError(f"daily runtime retrieval trace is invalid: {exc}") from exc
+    if trace_bytes != canonical_json(trace.model_dump(mode="json")).encode("utf-8"):
+        raise ValueError("daily runtime retrieval trace is not canonical")
+    population_manifests = [
+        ArtifactReference.model_validate(item)
+        for item in cast(list[object], identity["population_manifests"])
+    ]
+    representative_manifests = [
+        ArtifactReference.model_validate(item)
+        for item in cast(list[object], identity["representative_manifests"])
+    ]
+    if (
+        trace.run_id != identity["run_id"]
+        or trace.cluster_id != identity["cluster_id"]
+        or trace.query_text != query
+        or trace.query_sha256 != identity["query_sha256"]
+        or as_kst(trace.cutoff_at).isoformat() != identity["cutoff_at"]
+        or trace.memory_snapshot_id != identity["memory_snapshot_id"]
+        or trace.policy_version != identity["runtime_policy_version"]
+        or trace.source_population_manifests != population_manifests
+        or trace.source_representative_manifests != representative_manifests
+        or trace.evidence_memo_artifact is not None
+    ):
+        return None
+    record_ids = [row.record_id for row in trace.rows]
+    trace_identity = {
+        "run_id": trace.run_id,
+        "cluster_id": trace.cluster_id,
+        "query_sha256": trace.query_sha256,
+        "cutoff_at": as_kst(trace.cutoff_at).isoformat(),
+        "memory_snapshot_id": trace.memory_snapshot_id,
+        "policy_version": trace.policy_version,
+        "record_ids": record_ids,
+    }
+    expected_trace_id = "RTRV4-" + sha256_text(
+        canonical_json(trace_identity)
+    )[:20].upper()
+    forbidden_stages = {"LLM_EXPOSED", "MEMO_REFERENCED", "FINAL_CITED"}
+    if (
+        trace.trace_id != expected_trace_id
+        or trace_path.name != f"{trace.trace_id}.json"
+        or record_ids != sorted(record_ids)
+        or any(forbidden_stages.intersection(row.stages) for row in trace.rows)
+    ):
+        raise ValueError("daily runtime retrieval base trace closure is invalid")
+    for reference in [*population_manifests, *representative_manifests]:
+        _verify_checkpoint_reference(root, reference)
+    return RuntimeRetrievalBuildResult(
+        trace=trace,
+        trace_path=trace_path,
+        selected_record_ids=tuple(
+            row.record_id for row in trace.rows if "LANE_SELECTED" in row.stages
+        ),
+    )
+
+
+def _load_daily_runtime_retrieval_checkpoint(
+    root: Path,
+    *,
+    identity: dict[str, Any],
+    query: str,
+) -> RuntimeRetrievalBuildResult | None:
+    directory, checkpoint_path, adoption_marker_path = (
+        _daily_runtime_retrieval_checkpoint_paths(
+            root,
+            run_id=str(identity["run_id"]),
+            cluster_id=str(identity["cluster_id"]),
+            identity=identity,
+        )
+    )
+    if checkpoint_path.is_file():
+        payload = read_json(checkpoint_path)
+        if (
+            not isinstance(payload, dict)
+            or payload.get("schema_version")
+            != DAILY_RUNTIME_RETRIEVAL_CHECKPOINT_SCHEMA
+            or payload.get("identity") != identity
+        ):
+            raise ValueError("daily runtime retrieval checkpoint identity is invalid")
+        trace_reference = ArtifactReference.model_validate(
+            payload.get("trace_artifact")
+        )
+        trace_path = _verify_checkpoint_reference(root, trace_reference)
+        result = _validated_daily_runtime_trace(
+            root,
+            trace_path=trace_path,
+            identity=identity,
+            query=query,
+        )
+        if result is None:
+            raise ValueError("daily runtime retrieval checkpoint trace is stale")
+        return result
+    if adoption_marker_path.exists() or not directory.is_dir():
+        return None
+    base_trace_paths = sorted(
+        path
+        for path in directory.glob("RTRV4-*.json")
+        if ".evidence." not in path.name and ".final." not in path.name
+    )
+    matching = [
+        result
+        for path in base_trace_paths
+        if (
+            result := _validated_daily_runtime_trace(
+                root,
+                trace_path=path,
+                identity=identity,
+                query=query,
+            )
+        )
+        is not None
+    ]
+    if len(matching) > 1:
+        raise ValueError("multiple daily runtime retrieval traces match one request")
+    if not matching:
+        return None
+    _write_daily_runtime_retrieval_checkpoint(
+        root,
+        identity=identity,
+        retrieval=matching[0],
+        adopted_existing_trace=True,
+    )
+    return _load_daily_runtime_retrieval_checkpoint(
+        root,
+        identity=identity,
+        query=query,
+    )
+
+
+def _write_daily_runtime_retrieval_checkpoint(
+    root: Path,
+    *,
+    identity: dict[str, Any],
+    retrieval: RuntimeRetrievalBuildResult,
+    adopted_existing_trace: bool,
+) -> None:
+    _directory, checkpoint_path, adoption_marker_path = (
+        _daily_runtime_retrieval_checkpoint_paths(
+            root,
+            run_id=str(identity["run_id"]),
+            cluster_id=str(identity["cluster_id"]),
+            identity=identity,
+        )
+    )
+    _write_immutable_json(
+        checkpoint_path,
+        {
+            "schema_version": DAILY_RUNTIME_RETRIEVAL_CHECKPOINT_SCHEMA,
+            "identity": identity,
+            "trace_artifact": _artifact_reference(
+                root,
+                retrieval.trace_path,
+            ).model_dump(mode="json"),
+            "adopted_existing_trace": adopted_existing_trace,
+        },
+    )
+    _write_immutable_json(
+        adoption_marker_path,
+        {
+            "schema_version": (
+                "nslab.daily_runtime_retrieval_adoption_marker.v1"
+            ),
+            "adoption_closed": True,
+        },
     )
 
 
