@@ -4,15 +4,15 @@
 
 Research repair, import, record embedding, semantic interpretation, contradiction review, and world-model synthesis are one-time offline work. A daily 08:00 CSV does not trigger any of them.
 
-The daily product consumes an immutable `BrainPackage`, interprets current news once, performs bounded local retrieval, and makes the final market decision once.
+The daily product loads an immutable `BrainPackage` and current news before its single model request. That request interprets the news with the compiled knowledge and returns the final decision.
 
 ```text
 CSV
   -> local parse / cutoff / clustering / CurrentEventCapsule
-  -> CALL 1 current_day_interpretation
-  -> local BrainPackage retrieval
+  -> load compiled world/category guidance
+  -> local BrainPackage retrieval grounded in current news
   -> DailyBrainContext
-  -> CALL 2 final_market_decision
+  -> ONE CALL final_market_decision (interpretation + decision)
   -> sealed prediction / report / manifest
 ```
 
@@ -35,7 +35,7 @@ src/news_scalping_lab/contracts/offline_brain.py
 src/news_scalping_lab/inference/thin_daily.py
 ```
 
-The call graph has exactly two logical calls. `settings.llm.max_retries` may be 0 or 1; outer trace retry is fixed at 0. With the production Codex provider, this yields two normal calls and no more than four live calls including one structured-output repair per logical call.
+The call graph has exactly one logical call. `settings.llm.max_retries` may be 0 or 1; outer trace retry is fixed at 0. With the production Codex provider, this yields one normal call and at most one additional structured-output repair. There is no preliminary interpretation request.
 
 ## CurrentEventCapsule
 
@@ -47,11 +47,29 @@ Every input CSV row also receives an explicit disposition in a separate ledger, 
 
 ## DailyBrainContext
 
+Architecture v2 loads this context before any daily LLM call. Retrieval queries
+come directly from event titles, predicate sentences, issuer/counterparty,
+numbers, and modality. No model-generated interpretation controls initial recall.
+The same request performs interpretation and final review, keeping the daily
+witness set bounded. All stored world/category Markdown guidance is included with its
+package-relative path and SHA-256. It is evidence, never a candidate allowlist.
+
+The analyzer rejects missing, changed, future, or wrong-news initial context
+before invoking the model. The run identity includes the package root, D-1
+context, and model configuration. Daily prompt/checkpoint identities change;
+offline compiler v5 and its existing checkpoints remain compatible.
+
+The single structured response contains `analyzed_cluster_ids` and the final
+prediction. Missing, duplicate, or added cluster IDs fail validation without
+launching another analysis call. The decision envelope is saved and hashed in
+the run manifest. This accounts for claimed coverage, not proven semantic quality.
+
 The local brain reader may return only precompiled objects:
 
 ```text
 SemanticMemoryCapsule
 SynthesizedMechanismClaim
+compiled world/category guidance
 population statistics
 beneficiary / leader / continuation memory
 current-vs-history differences

@@ -37,6 +37,7 @@ from news_scalping_lab.contracts.models import (
     SemanticRetrievalPlan,
     SemanticRetrievalQuery,
 )
+from news_scalping_lab.contracts.offline_brain import BrainInformedDecision
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
 from news_scalping_lab.utils import KST, now_kst, sha256_text, stable_id
 
@@ -64,6 +65,19 @@ class DeterministicMockLLMProvider:
         )
 
     async def generate_structured(self, *, prompt: str, response_model: type[T], purpose: str) -> T:
+        if response_model is BrainInformedDecision:
+            payload = self._blind_payload(prompt)
+            raw_cluster_ids = payload.get("required_cluster_ids")
+            cluster_ids = (
+                [str(value) for value in raw_cluster_ids]
+                if isinstance(raw_cluster_ids, list)
+                else []
+            )
+            decision = BrainInformedDecision(
+                analyzed_cluster_ids=cluster_ids,
+                prediction=self._blind_prediction(prompt),
+            )
+            return decision  # type: ignore[return-value]
         if response_model is BlindPrediction and purpose == "final_synthesis":
             prediction = self._final_synthesis_prediction(prompt)
             return prediction  # type: ignore[return-value]
