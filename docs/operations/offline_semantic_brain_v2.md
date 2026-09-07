@@ -194,6 +194,14 @@ OAuth 경쟁에 따라 더 길어질 수 있다. 완료된 content-addressed che
 
 ## 현재 상태
 
+2026-09-07 19:29 KST: v5 build는 할당량 중단 이후 동일 compile ID로 재개됐다.
+기존 checkpoint 재사용과 신규 leaf 4개 성공을 확인했으며 성공 checkpoint는
+2,168/7,671개(28.2623%), 남은 논리 호출은 5,503개다. Goal 상태도 `active`로
+재확인했다. 빌드 또는 품질 검증이 완료된 것은 아니다. 실제 process/checkpoint 상태는
+`diagnostics/offline_brain_v2_implementation_report.{json,md}`에서 관측 시각과 함께
+확인한다. 최신 goal 원문 사본은
+`docs/operations/codex_goal_offline_brain_thin_daily_inference.md`다.
+
 ```text
 DAILY_PRODUCT_PATH_IMPLEMENTED       true
 DAILY_CALL_GRAPH_BOUNDED             true
@@ -202,7 +210,7 @@ OFFLINE_V2_COMPILER_FIXTURE_TESTED   true
 FULL_823279_PLAN_STRICT_COMPLETED     true
 FULL_823279_PLAN_V5_COMPLETED         true
 FULL_823279_BUILD_V4_FAILED_CLOSED    true
-FULL_823279_BUILD_V5_RETRY_PENDING    true
+FULL_823279_BUILD_V5_RESUMED          true
 FULL_823279_BUILD_COMPLETED           false
 PREDICTIVE_QUALITY_EVALUATED          false
 PRODUCTION_ACTIVATED                  false

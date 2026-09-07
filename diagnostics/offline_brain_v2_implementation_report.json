@@ -1,6 +1,7 @@
 {
   "schema_version": "nslab.offline_brain_v2_implementation_report.v1",
-  "status": "V4_FULL_BUILD_FAILED_CLOSED_V5_PLAN_COMPLETED_FULL_BUILD_RETRY_PENDING",
+  "status": "V5_FULL_BUILD_RESUMED_LIVE_SUCCESS_CONFIRMED",
+  "status_observed_at": "2026-09-07T19:29:47.1608638+09:00",
   "source": {
     "record_count": 823279,
     "record_corpus_root": "2d25581cdc98d89cb0f1d2fa00bec917442171ee279c001edfc764e2941f6d75",
@@ -16,8 +17,11 @@
   },
   "daily_product": {
     "command": "analyze-daily",
-    "normal_logical_llm_calls": 2,
-    "maximum_live_calls_with_one_schema_repair_each": 4,
+    "normal_logical_llm_calls": 1,
+    "maximum_live_calls_with_one_schema_repair": 2,
+    "compiled_brain_loaded_before_first_llm_call": true,
+    "separate_interpretation_call": false,
+    "architecture_version": "one_time_brain_thin_daily.v2",
     "historical_raw_daily_llm_map_calls": 0,
     "daily_import_calls": 0,
     "daily_brain_rebuild_calls": 0,
@@ -73,6 +77,66 @@
     "v4_checkpoints_reused": false,
     "v5_authoritative_plan_refreshed": true
   },
+  "v5_resume": {
+    "attempt_id": "OFFLINE-COMPILE-add3461bd175147e255d",
+    "previous_stop_at": "2026-09-03T15:35:21.695831+09:00",
+    "previous_stop_reason": "CODEX_USAGE_LIMIT",
+    "previous_error_checkpoint_id": "LLMCKPT-978cd92f05059352",
+    "checkpoint_baseline_observed_at": "2026-09-07T19:04:44.6247068+09:00",
+    "successful_checkpoints_before_resume": 2164,
+    "long_payload_ok_before_resume": 90,
+    "leaf_ok_before_resume": 2074,
+    "reduce_review_ok_before_resume": 0,
+    "remaining_logical_calls_before_resume": 5507,
+    "logical_call_completion_percent_before_resume": 28.21014209359927,
+    "percentage_is_elapsed_time_progress": false,
+    "compile_id_and_model_preflight_match": true,
+    "resume_from_checkpoints": true,
+    "offline_compiler_changed": false,
+    "started_at": "2026-09-07T19:05:51.9237560+09:00",
+    "process_id": 116688,
+    "stdout": "runs/offline_brain_v5_resume_20260907T190551.stdout.log",
+    "stderr": "runs/offline_brain_v5_resume_20260907T190551.stderr.log",
+    "phase_at_observation": "offline_semantic_leaf",
+    "progress_file_phase_at_observation": "representative_and_distribution_build",
+    "new_live_success_after_resume_verified": true,
+    "new_success_count_at_observation": 4,
+    "successful_checkpoints_at_observation": 2168,
+    "long_payload_ok_at_observation": 90,
+    "leaf_ok_at_observation": 2078,
+    "reduce_review_ok_at_observation": 0,
+    "remaining_logical_calls_at_observation": 5503,
+    "logical_call_completion_percent_at_observation": 28.262286533698344,
+    "error_checkpoints_at_observation": 0,
+    "previous_error_checkpoint_now_ok": true,
+    "new_success_checkpoint_ids": [
+      "LLMCKPT-253fdebae16582fa",
+      "LLMCKPT-935fa98c8ace907b",
+      "LLMCKPT-978cd92f05059352",
+      "LLMCKPT-c9d15a9d5f030c5a"
+    ],
+    "checkpoint_reuse_observation": {
+      "observed_at": "2026-09-07T19:24:11.3640107+09:00",
+      "new_v5_trace_count_at_that_observation": 1352,
+      "checkpoint_hit_count_at_that_observation": 1352,
+      "example_trace_ids": ["TRACE-7a04a8ce40ea", "TRACE-d1b9fa851a0a"],
+      "is_final_trace_count": false
+    },
+    "quota_availability": "CONFIRMED_FOR_RESUMED_CALLS_NOT_A_GUARANTEE_FOR_ALL_REMAINING_CALLS",
+    "thread_goal_automation_state_before_resume": "usageLimited",
+    "thread_goal_automation_state_observed": "active",
+    "thread_goal_state_changed_by_agent": false,
+    "package_created": false,
+    "production_activated": false
+  },
+  "updated_goal_document": {
+    "repository_path": "docs/operations/codex_goal_offline_brain_thin_daily_inference.md",
+    "downloads_path": "C:/Users/eorb9/Downloads/codex_goal_nslab_offline_brain_thin_daily_inference.md",
+    "sha256": "6aa03acc329503d9fbc2e5c2509072a3987d1643a1f6e23628eadad6e474e86c",
+    "original_backup_sha256": "3f802d1a7701d40cf9fa4bf67d218db48bea09abca1d8687995e46a81b04bf5b",
+    "daily_contract": "ONE_NORMAL_CALL_AT_MOST_ONE_SCHEMA_REPAIR",
+    "offline_compiler_v5_checkpoint_contract_unchanged": true
+  },
   "rejected_diagnostic_plans": [
     {
       "path": "diagnostics/offline_brain_v2_full_plan_strict_v2.json",
@@ -96,13 +160,16 @@
     "forecast_is_observation_not_gate": true
   },
   "verification": {
+    "verified_on": "2026-09-07",
     "ruff": "PASS",
     "mypy_source_file_count": 138,
     "mypy": "PASS",
-    "targeted_test_count": 19,
-    "targeted_tests": "PASS",
-    "full_pytest": "PASS_1881",
-    "full_build": "V4_FAILED_CLOSED_V5_RETRY_PENDING",
+    "targeted_test_count": 24,
+    "targeted_tests": "PASS_INCLUDED_IN_FULL_SUITE",
+    "full_pytest": "PASS_1887",
+    "full_pytest_command": "python -m pytest -q --tb=short",
+    "goal_downloads_and_repository_sha256_match": true,
+    "full_build": "V5_RESUMED_LIVE_SUCCESS_CONFIRMED_NOT_COMPLETE",
     "calibration_holdout": "NOT_STARTED",
     "production_activation": false
   }

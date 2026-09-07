@@ -18,6 +18,7 @@ production/
 *.egg-info/
 data/cache/*
 runs/traces/*
+runs/offline_brain_v5_resume_*.log
 runs/checkpoints/*
 !runs/checkpoints/evaluations/
 !runs/checkpoints/evaluations/**
