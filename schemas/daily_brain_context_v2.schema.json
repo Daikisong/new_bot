@@ -1,5 +1,29 @@
 {
   "$defs": {
+    "CompiledBrainGuidance": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact": {
+          "title": "Artifact",
+          "type": "string"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact",
+        "sha256",
+        "content"
+      ],
+      "title": "CompiledBrainGuidance",
+      "type": "object"
+    },
     "ExactWitness": {
       "additionalProperties": false,
       "properties": {
@@ -370,6 +394,11 @@
       "title": "Beneficiary Graph",
       "type": "array"
     },
+    "brain_build_cutoff": {
+      "format": "date-time",
+      "title": "Brain Build Cutoff",
+      "type": "string"
+    },
     "brain_package_root": {
       "title": "Brain Package Root",
       "type": "string"
@@ -378,6 +407,13 @@
       "title": "Brain Version",
       "type": "string"
     },
+    "compiled_brain_guidance": {
+      "items": {
+        "$ref": "#/$defs/CompiledBrainGuidance"
+      },
+      "title": "Compiled Brain Guidance",
+      "type": "array"
+    },
     "continuation_memory": {
       "items": {
         "additionalProperties": true,
@@ -385,6 +421,10 @@
       },
       "title": "Continuation Memory",
       "type": "array"
+    },
+    "current_event_capsules_sha256": {
+      "title": "Current Event Capsules Sha256",
+      "type": "string"
     },
     "current_vs_history_differences": {
       "items": {
@@ -411,8 +451,16 @@
       "type": "integer"
     },
     "interpretation_sha256": {
-      "title": "Interpretation Sha256",
-      "type": "string"
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Interpretation Sha256"
     },
     "leader_selection_memory": {
       "items": {
@@ -435,14 +483,22 @@
       "title": "Population Statistics",
       "type": "array"
     },
+    "retrieval_basis": {
+      "enum": [
+        "CURRENT_NEWS",
+        "MODEL_INTERPRETATION"
+      ],
+      "title": "Retrieval Basis",
+      "type": "string"
+    },
     "retrieval_query_count": {
       "default": 0,
       "title": "Retrieval Query Count",
       "type": "integer"
     },
     "schema_version": {
-      "const": "nslab.daily_brain_context.v1",
-      "default": "nslab.daily_brain_context.v1",
+      "const": "nslab.daily_brain_context.v2",
+      "default": "nslab.daily_brain_context.v2",
       "title": "Schema Version",
       "type": "string"
     },
@@ -471,7 +527,9 @@
   "required": [
     "brain_version",
     "brain_package_root",
-    "interpretation_sha256"
+    "brain_build_cutoff",
+    "retrieval_basis",
+    "current_event_capsules_sha256"
   ],
   "title": "DailyBrainContext",
   "type": "object"

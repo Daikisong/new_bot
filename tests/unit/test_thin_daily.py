@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import json
 import textwrap
 from datetime import date, datetime
 from pathlib import Path
@@ -11,6 +12,7 @@ import pytest
 
 from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.offline_brain import (
+    CompiledBrainGuidance,
     CurrentDayInterpretation,
     CurrentEventCapsule,
     DailyBrainContext,
@@ -53,12 +55,13 @@ class FixtureBrainContextProvider:
     async def retrieve(
         self,
         *,
-        interpretation: CurrentDayInterpretation,
+        interpretation: CurrentDayInterpretation | None,
         current_event_capsules: list[CurrentEventCapsule],
         cutoff_at: datetime,
         max_exact_witnesses: int,
     ) -> DailyBrainContext:
         self.calls += 1
+        assert interpretation is None
         assert current_event_capsules
         assert max_exact_witnesses == 24
         supporting_id = "REC-support"
@@ -119,9 +122,22 @@ class FixtureBrainContextProvider:
         return DailyBrainContext(
             brain_version="brain-v2-fixture",
             brain_package_root="5" * 64,
-            interpretation_sha256=sha256_text(
-                canonical_json(interpretation.model_dump(mode="json"))
+            brain_build_cutoff=available_from,
+            retrieval_basis="CURRENT_NEWS",
+            current_event_capsules_sha256=sha256_text(
+                canonical_json([row.model_dump(mode="json") for row in current_event_capsules])
             ),
+            compiled_brain_guidance=[
+                CompiledBrainGuidance(
+                    artifact=artifact,
+                    sha256=sha256_text(content),
+                    content=content,
+                )
+                for artifact, content in [
+                    ("world_model.md", "Research-derived world knowledge before interpretation."),
+                    ("category_brain/single_event.md", "Research-derived category failure boundaries."),
+                ]
+            ],
             selected_semantic_capsules=[capsule],
             selected_mechanism_claims=[claim],
             population_statistics=[
@@ -135,7 +151,7 @@ class FixtureBrainContextProvider:
             current_vs_history_differences=["fixture current event is newer"],
             unresolved_contradictions=["fixture counterexample remains"],
             exact_witnesses=capsule.representative_exact_witnesses,
-            retrieval_query_count=len(interpretation.retrieval_queries),
+            retrieval_query_count=len(current_event_capsules),
             index_query_count=2,
             online_full_corpus_scan_count=0,
             future_record_count=0,
@@ -156,7 +172,7 @@ def _write_news_csv(path: Path, *, row_count: int) -> Path:
 
 
 @pytest.mark.asyncio
-async def test_daily_normal_call_count_is_two_and_uses_brain(tmp_path: Path) -> None:
+async def test_daily_normal_call_count_is_one_and_uses_brain(tmp_path: Path) -> None:
     news_path = _write_news_csv(tmp_path / "news.csv", row_count=10)
     llm = CountingMockLLM()
     brain = FixtureBrainContextProvider()
@@ -170,15 +186,29 @@ async def test_daily_normal_call_count_is_two_and_uses_brain(tmp_path: Path) -> 
         cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
     )
 
-    assert llm.calls == ["current_day_interpretation", "final_market_decision"]
+    assert llm.calls == ["final_market_decision"]
     assert brain.calls == 1
-    assert analysis.context_manifest.logical_llm_call_count == 2
+    assert analysis.context_manifest.logical_llm_call_count == 1
     assert analysis.context_manifest.historical_raw_daily_map_call_count == 0
     assert analysis.context_manifest.daily_import_call_count == 0
     assert analysis.context_manifest.daily_brain_rebuild_call_count == 0
     assert analysis.context_manifest.blind_web_search_call_count == 0
     assert analysis.context_manifest.online_full_corpus_scan_count == 0
     assert analysis.context_manifest.brain_version == "brain-v2-fixture"
+    assert analysis.context_manifest.brain_context_loaded_before_first_llm is True
+    assert analysis.context_manifest.brain_retrieval_basis == "CURRENT_NEWS"
+    assert analysis.context_manifest.compiled_brain_guidance_count == 2
+    final_payload = json.loads(llm.prompts["final_market_decision"].split(
+        "---BLIND_ANALYSIS_PAYLOAD---\n", 1
+    )[1])
+    assert "Research-derived world knowledge before interpretation." in llm.prompts["final_market_decision"]
+    assert "Research-derived category failure boundaries." in llm.prompts["final_market_decision"]
+    assert "already absorbed" in llm.prompts["final_market_decision"]
+    assert "candidate allowlist" in llm.prompts["final_market_decision"]
+    assert final_payload["daily_brain_context"]["interpretation_sha256"] is None
+    assert "current_day_interpretation" not in final_payload
+    decision = read_json(tmp_path / analysis.context_manifest.brain_decision_artifact)
+    assert set(decision["analyzed_cluster_ids"]) == set(final_payload["required_cluster_ids"])
     assert any(
         "CAP-fixture" in candidate.semantic_capsule_ids
         for candidate in analysis.blind_prediction.candidates
@@ -207,13 +237,13 @@ async def test_daily_llm_call_count_is_independent_of_cluster_count(
         cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
     )
 
-    assert len(llm.calls) == 2
-    assert analysis.context_manifest.logical_llm_call_count == 2
+    assert len(llm.calls) == 1
+    assert analysis.context_manifest.logical_llm_call_count == 1
     assert analysis.context_manifest.material_event_cluster_count >= 1
 
 
 @pytest.mark.asyncio
-async def test_daily_max_call_count_with_repairs_is_four(tmp_path: Path) -> None:
+async def test_daily_max_call_count_with_repairs_is_two(tmp_path: Path) -> None:
     news_path = _write_news_csv(tmp_path / "news.csv", row_count=2)
     settings = Settings(project_root=tmp_path)
     settings.llm.max_retries = 1
@@ -227,7 +257,7 @@ async def test_daily_max_call_count_with_repairs_is_four(tmp_path: Path) -> None
         cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
     )
 
-    assert analysis.context_manifest.maximum_live_agent_call_count == 4
+    assert analysis.context_manifest.maximum_live_agent_call_count == 2
 
 
 @pytest.mark.asyncio
@@ -251,9 +281,6 @@ async def test_all_news_rows_have_disposition_and_bodies_are_not_repeated(
     assert dispositions["row_count"] == 8
     assert len(dispositions["rows"]) == 8
     assert all(row["cluster_id"] for row in dispositions["rows"])
-    assert "opaque filler qwerty zxcvbn" not in llm.prompts[
-        "current_day_interpretation"
-    ]
     assert "opaque filler qwerty zxcvbn" not in llm.prompts["final_market_decision"]
 
 
@@ -285,8 +312,8 @@ async def test_daily_llm_call_count_is_independent_of_record_count(
         cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
     )
 
-    assert llm.calls == ["current_day_interpretation", "final_market_decision"]
-    assert analysis.context_manifest.logical_llm_call_count == 2
+    assert llm.calls == ["final_market_decision"]
+    assert analysis.context_manifest.logical_llm_call_count == 1
 
 
 def test_no_daily_llm_call_inside_historical_record_or_memory_loop() -> None:
@@ -302,5 +329,75 @@ def test_no_daily_llm_call_inside_historical_record_or_memory_loop() -> None:
         and node.func.attr in {"generate_structured", "generate_text"}
     ]
     assert loop_calls == []
-    assert source.count("self.llm.generate_structured") == 2
+    assert source.count("self.llm.generate_structured") == 1
     assert "build_runtime_evidence_memos" not in source
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("defect", ["missing_guidance", "future_guidance", "wrong_news", "changed_guidance"])
+async def test_invalid_brain_fails_before_any_llm_call(tmp_path: Path, defect: str) -> None:
+    class InvalidBrain(FixtureBrainContextProvider):
+        async def retrieve(self, **kwargs: Any) -> DailyBrainContext:
+            context = await super().retrieve(**kwargs)
+            if defect == "missing_guidance":
+                return context.model_copy(update={"compiled_brain_guidance": []})
+            if defect == "future_guidance":
+                return context.model_copy(update={"brain_build_cutoff": datetime(2026, 1, 3, tzinfo=KST)})
+            if defect == "wrong_news":
+                return context.model_copy(update={"current_event_capsules_sha256": "0" * 64})
+            changed = context.compiled_brain_guidance[0].model_copy(update={"content": "changed"})
+            return context.model_copy(update={
+                "compiled_brain_guidance": [changed, *context.compiled_brain_guidance[1:]],
+            })
+
+    llm = CountingMockLLM()
+    with pytest.raises(ValueError):
+        await ThinDailyAnalyzer(
+            Settings(project_root=tmp_path), llm=llm, brain_context_provider=InvalidBrain(),
+        ).analyze(
+            news_csv=_write_news_csv(tmp_path / "news.csv", row_count=2),
+            trade_date=date(2026, 1, 2),
+            cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
+        )
+    assert llm.calls == []
+
+
+@pytest.mark.asyncio
+async def test_news_and_brain_are_loaded_before_first_model_request(tmp_path: Path) -> None:
+    brain = FixtureBrainContextProvider()
+
+    class BrainAwareLLM(CountingMockLLM):
+        async def generate_structured(self, **kwargs: Any) -> Any:
+            assert brain.calls == 1
+            assert "Research-derived world knowledge before interpretation." in kwargs["prompt"]
+            return await super().generate_structured(**kwargs)
+
+    llm = BrainAwareLLM()
+    await ThinDailyAnalyzer(
+        Settings(project_root=tmp_path), llm=llm, brain_context_provider=brain,
+    ).analyze(
+        news_csv=_write_news_csv(tmp_path / "news.csv", row_count=2),
+        trade_date=date(2026, 1, 2),
+        cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
+    )
+    assert llm.calls == ["final_market_decision"]
+
+
+@pytest.mark.asyncio
+async def test_single_decision_rejects_missing_event_without_extra_llm_calls(tmp_path: Path) -> None:
+    class OmittingLLM(CountingMockLLM):
+        async def generate_structured(self, **kwargs: Any) -> Any:
+            decision = await super().generate_structured(**kwargs)
+            return decision.model_copy(update={"analyzed_cluster_ids": []})
+
+    llm = OmittingLLM()
+    with pytest.raises(ValueError, match="material event cluster"):
+        await ThinDailyAnalyzer(
+            Settings(project_root=tmp_path), llm=llm,
+            brain_context_provider=FixtureBrainContextProvider(),
+        ).analyze(
+            news_csv=_write_news_csv(tmp_path / "news.csv", row_count=2),
+            trade_date=date(2026, 1, 2),
+            cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
+        )
+    assert llm.calls == ["final_market_decision"]

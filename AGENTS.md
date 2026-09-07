@@ -31,6 +31,12 @@ copying credential files. Production embedding uses a real provider with
 
 ## Product Intent: One-Time Brain, Daily Decision
 
+- Open-world does not mean brain-free: load cutoff-safe compiled world/category
+  knowledge and current-news-grounded memory before the first daily LLM call.
+  Historical names must not become a candidate allowlist.
+- The daily product has one normal GPT decision request: current news plus
+  precompiled brain knowledge together. There is no separate interpretation
+  call. At most one structured-output repair is allowed if necessary.
 - Accepted repaired research is incorporated into durable `brain/`, `memory/`,
   and semantic indexes in a one-time offline build. The user must not pay the
   full raw-research interpretation cost again for every daily CSV.

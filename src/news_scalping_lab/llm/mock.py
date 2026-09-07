@@ -38,6 +38,7 @@ from news_scalping_lab.contracts.models import (
     SemanticRetrievalQuery,
 )
 from news_scalping_lab.contracts.offline_brain import (
+    BrainInformedDecision,
     CurrentDayInterpretation,
     LongPayloadChunkDigestDraft,
     LongPayloadDigestBatch,
@@ -82,6 +83,13 @@ class DeterministicMockLLMProvider:
         )
 
     async def generate_structured(self, *, prompt: str, response_model: type[T], purpose: str) -> T:
+        if response_model is BrainInformedDecision:
+            payload = self._marked_payload(prompt, "---BLIND_ANALYSIS_PAYLOAD---")
+            decision = BrainInformedDecision(
+                analyzed_cluster_ids=[str(value) for value in payload["required_cluster_ids"]],
+                prediction=self._blind_prediction(prompt),
+            )
+            return decision  # type: ignore[return-value]
         if response_model is CurrentDayInterpretation:
             interpretation = self._current_day_interpretation(prompt)
             return interpretation  # type: ignore[return-value]

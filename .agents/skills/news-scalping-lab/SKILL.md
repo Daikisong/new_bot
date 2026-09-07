@@ -31,6 +31,13 @@ Use this skill for:
   and indexes. Daily inference must not reinterpret the raw research corpus or
   fan out one LLM task per record, lane assignment, or material cluster-record
   relationship.
+- Load the compiled world/category guidance and current-news-grounded memories
+  before the only daily LLM decision request. It interprets current news and
+  returns the answer together. Open-world means novel events and candidates remain
+  eligible; it never means starting with an uninformed model interpretation.
+- Daily architecture/prompt v2 supersedes the downloaded goal's two-call graph
+  and brain-free first call. This user correction does not change offline compiler v5, its
+  prompts, schemas, package format, or checkpoint reuse identity.
 - Targeted runtime retrieval is supporting evidence. It must be
   relevance-driven, citation-bearing, and operationally usable before market
   open; it is not an exhaustive replay of the research warehouse.
@@ -190,10 +197,11 @@ python -m news_scalping_lab.cli memory score-runtime-variants \
   path. Preserve completeness in the offline compiler, brain roots, retrieval
   traces, and citations; do not prove it by making the daily LLM reread every
   raw relationship.
-- Production `analyze-daily` has exactly two logical LLM call sites:
-  `current_day_interpretation` and `final_market_decision`. They are outside all
-  record, cluster, memory-cell, and retrieval-lane loops. One structured repair
-  per call is the hard limit, so live agent invocations cannot exceed four.
+- Production `analyze-daily` has exactly one logical LLM call site:
+  `final_market_decision`, outside all record, cluster, memory-cell, and
+  retrieval-lane loops. It receives current news and the precompiled brain
+  together. At most one structured repair is allowed, so live invocations
+  cannot exceed two. No preliminary interpretation request is permitted.
 - If a diagnostic pack plan is run explicitly, use its exact call count for the
   forecast and resume only content-addressed `ok` checkpoints. Never call a
   diagnostic pack run a formal prediction result.

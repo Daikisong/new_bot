@@ -417,13 +417,23 @@ class CurrentDayInterpretation(StrictModel):
     retrieval_queries: list[str] = Field(default_factory=list)
 
 
+class CompiledBrainGuidance(StrictModel):
+    artifact: str
+    sha256: str
+    content: str
+
+
 class DailyBrainContext(StrictModel):
-    schema_version: Literal["nslab.daily_brain_context.v1"] = (
-        "nslab.daily_brain_context.v1"
+    schema_version: Literal["nslab.daily_brain_context.v2"] = (
+        "nslab.daily_brain_context.v2"
     )
     brain_version: str
     brain_package_root: str
-    interpretation_sha256: str
+    brain_build_cutoff: datetime
+    retrieval_basis: Literal["CURRENT_NEWS", "MODEL_INTERPRETATION"]
+    current_event_capsules_sha256: str
+    interpretation_sha256: str | None = None
+    compiled_brain_guidance: list[CompiledBrainGuidance] = Field(default_factory=list)
     selected_semantic_capsules: list[SemanticMemoryCapsule] = Field(
         default_factory=list
     )
@@ -444,6 +454,10 @@ class DailyBrainContext(StrictModel):
 
     @model_validator(mode="after")
     def validate_daily_bounds(self) -> Self:
+        if self.retrieval_basis == "CURRENT_NEWS" and self.interpretation_sha256 is not None:
+            raise ValueError("news-grounded brain retrieval cannot depend on a model interpretation")
+        if self.retrieval_basis == "MODEL_INTERPRETATION" and not self.interpretation_sha256:
+            raise ValueError("model-grounded brain retrieval must bind its interpretation")
         if len(self.exact_witnesses) > 24:
             raise ValueError("daily brain context cannot expose more than 24 raw witnesses")
         if self.online_full_corpus_scan_count != 0:
@@ -453,9 +467,14 @@ class DailyBrainContext(StrictModel):
         return self
 
 
+class BrainInformedDecision(StrictModel):
+    analyzed_cluster_ids: list[str]
+    prediction: BlindPrediction
+
+
 class ThinDailyRunManifest(StrictModel):
-    schema_version: Literal["nslab.thin_daily_run_manifest.v1"] = (
-        "nslab.thin_daily_run_manifest.v1"
+    schema_version: Literal["nslab.thin_daily_run_manifest.v2"] = (
+        "nslab.thin_daily_run_manifest.v2"
     )
     run_id: str
     trade_date: date
@@ -486,10 +505,14 @@ class ThinDailyRunManifest(StrictModel):
     llm_model_config: dict[str, Any]
     brain_version: str
     brain_package_root: str
+    brain_context_loaded_before_first_llm: Literal[True]
+    brain_retrieval_basis: Literal["CURRENT_NEWS"]
+    compiled_brain_guidance_count: int
+    analyzed_cluster_count: int
+    brain_decision_artifact: str
+    brain_decision_sha256: str
     current_event_capsules_artifact: str
     current_event_capsules_sha256: str
-    current_day_interpretation_artifact: str
-    current_day_interpretation_sha256: str
     daily_brain_context_artifact: str
     daily_brain_context_sha256: str
     row_disposition_artifact: str
@@ -503,12 +526,14 @@ class ThinDailyRunManifest(StrictModel):
 
     @model_validator(mode="after")
     def validate_architecture_contract(self) -> Self:
+        if self.analyzed_cluster_count != self.material_event_cluster_count:
+            raise ValueError("daily decision must account for every material event cluster")
         if self.wall_clock_seconds < 0:
             raise ValueError("daily wall-clock duration cannot be negative")
-        if self.logical_llm_call_count != 2:
-            raise ValueError("thin daily inference must use exactly two logical LLM calls")
-        if self.maximum_live_agent_call_count > 4:
-            raise ValueError("thin daily inference cannot exceed four live calls including repairs")
+        if self.logical_llm_call_count != 1:
+            raise ValueError("thin daily inference must use exactly one logical LLM call")
+        if self.maximum_live_agent_call_count not in (1, 2):
+            raise ValueError("thin daily inference allows one call and at most one structured repair")
         forbidden = (
             self.historical_raw_daily_map_call_count,
             self.daily_import_call_count,

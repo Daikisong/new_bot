@@ -480,6 +480,22 @@ async def test_daily_reader_uses_only_precompiled_package(tmp_path: Path) -> Non
         representative_title="fixture event",
         published_times=[datetime(2026, 1, 2, 7, 0, tzinfo=KST)],
     )
+    initial_context = await provider.retrieve(
+        interpretation=None,
+        current_event_capsules=[current],
+        cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
+        max_exact_witnesses=24,
+    )
+    assert initial_context.retrieval_basis == "CURRENT_NEWS"
+    assert initial_context.interpretation_sha256 is None
+    assert initial_context.selected_semantic_capsules
+    assert initial_context.brain_build_cutoff == result.package_manifest.build_cutoff
+    assert initial_context.compiled_brain_guidance[0].content == (
+        result.package_dir / "world_model.md"
+    ).read_text(encoding="utf-8")
+    assert len(initial_context.compiled_brain_guidance) == 1 + len(list(
+        (result.package_dir / "category_brain").glob("*.md")
+    ))
     context = await provider.retrieve(
         interpretation=interpretation,
         current_event_capsules=[current],

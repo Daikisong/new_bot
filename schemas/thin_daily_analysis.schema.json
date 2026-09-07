@@ -542,29 +542,47 @@
     "ThinDailyRunManifest": {
       "additionalProperties": false,
       "properties": {
+        "analyzed_cluster_count": {
+          "title": "Analyzed Cluster Count",
+          "type": "integer"
+        },
         "blind_web_search_call_count": {
           "title": "Blind Web Search Call Count",
           "type": "integer"
         },
+        "brain_context_loaded_before_first_llm": {
+          "const": true,
+          "title": "Brain Context Loaded Before First Llm",
+          "type": "boolean"
+        },
+        "brain_decision_artifact": {
+          "title": "Brain Decision Artifact",
+          "type": "string"
+        },
+        "brain_decision_sha256": {
+          "title": "Brain Decision Sha256",
+          "type": "string"
+        },
         "brain_package_root": {
           "title": "Brain Package Root",
+          "type": "string"
+        },
+        "brain_retrieval_basis": {
+          "const": "CURRENT_NEWS",
+          "title": "Brain Retrieval Basis",
           "type": "string"
         },
         "brain_version": {
           "title": "Brain Version",
           "type": "string"
         },
+        "compiled_brain_guidance_count": {
+          "title": "Compiled Brain Guidance Count",
+          "type": "integer"
+        },
         "created_at": {
           "format": "date-time",
           "title": "Created At",
-          "type": "string"
-        },
-        "current_day_interpretation_artifact": {
-          "title": "Current Day Interpretation Artifact",
-          "type": "string"
-        },
-        "current_day_interpretation_sha256": {
-          "title": "Current Day Interpretation Sha256",
           "type": "string"
         },
         "current_event_capsule_bytes": {
@@ -710,8 +728,8 @@
           "type": "string"
         },
         "schema_version": {
-          "const": "nslab.thin_daily_run_manifest.v1",
-          "default": "nslab.thin_daily_run_manifest.v1",
+          "const": "nslab.thin_daily_run_manifest.v2",
+          "default": "nslab.thin_daily_run_manifest.v2",
           "title": "Schema Version",
           "type": "string"
         },
@@ -765,10 +783,14 @@
         "llm_model_config",
         "brain_version",
         "brain_package_root",
+        "brain_context_loaded_before_first_llm",
+        "brain_retrieval_basis",
+        "compiled_brain_guidance_count",
+        "analyzed_cluster_count",
+        "brain_decision_artifact",
+        "brain_decision_sha256",
         "current_event_capsules_artifact",
         "current_event_capsules_sha256",
-        "current_day_interpretation_artifact",
-        "current_day_interpretation_sha256",
         "daily_brain_context_artifact",
         "daily_brain_context_sha256",
         "row_disposition_artifact",

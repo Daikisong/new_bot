@@ -5,7 +5,7 @@
 이 compiler의 목적은 823,279개 연구 record를 매일 다시 읽는 것이 아니다.
 기존 import와 실임베딩을 한 번 재사용해 의미 단위, 성공과 실패 경계,
 수혜주, 대장주, 지속성 지식을 immutable `BrainPackage`로 합성하는 것이다.
-매일 08시 CSV는 이 package만 조회하고 정상 LLM 2회로 판단한다.
+매일 08시 CSV는 이 package만 조회하고 정상 LLM 1회로 해석과 판단을 함께 한다.
 
 ## 구현 경계
 
@@ -21,14 +21,21 @@ OFFLINE
   -> immutable BrainPackage with provenance roots and HNSW indexes
 
 DAILY
-CSV -> CurrentEventCapsule -> LLM call 1
-    -> local capsule and claim HNSW retrieval
-    -> at most 24 exact witnesses
-    -> LLM call 2 -> sealed decision
+CSV -> CurrentEventCapsule
+    -> compiled world/category guidance + news-grounded HNSW retrieval
+    -> knowledge context with at most 24 exact witnesses
+    -> ONE LLM call: brain-informed interpretation and sealed decision
 ```
 
 `build-offline`은 repair, import, record embedding을 다시 실행하지 않는다.
 `analyze-daily`은 import, rebuild, raw-record LLM map 권한이 없다.
+
+2026-09-07 사용자 정정: 첫 해석부터 저장된 두뇌를 사용해야 한다. daily v2는
+LLM 해석 전에 뉴스에서 직접 관련 기억을 조회하고, 공통·분야별 합성 지식과
+함께 한 번의 GPT 요청에 전달해 해석과 최종 답변을 받는다. 별도 1차 해석
+호출은 없다. open-world는 과거 종목만 후보로 허용하지
+않는다는 뜻이며, 두뇌 없이 첫 해석을 하라는 뜻이 아니다. 이 수정은 offline
+compiler v5와 checkpoint 계약을 변경하지 않는다.
 
 ## 전수 의미 보존 규칙
 
@@ -181,7 +188,7 @@ OAuth 경쟁에 따라 더 길어질 수 있다. 완료된 content-addressed che
 4. 모든 leaf가 category와 world reduce root까지 닫히는가.
 5. 중단 후 완료 checkpoint를 재사용하는가.
 6. daily retrieval이 raw record나 capsule 전체 scan을 하지 않는가.
-7. daily 정상 LLM 호출이 정확히 2회이고 corpus 크기와 무관한가.
+7. daily 정상 LLM 호출이 정확히 1회이고 corpus 크기와 무관한가.
 8. CALIBRATION과 HOLDOUT이 동일 `analyze-daily` 경로를 쓰는가.
 9. quality gate 전 production pointer가 활성화되지 않았는가.
 

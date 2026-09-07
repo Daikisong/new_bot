@@ -24,6 +24,7 @@ from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.offline_brain import (
     BrainPackageManifest,
     BrainPackagePointer,
+    CompiledBrainGuidance,
     CurrentDayInterpretation,
     CurrentEventCapsule,
     DailyBrainContext,
@@ -1007,7 +1008,7 @@ class BrainPackageDailyContextProvider:
     async def retrieve(
         self,
         *,
-        interpretation: CurrentDayInterpretation,
+        interpretation: CurrentDayInterpretation | None,
         current_event_capsules: Sequence[CurrentEventCapsule],
         cutoff_at: datetime,
         max_exact_witnesses: int,
@@ -1097,7 +1098,16 @@ class BrainPackageDailyContextProvider:
         return DailyBrainContext(
             brain_version=self._manifest.brain_version,
             brain_package_root=self._manifest.package_root,
-            interpretation_sha256=sha256_text(canonical_json(interpretation.model_dump(mode="json"))),
+            brain_build_cutoff=self._manifest.build_cutoff,
+            retrieval_basis="CURRENT_NEWS" if interpretation is None else "MODEL_INTERPRETATION",
+            current_event_capsules_sha256=sha256_text(
+                canonical_json([row.model_dump(mode="json") for row in current_event_capsules])
+            ),
+            interpretation_sha256=(
+                sha256_text(canonical_json(interpretation.model_dump(mode="json")))
+                if interpretation is not None else None
+            ),
+            compiled_brain_guidance=_load_compiled_brain_guidance(self.package_dir),
             selected_semantic_capsules=selected_capsules,
             selected_mechanism_claims=selected_claims,
             population_statistics=population_statistics,
@@ -2655,15 +2665,27 @@ def _selected_claims(
 
 
 def _daily_query_texts(
-    interpretation: CurrentDayInterpretation,
+    interpretation: CurrentDayInterpretation | None,
     capsules: Sequence[CurrentEventCapsule],
 ) -> list[str]:
+    # Ground the initial retrieval in observed events, before any model hypothesis.
     values = [
-        *interpretation.retrieval_queries,
-        *interpretation.policy_industry_macro_mechanisms,
-        *interpretation.beneficiary_paths,
-        *[row.representative_title for row in capsules],
+        "\n".join([
+            row.representative_title,
+            *row.predicate_exact_sentences,
+            *row.issuer_company_literals,
+            *row.counterparty_literals,
+            *row.numeric_unit_literals,
+            *row.modality_literals,
+        ])
+        for row in capsules
     ]
+    if interpretation is not None:
+        values.extend([
+            *interpretation.retrieval_queries,
+            *interpretation.policy_industry_macro_mechanisms,
+            *interpretation.beneficiary_paths,
+        ])
     return _unique(value for value in values if value.strip())
 
 
@@ -2681,16 +2703,35 @@ def _unique_witnesses(
 
 
 def _current_history_differences(
-    interpretation: CurrentDayInterpretation,
+    interpretation: CurrentDayInterpretation | None,
     capsules: list[SemanticMemoryCapsule],
 ) -> list[str]:
     historical_conditions = {
         value for capsule in capsules for value in [*capsule.applicable_conditions, *capsule.boundary_conditions]
     }
     return [
-        *[f"current uncertainty: {value}" for value in interpretation.uncertainties],
+        *[f"current uncertainty: {value}" for value in (
+            interpretation.uncertainties if interpretation is not None else []
+        )],
         *[f"historical boundary: {value}" for value in sorted(historical_conditions)],
     ]
+
+
+def _load_compiled_brain_guidance(package_dir: Path) -> list[CompiledBrainGuidance]:
+    categories = sorted((package_dir / "category_brain").glob("*.md"))
+    if not categories:
+        raise ValueError("selected BrainPackage has no compiled category guidance")
+    output: list[CompiledBrainGuidance] = []
+    for path in [package_dir / "world_model.md", *categories]:
+        content = path.read_bytes().decode("utf-8")
+        if not content.strip():
+            raise ValueError(f"compiled brain guidance is empty: {path.name}")
+        output.append(CompiledBrainGuidance(
+            artifact=path.relative_to(package_dir).as_posix(),
+            sha256=sha256_text(content),
+            content=content,
+        ))
+    return output
 
 
 def _projection_rows(

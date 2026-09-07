@@ -1424,7 +1424,7 @@ def analyze_daily(
         typer.Option("--d-minus-one-context"),
     ] = None,
 ) -> None:
-    """Run the bounded two-call product path over an offline BrainPackage."""
+    """Run the single-call product path over an offline BrainPackage."""
 
     settings = load_settings()
     parsed_trade_date = _parse_date(trade_date)
