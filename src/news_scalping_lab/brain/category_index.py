@@ -649,6 +649,9 @@ def _write_category_database(
 ) -> None:
     connection = duckdb.connect(str(path))
     try:
+        # Fix the physical build order so identical claims produce identical
+        # persisted HNSW bytes across hosts with different CPU counts.
+        connection.execute("SET threads = 1")
         connection.execute("INSTALL vss")
         connection.execute("LOAD vss")
         connection.execute("SET hnsw_enable_experimental_persistence = true")
