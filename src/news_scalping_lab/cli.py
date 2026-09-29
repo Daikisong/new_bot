@@ -35,7 +35,12 @@ from news_scalping_lab.brain.offline_v2 import (
     OfflineSemanticBrainCompiler,
     select_brain_package,
 )
-from news_scalping_lab.config import ensure_project_dirs, load_settings, write_default_config_files
+from news_scalping_lab.config import (
+    Settings,
+    ensure_project_dirs,
+    load_settings,
+    write_default_config_files,
+)
 from news_scalping_lab.context.episode_scope import inspect_manifest_episode_scope
 from news_scalping_lab.context.final_synthesis import (
     FINAL_SYNTHESIS_REQUIRED_INPUTS,
@@ -1274,6 +1279,24 @@ def brain_diff(version_a: str, version_b: str) -> None:
     _echo({**diff, "markdown_path": markdown_path.as_posix()})
 
 
+def _require_offline_production_llm_identity(settings: Settings) -> None:
+    """Prevent an offline production build from silently falling back to mock."""
+
+    actual = (
+        settings.llm_provider.strip().lower(),
+        str(settings.llm.model or "").strip(),
+        str(settings.llm.reasoning_effort or "").strip(),
+    )
+    expected = ("codex-oauth", "gpt-5.6-sol", "xhigh")
+    if actual != expected:
+        raise ValueError(
+            "offline brain build requires provider/model/reasoning "
+            f"{expected!r}; configured {actual!r}. Set "
+            "NSLAB_LLM_PROVIDER=codex-oauth, NSLAB_CODEX_MODEL=gpt-5.6-sol, "
+            "and NSLAB_CODEX_REASONING_EFFORT=xhigh before resuming."
+        )
+
+
 @brain_app.command("build-offline")
 def brain_build_offline(
     source_project: Annotated[Path, typer.Option("--source-project")],
@@ -1287,6 +1310,7 @@ def brain_build_offline(
 
     settings = load_settings()
     try:
+        _require_offline_production_llm_identity(settings)
         result = asyncio.run(
             OfflineSemanticBrainCompiler(settings).build(
                 source_project=source_project,
@@ -1343,6 +1367,7 @@ def brain_update_offline(
 
     settings = load_settings()
     try:
+        _require_offline_production_llm_identity(settings)
         result = asyncio.run(
             OfflineSemanticBrainCompiler(settings).build(
                 source_project=source_project,
