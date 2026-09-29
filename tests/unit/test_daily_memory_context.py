@@ -14,6 +14,7 @@ from news_scalping_lab.audits.lookahead import audit_lookahead
 from news_scalping_lab.brain.category_index import (
     build_category_brain_index,
     claim_payload_sha256,
+    inspect_category_brain_index,
 )
 from news_scalping_lab.config import Settings
 from news_scalping_lab.context.final_synthesis import (
@@ -792,29 +793,67 @@ def test_daily_cluster_checkpoint_rejects_stale_semantic_policy(
         )
 
 
-def test_two_worker_cluster_build_is_byte_identical_to_sequential_build(
+def _without_physical_category_hashes(context: dict[str, object]) -> dict[str, object]:
+    normalized = deepcopy(context)
+    for key in ("category_brain_manifest", "category_brain_index_manifest"):
+        reference = normalized[key]
+        assert isinstance(reference, dict)
+        reference["sha256"] = "<physical-artifact-hash>"
+    plans = normalized["category_query_plans"]
+    assert isinstance(plans, list)
+    for plan in plans:
+        assert isinstance(plan, dict)
+        plan["source_artifact_sha256"] = "<physical-artifact-hash>"
+    return normalized
+
+
+def _category_index_logical_state(
+    root: Path,
+    context: dict[str, object],
+) -> tuple[dict[str, object], bytes]:
+    reference = context["category_brain_index_manifest"]
+    assert isinstance(reference, dict)
+    manifest_path = root / str(reference["artifact_path"])
+    inspection = inspect_category_brain_index(root, manifest_path)
+    assert inspection["passed"] is True
+    manifest = read_json(manifest_path)
+    assert isinstance(manifest, dict)
+    manifest.pop("database_sha256", None)
+    ledger_path = root / str(manifest["vector_ledger"]["artifact_path"])
+    return manifest, ledger_path.read_bytes()
+
+
+def test_two_worker_cluster_build_is_logically_identical_to_sequential_build(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _sequential_index, _candidate, _graph, sequential_path, sequential = (
+    sequential_root = tmp_path / "sequential"
+    _sequential_index, _candidate, _graph, _sequential_path, sequential = (
         _build_daily_fixture(
-            tmp_path / "sequential",
+            sequential_root,
             monkeypatch,
             cluster_count=2,
             max_cluster_workers=1,
         )
     )
-    _parallel_index, _candidate, _graph, parallel_path, parallel = (
+    parallel_root = tmp_path / "parallel"
+    _parallel_index, _candidate, _graph, _parallel_path, parallel = (
         _build_daily_fixture(
-            tmp_path / "parallel",
+            parallel_root,
             monkeypatch,
             cluster_count=2,
             max_cluster_workers=2,
         )
     )
 
-    assert parallel == sequential
-    assert parallel_path.read_bytes() == sequential_path.read_bytes()
+    # DuckDB checkpoint bytes can contain engine/platform metadata.  Compare
+    # the attested logical state while retaining each file's own SHA check.
+    assert _without_physical_category_hashes(parallel) == (
+        _without_physical_category_hashes(sequential)
+    )
+    assert _category_index_logical_state(parallel_root, parallel) == (
+        _category_index_logical_state(sequential_root, sequential)
+    )
 
 
 def test_daily_analysis_creates_adaptive_trace(
