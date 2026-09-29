@@ -120,3 +120,26 @@ embedding 758,703건, generated embedding 0건. Manifest의 8개 artifact SHA-25
 별도의 전체 `inspect_memory_snapshot` 재실행은 같은 대규모 deep SQL 감사를
 반복하므로 하지 않았다. 따라서 여기서 확인한 것은 successful builder receipt,
 실제 build/holdout overlap 검사, manifest artifact hashes, 종료 후 cleanup이다.
+
+## Brain compiler 재개 전 메모리 감시
+
+2026-09-30 현재 프로세스 점검에서는 Offline Semantic Brain compiler 또는
+snapshot replay를 실행 중인 Python 프로세스가 없었다. 전체 Python 프로세스는
+46개였지만 Codex MCP 등 상주 서비스가 포함되어 있었고, private memory 합계
+1.84 GiB, working set 합계 1.06 GiB, 최대 단일 프로세스 201 MiB였다. Host
+available memory는 약 19 GiB였다. 이 상주 서비스를 임의로 종료하지 않았다.
+현재 실행 중인 compiler가 없으므로 지금 정리할 작업 Python 메모리도 없다.
+
+앞의 14.77 GiB high-water는 snapshot retrieval-index 감사의 관측값이다. 약
+10초 후 크게 회수된 기록은 있지만, 그 결과로 offline brain compiler의 peak나
+누수 여부까지 입증된 것은 아니다. compiler는 OAuth 사용 제한 해제 후 기존
+7,902개 content-addressed checkpoint에서 재개하며, 첫 재개 실행을 기준 측정으로
+삼는다.
+
+재개 시 compiler PID의 private bytes, working set, host available memory를 10초
+간격으로 단계/완료 호출 수와 함께 기록한다. 정상적인 단일 단계 피크인지 판단할
+수 있도록 같은 단계의 연속 구간을 비교한다. available memory가 8 GiB 아래로
+내려가면 경고하고, 6 GiB 아래 상태가 60초 지속되거나 동일 단계에서 private bytes가
+계속 증가해 회수 징후가 없으면 checkpoint 보존을 확인한 뒤 중단하고 원인을
+분석한다. 한 번의 순간 피크만으로 중단하거나, 반대로 `gc.collect()`만 호출하고
+안전하다고 판정하지 않는다. 중단 시 다른 MCP/프로젝트 프로세스는 종료하지 않는다.
