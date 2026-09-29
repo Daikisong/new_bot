@@ -27,7 +27,8 @@ snapshot을 검증한다. 이 전수 검증의 DuckDB 연결에는 별도 메모
   보장하지는 않는다.
 - `news_scalping_lab.memory.index` INFO 로그에 manifest/hash, source projection,
   sidecar, projection comparison, cell/index 검증 단계를 남긴다. Source projection은
-  10,000건마다 진행 수를 기록한다. 원문 뉴스나 인증정보는 기록하지 않는다.
+  10,000건마다 진행 수를 기록한다. replay snapshot CLI는 해당 로그를 stderr에
+  보이도록 INFO logging을 설정한다. 원문 뉴스나 인증정보는 기록하지 않는다.
 
 4GB는 DuckDB가 관리하는 buffer 한도다. Python heap, NumPy 배열, native extension을
 포함한 전체 프로세스의 hard limit이 아니다. 후속 대용량 실행에서는 private bytes와

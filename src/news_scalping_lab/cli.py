@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import subprocess
 import sys
 from collections import Counter
@@ -8904,6 +8905,10 @@ def memory_build_semantic_upgrade_replay_snapshot(
         typer.Option("--holdout-count", min=20),
     ] = 40,
 ) -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
     settings = load_settings(
         project_root,
         resolve_production=False,
