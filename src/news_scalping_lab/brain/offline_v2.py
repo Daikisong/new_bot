@@ -71,6 +71,7 @@ MAX_LONG_PAYLOAD_BATCH_BYTES = 170_000
 MAX_LONG_PAYLOAD_DIGEST_BUDGET_BYTES = 8_000
 MAX_REDUCE_PROMPT_BYTES = 180_000
 MAX_REDUCE_CHILDREN = 16
+OFFLINE_DUCKDB_MEMORY_LIMIT = "8GB"
 SPLIT_P90_DISTANCE = 0.28
 SPLIT_MAX_DISTANCE = 0.55
 SPLIT_DEPTH_MARGIN = 16
@@ -244,6 +245,7 @@ class OfflineSemanticBrainCompiler:
         if database_path.exists():
             database_path.unlink()
         connection = duckdb.connect(str(database_path))
+        _configure_offline_duckdb(connection, temp_directory=work_root / "duckdb_tmp")
         try:
             _initialize_package_database(connection, source=source)
             unit_builds = _build_semantic_assignments(
@@ -391,6 +393,7 @@ class OfflineSemanticBrainCompiler:
             database_path.unlink()
 
         connection = duckdb.connect(str(database_path))
+        _configure_offline_duckdb(connection, temp_directory=work_root / "duckdb_tmp")
         try:
             _initialize_package_database(connection, source=source)
             unit_builds = _build_semantic_assignments(
@@ -1418,6 +1421,11 @@ def _build_semantic_assignments(
 ) -> list[_UnitBuild]:
     category_case = _category_case_sql()
     source_connection = duckdb.connect(str(source.database_path), read_only=True)
+    _configure_offline_duckdb(
+        source_connection,
+        temp_directory=(progress_path.parent if progress_path is not None else source.project_root)
+        / "duckdb_source_tmp",
+    )
     cursor = source_connection.execute(
         f"""
         SELECT
@@ -1530,6 +1538,19 @@ def _build_semantic_assignments(
     if duplicate_count:
         raise ValueError("semantic primary assignments contain duplicates")
     return builds
+
+
+def _configure_offline_duckdb(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    temp_directory: Path,
+) -> None:
+    """Bound DuckDB native memory and spill large planning joins to disk."""
+
+    temp_directory.mkdir(parents=True, exist_ok=True)
+    escaped_directory = str(temp_directory.resolve()).replace("'", "''")
+    connection.execute(f"PRAGMA memory_limit='{OFFLINE_DUCKDB_MEMORY_LIMIT}'")
+    connection.execute(f"PRAGMA temp_directory='{escaped_directory}'")
 
 
 def _split_semantic_stratum(
@@ -1661,9 +1682,18 @@ def _recursive_semantic_clusters(
         left_mask[order[len(order) // 2 :]] = True
         if bool(np.all(left_mask)) or bool(np.all(~left_mask)):
             raise ValueError("semantic stratum could not be split without truncation")
+    # Advanced indexing makes ``vectors`` a fresh dense array.  A large
+    # population-derived stratum can recurse many levels deep, so retaining
+    # every parent's temporary matrix while descending causes avoidable native
+    # memory growth.  Materialize child indexes first, then release the parent
+    # temporaries before entering the recursive calls; the geometry and split
+    # predicate remain unchanged.
+    left_indexes = indexes[left_mask]
+    right_indexes = indexes[~left_mask]
+    del vectors, centroid, distances, left_seed, right_seed, left_mask
     return [
-        *_recursive_semantic_clusters(matrix, indexes[left_mask], depth=depth + 1),
-        *_recursive_semantic_clusters(matrix, indexes[~left_mask], depth=depth + 1),
+        *_recursive_semantic_clusters(matrix, left_indexes, depth=depth + 1),
+        *_recursive_semantic_clusters(matrix, right_indexes, depth=depth + 1),
     ]
 
 

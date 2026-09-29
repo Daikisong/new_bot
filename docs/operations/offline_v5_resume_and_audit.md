@@ -40,6 +40,27 @@ byte budget, the planner stops that simulation rather than looping; the emitted
 build ledger remains authoritative. The final call count and ETA must therefore
 be read from sealed compile artifacts, not from the pre-LLM plan.
 
+## Memory-bounded planning
+
+Full-population geometry and representative selection are local work, but their
+DuckDB joins and NumPy clustering can allocate native memory independently of
+Python garbage collection. Offline plan/build connections therefore use an
+explicit `8GB` DuckDB memory limit and a compile-work-directory spill target.
+Recursive clustering releases parent advanced-indexing arrays before descending.
+This preserves the geometry and split predicates while preventing a large
+stratum from retaining every intermediate dense matrix. A watchdog may stop an
+evaluation-only plan above `12GB` private memory; an incomplete plan is never
+treated as evidence and can be regenerated from the immutable source.
+
+The corrected BUILD-only evaluation plan was regenerated read-only at
+`C:\Users\eorb9\projects\nslab_semantic_upgrade_v7_eval_v2\project\diagnostics\offline_brain_v2_build_only_full_plan_20260929_updated.json`.
+It binds to `MEMIDX-4409624afdffd1d01018`, contains 759,308 records and 49,385
+semantic units, estimates a lower bound of 7,158 logical calls (73 long-payload,
+6,917 leaf, 168 reduce/review), and made zero LLM calls. The run peaked below
+the watchdog threshold and returned memory to the host after the Python child
+exited. The earlier 7,147-call plan remains preserved for comparison; the new
+plan is authoritative for future evaluation build planning.
+
 ## Resume protocol
 
 1. Confirm the OAuth retry window has passed and confirm that no process with
