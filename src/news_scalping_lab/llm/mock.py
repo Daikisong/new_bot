@@ -75,7 +75,7 @@ class DeterministicMockLLMProvider:
             )
             decision = BrainInformedDecision(
                 analyzed_cluster_ids=cluster_ids,
-                prediction=self._blind_prediction(prompt),
+                prediction=self._brain_informed_prediction(prompt),
             )
             return decision  # type: ignore[return-value]
         if response_model is BlindPrediction and purpose == "final_synthesis":
@@ -332,6 +332,65 @@ class DeterministicMockLLMProvider:
             dominant_sectors=[sector],
             candidates=candidates,
         )
+
+    def _brain_informed_prediction(self, prompt: str) -> BlindPrediction:
+        prediction = self._blind_prediction(prompt)
+        payload = self._blind_payload(prompt)
+        raw_capsules = payload.get("current_event_capsules", [])
+        event_rows: dict[str, set[int]] = {}
+        all_row_ids: set[int] = set()
+        if isinstance(raw_capsules, list):
+            for raw_capsule in raw_capsules:
+                if not isinstance(raw_capsule, dict):
+                    continue
+                row_ids = {
+                    value
+                    for value in raw_capsule.get("source_row_ids", [])
+                    if isinstance(value, int) and not isinstance(value, bool)
+                }
+                all_row_ids.update(row_ids)
+                for event_id in raw_capsule.get("event_ids", []):
+                    if isinstance(event_id, str):
+                        event_rows.setdefault(event_id, set()).update(row_ids)
+
+        allowed_capsules = self._payload_string_list(
+            payload, "allowed_semantic_capsule_ids"
+        )
+        allowed_claims = self._payload_string_list(
+            payload, "allowed_mechanism_claim_ids"
+        )
+        daily_context = payload.get("daily_brain_context", {})
+        population_roots = []
+        if isinstance(daily_context, dict):
+            statistics = daily_context.get("population_statistics", [])
+            if isinstance(statistics, list):
+                population_roots = [
+                    str(row["population_root"])
+                    for row in statistics
+                    if isinstance(row, dict)
+                    and isinstance(row.get("population_root"), str)
+                ]
+
+        candidates = []
+        for candidate in prediction.candidates:
+            cited_rows = {
+                row_id
+                for event_id in candidate.event_ids
+                for row_id in event_rows.get(event_id, set())
+            }
+            if not cited_rows:
+                cited_rows = set(all_row_ids)
+            candidates.append(
+                candidate.model_copy(
+                    update={
+                        "source_row_ids": sorted(cited_rows),
+                        "semantic_capsule_ids": allowed_capsules[:1],
+                        "mechanism_claim_ids": allowed_claims[:1],
+                        "population_manifest_roots": population_roots[:1],
+                    }
+                )
+            )
+        return prediction.model_copy(update={"candidates": candidates})
 
     def _blind_payload(self, prompt: str) -> dict[str, Any]:
         marker = "---BLIND_ANALYSIS_PAYLOAD---"

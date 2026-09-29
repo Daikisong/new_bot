@@ -48,6 +48,11 @@ from news_scalping_lab.contracts.models import (
     ResearchEpisode,
     SemanticRetrievalPlan,
 )
+from news_scalping_lab.contracts.offline_brain import (
+    DailyBrainContext,
+    ThinDailyAnalysis,
+    ThinDailyRunManifest,
+)
 from news_scalping_lab.contracts.production import (
     ProductionBatchImportReceipt,
     ProductionCompanyMemoryAttestation,
@@ -111,6 +116,9 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "category_claim_inclusion_proof.schema.json": CategoryClaimInclusionProof,
     "category_brain_index_manifest.schema.json": CategoryBrainIndexManifest,
     "daily_memory_context.schema.json": DailyMemoryContext,
+    "daily_brain_context_v2.schema.json": DailyBrainContext,
+    "thin_daily_analysis.schema.json": ThinDailyAnalysis,
+    "thin_daily_run_manifest.schema.json": ThinDailyRunManifest,
     "runtime_evidence_memo.schema.json": RuntimeEvidenceMemo,
     "runtime_evidence_memo_batch.schema.json": RuntimeEvidenceMemoBatch,
     "runtime_retrieval_trace.schema.json": RuntimeRetrievalTrace,

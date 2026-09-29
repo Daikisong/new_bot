@@ -95,11 +95,19 @@ historical raw daily map count = 0
 
 `nslab analyze` and `DailyAnalyzer.analyze()` are now labeled `LEGACY_EXHAUSTIVE_DIAGNOSTIC_ONLY`. `build_runtime_evidence_memos()` and `build_runtime_evidence_memos_packed()` remain available only for forensic/offline diagnostics. They are unreachable from `analyze-daily`.
 
-The before/after evidence is recorded in:
+The current call-graph authority and historical evidence are recorded in:
 
 ```text
 diagnostics/daily_llm_call_graph_before.json
 diagnostics/daily_llm_call_graph_before.md
+diagnostics/daily_llm_call_graph_single_call.json
+```
+
+The earlier `after` files preserve an intermediate two-call implementation
+and are historical only; they are superseded by the one-call audit above.
+They remain available for provenance:
+
+```text
 diagnostics/daily_llm_call_graph_after.json
 diagnostics/daily_llm_call_graph_after.md
 ```

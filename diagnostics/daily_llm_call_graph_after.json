@@ -1,6 +1,8 @@
 {
   "schema_version": "nslab.daily_llm_call_graph_audit.v1",
-  "audit_kind": "AFTER_PR_A_ARCHITECTURE_CORRECTION",
+  "audit_kind": "HISTORICAL_INTERMEDIATE_SUPERSEDED_BY_SINGLE_CALL",
+  "audit_status": "HISTORICAL_NOT_CURRENT",
+  "authoritative_current_audit": "diagnostics/daily_llm_call_graph_single_call.json",
   "production_entrypoint": "news_scalping_lab.inference.thin_daily.ThinDailyAnalyzer.analyze",
   "production_command": "nslab analyze-daily",
   "architecture_version": "one_time_brain_thin_daily.v1",
@@ -58,7 +60,7 @@
     "test_all_news_rows_have_disposition": "PASS",
     "test_member_news_bodies_are_not_repeated_in_prompt": "PASS"
   },
-  "current_status": {
+  "status_at_historical_capture": {
     "daily_product_path_implemented": true,
     "daily_call_graph_bounded": true,
     "historical_raw_daily_remap_zero": true,

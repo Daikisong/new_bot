@@ -3464,12 +3464,25 @@ class DailyAnalyzer:
         )
         prompt = self._build_final_synthesis_prompt(payload)
         prompt_tokens = count_provider_tokens(self.llm, prompt)
-        if prompt_tokens > self.settings.limits.final_synthesis_token_budget:
+        if (
+            prompt_tokens > self.settings.limits.final_synthesis_token_budget
+            and self._final_synthesis_token_budget_is_blocking(manifest)
+        ):
             manifest.errors.append(
                 "final synthesis prompt exceeds token budget: "
                 f"{prompt_tokens} > {self.settings.limits.final_synthesis_token_budget}"
             )
             raise FinalSynthesisBudgetError(manifest.errors[-1])
+        if prompt_tokens > self.settings.limits.final_synthesis_token_budget:
+            manifest.final_synthesis_context_summary.update(
+                {
+                    "quality_full_token_budget_observation": "EXCEEDED_NON_BLOCKING",
+                    "observed_prompt_tokens": prompt_tokens,
+                    "configured_token_budget": (
+                        self.settings.limits.final_synthesis_token_budget
+                    ),
+                }
+            )
         prompt_sha256 = sha256_text(prompt)
         try:
             synthesized = await self.llm.generate_structured(
@@ -3530,6 +3543,12 @@ class DailyAnalyzer:
                 }
             )
         return normalized, prompt_sha256, prompt_tokens
+
+    @staticmethod
+    def _final_synthesis_token_budget_is_blocking(
+        manifest: ContextManifest,
+    ) -> bool:
+        return manifest.llm_model_config.get("evaluation_profile") != "QUALITY_FULL"
 
     def _phase7_final_memory_context(
         self,
