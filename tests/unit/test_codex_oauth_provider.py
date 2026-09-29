@@ -107,7 +107,7 @@ def test_codex_oauth_provider_sends_non_ascii_prompt_as_utf8() -> None:
     assert execution_kwargs["input"] == "한글 연구자료를 요약해줘"
     assert execution_kwargs["text"] is True
     assert execution_kwargs["encoding"] == "utf-8"
-    assert execution_kwargs["errors"] == "strict"
+    assert execution_kwargs["errors"] == "replace"
 
 
 def test_codex_oauth_provider_never_reads_credential_files() -> None:

@@ -403,6 +403,16 @@
       "title": "Brain Package Root",
       "type": "string"
     },
+    "brain_projection_mode": {
+      "default": "FULL_PACKAGE",
+      "enum": [
+        "FULL_PACKAGE",
+        "POINT_IN_TIME_EVIDENCE_ONLY",
+        "NO_HISTORICAL_BRAIN"
+      ],
+      "title": "Brain Projection Mode",
+      "type": "string"
+    },
     "brain_version": {
       "title": "Brain Version",
       "type": "string"

@@ -99,6 +99,10 @@ from news_scalping_lab.evaluation.shadow import (
     seal_shadow_split,
     shadow_replay_readiness,
 )
+from news_scalping_lab.evaluation.thin_daily_quality import (
+    predict_thin_daily_quality,
+    score_thin_daily_quality,
+)
 from news_scalping_lab.inference.analyzer import (
     OPEN_WORLD_FIRST_ANALYSIS_PROMPT_VERSION,
     DailyAnalyzer,
@@ -9152,6 +9156,107 @@ def memory_score_runtime_variants(
             "production_activation_status": result.report[
                 "production_activation_status"
             ],
+        }
+    )
+
+
+@memory_app.command("predict-thin-daily-quality")
+def memory_predict_thin_daily_quality(
+    project_root: Annotated[Path, typer.Option("--project-root")],
+    blind_selection: Annotated[Path, typer.Option("--blind-selection")],
+    baseline_project_root: Annotated[Path, typer.Option("--baseline-project-root")],
+    baseline_manifest: Annotated[Path, typer.Option("--baseline-manifest")],
+    category_index_manifest: Annotated[Path, typer.Option("--category-index-manifest")],
+    offline_package_dir: Annotated[Path, typer.Option("--offline-package-dir")],
+) -> None:
+    settings = load_settings(
+        project_root,
+        resolve_production=False,
+        dotenv_root=Path.cwd(),
+    )
+
+    def resolved(path: Path) -> Path:
+        return (
+            path.resolve()
+            if path.is_absolute()
+            else (settings.project_root / path).resolve()
+        )
+
+    try:
+        profile = quality_full_runtime_profile(
+            provider=str(settings.llm_provider),
+            model=settings.llm.model,
+            reasoning_effort=str(settings.llm.reasoning_effort or ""),
+        )
+        result = asyncio.run(
+            predict_thin_daily_quality(
+                settings.project_root,
+                settings=settings,
+                blind_selection_path=resolved(blind_selection),
+                baseline_project_root=resolved(baseline_project_root),
+                baseline_manifest_path=resolved(baseline_manifest),
+                category_index_manifest_path=resolved(category_index_manifest),
+                offline_package_dir=resolved(offline_package_dir),
+                profile=profile,
+            )
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "run_id": result.manifest.run_id,
+            "profile": result.manifest.profile.model_dump(mode="json"),
+            "expected_case_count": len(result.manifest.expected_case_ids),
+            "prediction_seal_count": len(result.manifest.seals),
+            "paired_case_count": len(result.manifest.paired_case_ids),
+            "all_predictions_sealed": result.manifest.all_predictions_sealed,
+            "outcome_opened": result.manifest.outcome_opened,
+            "manifest_path": relative_to_root(
+                result.manifest_path,
+                settings.project_root,
+            ),
+            "production_activation_status": result.manifest.production_activation_status,
+        }
+    )
+
+
+@memory_app.command("score-thin-daily-quality")
+def memory_score_thin_daily_quality(
+    project_root: Annotated[Path, typer.Option("--project-root")],
+    paired_predictions: Annotated[Path, typer.Option("--paired-predictions")],
+    outcome_selection: Annotated[Path, typer.Option("--outcome-selection")],
+) -> None:
+    settings = load_settings(
+        project_root,
+        resolve_production=False,
+        dotenv_root=Path.cwd(),
+    )
+
+    def resolved(path: Path) -> Path:
+        return (
+            path.resolve()
+            if path.is_absolute()
+            else (settings.project_root / path).resolve()
+        )
+
+    try:
+        result = score_thin_daily_quality(
+            settings.project_root,
+            paired_prediction_manifest_path=resolved(paired_predictions),
+            outcome_selection_path=resolved(outcome_selection),
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "report_path": relative_to_root(result.report_path, settings.project_root),
+            "markdown_path": relative_to_root(result.markdown_path, settings.project_root),
+            "paired_case_count": result.report["paired_case_count"],
+            "quality_metrics_by_arm": result.report["quality_metrics_by_arm"],
+            "production_activation_status": result.report[
+                "production_activation_status"
+            ],
+            "promotion_decision": result.report["promotion_decision"],
         }
     )
 

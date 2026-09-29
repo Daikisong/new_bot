@@ -65,6 +65,8 @@ EXPECTED_SCHEMA_FILES = {
     "production_release_manifest.schema.json",
     "production_release_configuration.schema.json",
     "production_release_transaction.schema.json",
+    "quality_artifact_reference.schema.json",
+    "quality_evaluation_profile.schema.json",
     "red_team_artifact.schema.json",
     "record_routing_metadata.schema.json",
     "representative_record.schema.json",
@@ -84,6 +86,8 @@ EXPECTED_SCHEMA_FILES = {
     "shadow_replay_dataset.schema.json",
     "synthesized_mechanism_claim.schema.json",
     "thin_daily_analysis.schema.json",
+    "thin_daily_quality_prediction_manifest.schema.json",
+    "thin_daily_quality_prediction_seal.schema.json",
     "thin_daily_run_manifest.schema.json",
 }
 

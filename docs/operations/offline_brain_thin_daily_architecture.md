@@ -95,7 +95,7 @@ historical raw daily map count = 0
 
 `nslab analyze` and `DailyAnalyzer.analyze()` are now labeled `LEGACY_EXHAUSTIVE_DIAGNOSTIC_ONLY`. `build_runtime_evidence_memos()` and `build_runtime_evidence_memos_packed()` remain available only for forensic/offline diagnostics. They are unreachable from `analyze-daily`.
 
-The before/after evidence is recorded in:
+The pre-correction and intermediate two-call evidence is preserved for history:
 
 ```text
 diagnostics/daily_llm_call_graph_before.json
@@ -103,6 +103,12 @@ diagnostics/daily_llm_call_graph_before.md
 diagnostics/daily_llm_call_graph_after.json
 diagnostics/daily_llm_call_graph_after.md
 ```
+
+`daily_llm_call_graph_after.*` records the intermediate PR-A two-call design and
+is superseded by the user's later one-call correction. The authoritative current
+audit is `diagnostics/daily_llm_call_graph_single_call.json`; it records one
+normal logical call, a maximum of two live invocations with one schema repair,
+brain loading before the call, and no daily raw-record map, import, or rebuild.
 
 ## PR-B Implementation
 

@@ -135,11 +135,21 @@ class ThinDailyAnalyzer:
         llm: LLMProvider | None = None,
         embedding_provider: Any | None = None,
         brain_context_provider: DailyBrainContextProvider | None = None,
+        run_output_root: Path | None = None,
+        write_canonical_outputs: bool = True,
     ) -> None:
         if settings.llm.max_retries > 1:
             raise ValueError("analyze-daily allows at most one structured repair per logical call")
         self.settings = settings
         self.root = settings.project_root
+        self.run_output_root = (
+            run_output_root or self.root / "runs" / "thin_daily"
+        ).resolve()
+        try:
+            self.run_output_root.relative_to(self.root.resolve())
+        except ValueError as exc:
+            raise ValueError("thin daily output root must remain inside the project root") from exc
+        self.write_canonical_outputs = write_canonical_outputs
         base_llm = llm or create_llm_provider(settings)
         self.llm_model_config = _llm_model_config(settings, base_llm)
         self.llm = _trace_daily_llm(settings, base_llm, self.llm_model_config)
@@ -222,12 +232,13 @@ class ThinDailyAnalyzer:
             trade_date.isoformat(),
             cutoff_at.isoformat(),
             capsule_sha256,
+            brain_context.brain_projection_mode,
             brain_context.brain_package_root,
             sha256_text(canonical_json(d_minus_one_context)),
             sha256_text(canonical_json(self.llm_model_config)),
             length=20,
         )
-        output_root = self.root / "runs" / "thin_daily" / run_id
+        output_root = self.run_output_root / run_id
         output_root.mkdir(parents=True, exist_ok=True)
 
         capsules_path = output_root / "current_event_capsules.json"
@@ -283,14 +294,14 @@ class ThinDailyAnalyzer:
         prediction_path = output_root / "blind_prediction.json"
         decision_path = output_root / "brain_decision.json"
         write_json(decision_path, decision.model_dump(mode="json"))
-        report_path = output_root / "preopen_report.md"
+        run_report_path = output_root / "preopen_report.md"
         write_json(prediction_path, prediction.model_dump(mode="json"))
         report_text = _render_thin_daily_report(
             prediction,
             run_id=run_id,
             brain_context=brain_context,
         )
-        report_path.write_text(report_text, encoding="utf-8", newline="\n")
+        run_report_path.write_text(report_text, encoding="utf-8", newline="\n")
 
         canonical_prediction_path = (
             self.settings.path(self.settings.output_dirs.predictions) / f"{trade_date.isoformat()}.json"
@@ -298,9 +309,12 @@ class ThinDailyAnalyzer:
         canonical_report_path = (
             self.settings.path(self.settings.output_dirs.reports) / f"{trade_date.isoformat()}_preopen.md"
         )
-        write_json(canonical_prediction_path, prediction.model_dump(mode="json"))
-        canonical_report_path.parent.mkdir(parents=True, exist_ok=True)
-        canonical_report_path.write_text(report_text, encoding="utf-8", newline="\n")
+        if self.write_canonical_outputs:
+            write_json(canonical_prediction_path, prediction.model_dump(mode="json"))
+            canonical_report_path.parent.mkdir(parents=True, exist_ok=True)
+            canonical_report_path.write_text(report_text, encoding="utf-8", newline="\n")
+        final_prediction_path = canonical_prediction_path if self.write_canonical_outputs else prediction_path
+        final_report_path = canonical_report_path if self.write_canonical_outputs else run_report_path
 
         prompt_hashes = {
             "final_market_decision": sha256_text(final_prompt),
@@ -341,6 +355,7 @@ class ThinDailyAnalyzer:
             llm_model_config=self.llm_model_config,
             brain_version=brain_context.brain_version,
             brain_package_root=brain_context.brain_package_root,
+            brain_projection_mode=brain_context.brain_projection_mode,
             brain_context_loaded_before_first_llm=True,
             brain_retrieval_basis="CURRENT_NEWS",
             compiled_brain_guidance_count=len(brain_context.compiled_brain_guidance),
@@ -355,12 +370,16 @@ class ThinDailyAnalyzer:
             row_disposition_sha256=file_sha256(row_disposition_path),
             prediction_artifact=relative_to_root(prediction_path, self.root),
             prediction_sha256=file_sha256(prediction_path),
-            report_artifact=relative_to_root(report_path, self.root),
-            report_sha256=file_sha256(report_path),
+            report_artifact=relative_to_root(final_report_path, self.root),
+            report_sha256=file_sha256(final_report_path),
             prompt_hashes=prompt_hashes,
             token_counts=token_counts,
         )
-        manifest_path = self.settings.path(self.settings.output_dirs.manifests) / (f"{run_id}.json")
+        manifest_path = (
+            self.settings.path(self.settings.output_dirs.manifests) / f"{run_id}.json"
+            if self.write_canonical_outputs
+            else output_root / "thin_daily_run_manifest.json"
+        )
         write_json(manifest_path, manifest.model_dump(mode="json"))
         return ThinDailyAnalysis(
             run_id=run_id,
@@ -369,8 +388,8 @@ class ThinDailyAnalyzer:
             created_at=manifest.created_at,
             blind_prediction=prediction,
             context_manifest=manifest,
-            report_path=relative_to_root(canonical_report_path, self.root),
-            prediction_path=relative_to_root(canonical_prediction_path, self.root),
+            report_path=relative_to_root(final_report_path, self.root),
+            prediction_path=relative_to_root(final_prediction_path, self.root),
         )
 
 
@@ -542,7 +561,7 @@ def _build_final_market_decision_prompt(
     return (
         "Return BrainInformedDecision with every required cluster ID exactly once in "
         "analyzed_cluster_ids and the final BlindPrediction in prediction, in one call. "
-        "Interpret every current event using the supplied precompiled world/category knowledge, "
+        "Interpret every current event using the supplied cutoff-safe precompiled brain context, "
         "mechanisms, applicable conditions, failures, and counterexamples from the outset. "
         "Compare current facts with those conditions; distinguish facts from hypotheses. "
         "Open-world means new events and candidates remain eligible without historical analogs; "
@@ -649,11 +668,15 @@ def _validate_brain_context_as_of(
     *,
     cutoff_at: datetime,
 ) -> None:
-    if context.brain_build_cutoff > cutoff_at:
+    if (
+        context.brain_build_cutoff > cutoff_at
+        and context.brain_projection_mode != "POINT_IN_TIME_EVIDENCE_ONLY"
+    ):
         raise ValueError("daily brain context contains cutoff-after compiled guidance")
     guidance = context.compiled_brain_guidance
-    if not any(row.artifact == "world_model.md" for row in guidance) or not any(
-        row.artifact.startswith("category_brain/") for row in guidance
+    if context.brain_projection_mode == "FULL_PACKAGE" and (
+        not any(row.artifact == "world_model.md" for row in guidance)
+        or not any(row.artifact.startswith("category_brain/") for row in guidance)
     ):
         raise ValueError("daily brain context requires compiled world and category guidance")
     if any(not row.content.strip() or sha256_text(row.content) != row.sha256 for row in guidance):

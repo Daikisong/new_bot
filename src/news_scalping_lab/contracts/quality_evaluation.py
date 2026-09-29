@@ -884,3 +884,130 @@ class PairedPredictionManifest(BaseModel):
         if self.all_predictions_sealed != (set(paired) == expected):
             raise ValueError("paired prediction all-sealed flag is inconsistent")
         return self
+
+
+class ThinDailyQualitySeal(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["nslab.thin_daily_quality_prediction_seal.v1"] = (
+        "nslab.thin_daily_quality_prediction_seal.v1"
+    )
+    case_id: str
+    arm_id: Literal["A", "B", "C"]
+    arm_architecture_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    sealed_at: datetime
+    cutoff_at: datetime
+    blind_input_manifest: QualityArtifactReference
+    materialized_news_csv: QualityArtifactReference
+    news_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    d_minus_one_context: QualityArtifactReference
+    d_minus_one_payload_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    current_event_capsules: QualityArtifactReference
+    daily_brain_context: QualityArtifactReference
+    prediction: QualityArtifactReference
+    run_manifest: QualityArtifactReference
+    logical_llm_call_count: Literal[1] = 1
+    maximum_live_agent_call_count: Literal[1, 2]
+    historical_raw_daily_map_call_count: Literal[0] = 0
+    daily_import_call_count: Literal[0] = 0
+    daily_brain_rebuild_call_count: Literal[0] = 0
+    blind_web_search_call_count: Literal[0] = 0
+    online_full_corpus_scan_count: Literal[0] = 0
+    future_record_count: Literal[0] = 0
+    material_event_cluster_count: int = Field(ge=1)
+    current_event_capsule_count: int = Field(ge=1)
+    selected_semantic_capsule_count: int = Field(ge=0)
+    selected_mechanism_claim_count: int = Field(ge=0)
+    compiled_brain_guidance_count: int = Field(ge=0)
+    historical_raw_witness_count: int = Field(ge=0, le=24)
+    wall_clock_seconds: float = Field(ge=0)
+    token_counts: dict[str, int]
+    llm_model_config: dict[str, Any]
+    brain_version: str
+    brain_package_root: str
+    brain_projection_mode: Literal[
+        "FULL_PACKAGE",
+        "POINT_IN_TIME_EVIDENCE_ONLY",
+        "NO_HISTORICAL_BRAIN",
+    ]
+    outcome_reference_count: Literal[0] = 0
+
+    @model_validator(mode="after")
+    def validate_seal(self) -> Self:
+        if not self.case_id.strip() or not self.brain_version.strip():
+            raise ValueError("thin daily prediction seal identity cannot be blank")
+        if self.cutoff_at.utcoffset() is None or self.sealed_at.utcoffset() is None:
+            raise ValueError("thin daily prediction seal timestamps must be timezone-aware")
+        if self.current_event_capsule_count != self.material_event_cluster_count:
+            raise ValueError("thin daily prediction must capsule every material cluster")
+        if self.arm_id == "A" and self.brain_projection_mode != "NO_HISTORICAL_BRAIN":
+            raise ValueError("arm A must not receive historical brain context")
+        if self.arm_id != "A" and self.brain_projection_mode == "NO_HISTORICAL_BRAIN":
+            raise ValueError("arms B/C must receive historical brain context")
+        return self
+
+
+class ThinDailyQualityPredictionManifest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["nslab.thin_daily_quality_prediction_manifest.v1"] = (
+        "nslab.thin_daily_quality_prediction_manifest.v1"
+    )
+    run_id: str
+    prediction_code_version: Literal["nslab.thin_daily_quality_prediction.v2"] = (
+        "nslab.thin_daily_quality_prediction.v2"
+    )
+    profile: QualityEvaluationProfile
+    blind_selection: QualityArtifactReference
+    build_only_source_attestation: QualityArtifactReference
+    expected_case_ids: list[str] = Field(min_length=1)
+    expected_arm_ids: list[Literal["A", "B", "C"]] = Field(min_length=3, max_length=3)
+    expected_arm_architecture_sha256: dict[str, str]
+    seals: list[ThinDailyQualitySeal] = Field(default_factory=list)
+    paired_case_ids: list[str] = Field(default_factory=list)
+    all_predictions_sealed: bool = False
+    outcome_opened: Literal[False] = False
+    production_activation_status: Literal["NOT_PRODUCTION_ACTIVATED"] = (
+        "NOT_PRODUCTION_ACTIVATED"
+    )
+
+    @model_validator(mode="after")
+    def validate_closure(self) -> Self:
+        expected_cases = set(self.expected_case_ids)
+        expected_arms = set(self.expected_arm_ids)
+        if len(expected_cases) != len(self.expected_case_ids):
+            raise ValueError("thin daily evaluation case IDs must be unique")
+        if self.expected_arm_ids != ["A", "B", "C"]:
+            raise ValueError("thin daily evaluation arms must be ordered A/B/C")
+        if set(self.expected_arm_architecture_sha256) != expected_arms:
+            raise ValueError("thin daily evaluation architecture identities are incomplete")
+        if any(
+            len(value) != 64 or any(ch not in "0123456789abcdef" for ch in value)
+            for value in self.expected_arm_architecture_sha256.values()
+        ):
+            raise ValueError("thin daily evaluation architecture hashes are invalid")
+        seals_by_case: dict[str, dict[str, ThinDailyQualitySeal]] = {}
+        for seal in self.seals:
+            if seal.case_id not in expected_cases or seal.arm_id not in expected_arms:
+                raise ValueError("thin daily evaluation contains an unexpected seal")
+            if seal.arm_architecture_sha256 != self.expected_arm_architecture_sha256[seal.arm_id]:
+                raise ValueError("thin daily evaluation arm architecture drifted")
+            arm_seals = seals_by_case.setdefault(seal.case_id, {})
+            if seal.arm_id in arm_seals:
+                raise ValueError("thin daily evaluation has a duplicate case/arm seal")
+            arm_seals[seal.arm_id] = seal
+        fully_paired = {
+            case_id
+            for case_id, rows in seals_by_case.items()
+            if set(rows) == expected_arms
+        }
+        if set(self.paired_case_ids) != fully_paired:
+            raise ValueError("thin daily evaluation paired-case list is stale")
+        if self.all_predictions_sealed != (fully_paired == expected_cases):
+            raise ValueError("thin daily evaluation completion flag is stale")
+        for rows in seals_by_case.values():
+            if len({row.news_sha256 for row in rows.values()}) > 1:
+                raise ValueError("thin daily evaluation arms do not share the same news")
+            if len({row.d_minus_one_payload_sha256 for row in rows.values()}) > 1:
+                raise ValueError("thin daily evaluation arms do not share the same D-1 context")
+        return self

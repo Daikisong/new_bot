@@ -348,6 +348,30 @@ def test_market_metrics_separate_exact_leader_from_top_pick_high20(
     assert metrics["evaluation_universe_count"] == 3
 
 
+def test_market_metrics_can_count_unsupported_tickers_as_false_positives(
+    tmp_path: Path,
+) -> None:
+    path = _write_outcomes(
+        tmp_path,
+        [
+            _outcome_row("000001", rank=1, high_return=30.0),
+            _outcome_row("000002", rank=2, high_return=0.0),
+        ],
+    )
+    metrics = _prediction_metrics(
+        _prediction(["000999", "000001"]),
+        path,
+        evaluation_universe_tickers=["000001", "000002"],
+        probability_policy_version=QUALITY_HIGH20_PROBABILITY_POLICY_VERSION,
+        allow_unsupported_tickers=True,
+    )
+
+    assert metrics["unsupported_d1_ticker_count"] == 1
+    assert metrics["unsupported_d1_tickers"] == ["000999"]
+    assert metrics["upper_limit_hit_count_at_5"] == 1
+    assert metrics["upper_limit_precision_at_5"] == pytest.approx(0.2)
+
+
 def test_market_metrics_use_fixed_k_and_none_for_empty_targets(
     tmp_path: Path,
 ) -> None:

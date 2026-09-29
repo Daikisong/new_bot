@@ -22,7 +22,13 @@ from news_scalping_lab.contracts.offline_brain import (
 )
 from news_scalping_lab.inference.thin_daily import ThinDailyAnalyzer
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
-from news_scalping_lab.utils import KST, canonical_json, read_json, sha256_text
+from news_scalping_lab.utils import (
+    KST,
+    canonical_json,
+    file_sha256,
+    read_json,
+    sha256_text,
+)
 
 
 class CountingMockLLM(DeterministicMockLLMProvider):
@@ -282,6 +288,33 @@ async def test_all_news_rows_have_disposition_and_bodies_are_not_repeated(
     assert len(dispositions["rows"]) == 8
     assert all(row["cluster_id"] for row in dispositions["rows"])
     assert "opaque filler qwerty zxcvbn" not in llm.prompts["final_market_decision"]
+
+
+@pytest.mark.asyncio
+async def test_evaluation_output_is_local_and_manifest_binds_existing_report(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path)
+    output_root = tmp_path / "runs" / "evaluation"
+    analysis = await ThinDailyAnalyzer(
+        settings,
+        llm=CountingMockLLM(),
+        brain_context_provider=FixtureBrainContextProvider(),
+        run_output_root=output_root,
+        write_canonical_outputs=False,
+    ).analyze(
+        news_csv=_write_news_csv(tmp_path / "news.csv", row_count=2),
+        trade_date=date(2026, 1, 2),
+        cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
+    )
+
+    report_path = tmp_path / analysis.context_manifest.report_artifact
+    run_manifest_path = output_root / analysis.run_id / "thin_daily_run_manifest.json"
+    assert report_path.is_file()
+    assert file_sha256(report_path) == analysis.context_manifest.report_sha256
+    assert run_manifest_path.is_file()
+    assert not (tmp_path / "predictions" / "2026-01-02.json").exists()
+    assert not (tmp_path / "reports" / "2026-01-02_preopen.md").exists()
 
 
 def test_daily_rejects_more_than_one_repair_retry(tmp_path: Path) -> None:

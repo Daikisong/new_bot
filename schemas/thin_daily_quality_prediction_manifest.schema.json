@@ -1,0 +1,439 @@
+{
+  "$defs": {
+    "QualityArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_path",
+        "sha256"
+      ],
+      "title": "QualityArtifactReference",
+      "type": "object"
+    },
+    "QualityEvaluationProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "call_count_is_blocking": {
+          "default": false,
+          "title": "Call Count Is Blocking",
+          "type": "boolean"
+        },
+        "checkpoint_resume_required": {
+          "default": true,
+          "title": "Checkpoint Resume Required",
+          "type": "boolean"
+        },
+        "daily_p95_gate_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Daily P95 Gate Seconds"
+        },
+        "latency_is_blocking": {
+          "default": false,
+          "title": "Latency Is Blocking",
+          "type": "boolean"
+        },
+        "live_latency_target_source": {
+          "default": "DISABLED",
+          "enum": [
+            "DISABLED",
+            "USER_DEFINED_ONLY"
+          ],
+          "title": "Live Latency Target Source",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "profile": {
+          "enum": [
+            "QUALITY_FULL",
+            "LIVE_OPERATIONAL"
+          ],
+          "title": "Profile",
+          "type": "string"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "reasoning_effort": {
+          "title": "Reasoning Effort",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "nslab.quality_evaluation_profile.v1",
+          "default": "nslab.quality_evaluation_profile.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "token_is_blocking": {
+          "default": false,
+          "title": "Token Is Blocking",
+          "type": "boolean"
+        },
+        "wall_clock_limit_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wall Clock Limit Seconds"
+        }
+      },
+      "required": [
+        "profile",
+        "provider",
+        "model",
+        "reasoning_effort"
+      ],
+      "title": "QualityEvaluationProfile",
+      "type": "object"
+    },
+    "ThinDailyQualitySeal": {
+      "additionalProperties": false,
+      "properties": {
+        "arm_architecture_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Arm Architecture Sha256",
+          "type": "string"
+        },
+        "arm_id": {
+          "enum": [
+            "A",
+            "B",
+            "C"
+          ],
+          "title": "Arm Id",
+          "type": "string"
+        },
+        "blind_input_manifest": {
+          "$ref": "#/$defs/QualityArtifactReference"
+        },
+        "blind_web_search_call_count": {
+          "const": 0,
+          "default": 0,
+          "title": "Blind Web Search Call Count",
+          "type": "integer"
+        },
+        "brain_package_root": {
+          "title": "Brain Package Root",
+          "type": "string"
+        },
+        "brain_projection_mode": {
+          "enum": [
+            "FULL_PACKAGE",
+            "POINT_IN_TIME_EVIDENCE_ONLY",
+            "NO_HISTORICAL_BRAIN"
+          ],
+          "title": "Brain Projection Mode",
+          "type": "string"
+        },
+        "brain_version": {
+          "title": "Brain Version",
+          "type": "string"
+        },
+        "case_id": {
+          "title": "Case Id",
+          "type": "string"
+        },
+        "compiled_brain_guidance_count": {
+          "minimum": 0,
+          "title": "Compiled Brain Guidance Count",
+          "type": "integer"
+        },
+        "current_event_capsule_count": {
+          "minimum": 1,
+          "title": "Current Event Capsule Count",
+          "type": "integer"
+        },
+        "current_event_capsules": {
+          "$ref": "#/$defs/QualityArtifactReference"
+        },
+        "cutoff_at": {
+          "format": "date-time",
+          "title": "Cutoff At",
+          "type": "string"
+        },
+        "d_minus_one_context": {
+          "$ref": "#/$defs/QualityArtifactReference"
+        },
+        "d_minus_one_payload_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "D Minus One Payload Sha256",
+          "type": "string"
+        },
+        "daily_brain_context": {
+          "$ref": "#/$defs/QualityArtifactReference"
+        },
+        "daily_brain_rebuild_call_count": {
+          "const": 0,
+          "default": 0,
+          "title": "Daily Brain Rebuild Call Count",
+          "type": "integer"
+        },
+        "daily_import_call_count": {
+          "const": 0,
+          "default": 0,
+          "title": "Daily Import Call Count",
+          "type": "integer"
+        },
+        "future_record_count": {
+          "const": 0,
+          "default": 0,
+          "title": "Future Record Count",
+          "type": "integer"
+        },
+        "historical_raw_daily_map_call_count": {
+          "const": 0,
+          "default": 0,
+          "title": "Historical Raw Daily Map Call Count",
+          "type": "integer"
+        },
+        "historical_raw_witness_count": {
+          "maximum": 24,
+          "minimum": 0,
+          "title": "Historical Raw Witness Count",
+          "type": "integer"
+        },
+        "llm_model_config": {
+          "additionalProperties": true,
+          "title": "Llm Model Config",
+          "type": "object"
+        },
+        "logical_llm_call_count": {
+          "const": 1,
+          "default": 1,
+          "title": "Logical Llm Call Count",
+          "type": "integer"
+        },
+        "material_event_cluster_count": {
+          "minimum": 1,
+          "title": "Material Event Cluster Count",
+          "type": "integer"
+        },
+        "materialized_news_csv": {
+          "$ref": "#/$defs/QualityArtifactReference"
+        },
+        "maximum_live_agent_call_count": {
+          "enum": [
+            1,
+            2
+          ],
+          "title": "Maximum Live Agent Call Count",
+          "type": "integer"
+        },
+        "news_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "News Sha256",
+          "type": "string"
+        },
+        "online_full_corpus_scan_count": {
+          "const": 0,
+          "default": 0,
+          "title": "Online Full Corpus Scan Count",
+          "type": "integer"
+        },
+        "outcome_reference_count": {
+          "const": 0,
+          "default": 0,
+          "title": "Outcome Reference Count",
+          "type": "integer"
+        },
+        "prediction": {
+          "$ref": "#/$defs/QualityArtifactReference"
+        },
+        "run_manifest": {
+          "$ref": "#/$defs/QualityArtifactReference"
+        },
+        "schema_version": {
+          "const": "nslab.thin_daily_quality_prediction_seal.v1",
+          "default": "nslab.thin_daily_quality_prediction_seal.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "sealed_at": {
+          "format": "date-time",
+          "title": "Sealed At",
+          "type": "string"
+        },
+        "selected_mechanism_claim_count": {
+          "minimum": 0,
+          "title": "Selected Mechanism Claim Count",
+          "type": "integer"
+        },
+        "selected_semantic_capsule_count": {
+          "minimum": 0,
+          "title": "Selected Semantic Capsule Count",
+          "type": "integer"
+        },
+        "token_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Token Counts",
+          "type": "object"
+        },
+        "wall_clock_seconds": {
+          "minimum": 0,
+          "title": "Wall Clock Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "case_id",
+        "arm_id",
+        "arm_architecture_sha256",
+        "sealed_at",
+        "cutoff_at",
+        "blind_input_manifest",
+        "materialized_news_csv",
+        "news_sha256",
+        "d_minus_one_context",
+        "d_minus_one_payload_sha256",
+        "current_event_capsules",
+        "daily_brain_context",
+        "prediction",
+        "run_manifest",
+        "maximum_live_agent_call_count",
+        "material_event_cluster_count",
+        "current_event_capsule_count",
+        "selected_semantic_capsule_count",
+        "selected_mechanism_claim_count",
+        "compiled_brain_guidance_count",
+        "historical_raw_witness_count",
+        "wall_clock_seconds",
+        "token_counts",
+        "llm_model_config",
+        "brain_version",
+        "brain_package_root",
+        "brain_projection_mode"
+      ],
+      "title": "ThinDailyQualitySeal",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "all_predictions_sealed": {
+      "default": false,
+      "title": "All Predictions Sealed",
+      "type": "boolean"
+    },
+    "blind_selection": {
+      "$ref": "#/$defs/QualityArtifactReference"
+    },
+    "build_only_source_attestation": {
+      "$ref": "#/$defs/QualityArtifactReference"
+    },
+    "expected_arm_architecture_sha256": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Expected Arm Architecture Sha256",
+      "type": "object"
+    },
+    "expected_arm_ids": {
+      "items": {
+        "enum": [
+          "A",
+          "B",
+          "C"
+        ],
+        "type": "string"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Expected Arm Ids",
+      "type": "array"
+    },
+    "expected_case_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Expected Case Ids",
+      "type": "array"
+    },
+    "outcome_opened": {
+      "const": false,
+      "default": false,
+      "title": "Outcome Opened",
+      "type": "boolean"
+    },
+    "paired_case_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Paired Case Ids",
+      "type": "array"
+    },
+    "prediction_code_version": {
+      "const": "nslab.thin_daily_quality_prediction.v2",
+      "default": "nslab.thin_daily_quality_prediction.v2",
+      "title": "Prediction Code Version",
+      "type": "string"
+    },
+    "production_activation_status": {
+      "const": "NOT_PRODUCTION_ACTIVATED",
+      "default": "NOT_PRODUCTION_ACTIVATED",
+      "title": "Production Activation Status",
+      "type": "string"
+    },
+    "profile": {
+      "$ref": "#/$defs/QualityEvaluationProfile"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.thin_daily_quality_prediction_manifest.v1",
+      "default": "nslab.thin_daily_quality_prediction_manifest.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "seals": {
+      "items": {
+        "$ref": "#/$defs/ThinDailyQualitySeal"
+      },
+      "title": "Seals",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run_id",
+    "profile",
+    "blind_selection",
+    "build_only_source_attestation",
+    "expected_case_ids",
+    "expected_arm_ids",
+    "expected_arm_architecture_sha256"
+  ],
+  "title": "ThinDailyQualityPredictionManifest",
+  "type": "object"
+}
