@@ -129,6 +129,45 @@ class CategoryBrainIndex:
             source_artifact_sha256=file_sha256(self.manifest_path),
         )
 
+    def query_candidates(
+        self,
+        *,
+        query_vector: list[float],
+        limit: int,
+        available_before: datetime,
+    ) -> list[tuple[float, CompiledBrainClaim]]:
+        """Return a bounded HNSW candidate set filtered to point-in-time claims."""
+
+        provider = self.embedding_provider
+        if provider is None:
+            raise ValueError("category brain query requires an embedding provider")
+        if provider.embedding_method != self.manifest.embedding_model:
+            raise ValueError("category brain query embedding model mismatch")
+        if limit < 1:
+            return []
+        vector = _float32_vector(query_vector)
+        if len(vector) != self.manifest.embedding_dimensions:
+            raise ValueError("category brain query embedding dimension mismatch")
+        vector_type = f"FLOAT[{self.manifest.embedding_dimensions}]"
+        rows = self.connection.execute(
+            f"""
+            SELECT claim_id,
+                   1.0 - array_cosine_distance(embedding, ?::{vector_type}) AS score,
+                   claim_json
+            FROM claims
+            ORDER BY array_cosine_distance(embedding, ?::{vector_type}), claim_id
+            LIMIT ?
+            """,
+            [vector, vector, limit],
+        ).fetchall()
+        cutoff = as_kst(available_before)
+        output: list[tuple[float, CompiledBrainClaim]] = []
+        for _claim_id, score, claim_json in rows:
+            claim = CompiledBrainClaim.model_validate(json.loads(str(claim_json)))
+            if as_kst(claim.available_from) <= cutoff:
+                output.append((float(score), claim))
+        return output
+
     def guidance_claims(
         self,
         *,

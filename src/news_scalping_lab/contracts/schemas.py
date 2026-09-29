@@ -71,6 +71,12 @@ from news_scalping_lab.contracts.production import (
     ProductionReleaseManifest,
     ProductionReleaseTransaction,
 )
+from news_scalping_lab.contracts.quality_evaluation import (
+    QualityArtifactReference,
+    QualityEvaluationProfile,
+    ThinDailyQualityPredictionManifest,
+    ThinDailyQualitySeal,
+)
 from news_scalping_lab.contracts.runtime_retrieval import (
     RuntimeEvidenceMemo,
     RuntimeEvidenceMemoBatch,
@@ -157,6 +163,12 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "daily_brain_context_v2.schema.json": DailyBrainContext,
     "thin_daily_run_manifest.schema.json": ThinDailyRunManifest,
     "thin_daily_analysis.schema.json": ThinDailyAnalysis,
+    "quality_artifact_reference.schema.json": QualityArtifactReference,
+    "quality_evaluation_profile.schema.json": QualityEvaluationProfile,
+    "thin_daily_quality_prediction_seal.schema.json": ThinDailyQualitySeal,
+    "thin_daily_quality_prediction_manifest.schema.json": (
+        ThinDailyQualityPredictionManifest
+    ),
 }
 
 

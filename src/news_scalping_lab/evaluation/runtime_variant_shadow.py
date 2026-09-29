@@ -1805,6 +1805,7 @@ def _prediction_metrics(
     truth_bytes: bytes | None = None,
     evaluation_universe_tickers: Sequence[str] | None = None,
     probability_policy_version: str | None = None,
+    allow_unsupported_tickers: bool = False,
 ) -> dict[str, Any]:
     outcome = _load_canonical_outcome_universe(
         truth_path,
@@ -1846,13 +1847,13 @@ def _prediction_metrics(
     if len(ranked) != len(set(ranked)):
         raise ValueError("prediction candidate tickers must be unique")
     unexpected = sorted(set(ranked) - sealed_d1_tickers)
-    if unexpected:
+    if unexpected and not allow_unsupported_tickers:
         raise ValueError(
             "prediction contains tickers outside the sealed D-1 universe: "
             + ",".join(unexpected)
         )
     outcome_missing_ranked = sorted(set(ranked) - raw_outcome_tickers)
-    if outcome_missing_ranked:
+    if outcome_missing_ranked and not allow_unsupported_tickers:
         raise ValueError(
             "prediction contains tickers without an outcome row: "
             + ",".join(outcome_missing_ranked)
@@ -1973,6 +1974,12 @@ def _prediction_metrics(
         ),
         "generated_candidate_tickers": ranked,
         "ranked_candidate_tickers": ranked,
+        "unsupported_d1_ticker_count": len(
+            set(unexpected).union(outcome_missing_ranked)
+        ),
+        "unsupported_d1_tickers": sorted(
+            set(unexpected).union(outcome_missing_ranked)
+        ),
         "evaluation_universe_count": len(evaluation_universe),
         "evaluation_universe_sha256": universe_root_sha256,
         "evaluation_universe_policy_version": (
@@ -2045,9 +2052,19 @@ def _prediction_metrics(
             set(high10_targets),
             cutoff,
         )
+        metrics[f"upper_limit_precision_at_{cutoff}"] = _precision_at(
+            ranked,
+            set(upper_limit_targets),
+            cutoff,
+        )
         metrics[f"high20_precision_at_{cutoff}"] = _precision_at(
             ranked,
             set(high20_targets),
+            cutoff,
+        )
+        metrics[f"high10_precision_at_{cutoff}"] = _precision_at(
+            ranked,
+            set(high10_targets),
             cutoff,
         )
         metrics[f"leader_recall_at_{cutoff}"] = float(

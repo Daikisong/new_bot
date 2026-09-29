@@ -77,6 +77,7 @@ SPLIT_DEPTH_MARGIN = 16
 DAILY_MAX_CAPSULES = 24
 DAILY_MAX_CLAIMS = 24
 DAILY_ANN_CANDIDATES = 96
+DAILY_TEMPORAL_ANN_CANDIDATES = 512
 _LOGGER = logging.getLogger(__name__)
 
 _CATEGORY_PRECEDENCE = (
@@ -979,10 +980,12 @@ class BrainPackageDailyContextProvider:
         *,
         package_dir: Path | None = None,
         embedding_provider: Any | None = None,
+        allow_point_in_time_projection: bool = False,
     ) -> None:
         self.settings = settings
         self.root = settings.project_root
         self.package_dir = package_dir
+        self.allow_point_in_time_projection = allow_point_in_time_projection
         self.embedding_provider = embedding_provider or create_configured_embedding_provider(
             settings,
             production=(settings.event_cluster_fallback_policy.value == "fail-closed"),
@@ -990,6 +993,8 @@ class BrainPackageDailyContextProvider:
         self._manifest: BrainPackageManifest | None = None
 
     def ensure_ready(self) -> None:
+        if self._manifest is not None and self.package_dir is not None:
+            return
         package_dir = self.package_dir or _package_dir_from_pointer(self.root)
         manifest_path = package_dir / "brain_package_manifest.json"
         if not manifest_path.is_file():
@@ -1038,7 +1043,11 @@ class BrainPackageDailyContextProvider:
             self.ensure_ready()
         assert self._manifest is not None
         assert self.package_dir is not None
-        if self._manifest.build_cutoff > cutoff_at:
+        point_in_time_projection = (
+            self.allow_point_in_time_projection
+            and self._manifest.build_cutoff > cutoff_at
+        )
+        if self._manifest.build_cutoff > cutoff_at and not point_in_time_projection:
             raise ValueError("selected BrainPackage was built after the daily inference cutoff")
         query_texts = _daily_query_texts(interpretation, current_event_capsules)
         vectors = await self.embedding_provider.embed(
@@ -1053,6 +1062,11 @@ class BrainPackageDailyContextProvider:
             connection.execute("LOAD vss")
             capsule_scores: dict[str, float] = {}
             claim_scores: dict[str, float] = {}
+            candidate_limit = (
+                DAILY_TEMPORAL_ANN_CANDIDATES
+                if point_in_time_projection
+                else DAILY_ANN_CANDIDATES
+            )
             for vector in vectors:
                 rows = connection.execute(
                     """
@@ -1062,7 +1076,7 @@ class BrainPackageDailyContextProvider:
                     ORDER BY array_cosine_distance(embedding, ?::FLOAT[384]), capsule_id
                     LIMIT ?
                     """,
-                    [vector, vector, DAILY_ANN_CANDIDATES],
+                    [vector, vector, candidate_limit],
                 ).fetchall()
                 for capsule_id, score in rows:
                     capsule_scores[str(capsule_id)] = max(float(score), capsule_scores.get(str(capsule_id), -1.0))
@@ -1074,7 +1088,7 @@ class BrainPackageDailyContextProvider:
                     ORDER BY array_cosine_distance(embedding, ?::FLOAT[384]), claim_id
                     LIMIT ?
                     """,
-                    [vector, vector, DAILY_ANN_CANDIDATES],
+                    [vector, vector, candidate_limit],
                 ).fetchall()
                 for claim_id, score in claim_rows:
                     claim_scores[str(claim_id)] = max(
@@ -1084,6 +1098,7 @@ class BrainPackageDailyContextProvider:
                 connection,
                 capsule_scores=capsule_scores,
                 limit=DAILY_MAX_CAPSULES,
+                available_before=cutoff_at if point_in_time_projection else None,
             )
             selected_capsules = [
                 SemanticMemoryCapsule.model_validate_json(row[0])
@@ -1098,6 +1113,7 @@ class BrainPackageDailyContextProvider:
                 selected_capsule_ids=set(selected_ids),
                 claim_scores=claim_scores,
                 limit=DAILY_MAX_CLAIMS,
+                available_before=cutoff_at if point_in_time_projection else None,
             )
         finally:
             connection.close()
@@ -1123,6 +1139,11 @@ class BrainPackageDailyContextProvider:
             retrieval_basis=(
                 "CURRENT_NEWS" if interpretation is None else "MODEL_INTERPRETATION"
             ),
+            brain_projection_mode=(
+                "POINT_IN_TIME_EVIDENCE_ONLY"
+                if point_in_time_projection
+                else "FULL_PACKAGE"
+            ),
             current_event_capsules_sha256=sha256_text(
                 canonical_json(
                     [row.model_dump(mode="json") for row in current_event_capsules]
@@ -1133,22 +1154,48 @@ class BrainPackageDailyContextProvider:
                 if interpretation is not None
                 else None
             ),
-            compiled_brain_guidance=_load_compiled_brain_guidance(self.package_dir),
+            compiled_brain_guidance=(
+                [] if point_in_time_projection else _load_compiled_brain_guidance(self.package_dir)
+            ),
             selected_semantic_capsules=selected_capsules,
             selected_mechanism_claims=selected_claims,
             population_statistics=population_statistics,
             current_vs_history_differences=_current_history_differences(interpretation, selected_capsules),
-            beneficiary_graph=_projection_rows(
-                self.package_dir / "beneficiary_graph" / "summary.json",
-                selected_capsule_ids=set(selected_ids),
+            beneficiary_graph=(
+                [
+                    {"capsule_id": row.capsule_id, "implications": row.beneficiary_implications}
+                    for row in selected_capsules
+                    if row.beneficiary_implications
+                ]
+                if point_in_time_projection
+                else _projection_rows(
+                    self.package_dir / "beneficiary_graph" / "summary.json",
+                    selected_capsule_ids=set(selected_ids),
+                )
             ),
-            leader_selection_memory=_projection_rows(
-                self.package_dir / "leader_selection_memory" / "summary.json",
-                selected_capsule_ids=set(selected_ids),
+            leader_selection_memory=(
+                [
+                    {"capsule_id": row.capsule_id, "implications": row.leader_selection_implications}
+                    for row in selected_capsules
+                    if row.leader_selection_implications
+                ]
+                if point_in_time_projection
+                else _projection_rows(
+                    self.package_dir / "leader_selection_memory" / "summary.json",
+                    selected_capsule_ids=set(selected_ids),
+                )
             ),
-            continuation_memory=_projection_rows(
-                self.package_dir / "continuation_memory" / "summary.json",
-                selected_capsule_ids=set(selected_ids),
+            continuation_memory=(
+                [
+                    {"capsule_id": row.capsule_id, "implications": row.continuation_implications}
+                    for row in selected_capsules
+                    if row.continuation_implications
+                ]
+                if point_in_time_projection
+                else _projection_rows(
+                    self.package_dir / "continuation_memory" / "summary.json",
+                    selected_capsule_ids=set(selected_ids),
+                )
             ),
             unresolved_contradictions=_unique(
                 condition for row in selected_capsules for condition in row.failure_conditions
@@ -2624,6 +2671,7 @@ def _balanced_capsule_ids(
     *,
     capsule_scores: dict[str, float],
     limit: int,
+    available_before: datetime | None = None,
 ) -> list[str]:
     ordered = sorted(capsule_scores, key=lambda key: (-capsule_scores[key], key))
     payloads = {
@@ -2633,6 +2681,13 @@ def _balanced_capsule_ids(
             [ordered],
         ).fetchall()
     }
+    if available_before is not None:
+        ordered = [
+            capsule_id
+            for capsule_id in ordered
+            if capsule_id in payloads
+            and payloads[capsule_id].available_from <= available_before
+        ]
     lanes: tuple[Callable[[SemanticMemoryCapsule], bool], ...] = (
         lambda row: bool(row.supporting_record_ids),
         lambda row: bool(row.contradicting_record_ids),
@@ -2666,23 +2721,24 @@ def _selected_claims(
     selected_capsule_ids: set[str],
     claim_scores: dict[str, float],
     limit: int,
+    available_before: datetime | None = None,
 ) -> list[SynthesizedMechanismClaim]:
     linked_ids = {
         str(row[0])
         for row in connection.execute(
             "SELECT DISTINCT claim_id FROM mechanism_claim_capsules "
-            "WHERE capsule_id IN (SELECT unnest(?::VARCHAR[]))",
-            [sorted(selected_capsule_ids)],
+            "WHERE capsule_id IN (SELECT unnest(?::VARCHAR[])) "
+            "ORDER BY claim_id LIMIT ?",
+            [sorted(selected_capsule_ids), max(limit * 16, limit)],
         ).fetchall()
     }
     candidate_ids = sorted(
-        linked_ids | set(claim_scores),
+        linked_ids,
         key=lambda claim_id: (
-            claim_id not in linked_ids,
             -claim_scores.get(claim_id, -1.0),
             claim_id,
         ),
-    )[:limit]
+    )
     if not candidate_ids:
         return []
     payloads = {
@@ -2693,11 +2749,14 @@ def _selected_claims(
             [candidate_ids],
         ).fetchall()
     }
-    return [
+    claims = [
         SynthesizedMechanismClaim.model_validate_json(payloads[claim_id])
         for claim_id in candidate_ids
         if claim_id in payloads
     ]
+    if available_before is not None:
+        claims = [claim for claim in claims if claim.available_from <= available_before]
+    return claims[:limit]
 
 
 def _daily_query_texts(
