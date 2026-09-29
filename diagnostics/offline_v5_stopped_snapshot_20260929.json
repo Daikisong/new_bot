@@ -3,6 +3,9 @@
   "observed_at": "2026-09-29T20:09:00+09:00",
   "compile_id": "OFFLINE-COMPILE-add3461bd175147e255d",
   "compiler_version": "nslab.offline_semantic_brain.compiler.v5",
+  "provider": "codex-oauth",
+  "model": "gpt-5.6-sol",
+  "reasoning_effort": "xhigh",
   "source_project": "C:/Users/eorb9/projects/news_bot/production/staging/P9IMPORT-3D770A7DD72457C97098/project",
   "expected_manifest_sha256": "6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576",
   "record_count": 823279,
@@ -24,5 +27,8 @@
   "oauth_retry_after": "2026-10-04T03:31:00+09:00",
   "record_progress_ratio_is_semantic_completion": false,
   "checkpoint_reuse_required": true,
-  "daily_import_or_embedding_rebuild_required": false
+  "daily_import_or_embedding_rebuild_required": false,
+  "production_package_must_not_be_used_as_evaluation_c_arm": true,
+  "evaluation_c_arm_source_snapshot_id": "MEMIDX-4409624afdffd1d01018",
+  "evaluation_c_arm_build_record_count": 759308
 }

@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 import news_scalping_lab.cli as cli_module
 from news_scalping_lab.cli import app
-from news_scalping_lab.config import Settings, ensure_project_dirs
+from news_scalping_lab.config import LLMModelSettings, Settings, ensure_project_dirs
 from news_scalping_lab.contracts.models import BlindAnalysis, ResearchEpisode
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.research_import.versioned_bundle import BundleImportResult
@@ -48,6 +48,23 @@ class _TrainingExportResult:
         self.path = path
         self.manifest_path = path.with_name("manifest.json")
         self.row_count = 0
+
+
+def test_offline_build_requires_pinned_production_llm_identity(tmp_path: Path) -> None:
+    settings = Settings(project_root=tmp_path)
+    with pytest.raises(ValueError, match="offline brain build requires"):
+        cli_module._require_offline_production_llm_identity(settings)
+
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="codex-oauth",
+        llm=LLMModelSettings(
+            provider="codex-oauth",
+            model="gpt-5.6-sol",
+            reasoning_effort="xhigh",
+        ),
+    )
+    cli_module._require_offline_production_llm_identity(settings)
 
 
 def _cli_brain_record(record_id: str = "BRAIN-CLI") -> BrainRecordEnvelope:

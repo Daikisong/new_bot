@@ -32,7 +32,17 @@ record geometry finished; it does not mean semantic synthesis finished.
 
 1. Confirm the OAuth retry window has passed and confirm that no process with
    this compile ID is already running.
-2. Run the exact command below from the repository environment. Do not change
+2. Pin the original LLM identity in the shell. The CLI now fails closed if any
+   of these values differ, rather than silently creating a new mock-provider
+   compile identity.
+
+```powershell
+$env:NSLAB_LLM_PROVIDER = "codex-oauth"
+$env:NSLAB_CODEX_MODEL = "gpt-5.6-sol"
+$env:NSLAB_CODEX_REASONING_EFFORT = "xhigh"
+```
+
+3. Run the exact command below from the repository environment. Do not change
    the source project, expected manifest hash, compiler version, model,
    reasoning effort, prompt schemas, or checkpoint identity.
 
@@ -42,15 +52,20 @@ python -m news_scalping_lab.cli brain build-offline `
   --expected-manifest-sha256 "6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576"
 ```
 
-3. Verify that content-addressed successful checkpoints are reused. A resumed
+4. Verify that content-addressed successful checkpoints are reused. A resumed
    run must not reissue successful map or reduce nodes.
-4. Treat any failed or identity-mismatched node as a stop condition. Do not
+5. Treat any failed or identity-mismatched node as a stop condition. Do not
    bypass a provider limit or alter the prompt to make a failed node pass.
-5. After the immutable package is written, run package closure, deep, and
+6. After the immutable package is written, run package closure, deep, and
    read-only parity audits before considering it eligible for evaluation.
 
 ## Post-build gates
 
+The production V5 package and the evaluation C package are different artifacts.
+The production V5 package uses the full 823,279-record source and must never be
+used as the C arm. The C arm must be built separately from the pre-registered
+evaluation-only snapshot (`MEMIDX-4409624afdffd1d01018`, BUILD population
+759,308 records), and its package manifest must bind exactly to that snapshot.
 The package must prove all of the following before the C arm is allowed:
 
 - record, capsule, claim, assignment, and warehouse roots are internally
@@ -64,9 +79,10 @@ The package must prove all of the following before the C arm is allowed:
 - `analyze-daily` loads the package before its single normal LLM call, with no
   daily import, rebuild, historical raw map, or web call.
 
-Only after those gates pass may the physically separate A/B/C blind predictions
-be sealed and scored against outcomes. Production activation remains a separate
-explicit step and is not implied by a successful build.
+Only after the separate evaluation C package passes those gates may the
+physically separate A/B/C blind predictions be sealed and scored against
+outcomes. Production activation remains a separate explicit step and is not
+implied by either a successful production build or an evaluation build.
 
 ## Current evaluation-only plan
 
