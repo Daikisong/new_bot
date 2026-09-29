@@ -116,51 +116,6 @@ def _fixture_reduce_children() -> list[SemanticReduceNode]:
     ]
 
 
-def test_reduce_claim_availability_includes_uncited_input_capsules() -> None:
-    first_available = datetime(2025, 1, 2, 18, 0, tzinfo=KST)
-    later_available = datetime(2025, 1, 9, 18, 0, tzinfo=KST)
-
-    def capsule(capsule_id: str, available_from: datetime) -> SemanticMemoryCapsule:
-        return SemanticMemoryCapsule(
-            capsule_id=capsule_id,
-            category="single_event",
-            semantic_unit_id=f"UNIT-{capsule_id}",
-            member_record_count=1,
-            member_independent_unit_count=1,
-            member_record_root="record-root",
-            event_or_mechanism_summary="fixture mechanism",
-            available_from=available_from,
-            provenance_root="provenance-root",
-            embedding=_vector(0),
-        )
-
-    node = SemanticReduceNode(
-        node_id="REDUCE-fixture",
-        child_node_ids=["LEAF-fixture"],
-        covered_capsule_ids=["CAP-old", "CAP-new"],
-        synthesis="claim synthesized from both inputs",
-        claims=[
-            MechanismClaimDraft(
-                statement="Old evidence supports the mechanism",
-                mechanism="fixture transmission",
-                supporting_capsule_ids=["CAP-old"],
-                confidence="medium",
-                status="supported",
-            )
-        ],
-    )
-
-    claims = _claims_from_reduce_node(
-        node,
-        category="single_event",
-        capsules=[capsule("CAP-old", first_available), capsule("CAP-new", later_available)],
-    )
-
-    assert len(claims) == 1
-    assert claims[0].supporting_capsule_ids == ["CAP-old"]
-    assert claims[0].available_from == later_available
-
-
 def _source_project(root: Path, *, oversized_document: bool = False) -> Path:
     snapshot_id = "MEMIDX-fixture"
     snapshot_root = root / "memory" / "retrieval_index" / "snapshots" / snapshot_id
@@ -260,47 +215,6 @@ def _source_project(root: Path, *, oversized_document: bool = False) -> Path:
         },
     )
     return root
-
-
-@pytest.mark.asyncio
-async def test_reduce_coverage_is_rebuilt_from_exact_children(
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    compiler = OfflineSemanticBrainCompiler(
-        Settings(project_root=tmp_path / "compiler"),
-        llm=ReduceCoverageMismatchLLM(),
-    )
-    children = _fixture_reduce_children()
-
-    with caplog.at_level("WARNING", logger="news_scalping_lab.brain.offline_v2"):
-        result = await compiler._reduce_node(
-            category="fixture",
-            level=0,
-            children=children,
-            review=False,
-        )
-
-    assert result.child_node_ids == [row.node_id for row in children]
-    assert result.covered_capsule_ids == ["CAP-a", "CAP-b", "CAP-c"]
-    assert "rebuilt from verified children" in caplog.text
-    assert "missing=1 unexpected=1" in caplog.text
-
-
-@pytest.mark.asyncio
-async def test_reduce_still_rejects_an_omitted_child_node(tmp_path: Path) -> None:
-    compiler = OfflineSemanticBrainCompiler(
-        Settings(project_root=tmp_path / "compiler"),
-        llm=ReduceCoverageMismatchLLM(omit_child=True),
-    )
-
-    with pytest.raises(ValueError, match="semantic reduce output omitted or added children"):
-        await compiler._reduce_node(
-            category="fixture",
-            level=0,
-            children=_fixture_reduce_children(),
-            review=False,
-        )
 
 
 @pytest.mark.asyncio

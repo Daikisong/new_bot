@@ -3869,13 +3869,8 @@ class DailyAnalyzer:
             )
         return normalized, prompt_sha256, prompt_tokens
 
-    @staticmethod
-    def _final_synthesis_token_budget_is_blocking(
-        manifest: ContextManifest,
-    ) -> bool:
-        return manifest.llm_model_config.get("evaluation_profile") != "QUALITY_FULL"
-
     def _bind_phase7_memory_provenance(
+        self,
         *,
         prediction: BlindPrediction,
         context: DailyMemoryContext,

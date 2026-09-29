@@ -45,6 +45,7 @@ from news_scalping_lab.contracts.offline_brain import (
     SemanticCapsuleDraft,
     SemanticCapsuleDraftBatch,
     SemanticReduceNode,
+)
 from news_scalping_lab.contracts.quality_evaluation import (
     SharedOpenWorldReduceOutput,
 )
