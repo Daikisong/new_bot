@@ -8,7 +8,7 @@ import logging
 import math
 import shutil
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -156,6 +156,16 @@ class _LeafNode:
 
 
 @dataclass(frozen=True)
+class _PlannedReduceNode:
+    """Lightweight reduce proxy used only by the zero-LLM planner."""
+
+    node_id: str
+    child_node_ids: tuple[str, ...]
+    covered_capsule_ids: tuple[str, ...]
+    payload_bytes: int
+
+
+@dataclass(frozen=True)
 class _PreviousPackageState:
     capsules_by_unit: dict[str, SemanticMemoryCapsule]
     reduce_nodes_by_id: dict[str, SemanticReduceNode]
@@ -263,16 +273,14 @@ class OfflineSemanticBrainCompiler:
         finally:
             connection.close()
         category_unit_counts: dict[str, int] = defaultdict(int)
-        category_bucket_ids: dict[str, set[str]] = defaultdict(set)
         outlier_unit_count = 0
         for row in unit_rows:
             category = str(row["category"])
             category_unit_counts[category] += 1
-            category_bucket_ids[category].add(sha256_text(str(row["semantic_unit_id"]))[:2])
             outlier_unit_count += int(bool(row["outlier_record_ids"]))
-        estimated_reduce_calls = (
-            sum(_reduce_call_count(len(bucket_ids)) + 1 for bucket_ids in category_bucket_ids.values()) + 1
-        )
+        planned_leaf_nodes = _planned_reduce_leaf_nodes(unit_rows)
+        estimated_reduce_calls = _estimate_reduce_review_call_count(planned_leaf_nodes)
+        estimated_leaf_node_count = sum(len(rows) for rows in planned_leaf_nodes.values())
         plan = {
             "schema_version": "nslab.offline_semantic_brain_plan.v1",
             "plan_id": plan_id,
@@ -317,12 +325,22 @@ class OfflineSemanticBrainCompiler:
             ),
             "rare_outlier_unit_count": outlier_unit_count,
             "leaf_map_call_count": len(leaf_batches),
+            "estimated_reduce_leaf_node_count": estimated_leaf_node_count,
             "estimated_reduce_review_call_count": estimated_reduce_calls,
+            # Capsule prose is not available during the zero-LLM planning pass.
+            # The same byte-aware packer is therefore run against coverage-only
+            # leaf proxies; the resulting count is explicitly a lower bound.
+            "estimated_reduce_review_call_count_is_lower_bound": True,
+            "estimated_reduce_prompt_byte_packing_simulated": True,
+            "estimated_reduce_prompt_byte_packing_simulation": (
+                "coverage_only_leaf_proxy.v1"
+            ),
             "estimated_total_logical_llm_call_count": (
                 payload_plan.long_payload_chunk_map_call_count
                 + len(leaf_batches)
                 + estimated_reduce_calls
             ),
+            "estimated_total_logical_llm_call_count_is_lower_bound": True,
             "first_n_shortcut_used": False,
             "silent_truncation_count": 0,
             "planning_llm_call_count": 0,
@@ -2068,21 +2086,212 @@ def _capsule_leaf_nodes(
     return nodes
 
 
+def _planned_reduce_leaf_nodes(
+    unit_rows: Sequence[dict[str, Any]],
+) -> dict[str, list[_PlannedReduceNode]]:
+    """Build deterministic, coverage-only leaf proxies for the zero-LLM plan.
+
+    Runtime leaf buckets use the final capsule IDs, which include model-authored
+    capsule prose and therefore do not exist during planning. Semantic-unit IDs
+    provide the same stable two-hex bucket geometry without making a model call.
+    The proxies retain every planned capsule ID but intentionally omit generated
+    prose, so byte-aware estimates remain lower bounds until real leaves exist.
+    """
+
+    buckets: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for row in unit_rows:
+        category = str(row["category"])
+        semantic_unit_id = str(row["semantic_unit_id"])
+        bucket = sha256_text(semantic_unit_id)[:2]
+        buckets[(category, bucket)].append(semantic_unit_id)
+
+    output: dict[str, list[_PlannedReduceNode]] = defaultdict(list)
+    for (category, bucket), semantic_unit_ids in sorted(buckets.items()):
+        covered = sorted(set(semantic_unit_ids))
+        node_id = stable_id(
+            "PLANNED-LEAF-BUCKET",
+            category,
+            bucket,
+            covered,
+            length=20,
+        )
+        output[category].append(
+            _PlannedReduceNode(
+                node_id=node_id,
+                child_node_ids=(),
+                covered_capsule_ids=tuple(covered),
+                payload_bytes=_planned_reduce_payload_bytes(
+                    node_id=node_id,
+                    child_node_ids=(),
+                    covered_capsule_ids=covered,
+                ),
+            )
+        )
+    return dict(sorted(output.items()))
+
+
+def _estimate_reduce_review_call_count(
+    leaves_by_category: Mapping[
+        str, Sequence[SemanticReduceNode | _PlannedReduceNode]
+    ],
+) -> int:
+    """Count reduce/review/root calls using the runtime byte-aware packer.
+
+    The next-level proxies preserve child identity and covered capsule IDs but
+    leave generated prose empty. This makes the estimate deterministic and
+    conservative while exercising the exact `_pack_reduce_nodes` byte and child
+    limits. One category review is added per non-empty category, followed by the
+    single world root call.
+    """
+
+    calls = 0
+    for category, leaves in sorted(leaves_by_category.items()):
+        current = [
+            row
+            if isinstance(row, _PlannedReduceNode)
+            else _planned_reduce_node_from_model(row)
+            for row in leaves
+        ]
+        level = 0
+        while len(current) > 1:
+            groups = list(_pack_planned_reduce_nodes(current))
+            calls += len(groups)
+            next_level = [
+                _planned_reduce_node(
+                    category=category,
+                    level=level,
+                    children=group,
+                )
+                for group in groups
+            ]
+            # A coverage-only proxy can stay over the byte budget forever when
+            # it has multiple oversized children. Real model prose may shrink
+            # at the next level, so stop this lower-bound simulation rather
+            # than claiming an infinite tree or burning memory.
+            if len(next_level) >= len(current):
+                break
+            current = next_level
+            level += 1
+        if current:
+            calls += 1
+    # `_reduce_world` always emits one root request for the category roots.
+    return calls + 1
+
+
+def _planned_reduce_node(
+    *,
+    category: str,
+    level: int,
+    children: Sequence[_PlannedReduceNode],
+) -> _PlannedReduceNode:
+    child_node_ids = tuple(row.node_id for row in children)
+    covered = tuple(
+        _unique(
+            capsule_id
+            for row in children
+            for capsule_id in row.covered_capsule_ids
+        )
+    )
+    node_id = stable_id(
+        "PLANNED-REDUCE",
+        category,
+        level,
+        child_node_ids,
+        length=20,
+    )
+    return _PlannedReduceNode(
+        node_id=node_id,
+        child_node_ids=child_node_ids,
+        covered_capsule_ids=covered,
+        payload_bytes=_planned_reduce_payload_bytes(
+            node_id=node_id,
+            child_node_ids=child_node_ids,
+            covered_capsule_ids=covered,
+        ),
+    )
+
+
+def _planned_reduce_node_from_model(node: SemanticReduceNode) -> _PlannedReduceNode:
+    return _PlannedReduceNode(
+        node_id=node.node_id,
+        child_node_ids=tuple(node.child_node_ids),
+        covered_capsule_ids=tuple(node.covered_capsule_ids),
+        payload_bytes=len(
+            canonical_json(node.model_dump(mode="json")).encode("utf-8")
+        ),
+    )
+
+
+def _planned_reduce_payload_bytes(
+    *,
+    node_id: str,
+    child_node_ids: Sequence[str],
+    covered_capsule_ids: Sequence[str],
+) -> int:
+    """Serialize the same empty-prose SemanticReduceNode shape once."""
+
+    return len(
+        canonical_json(
+            {
+                "boundary_conditions": [],
+                "child_node_ids": list(child_node_ids),
+                "claims": [],
+                "contradictions": [],
+                "covered_capsule_ids": list(covered_capsule_ids),
+                "failure_modes": [],
+                "mechanisms": [],
+                "node_id": node_id,
+                "schema_version": "nslab.semantic_reduce_node.v1",
+                "synthesis": "",
+                "conditions": [],
+            }
+        ).encode("utf-8")
+    )
+
+
+def _pack_planned_reduce_nodes(
+    nodes: Sequence[_PlannedReduceNode],
+) -> Iterable[list[_PlannedReduceNode]]:
+    """Byte-aware packer equivalent using cached proxy payload sizes."""
+
+    current: list[_PlannedReduceNode] = []
+    current_bytes = 2  # `[]` in canonical JSON
+    for node in nodes:
+        candidate_bytes = current_bytes + node.payload_bytes + (1 if current else 0)
+        if current and (
+            len(current) + 1 > MAX_REDUCE_CHILDREN
+            or candidate_bytes > MAX_REDUCE_PROMPT_BYTES
+        ):
+            yield current
+            current = [node]
+            current_bytes = 2 + node.payload_bytes
+        else:
+            current.append(node)
+            current_bytes = candidate_bytes
+    if current:
+        yield current
+
+
 def _pack_reduce_nodes(
     nodes: list[SemanticReduceNode],
 ) -> Iterable[list[SemanticReduceNode]]:
     current: list[SemanticReduceNode] = []
+    current_bytes = 2  # `[]` in canonical JSON
     for node in nodes:
-        candidate = [*current, node]
-        payload = [row.model_dump(mode="json") for row in candidate]
+        node_bytes = len(
+            canonical_json(node.model_dump(mode="json")).encode("utf-8")
+        )
+        candidate_bytes = current_bytes + node_bytes + (1 if current else 0)
         if current and (
-            len(candidate) > MAX_REDUCE_CHILDREN
-            or len(canonical_json(payload).encode("utf-8")) > MAX_REDUCE_PROMPT_BYTES
+            len(current) + 1 > MAX_REDUCE_CHILDREN
+            or candidate_bytes > MAX_REDUCE_PROMPT_BYTES
         ):
             yield current
             current = [node]
+            current_bytes = 2 + node_bytes
         else:
-            current = candidate
+            current.append(node)
+            current_bytes = candidate_bytes
     if current:
         yield current
 

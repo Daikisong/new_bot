@@ -13,7 +13,10 @@ from news_scalping_lab.brain.offline_v2 import (
     BrainPackageDailyContextProvider,
     OfflineSemanticBrainCompiler,
     _claims_from_reduce_node,
+    _estimate_reduce_review_call_count,
     _materialize_long_payload_chunk_digest,
+    _pack_reduce_nodes,
+    _planned_reduce_leaf_nodes,
     _split_semantic_stratum,
     _utf8_chunks,
     _VectorRow,
@@ -520,10 +523,58 @@ def test_offline_plan_uses_embeddings_but_zero_llm_calls(tmp_path: Path) -> None
     assert plan["dynamic_representative_count"] >= plan["semantic_unit_count"]
     assert plan["leaf_map_call_count"] >= 1
     assert plan["estimated_total_logical_llm_call_count"] > plan["leaf_map_call_count"]
+    assert plan["estimated_reduce_leaf_node_count"] >= 1
+    assert plan["estimated_reduce_review_call_count_is_lower_bound"] is True
+    assert plan["estimated_reduce_prompt_byte_packing_simulated"] is True
+    assert plan["estimated_total_logical_llm_call_count_is_lower_bound"] is True
     assert plan["planning_llm_call_count"] == 0
     assert plan["embedding_reused"] is True
     assert plan["import_reused"] is True
     assert plan["full_population_embedding_geometry"] is True
+
+
+def test_planner_reduce_projection_uses_runtime_byte_packer() -> None:
+    children = [
+        SemanticReduceNode(
+            node_id=f"LEAF-large-{index}",
+            child_node_ids=[],
+            covered_capsule_ids=[f"CAP-{index}"],
+            synthesis="x" * 100_000,
+        )
+        for index in range(2)
+    ]
+
+    assert [len(group) for group in _pack_reduce_nodes(children)] == [1, 1]
+    # The proxy cannot know whether model prose will shrink at the next level;
+    # it stops at the first non-progressing lower-bound level.
+    assert _estimate_reduce_review_call_count({"fixture": children}) == 4
+
+
+def test_planned_leaf_proxy_preserves_each_semantic_unit_once() -> None:
+    rows = [
+        {"category": "fixture", "semantic_unit_id": f"UNIT-{index}"}
+        for index in range(37)
+    ]
+    leaves = _planned_reduce_leaf_nodes(rows)
+    covered = [
+        capsule_id
+        for category_rows in leaves.values()
+        for node in category_rows
+        for capsule_id in node.covered_capsule_ids
+    ]
+
+    assert sorted(covered) == sorted(row["semantic_unit_id"] for row in rows)
+    assert len(covered) == len(set(covered))
+    first = next(iter(leaves["fixture"]))
+    model = SemanticReduceNode(
+        node_id=first.node_id,
+        child_node_ids=[],
+        covered_capsule_ids=list(first.covered_capsule_ids),
+        synthesis="",
+    )
+    assert first.payload_bytes == len(
+        canonical_json(model.model_dump(mode="json")).encode("utf-8")
+    )
 
 
 def test_source_manifest_pointer_drift_requires_explicit_attested_sha(

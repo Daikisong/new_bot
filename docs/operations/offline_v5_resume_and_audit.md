@@ -28,6 +28,18 @@ prompts can split further at the byte limit, so the final total can be higher.
 The `progress.json` value `record_progress_ratio=1.0` means only that local
 record geometry finished; it does not mean semantic synthesis finished.
 
+## Planner estimate semantics
+
+The zero-LLM planner now builds deterministic coverage-only leaf proxies and
+uses the same child-count and canonical-JSON byte packing rules as runtime
+reductions. Model-authored capsule prose is not available before leaf calls, so
+the resulting `estimated_reduce_review_call_count` and
+`estimated_total_logical_llm_call_count` are explicitly marked as lower bounds.
+If a proxy level cannot make progress because its coverage alone exceeds the
+byte budget, the planner stops that simulation rather than looping; the emitted
+build ledger remains authoritative. The final call count and ETA must therefore
+be read from sealed compile artifacts, not from the pre-LLM plan.
+
 ## Resume protocol
 
 1. Confirm the OAuth retry window has passed and confirm that no process with
