@@ -1,0 +1,212 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "assignment_coverage_ratio": {
+      "title": "Assignment Coverage Ratio",
+      "type": "number"
+    },
+    "brain_version": {
+      "title": "Brain Version",
+      "type": "string"
+    },
+    "build_cutoff": {
+      "format": "date-time",
+      "title": "Build Cutoff",
+      "type": "string"
+    },
+    "capsule_root": {
+      "title": "Capsule Root",
+      "type": "string"
+    },
+    "category_brain_root": {
+      "title": "Category Brain Root",
+      "type": "string"
+    },
+    "child_omission_count": {
+      "title": "Child Omission Count",
+      "type": "integer"
+    },
+    "chunked_representative_record_count": {
+      "title": "Chunked Representative Record Count",
+      "type": "integer"
+    },
+    "compiler_version": {
+      "title": "Compiler Version",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "daily_ann_query_plan_verified": {
+      "title": "Daily Ann Query Plan Verified",
+      "type": "boolean"
+    },
+    "duplicate_primary_assignment_count": {
+      "title": "Duplicate Primary Assignment Count",
+      "type": "integer"
+    },
+    "embedding_identity": {
+      "title": "Embedding Identity",
+      "type": "string"
+    },
+    "long_payload_chunk_count": {
+      "title": "Long Payload Chunk Count",
+      "type": "integer"
+    },
+    "mechanism_claim_hnsw_index_ready": {
+      "title": "Mechanism Claim Hnsw Index Ready",
+      "type": "boolean"
+    },
+    "mechanism_claim_root": {
+      "title": "Mechanism Claim Root",
+      "type": "string"
+    },
+    "memory_snapshot_root": {
+      "title": "Memory Snapshot Root",
+      "type": "string"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "package_root": {
+      "title": "Package Root",
+      "type": "string"
+    },
+    "population_contribution_record_count": {
+      "title": "Population Contribution Record Count",
+      "type": "integer"
+    },
+    "production_eligible": {
+      "default": false,
+      "title": "Production Eligible",
+      "type": "boolean"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "rare_outlier_unit_coverage_ratio": {
+      "title": "Rare Outlier Unit Coverage Ratio",
+      "type": "number"
+    },
+    "reasoning_effort": {
+      "title": "Reasoning Effort",
+      "type": "string"
+    },
+    "record_corpus_root": {
+      "title": "Record Corpus Root",
+      "type": "string"
+    },
+    "record_count": {
+      "title": "Record Count",
+      "type": "integer"
+    },
+    "representative_payload_char_count": {
+      "title": "Representative Payload Char Count",
+      "type": "integer"
+    },
+    "representative_payload_exposed_record_count": {
+      "title": "Representative Payload Exposed Record Count",
+      "type": "integer"
+    },
+    "representative_payload_exposure_ratio": {
+      "title": "Representative Payload Exposure Ratio",
+      "type": "number"
+    },
+    "representative_payload_full_read_count": {
+      "title": "Representative Payload Full Read Count",
+      "type": "integer"
+    },
+    "representative_payload_not_exposed_record_count": {
+      "title": "Representative Payload Not Exposed Record Count",
+      "type": "integer"
+    },
+    "representative_payload_read_root": {
+      "title": "Representative Payload Read Root",
+      "type": "string"
+    },
+    "representative_payload_truncated_count": {
+      "title": "Representative Payload Truncated Count",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": "nslab.brain_package_manifest.v2",
+      "default": "nslab.brain_package_manifest.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "semantic_capsule_count": {
+      "title": "Semantic Capsule Count",
+      "type": "integer"
+    },
+    "semantic_capsule_hnsw_index_ready": {
+      "title": "Semantic Capsule Hnsw Index Ready",
+      "type": "boolean"
+    },
+    "semantic_unit_count": {
+      "title": "Semantic Unit Count",
+      "type": "integer"
+    },
+    "synthesized_mechanism_claim_count": {
+      "title": "Synthesized Mechanism Claim Count",
+      "type": "integer"
+    },
+    "unassigned_record_count": {
+      "title": "Unassigned Record Count",
+      "type": "integer"
+    },
+    "unrepresented_reasoning_unit_count": {
+      "title": "Unrepresented Reasoning Unit Count",
+      "type": "integer"
+    },
+    "warehouse_root": {
+      "title": "Warehouse Root",
+      "type": "string"
+    }
+  },
+  "required": [
+    "brain_version",
+    "created_at",
+    "build_cutoff",
+    "record_count",
+    "semantic_unit_count",
+    "semantic_capsule_count",
+    "synthesized_mechanism_claim_count",
+    "population_contribution_record_count",
+    "representative_payload_exposed_record_count",
+    "representative_payload_not_exposed_record_count",
+    "representative_payload_exposure_ratio",
+    "representative_payload_read_root",
+    "representative_payload_char_count",
+    "representative_payload_full_read_count",
+    "representative_payload_truncated_count",
+    "chunked_representative_record_count",
+    "long_payload_chunk_count",
+    "record_corpus_root",
+    "memory_snapshot_root",
+    "warehouse_root",
+    "embedding_identity",
+    "compiler_version",
+    "provider",
+    "model",
+    "reasoning_effort",
+    "capsule_root",
+    "mechanism_claim_root",
+    "category_brain_root",
+    "package_root",
+    "assignment_coverage_ratio",
+    "unassigned_record_count",
+    "duplicate_primary_assignment_count",
+    "rare_outlier_unit_coverage_ratio",
+    "unrepresented_reasoning_unit_count",
+    "child_omission_count",
+    "semantic_capsule_hnsw_index_ready",
+    "mechanism_claim_hnsw_index_ready",
+    "daily_ann_query_plan_verified"
+  ],
+  "title": "BrainPackageManifest",
+  "type": "object"
+}

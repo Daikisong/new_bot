@@ -1,0 +1,247 @@
+{
+  "$defs": {
+    "ExactWitness": {
+      "additionalProperties": false,
+      "properties": {
+        "available_from": {
+          "format": "date-time",
+          "title": "Available From",
+          "type": "string"
+        },
+        "excerpt": {
+          "title": "Excerpt",
+          "type": "string"
+        },
+        "provenance_root": {
+          "title": "Provenance Root",
+          "type": "string"
+        },
+        "record_id": {
+          "title": "Record Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_id",
+        "excerpt",
+        "available_from",
+        "provenance_root"
+      ],
+      "title": "ExactWitness",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "applicable_conditions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Applicable Conditions",
+      "type": "array"
+    },
+    "available_from": {
+      "format": "date-time",
+      "title": "Available From",
+      "type": "string"
+    },
+    "beneficiary_implications": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Beneficiary Implications",
+      "type": "array"
+    },
+    "boundary_conditions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Boundary Conditions",
+      "type": "array"
+    },
+    "capsule_id": {
+      "title": "Capsule Id",
+      "type": "string"
+    },
+    "category": {
+      "title": "Category",
+      "type": "string"
+    },
+    "continuation_implications": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Continuation Implications",
+      "type": "array"
+    },
+    "contradicting_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Contradicting Record Ids",
+      "type": "array"
+    },
+    "counterexample_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Counterexample Record Ids",
+      "type": "array"
+    },
+    "economic_transmission": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Economic Transmission",
+      "type": "array"
+    },
+    "embedding": {
+      "items": {
+        "type": "number"
+      },
+      "title": "Embedding",
+      "type": "array"
+    },
+    "error_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Error Record Ids",
+      "type": "array"
+    },
+    "event_or_mechanism_summary": {
+      "title": "Event Or Mechanism Summary",
+      "type": "string"
+    },
+    "failure_conditions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Failure Conditions",
+      "type": "array"
+    },
+    "label_quality_distribution": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Label Quality Distribution",
+      "type": "object"
+    },
+    "leader_selection_implications": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Leader Selection Implications",
+      "type": "array"
+    },
+    "market_narrative": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Market Narrative",
+      "type": "array"
+    },
+    "member_independent_unit_count": {
+      "title": "Member Independent Unit Count",
+      "type": "integer"
+    },
+    "member_record_count": {
+      "title": "Member Record Count",
+      "type": "integer"
+    },
+    "member_record_root": {
+      "title": "Member Record Root",
+      "type": "string"
+    },
+    "near_miss_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Near Miss Record Ids",
+      "type": "array"
+    },
+    "newsless_or_unexplained_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Newsless Or Unexplained Record Ids",
+      "type": "array"
+    },
+    "novelty_modality_distinctions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Novelty Modality Distinctions",
+      "type": "array"
+    },
+    "polarity_distribution": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Polarity Distribution",
+      "type": "object"
+    },
+    "provenance_root": {
+      "title": "Provenance Root",
+      "type": "string"
+    },
+    "record_type_distribution": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Record Type Distribution",
+      "type": "object"
+    },
+    "regime_distribution": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Regime Distribution",
+      "type": "object"
+    },
+    "representative_exact_witnesses": {
+      "items": {
+        "$ref": "#/$defs/ExactWitness"
+      },
+      "title": "Representative Exact Witnesses",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "nslab.semantic_memory_capsule.v2",
+      "default": "nslab.semantic_memory_capsule.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "semantic_unit_id": {
+      "title": "Semantic Unit Id",
+      "type": "string"
+    },
+    "supporting_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Supporting Record Ids",
+      "type": "array"
+    },
+    "time_distribution": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Time Distribution",
+      "type": "object"
+    }
+  },
+  "required": [
+    "capsule_id",
+    "category",
+    "semantic_unit_id",
+    "member_record_count",
+    "member_independent_unit_count",
+    "member_record_root",
+    "event_or_mechanism_summary",
+    "available_from",
+    "provenance_root"
+  ],
+  "title": "SemanticMemoryCapsule",
+  "type": "object"
+}

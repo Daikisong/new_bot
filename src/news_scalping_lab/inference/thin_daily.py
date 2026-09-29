@@ -16,6 +16,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any, Protocol
 
+from news_scalping_lab.brain.offline_v2 import BrainPackageDailyContextProvider
 from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.models import BlindPrediction
 from news_scalping_lab.contracts.offline_brain import (
@@ -152,8 +153,11 @@ class ThinDailyAnalyzer:
             production=(settings.event_cluster_fallback_policy.value == "fail-closed"),
             llm_provider=base_llm,
         )
-        self.brain_context_provider = brain_context_provider or MissingBrainPackageProvider(
-            self.root
+        self.brain_context_provider = brain_context_provider or (
+            BrainPackageDailyContextProvider(
+                settings,
+                embedding_provider=self.embedding_provider,
+            )
         )
 
     async def analyze(

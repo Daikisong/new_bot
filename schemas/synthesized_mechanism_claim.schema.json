@@ -1,0 +1,114 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "available_from": {
+      "format": "date-time",
+      "title": "Available From",
+      "type": "string"
+    },
+    "boundary_conditions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Boundary Conditions",
+      "type": "array"
+    },
+    "category": {
+      "title": "Category",
+      "type": "string"
+    },
+    "claim_id": {
+      "title": "Claim Id",
+      "type": "string"
+    },
+    "conditions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Conditions",
+      "type": "array"
+    },
+    "confidence": {
+      "title": "Confidence",
+      "type": "string"
+    },
+    "contradicting_capsule_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Contradicting Capsule Ids",
+      "type": "array"
+    },
+    "contradicting_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Contradicting Record Ids",
+      "type": "array"
+    },
+    "embedding": {
+      "items": {
+        "type": "number"
+      },
+      "title": "Embedding",
+      "type": "array"
+    },
+    "failure_modes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Failure Modes",
+      "type": "array"
+    },
+    "mechanism": {
+      "title": "Mechanism",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.synthesized_mechanism_claim.v2",
+      "default": "nslab.synthesized_mechanism_claim.v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "source_node_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Node Ids",
+      "type": "array"
+    },
+    "statement": {
+      "title": "Statement",
+      "type": "string"
+    },
+    "status": {
+      "title": "Status",
+      "type": "string"
+    },
+    "supporting_capsule_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Supporting Capsule Ids",
+      "type": "array"
+    },
+    "supporting_record_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Supporting Record Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "claim_id",
+    "category",
+    "statement",
+    "mechanism",
+    "available_from",
+    "confidence",
+    "status"
+  ],
+  "title": "SynthesizedMechanismClaim",
+  "type": "object"
+}
