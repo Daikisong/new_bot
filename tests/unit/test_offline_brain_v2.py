@@ -24,7 +24,14 @@ from news_scalping_lab.contracts.offline_brain import (
     CurrentEventCapsule,
 )
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
-from news_scalping_lab.utils import KST, file_sha256, read_json, write_json
+from news_scalping_lab.utils import (
+    KST,
+    canonical_json,
+    file_sha256,
+    read_json,
+    sha256_text,
+    write_json,
+)
 
 
 class Embedding384:
@@ -36,6 +43,15 @@ class Embedding384:
             vector[sum(text.encode("utf-8")) % 8] = 1.0
             vectors.append(vector.tolist())
         return vectors
+
+
+class RecordingEmbedding384(Embedding384):
+    def __init__(self) -> None:
+        self.queries: list[list[str]] = []
+
+    async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
+        self.queries.append(list(texts))
+        return await super().embed(texts=texts, purpose=purpose)
 
 
 def _vector(index: int) -> list[float]:
@@ -416,9 +432,10 @@ async def test_daily_reader_uses_only_precompiled_package(tmp_path: Path) -> Non
             production_activated=True,
         )
 
+    embedding = RecordingEmbedding384()
     provider = BrainPackageDailyContextProvider(
         settings,
-        embedding_provider=Embedding384(),
+        embedding_provider=embedding,
     )
     interpretation = CurrentDayInterpretation(
         analyzed_cluster_ids=["EVCL-fixture"],
@@ -449,9 +466,29 @@ async def test_daily_reader_uses_only_precompiled_package(tmp_path: Path) -> Non
     assert len(context.exact_witnesses) <= 24
     assert context.online_full_corpus_scan_count == 0
     assert context.future_record_count == 0
+
+    news_context = await provider.retrieve(
+        interpretation=None,
+        current_event_capsules=[current],
+        cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
+        max_exact_witnesses=24,
+    )
+    assert embedding.queries[-1] == ["fixture event"]
+    assert news_context.retrieval_basis == "CURRENT_NEWS"
+    assert news_context.interpretation_sha256 is None
+    assert news_context.brain_build_cutoff == result.package_manifest.build_cutoff
+    assert news_context.current_event_capsules_sha256 == sha256_text(
+        canonical_json([current.model_dump(mode="json")])
+    )
+    guidance = {row.artifact: row for row in news_context.compiled_brain_guidance}
+    assert "world_model.md" in guidance
+    assert any(path.startswith("category_brain/") for path in guidance)
+    assert all(row.content.strip() for row in guidance.values())
+    assert all(row.sha256 == sha256_text(row.content) for row in guidance.values())
+
     with pytest.raises(ValueError, match="built after the daily inference cutoff"):
         await provider.retrieve(
-            interpretation=interpretation,
+            interpretation=None,
             current_event_capsules=[current],
             cutoff_at=datetime(2024, 12, 31, 8, 0, tzinfo=KST),
             max_exact_witnesses=24,

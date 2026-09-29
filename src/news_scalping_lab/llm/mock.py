@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import re
 from datetime import date, datetime, time
-from typing import Any, TypeVar, cast
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -38,7 +38,7 @@ from news_scalping_lab.contracts.models import (
     SemanticRetrievalQuery,
 )
 from news_scalping_lab.contracts.offline_brain import (
-    CurrentDayInterpretation,
+    BrainInformedDecision,
     LongPayloadChunkDigest,
     LongPayloadDigestBatch,
     MechanismClaimDraft,
@@ -46,17 +46,8 @@ from news_scalping_lab.contracts.offline_brain import (
     SemanticCapsuleDraftBatch,
     SemanticReduceNode,
 )
-from news_scalping_lab.contracts.quality_evaluation import (
-    SharedOpenWorldReduceOutput,
-)
-from news_scalping_lab.contracts.runtime_retrieval import (
-    RuntimeEvidenceMemo,
-    RuntimeEvidenceMemoBatch,
-    RuntimeEvidenceMemoPack,
-    RuntimeRetrievalLane,
-)
 from news_scalping_lab.research_import.semantic import SemanticResearchDraft
-from news_scalping_lab.utils import KST, canonical_json, now_kst, sha256_text, stable_id
+from news_scalping_lab.utils import KST, now_kst, sha256_text, stable_id
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -82,9 +73,6 @@ class DeterministicMockLLMProvider:
         )
 
     async def generate_structured(self, *, prompt: str, response_model: type[T], purpose: str) -> T:
-        if response_model is CurrentDayInterpretation:
-            interpretation = self._current_day_interpretation(prompt)
-            return interpretation  # type: ignore[return-value]
         if response_model is LongPayloadDigestBatch:
             long_payload_batch = self._long_payload_digest_batch(prompt)
             return long_payload_batch  # type: ignore[return-value]
@@ -92,8 +80,21 @@ class DeterministicMockLLMProvider:
             capsule_batch = self._semantic_capsule_draft_batch(prompt)
             return capsule_batch  # type: ignore[return-value]
         if response_model is SemanticReduceNode:
-            node = self._semantic_reduce_node(prompt)
-            return node  # type: ignore[return-value]
+            reduce_node = self._semantic_reduce_node(prompt)
+            return reduce_node  # type: ignore[return-value]
+        if response_model is BrainInformedDecision:
+            payload = self._blind_payload(prompt)
+            raw_cluster_ids = payload.get("required_cluster_ids")
+            cluster_ids = (
+                [str(value) for value in raw_cluster_ids]
+                if isinstance(raw_cluster_ids, list)
+                else []
+            )
+            decision = BrainInformedDecision(
+                analyzed_cluster_ids=cluster_ids,
+                prediction=self._brain_informed_prediction(prompt),
+            )
+            return decision  # type: ignore[return-value]
         if response_model is BlindPrediction and purpose == "final_synthesis":
             prediction = self._final_synthesis_prediction(prompt)
             return prediction  # type: ignore[return-value]
@@ -118,27 +119,18 @@ class DeterministicMockLLMProvider:
         if response_model is CandidateExpansionReview:
             expansion_review = self._candidate_expansion_review(prompt)
             return expansion_review  # type: ignore[return-value]
-        if response_model is SharedOpenWorldReduceOutput:
-            reduction = self._shared_open_world_reduce(prompt)
-            return reduction  # type: ignore[return-value]
-        if response_model is RuntimeEvidenceMemoPack:
-            memo_pack = self._runtime_evidence_memo_pack(prompt)
-            return memo_pack  # type: ignore[return-value]
         if response_model is SemanticResearchDraft:
             draft = self._semantic_research_draft(prompt)
             return draft  # type: ignore[return-value]
         raise NotImplementedError(f"mock structured output not registered for {response_model}")
 
-    def _semantic_capsule_draft_batch(
-        self,
-        prompt: str,
-    ) -> SemanticCapsuleDraftBatch:
+    def _semantic_capsule_draft_batch(self, prompt: str) -> SemanticCapsuleDraftBatch:
         payload = self._marked_payload(prompt, "---OFFLINE_SEMANTIC_LEAF---")
         node_id = str(payload.get("node_id") or "LEAF-mock")
         category = str(payload.get("category") or "world_model")
         raw_units = payload.get("semantic_units")
         units = raw_units if isinstance(raw_units, list) else []
-        semantic_unit_ids = [
+        unit_ids = [
             str(row.get("semantic_unit_id"))
             for row in units
             if isinstance(row, dict) and row.get("semantic_unit_id")
@@ -150,7 +142,7 @@ class DeterministicMockLLMProvider:
                     f"{category} semantic unit {unit_id} preserves its dynamic representatives."
                 ),
                 economic_transmission=["event -> economic exposure -> market response"],
-                market_narrative=["current evidence must be compared with historical boundaries"],
+                market_narrative=["compare current evidence with historical boundaries"],
                 applicable_conditions=["cutoff-safe and economically attributable"],
                 failure_conditions=["historical counterevidence dominates"],
                 boundary_conditions=["novelty or directness is weak"],
@@ -159,11 +151,11 @@ class DeterministicMockLLMProvider:
                 beneficiary_implications=["validate direct and indirect economic transmission"],
                 continuation_implications=["check D-1 absorption and remaining catalyst"],
             )
-            for unit_id in semantic_unit_ids
+            for unit_id in unit_ids
         ]
         return SemanticCapsuleDraftBatch(
             node_id=node_id,
-            semantic_unit_ids=semantic_unit_ids,
+            semantic_unit_ids=unit_ids,
             capsules=capsules,
         )
 
@@ -245,183 +237,6 @@ class DeterministicMockLLMProvider:
             return {}
         return payload if isinstance(payload, dict) else {}
 
-    def _current_day_interpretation(self, prompt: str) -> CurrentDayInterpretation:
-        marker = "---CURRENT_EVENT_CAPSULES---"
-        payload: dict[str, Any] = {}
-        if marker in prompt:
-            try:
-                parsed = json.loads(prompt.split(marker, maxsplit=1)[-1].strip())
-            except json.JSONDecodeError:
-                parsed = {}
-            if isinstance(parsed, dict):
-                payload = parsed
-        raw_cluster_ids = payload.get("required_cluster_ids")
-        cluster_ids = (
-            [str(value) for value in raw_cluster_ids]
-            if isinstance(raw_cluster_ids, list)
-            else []
-        )
-        raw_capsules = payload.get("current_event_capsules")
-        capsules = raw_capsules if isinstance(raw_capsules, list) else []
-        titles = [
-            str(row.get("representative_title"))
-            for row in capsules
-            if isinstance(row, dict) and row.get("representative_title")
-        ]
-        return CurrentDayInterpretation(
-            analyzed_cluster_ids=cluster_ids,
-            event_map=titles,
-            direct_issuer_events=titles[:5],
-            policy_industry_macro_mechanisms=self.infer_mechanisms("\n".join(titles)),
-            candidate_archetypes=["direct issuer", "theme beneficiary", "continuation"],
-            potential_sectors=[],
-            beneficiary_paths=["current catalyst -> economic exposure -> listed beneficiary"],
-            uncertainties=["listing identity", "novelty", "D-1 absorption"],
-            retrieval_queries=titles[:8] or ["current catalyst mechanism"],
-        )
-
-    def _runtime_evidence_memo_pack(
-        self,
-        prompt: str,
-    ) -> RuntimeEvidenceMemoPack:
-        marker = "---RUNTIME_EVIDENCE_PACK_INPUT---"
-        payload: dict[str, Any] = {}
-        if marker in prompt:
-            try:
-                parsed = json.loads(prompt.split(marker, maxsplit=1)[-1].strip())
-            except json.JSONDecodeError:
-                parsed = {}
-            if isinstance(parsed, dict):
-                payload = parsed
-        raw_assignments = payload.get("assignments")
-        assignments = [
-            row
-            for row in raw_assignments
-            if isinstance(row, dict)
-            and isinstance(row.get("cluster_id"), str)
-            and isinstance(row.get("record_id"), str)
-            and isinstance(row.get("lane"), str)
-        ] if isinstance(raw_assignments, list) else []
-        by_cluster_lane: dict[str, dict[str, list[str]]] = {}
-        for row in assignments:
-            cluster_id = str(row["cluster_id"])
-            lane = str(row["lane"])
-            record_id = str(row["record_id"])
-            by_cluster_lane.setdefault(cluster_id, {}).setdefault(lane, []).append(
-                record_id
-            )
-        batches: list[RuntimeEvidenceMemoBatch] = []
-        for cluster_id, lanes in sorted(by_cluster_lane.items()):
-            memos = [
-                RuntimeEvidenceMemo(
-                    memo_id=stable_id(
-                        "MOCKRMEMO",
-                        cluster_id,
-                        lane,
-                        canonical_json(sorted(set(record_ids))),
-                    ),
-                    cluster_id=cluster_id,
-                    lane=cast(RuntimeRetrievalLane, lane),
-                    source_record_ids=sorted(set(record_ids)),
-                    source_record_hash_root=sha256_text(
-                        canonical_json(sorted(set(record_ids)))
-                    ),
-                    current_vs_history_similarities=[
-                        "Deterministic mock compared the assigned historical payload."
-                    ],
-                    current_vs_history_differences=[
-                        "Final synthesis must retain current-event-specific uncertainty."
-                    ],
-                    unresolved_conflicts=[
-                        "Deterministic mock evidence requires final synthesis review."
-                    ],
-                )
-                for lane, record_ids in sorted(lanes.items())
-            ]
-            batches.append(
-                RuntimeEvidenceMemoBatch(
-                    cluster_id=cluster_id,
-                    source_record_ids=sorted(
-                        {
-                            record_id
-                            for record_ids in lanes.values()
-                            for record_id in record_ids
-                        }
-                    ),
-                    memos=memos,
-                )
-            )
-        return RuntimeEvidenceMemoPack(
-            cluster_ids=sorted(by_cluster_lane),
-            source_record_ids=sorted(
-                {str(row["record_id"]) for row in assignments}
-            ),
-            batches=batches,
-        )
-
-    def _shared_open_world_reduce(
-        self,
-        prompt: str,
-    ) -> SharedOpenWorldReduceOutput:
-        marker = "---SHARED_OPEN_WORLD_REDUCE_PAYLOAD---"
-        payload: dict[str, Any] = {}
-        if marker in prompt:
-            try:
-                parsed = json.loads(prompt.split(marker, maxsplit=1)[-1].strip())
-            except json.JSONDecodeError:
-                parsed = {}
-            if isinstance(parsed, dict):
-                payload = parsed
-        children = payload.get("children")
-        child_rows = children if isinstance(children, list) else []
-
-        def merged(field: str) -> list[str]:
-            values: list[str] = []
-            for row in child_rows:
-                raw_values = row.get(field) if isinstance(row, dict) else None
-                if not isinstance(raw_values, list):
-                    continue
-                for value in raw_values:
-                    if isinstance(value, str) and value.strip() and value not in values:
-                        values.append(value)
-            return values
-
-        covered = payload.get("required_cluster_ids")
-        required_cluster_ids = (
-            [str(value) for value in covered]
-            if isinstance(covered, list)
-            else []
-        )
-        child_ids = payload.get("required_child_node_ids")
-        required_child_ids = (
-            [str(value) for value in child_ids]
-            if isinstance(child_ids, list)
-            else []
-        )
-        mechanisms = merged("mechanisms") or [
-            "current event evidence -> direct and indirect beneficiary validation"
-        ]
-        return SharedOpenWorldReduceOutput(
-            node_id=str(payload.get("node_id") or "REDUCE-mock"),
-            child_node_ids=required_child_ids,
-            covered_cluster_ids=required_cluster_ids,
-            event_clusters=merged("event_clusters"),
-            direct_company_events=merged("direct_company_events"),
-            policy_industry_events=merged("policy_industry_events"),
-            mechanisms=mechanisms,
-            beneficiary_transmission_paths=merged(
-                "beneficiary_transmission_paths"
-            ),
-            narrative_conversion_points=merged("narrative_conversion_points"),
-            direct_candidates=merged("direct_candidates"),
-            potential_sectors=merged("potential_sectors"),
-            beneficiary_investigation_questions=merged(
-                "beneficiary_investigation_questions"
-            ),
-            uncertainties=merged("uncertainties"),
-            notes=["Deterministic mock hierarchical reduction."],
-        )
-
     async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
         vectors: list[list[float]] = []
         for text in texts:
@@ -490,24 +305,6 @@ class DeterministicMockLLMProvider:
         mechanisms = self._payload_string_list(payload, "first_pass_mechanisms")
         if not mechanisms:
             mechanisms = self.infer_mechanisms("\n---NEWS---\n".join(current_news) or prompt)
-        source_row_ids = [
-            int(value)
-            for value in payload.get("source_row_ids", [])
-            if isinstance(value, int) and not isinstance(value, bool)
-        ][:8]
-        semantic_capsule_ids = self._payload_string_list(
-            payload, "allowed_semantic_capsule_ids"
-        )[:4]
-        mechanism_claim_ids = self._payload_string_list(
-            payload, "allowed_mechanism_claim_ids"
-        )[:4]
-        raw_daily_context = payload.get("daily_brain_context")
-        daily_context = raw_daily_context if isinstance(raw_daily_context, dict) else {}
-        population_manifest_roots = [
-            str(row["population_root"])
-            for row in daily_context.get("population_statistics", [])
-            if isinstance(row, dict) and isinstance(row.get("population_root"), str)
-        ][:4]
         mentions = self.extract_company_mentions(current_news or [prompt])
         event_anchor = f"news://{event_ids[0]}" if event_ids else "news://current-batch"
         candidates: list[Candidate] = []
@@ -626,17 +423,6 @@ class DeterministicMockLLMProvider:
                 memory_record_ids=memory_record_ids,
             )
         )
-        candidates = [
-            candidate.model_copy(
-                update={
-                    "source_row_ids": source_row_ids,
-                    "semantic_capsule_ids": semantic_capsule_ids,
-                    "mechanism_claim_ids": mechanism_claim_ids,
-                    "population_manifest_roots": population_manifest_roots,
-                }
-            )
-            for candidate in candidates
-        ]
 
         sector = DominantSectorHypothesis(
             name="open-world catalyst cluster",
@@ -658,9 +444,6 @@ class DeterministicMockLLMProvider:
             contradicting_cases=prior_negative_cases,
             supporting_record_ids=prior_positive_record_ids,
             contradicting_record_ids=prior_negative_record_ids,
-            semantic_capsule_ids=semantic_capsule_ids,
-            mechanism_claim_ids=mechanism_claim_ids,
-            population_manifest_roots=population_manifest_roots,
         )
         return BlindPrediction(
             prediction_id=stable_id("PRED", prompt, created_at.isoformat()),
@@ -679,6 +462,65 @@ class DeterministicMockLLMProvider:
             dominant_sectors=[sector],
             candidates=candidates,
         )
+
+    def _brain_informed_prediction(self, prompt: str) -> BlindPrediction:
+        prediction = self._blind_prediction(prompt)
+        payload = self._blind_payload(prompt)
+        raw_capsules = payload.get("current_event_capsules", [])
+        event_rows: dict[str, set[int]] = {}
+        all_row_ids: set[int] = set()
+        if isinstance(raw_capsules, list):
+            for raw_capsule in raw_capsules:
+                if not isinstance(raw_capsule, dict):
+                    continue
+                row_ids = {
+                    value
+                    for value in raw_capsule.get("source_row_ids", [])
+                    if isinstance(value, int) and not isinstance(value, bool)
+                }
+                all_row_ids.update(row_ids)
+                for event_id in raw_capsule.get("event_ids", []):
+                    if isinstance(event_id, str):
+                        event_rows.setdefault(event_id, set()).update(row_ids)
+
+        allowed_capsules = self._payload_string_list(
+            payload, "allowed_semantic_capsule_ids"
+        )
+        allowed_claims = self._payload_string_list(
+            payload, "allowed_mechanism_claim_ids"
+        )
+        daily_context = payload.get("daily_brain_context", {})
+        population_roots = []
+        if isinstance(daily_context, dict):
+            statistics = daily_context.get("population_statistics", [])
+            if isinstance(statistics, list):
+                population_roots = [
+                    str(row["population_root"])
+                    for row in statistics
+                    if isinstance(row, dict)
+                    and isinstance(row.get("population_root"), str)
+                ]
+
+        candidates = []
+        for candidate in prediction.candidates:
+            cited_rows = {
+                row_id
+                for event_id in candidate.event_ids
+                for row_id in event_rows.get(event_id, set())
+            }
+            if not cited_rows:
+                cited_rows = set(all_row_ids)
+            candidates.append(
+                candidate.model_copy(
+                    update={
+                        "source_row_ids": sorted(cited_rows),
+                        "semantic_capsule_ids": allowed_capsules[:1],
+                        "mechanism_claim_ids": allowed_claims[:1],
+                        "population_manifest_roots": population_roots[:1],
+                    }
+                )
+            )
+        return prediction.model_copy(update={"candidates": candidates})
 
     def _blind_payload(self, prompt: str) -> dict[str, Any]:
         marker = "---BLIND_ANALYSIS_PAYLOAD---"
