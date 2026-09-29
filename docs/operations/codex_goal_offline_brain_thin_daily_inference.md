@@ -1913,3 +1913,11 @@ The production V5 build remains active as PID `1216`. Six successful reduce chec
 The BUILD-only source attestation is now v2. It checks that all snapshot record IDs occur in the BUILD split and rejects pairwise record-ID overlap across BUILD/CALIBRATION/HOLDOUT. The score report exposes those partition counts and zero-overlap gates. Verification after the change: Ruff PASS, mypy PASS for 139 source files, and full pytest PASS (1,902 tests in 320.94 seconds). The real BUILD-only V2 package remains unvalidated; formal A/B/C scoring has not started; production remains inactive.
 
 At 15:28, the build used 2.97 GiB working set / 6.30 GiB private memory; all Python processes used 3.51 GiB working set, available RAM was 16.23 GiB, and C: free space was 170.39 GiB. No trim or process control was performed. The branch still has no PR; dependency-correct PR-A/B/C/D staging remains unfinished.
+
+## Live Progress - 2026-09-29 15:44 KST
+
+PID `1216` remains active. Two successful reductions completed since 15:28; latest checkpoint `LLMCKPT-7be99cf87adb4f5d` completed at 15:40:48. The V5 ledger now has 7,894 successes and zero failures: 90 long-payload maps, 7,423 leaves, 375 reduces, and six category reviews. At least 124 calls remain against the 8,018 theoretical minimum (120 reductions, three category reviews, and one world root); byte-size splits may increase this. Low-confidence ETA is 11-14 hours, around 2026-09-30 02:45-05:45 KST.
+
+The BUILD-only source attestation v2 change is committed and pushed as `bcc9e80` on `codex/quality-full-pr126` (28 commits ahead of main). Ruff, mypy (139 files), and full pytest (1,902 tests) pass. No PR is open: staged PR-A/B/C/D topology still needs dependency resolution. The real BUILD-only package is unvalidated, A/B/C scoring has not started, and production remains inactive.
+
+At 15:44, the build used 2.98 GiB working set / 6.30 GiB private memory; Python processes used 3.51 GiB working set, host available RAM was 16.37 GiB, and C: had 170.19 GiB free. No memory trim or process control was performed.

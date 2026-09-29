@@ -563,3 +563,11 @@ The active V5 build is still PID `1216`. Six successful V5 reduce checkpoints la
 The BUILD-only evaluation attestation is now v2. It rejects any snapshot record not present in BUILD and any record-ID overlap across BUILD/CALIBRATION/HOLDOUT; the score artifact surfaces the split counts and overlap gates. Ruff and mypy pass, and full pytest passes all 1,902 tests in 320.94 seconds. The real BUILD-only package has not yet been validated, A/B/C scoring has not started, and production remains inactive.
 
 At 15:28, PID `1216` used 2.97 GiB working set and 6.30 GiB private memory; Python processes totaled 3.51 GiB working set, host available RAM was 16.23 GiB, and C: had 170.39 GiB free. No trim or process control was performed because the build is active and memory headroom remains.
+
+## 2026-09-29 15:44 KST
+
+PID `1216` remains active. Two more successful reductions completed since 15:28; latest checkpoint `LLMCKPT-7be99cf87adb4f5d` completed at 15:40:48. The V5 ledger has 7,894 successes, zero failures: 90 long-payload maps, 7,423 leaves, 375 reduces, and six category reviews. At least 124 calls remain against the 8,018 theoretical minimum (120 reductions, three category reviews, one world root); byte-size splits may increase it. Current low-confidence ETA is 11-14 hours, around 2026-09-30 02:45-05:45 KST.
+
+Full gates remain green after the attestation v2 change: Ruff, mypy (139 source files), pytest (1,902 tests). The v2 verifier and regression tests were committed and pushed as `bcc9e80` on `codex/quality-full-pr126`; the branch is 28 commits ahead of main and still has no PR. Dependency-correct PR-A/B/C/D staging is unfinished. The real BUILD-only V2 package remains unvalidated; A/B/C scoring has not started; production remains inactive.
+
+At 15:44, build PID `1216` used 2.98 GiB working set / 6.30 GiB private memory; Python processes totaled 3.51 GiB working set, host available RAM was 16.37 GiB, and C: had 170.19 GiB free. No trim or process control was performed because available headroom remains.
