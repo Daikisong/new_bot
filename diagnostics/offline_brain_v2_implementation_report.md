@@ -3,9 +3,9 @@
 ## 사용자가 요구한 제품
 
 823,279개 연구 record를 한 번 offline에서 의미적으로 합성하고, 매일 08시
-CSV에는 이미 만들어진 brain을 사용한다. daily 정상 LLM 호출은 현재 사건
-해석 1회와 최종 시장 판단 1회, 총 2회다. daily에서 과거 raw record를 다시
-map하는 호출은 0회다.
+CSV에는 이미 만들어진 brain을 사용한다. daily 정상 LLM 호출은 현재 뉴스와
+compiled brain을 함께 읽어 해석과 최종 판단을 하는 1회이며, 구조화 응답
+보정까지 최대 2회다. daily에서 과거 raw record를 다시 map하는 호출은 0회다.
 
 ## 이번에 구현한 것
 
@@ -63,10 +63,19 @@ truncation 0이라고 보고할 수 있었기 때문에 build 입력으로 거�
 ```text
 PR-B compiler and daily reader       IMPLEMENTED
 823,279 zero-call plan               PASS
-full one-time LLM build              NOT STARTED
+full one-time LLM build              PAUSED_AFTER_7,902_CHECKPOINTS
 same-path CALIBRATION/HOLDOUT         NOT STARTED
 production activation                HOLD
 ```
+
+2026-09-29 16:29:17 KST에 마지막 성공 reduce checkpoint
+`LLMCKPT-6fae813701eb8246`가 저장됐다. 바로 다음 호출은 16:29:41 KST에
+Codex CLI 사용량 제한으로 중단됐고, 로그가 안내한 재시도 시각은
+`Oct 4th, 2026 3:31 AM`이다. 현재 build plan 기준 성공 수는 long-payload
+90, leaf 7,423, reduce 383, category review 6으로 합계 7,902개다. 최소
+총 호출 하한 8,018개에서 최소 116개가 남았으며 prompt-byte 분할로 실제
+총량은 증가할 수 있다. build 프로세스는 현재 없고 package 생성은 미완료다.
+성공한 content-addressed checkpoint는 재개 시 재사용한다.
 
 full build와 품질평가가 끝나기 전에는 production 완료로 보고하거나 pointer를
 활성화하면 안 된다.

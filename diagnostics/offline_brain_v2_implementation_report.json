@@ -1,6 +1,6 @@
 {
   "schema_version": "nslab.offline_brain_v2_implementation_report.v1",
-  "status": "V4_FULL_BUILD_FAILED_CLOSED_V5_PLAN_COMPLETED_FULL_BUILD_RETRY_PENDING",
+  "status": "V5_FULL_BUILD_PAUSED_CODEX_USAGE_LIMIT",
   "source": {
     "record_count": 823279,
     "record_corpus_root": "2d25581cdc98d89cb0f1d2fa00bec917442171ee279c001edfc764e2941f6d75",
@@ -16,8 +16,8 @@
   },
   "daily_product": {
     "command": "analyze-daily",
-    "normal_logical_llm_calls": 2,
-    "maximum_live_calls_with_one_schema_repair_each": 4,
+    "normal_logical_llm_calls": 1,
+    "maximum_live_calls_with_one_schema_repair_each": 2,
     "historical_raw_daily_llm_map_calls": 0,
     "daily_import_calls": 0,
     "daily_brain_rebuild_calls": 0,
@@ -95,14 +95,46 @@
     "ideal_hours_at_concurrency_4_p90": 46.41,
     "forecast_is_observation_not_gate": true
   },
+  "current_v5_build": {
+    "attempt_id": "OFFLINE-COMPILE-add3461bd175147e255d",
+    "process_state": "STOPPED_AFTER_CODEX_USAGE_LIMIT",
+    "package_created": false,
+    "production_pointer_activated": false,
+    "processed_record_count": 823279,
+    "record_progress_ratio": 1.0,
+    "record_progress_phase": "representative_and_distribution_build",
+    "semantic_unit_count": 52644,
+    "logical_call_floor": 8018,
+    "successful_plan_checkpoints": 7902,
+    "minimum_remaining_calls": 116,
+    "actual_total_may_increase_from_prompt_splitting": true,
+    "successful_stage_counts": {
+      "long_payload_maps": 90,
+      "leaf_maps": 7423,
+      "reduce_nodes": 383,
+      "category_reviews": 6
+    },
+    "latest_success": {
+      "checkpoint_id": "LLMCKPT-6fae813701eb8246",
+      "purpose": "offline_semantic_reduce.REDUCE-7cc565a5d02a4afd9d6e",
+      "completed_at": "2026-09-29T16:29:17+09:00"
+    },
+    "usage_limit_error": {
+      "checkpoint_id": "LLMCKPT-1d6d8295e6996522",
+      "purpose": "offline_semantic_reduce.REDUCE-7c9b2ad3fe9e867198fd",
+      "occurred_at": "2026-09-29T16:29:41+09:00",
+      "retry_after_text": "Oct 4th, 2026 3:31 AM"
+    },
+    "resume_reuses_successful_checkpoints": true
+  },
   "verification": {
     "ruff": "PASS",
-    "mypy_source_file_count": 138,
+    "mypy_source_file_count": 133,
     "mypy": "PASS",
-    "targeted_test_count": 19,
+    "targeted_test_count": 37,
     "targeted_tests": "PASS",
-    "full_pytest": "PASS_1881",
-    "full_build": "V4_FAILED_CLOSED_V5_RETRY_PENDING",
+    "full_pytest": "PASS_1749",
+    "full_build": "V5_PAUSED_CODEX_USAGE_LIMIT",
     "calibration_holdout": "NOT_STARTED",
     "production_activation": false
   }

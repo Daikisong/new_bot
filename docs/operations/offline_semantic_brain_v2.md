@@ -5,7 +5,8 @@
 이 compiler의 목적은 823,279개 연구 record를 매일 다시 읽는 것이 아니다.
 기존 import와 실임베딩을 한 번 재사용해 의미 단위, 성공과 실패 경계,
 수혜주, 대장주, 지속성 지식을 immutable `BrainPackage`로 합성하는 것이다.
-매일 08시 CSV는 이 package만 조회하고 정상 LLM 2회로 판단한다.
+매일 08시 CSV는 이 package를 먼저 장전하고, 현재 뉴스와 두뇌를 함께 읽는
+정상 LLM 1회로 해석과 최종 판단을 함께 한다. 구조화 응답 보정은 최대 1회다.
 
 ## 구현 경계
 
@@ -21,10 +22,10 @@ OFFLINE
   -> immutable BrainPackage with provenance roots and HNSW indexes
 
 DAILY
-CSV -> CurrentEventCapsule -> LLM call 1
-    -> local capsule and claim HNSW retrieval
+CSV -> CurrentEventCapsule
+    -> local capsule and claim HNSW retrieval + compiled guidance
     -> at most 24 exact witnesses
-    -> LLM call 2 -> sealed decision
+    -> LLM call 1 (interpretation + decision) -> sealed decision
 ```
 
 `build-offline`은 repair, import, record embedding을 다시 실행하지 않는다.
@@ -181,7 +182,7 @@ OAuth 경쟁에 따라 더 길어질 수 있다. 완료된 content-addressed che
 4. 모든 leaf가 category와 world reduce root까지 닫히는가.
 5. 중단 후 완료 checkpoint를 재사용하는가.
 6. daily retrieval이 raw record나 capsule 전체 scan을 하지 않는가.
-7. daily 정상 LLM 호출이 정확히 2회이고 corpus 크기와 무관한가.
+7. daily 정상 LLM 호출이 1회, schema 보정 포함 최대 2회이며 corpus 크기와 무관한가.
 8. CALIBRATION과 HOLDOUT이 동일 `analyze-daily` 경로를 쓰는가.
 9. quality gate 전 production pointer가 활성화되지 않았는가.
 
@@ -195,8 +196,28 @@ OFFLINE_V2_COMPILER_FIXTURE_TESTED   true
 FULL_823279_PLAN_STRICT_COMPLETED     true
 FULL_823279_PLAN_V5_COMPLETED         true
 FULL_823279_BUILD_V4_FAILED_CLOSED    true
-FULL_823279_BUILD_V5_RETRY_PENDING    true
+FULL_823279_BUILD_V5_PAUSED_USAGE_LIMIT true
 FULL_823279_BUILD_COMPLETED           false
 PREDICTIVE_QUALITY_EVALUATED          false
 PRODUCTION_ACTIVATED                  false
 ```
+
+## 2026-09-29 V5 빌드 상태
+
+전수 offline build는 시작됐지만 완료되지 않았다. 마지막 성공 checkpoint는
+`LLMCKPT-6fae813701eb8246`이며 16:29:17 KST에 `REDUCE-7cc565a5d02a4afd9d6e`
+호출이 성공했다. 16:29:41 KST의 다음 reduce 호출
+`LLMCKPT-1d6d8295e6996522`는 Codex CLI 사용량 제한으로 실패했다. 마지막 로그는
+다음 재시도 가능 시각을 `Oct 4th, 2026 3:31 AM`으로 안내한다.
+
+현재 build plan에 속한 성공 작업은 90 long-payload maps, 7,423 leaf maps,
+383 reductions, 6 category reviews로 **7,902개**다. 확정된 topology의 최소
+호출 하한은 8,018개라 최소 116개가 남았고, 180,000-byte prompt 분할로 더
+늘 수 있다. 예전 계획·진단 호출이 함께 있는 공유 checkpoint 디렉터리의
+전체 파일 수를 build 호출 수로 오인하지 않는다.
+
+합성 프로세스는 현재 실행 중이 아니다. 마지막 `progress.json`의 record
+100%는 local representative/distribution preparation과 52,644 semantic unit
+산출만 뜻하며 LLM 합성 완료율이 아니다. 기존 성공 checkpoint는 재사용되며
+같은 build 명령으로 재개한다. package는 아직 완성되지 않았고 production
+pointer도 활성화하지 않았다.
