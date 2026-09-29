@@ -88,3 +88,35 @@ host available memory를 함께 관찰해야 한다. `gc.collect()` 호출만으
 않았다. V5 합성은 기존 7,902회 성공 checkpoint를 보존하며 OAuth 재개 시각을 기다린다.
 두뇌 package 봉인, 별도 평가 package, CALIBRATION/HOLDOUT 평가, production 활성화는
 여전히 미완료다. 이 메모리 보강을 전체 goal 완료로 해석하면 안 된다.
+
+## 2026-09-30 실제 snapshot 실행 관측
+
+평가 전용 snapshot `MEMIDX-1f051543698019d5acc0`을 기존 parent vectors로 만들었다.
+새 embedding 생성 0건, LLM 호출 0건, 연구자료 재수입 0건이다. 실행 후 Python PID가
+종료했고 `data/cache/memory-audit/audit-*` scratch 디렉터리도 0개였다.
+
+이 PC의 총 RAM은 61.6 GiB였다. Python 프로세스는 단계별로 크게 변했다. source 및
+sidecar 투영에서는 대략 5-7 GiB private memory를 썼고, cell integrity 단계 종료 시
+약 6.1 GiB에서 3.4 GiB로 내려갔다. retrieval-index 대조에서는 순간 high-water가
+private 14.77 GiB, working set 12.37 GiB까지 올라가고 host available memory가
+7.2 GiB까지 줄었다. 약 10초 뒤 private 3.93 GiB, working set 1.56 GiB,
+available memory 19.3 GiB로 회복됐다. 이후 같은 단계의 private memory는 약
+9.57 GiB, working set 약 7.38 GiB 부근에서 유지됐다. 이 급락/회복은 누적 누수보다
+대형 검증 쿼리의 임시 할당과 회수에 부합한다. 프로세스 메모리만 보지 말고 host
+available memory도 함께 봐야 한다.
+
+중요: DuckDB `memory_limit=4GB`는 DuckDB가 관리하는 buffer 한도다. Python heap,
+NumPy 및 native extension을 합친 전체 프로세스의 hard cap이 아니다. 실제 private
+high-water가 14.77 GiB였으므로 4GB 설정을 전체 RAM 제한이라고 표현하면 안 된다.
+`gc.collect()`만으로 DuckDB/native 작업 메모리를 회수한다고 가정하지 않는다. 이
+실행에서는 단계가 끝날 때 메모리가 실제로 반환되고, audit 연결 종료 후 scratch도
+정리됐다.
+
+완료 receipt: BUILD cutoff `2026-01-01T23:59:59+09:00`, 포함 758,703건, 미래 제외
+64,576건, calibration 32,474건, holdout 28,375건, 두 split overlap 0, retained
+embedding 758,703건, generated embedding 0건. Manifest의 8개 artifact SHA-256을
+모두 다시 대조했고 전부 일치했다. Snapshot은 `evaluation_only=true`이며
+`production_ready=true` 필드가 있어도 production 활성화 승인을 뜻하지 않는다.
+별도의 전체 `inspect_memory_snapshot` 재실행은 같은 대규모 deep SQL 감사를
+반복하므로 하지 않았다. 따라서 여기서 확인한 것은 successful builder receipt,
+실제 build/holdout overlap 검사, manifest artifact hashes, 종료 후 cleanup이다.
