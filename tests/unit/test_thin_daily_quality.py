@@ -342,6 +342,23 @@ def test_build_only_package_attestation_verifies_snapshot_and_split_chain(tmp_pa
     assert attestation.payload["calibration_overlap_count"] == 0
     assert attestation.payload["holdout_overlap_count"] == 0
 
+    # The formal C arm must remain a physically separate evaluation package;
+    # accepting a production-eligible manifest here would allow source leakage.
+    write_json(
+        package_root / "brain_package_manifest.json",
+        {
+            "memory_snapshot_root": snapshot_manifest_sha256,
+            "record_count": 1,
+            "build_cutoff": build_cutoff,
+            "record_corpus_root": "a" * 64,
+            "production_eligible": True,
+            "package_root": "b" * 64,
+            "brain_version": "brain-v2-test",
+        },
+    )
+    with pytest.raises(ValueError, match="cannot be marked production eligible"):
+        _validate_build_only_v2_package(package_root)
+
 
 def test_formal_cases_must_match_the_attested_split() -> None:
     cutoff = datetime(2026, 1, 2, 0, 0, tzinfo=KST)
