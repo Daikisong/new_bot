@@ -2829,7 +2829,7 @@ def _normalized_mean(
     value = np.mean(matrix, axis=0, dtype=np.float64).astype(np.float32)
     norm = float(np.linalg.norm(value))
     if norm == 0.0:
-        return cast(npt.NDArray[np.float32], value)
+        return np.asarray(value, dtype=np.float32)
     normalized = value / norm
     return cast(npt.NDArray[np.float32], normalized)
 
