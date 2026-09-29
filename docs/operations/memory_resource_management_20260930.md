@@ -136,6 +136,11 @@ available memory는 약 19 GiB였다. 이 상주 서비스를 임의로 종료�
 7,902개 content-addressed checkpoint에서 재개하며, 첫 재개 실행을 기준 측정으로
 삼는다.
 
+compiler 코드에서는 payload 수치와 exposure ledger를 만든 뒤 중복 projected/chunk
+계획을 해제하고, leaf capsule 생성 직후 원문 prompt 행을 해제하도록 했다. Reduce는
+capsule 및 검증된 child ID만 사용한다. 관련 단위 테스트 14개, Ruff, mypy 139개
+source file을 통과했지만, 이 수명 단축의 실 corpus 메모리 절감량은 아직 측정하지 않았다.
+
 재개 시 compiler PID의 private bytes, working set, host available memory를 10초
 간격으로 단계/완료 호출 수와 함께 기록한다. 정상적인 단일 단계 피크인지 판단할
 수 있도록 같은 단계의 연속 구간을 비교한다. available memory가 8 GiB 아래로

@@ -423,7 +423,13 @@ class OfflineSemanticBrainCompiler:
             self._payload_exposure_rows = _representative_payload_exposure_rows(
                 package_payload_plan
             )
+            # The audit plan retains projected rows and copied long-payload chunks.
+            # Its metrics and exposure ledger are captured, so release those copies
+            # before leaf compilation builds the changed-row plan it actually uses.
+            del package_payload_plan
             capsules, leaf_nodes = await self._compile_leaf_capsules(unit_rows)
+            # Reduce operates on capsules and verified child IDs, not raw news payloads.
+            del unit_rows
             _write_capsules_to_database(connection, capsules)
             category_roots: dict[str, SemanticReduceNode] = {}
             reduce_nodes: list[SemanticReduceNode] = []
