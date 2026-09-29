@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import shutil
 from collections import defaultdict
@@ -76,6 +77,7 @@ SPLIT_DEPTH_MARGIN = 16
 DAILY_MAX_CAPSULES = 24
 DAILY_MAX_CLAIMS = 24
 DAILY_ANN_CANDIDATES = 96
+_LOGGER = logging.getLogger(__name__)
 
 _CATEGORY_PRECEDENCE = (
     "single_event",
@@ -890,10 +892,9 @@ class OfflineSemanticBrainCompiler:
         if (
             result.node_id != node_id
             or result.child_node_ids != child_ids
-            or set(result.covered_capsule_ids) != set(covered)
         ):
             raise ValueError("semantic reduce output omitted or added children")
-        return result.model_copy(update={"covered_capsule_ids": covered})
+        return _canonicalize_reduce_coverage(result, covered)
 
     async def _reduce_world(
         self,
@@ -924,13 +925,9 @@ class OfflineSemanticBrainCompiler:
             self._recompiled_reduce_node_count += 1
         expected_children = [row.node_id for row in children]
         expected_capsules = _unique(capsule_id for row in children for capsule_id in row.covered_capsule_ids)
-        if (
-            result.node_id != node_id
-            or result.child_node_ids != expected_children
-            or set(result.covered_capsule_ids) != set(expected_capsules)
-        ):
+        if result.node_id != node_id or result.child_node_ids != expected_children:
             raise ValueError("world reduce output omitted category children")
-        return result.model_copy(update={"covered_capsule_ids": expected_capsules})
+        return _canonicalize_reduce_coverage(result, expected_capsules)
 
     async def _call_structured(
         self,
@@ -947,6 +944,30 @@ class OfflineSemanticBrainCompiler:
                 response_model=response_model,
                 purpose=purpose,
             )
+
+
+def _canonicalize_reduce_coverage(
+    result: SemanticReduceNode,
+    expected_capsule_ids: Sequence[str],
+) -> SemanticReduceNode:
+    """Use the verified child tree, not a model-echoed ID list, as coverage truth."""
+    canonical_ids = _unique(expected_capsule_ids)
+    canonical_set = set(canonical_ids)
+    reported_set = set(result.covered_capsule_ids)
+    duplicate_count = len(result.covered_capsule_ids) - len(reported_set)
+    if canonical_set != reported_set or duplicate_count:
+        _LOGGER.warning(
+            "offline reduce node %s returned noncanonical capsule coverage; "
+            "rebuilt from verified children (expected=%d reported=%d missing=%d "
+            "unexpected=%d duplicate=%d)",
+            result.node_id,
+            len(canonical_ids),
+            len(result.covered_capsule_ids),
+            len(canonical_set - reported_set),
+            len(reported_set - canonical_set),
+            duplicate_count,
+        )
+    return result.model_copy(update={"covered_capsule_ids": canonical_ids})
 
 
 class BrainPackageDailyContextProvider:
@@ -2191,6 +2212,17 @@ def _claims_from_reduce_node(
     capsules: list[SemanticMemoryCapsule],
 ) -> list[SynthesizedMechanismClaim]:
     by_id = {row.capsule_id: row for row in capsules}
+    covered = [
+        by_id[capsule_id]
+        for capsule_id in node.covered_capsule_ids
+        if capsule_id in by_id
+    ]
+    if len(covered) != len(node.covered_capsule_ids):
+        raise ValueError("reduce claim source tree contains unknown capsule coverage")
+    if not covered:
+        return []
+    # A reduce claim can be influenced by every input, not only the IDs it cites.
+    node_available_from = max(row.available_from for row in covered)
     output: list[SynthesizedMechanismClaim] = []
     for draft in node.claims:
         supporting_ids = [value for value in draft.supporting_capsule_ids if value in by_id]
@@ -2201,7 +2233,6 @@ def _claims_from_reduce_node(
         if not referenced:
             continue
         embedding = _normalized_mean(np.asarray([row.embedding for row in referenced], dtype=np.float32))
-        available_from = max(row.available_from for row in referenced)
         output.append(
             SynthesizedMechanismClaim(
                 claim_id=stable_id(
@@ -2231,7 +2262,7 @@ def _claims_from_reduce_node(
                     ]
                 ),
                 source_node_ids=[node.node_id],
-                available_from=available_from,
+                available_from=node_available_from,
                 confidence=draft.confidence,
                 status=draft.status,
                 embedding=[float(value) for value in embedding],
