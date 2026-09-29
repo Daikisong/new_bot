@@ -20,6 +20,7 @@ from news_scalping_lab.contracts.quality_evaluation import (
 from news_scalping_lab.evaluation.thin_daily_quality import (
     NoHistoricalBrainContextProvider,
     _render_score_markdown,
+    _validate_build_only_record_membership,
     _validate_build_only_v2_package,
     _validate_quality_cases_against_build_split,
     _verify_build_only_attestation_payload,
@@ -179,7 +180,11 @@ def test_build_only_package_attestation_verifies_snapshot_and_split_chain(tmp_pa
     package_root.mkdir()
     records_dir = source_root / "memory" / "records"
     records_dir.mkdir(parents=True)
-    for episode_id, record_id in (("CAL-1", "CAL-REC"), ("HOLD-1", "HOLD-REC")):
+    for episode_id, record_id in (
+        ("BUILD-1", "BUILD-REC"),
+        ("CAL-1", "CAL-REC"),
+        ("HOLD-1", "HOLD-REC"),
+    ):
         (records_dir / f"{episode_id}.jsonl").write_text(
             canonical_json({"record_id": record_id}) + "\n",
             encoding="utf-8",
@@ -339,8 +344,42 @@ def test_build_only_package_attestation_verifies_snapshot_and_split_chain(tmp_pa
     attestation = _validate_build_only_v2_package(package_root)
     _verify_build_only_attestation_payload(attestation.payload)
     assert attestation.payload["build_snapshot_record_count"] == 1
+    assert attestation.payload["build_split_record_count"] == 1
+    assert attestation.payload["build_split_record_ids_sha256"] == sha256_text("BUILD-REC")
+    assert attestation.payload["build_non_build_record_count"] == 0
+    assert attestation.payload["build_calibration_split_overlap_count"] == 0
+    assert attestation.payload["build_holdout_split_overlap_count"] == 0
+    assert attestation.payload["calibration_holdout_split_overlap_count"] == 0
     assert attestation.payload["calibration_overlap_count"] == 0
     assert attestation.payload["holdout_overlap_count"] == 0
+
+
+def test_build_only_record_membership_rejects_non_build_and_overlapping_splits() -> None:
+    valid = {
+        "included_record_ids": {"BUILD-REC"},
+        "build_record_ids": {"BUILD-REC"},
+        "calibration_record_ids": {"CAL-REC"},
+        "holdout_record_ids": {"HOLD-REC"},
+    }
+    assert _validate_build_only_record_membership(**valid) == {
+        "build_non_build_record_count": 0,
+        "build_calibration_split_overlap_count": 0,
+        "build_holdout_split_overlap_count": 0,
+        "calibration_holdout_split_overlap_count": 0,
+    }
+
+    with pytest.raises(ValueError, match="outside the BUILD split"):
+        _validate_build_only_record_membership(
+            **{**valid, "included_record_ids": {"UNASSIGNED-REC"}}
+        )
+    with pytest.raises(ValueError, match="record partitions overlap"):
+        _validate_build_only_record_membership(
+            **{**valid, "holdout_record_ids": {"CAL-REC"}}
+        )
+    with pytest.raises(ValueError, match="record partitions overlap"):
+        _validate_build_only_record_membership(
+            **{**valid, "calibration_record_ids": {"BUILD-REC"}}
+        )
 
 
 def test_formal_cases_must_match_the_attested_split() -> None:
@@ -371,7 +410,15 @@ def test_formal_cases_must_match_the_attested_split() -> None:
 
 def test_build_only_attestation_is_content_bound_and_closes_exclusions() -> None:
     core = {
-        "schema_version": "nslab.thin_daily_build_source_attestation.v1",
+        "schema_version": "nslab.thin_daily_build_source_attestation.v2",
+        "source_record_count": 3,
+        "build_snapshot_record_count": 1,
+        "build_split_record_count": 1,
+        "build_split_record_ids_sha256": sha256_text("BUILD-REC"),
+        "build_non_build_record_count": 0,
+        "build_calibration_split_overlap_count": 0,
+        "build_holdout_split_overlap_count": 0,
+        "calibration_holdout_split_overlap_count": 0,
         "calibration_overlap_count": 0,
         "holdout_overlap_count": 0,
         "full_corpus_centroids_used": False,
@@ -388,6 +435,14 @@ def test_build_only_attestation_is_content_bound_and_closes_exclusions() -> None
             {**payload, "full_corpus_centroids_used": True}
         )
 
+    false_claim_core = {**core, "build_non_build_record_count": 1}
+    false_claim = {
+        **false_claim_core,
+        "attestation_sha256": sha256_text(canonical_json(false_claim_core)),
+    }
+    with pytest.raises(ValueError, match="does not close its exclusion gates"):
+        _verify_build_only_attestation_payload(false_claim)
+
 
 def test_score_markdown_surfaces_build_snapshot_and_exclusion_evidence() -> None:
     report = {
@@ -400,6 +455,12 @@ def test_score_markdown_surfaces_build_snapshot_and_exclusion_evidence() -> None
             "build_cutoff": "2026-01-02T00:00:00+09:00",
             "source_record_count": 100,
             "build_snapshot_record_count": 75,
+            "build_split_record_count": 80,
+            "build_split_record_ids_sha256": "d" * 64,
+            "build_non_build_record_count": 0,
+            "build_calibration_split_overlap_count": 0,
+            "build_holdout_split_overlap_count": 0,
+            "calibration_holdout_split_overlap_count": 0,
             "calibration_case_count": 1,
             "calibration_record_count": 10,
             "calibration_overlap_count": 0,
@@ -424,5 +485,7 @@ def test_score_markdown_surfaces_build_snapshot_and_exclusion_evidence() -> None
     assert "75/100 source records included" in rendered
     assert "CAL 10 records / 0 overlap" in rendered
     assert "HOLDOUT 15 records / 0 overlap" in rendered
+    assert "snapshot non-BUILD `0`" in rendered
+    assert "BUILD/HOLDOUT, CAL/HOLDOUT overlaps `0/0/0`" in rendered
     assert "runs/build_only_source_attestation.json" in rendered
     assert "a" * 64 in rendered

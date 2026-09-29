@@ -73,7 +73,7 @@ from news_scalping_lab.utils import (
 )
 
 THIN_DAILY_QUALITY_VERSION = "nslab.thin_daily_quality.v2"
-BUILD_ONLY_SOURCE_ATTESTATION_VERSION = "nslab.thin_daily_build_source_attestation.v1"
+BUILD_ONLY_SOURCE_ATTESTATION_VERSION = "nslab.thin_daily_build_source_attestation.v2"
 THIN_DAILY_QUALITY_ARMS: tuple[Literal["A", "B", "C"], ...] = ("A", "B", "C")
 THIN_DAILY_QUALITY_ROOT = Path("runs/semantic_brain_upgrade/thin_daily_quality")
 BASELINE_CLAIM_QUERY_CANDIDATES = 512
@@ -668,6 +668,24 @@ def score_thin_daily_quality(
             "build_snapshot_record_count": build_source_attestation[
                 "build_snapshot_record_count"
             ],
+            "build_split_record_count": build_source_attestation[
+                "build_split_record_count"
+            ],
+            "build_split_record_ids_sha256": build_source_attestation[
+                "build_split_record_ids_sha256"
+            ],
+            "build_non_build_record_count": build_source_attestation[
+                "build_non_build_record_count"
+            ],
+            "build_calibration_split_overlap_count": build_source_attestation[
+                "build_calibration_split_overlap_count"
+            ],
+            "build_holdout_split_overlap_count": build_source_attestation[
+                "build_holdout_split_overlap_count"
+            ],
+            "calibration_holdout_split_overlap_count": build_source_attestation[
+                "calibration_holdout_split_overlap_count"
+            ],
             "calibration_case_count": build_source_attestation[
                 "calibration_case_count"
             ],
@@ -907,6 +925,7 @@ def _validate_build_only_v2_package(package_dir: Path) -> BuildOnlyV2SourceAttes
     if any(not split_case_ids[name] for name in split_case_ids):
         raise ValueError("BUILD source split is missing a partition")
 
+    build_record_ids = _record_ids_for_episodes(source_project, split_case_ids["BUILD"])
     calibration_record_ids = _record_ids_for_episodes(
         source_project,
         split_case_ids["CALIBRATION"],
@@ -925,6 +944,12 @@ def _validate_build_only_v2_package(package_dir: Path) -> BuildOnlyV2SourceAttes
     holdout_overlap = holdout_record_ids & included_record_ids
     if calibration_overlap or holdout_overlap:
         raise ValueError("CALIBRATION or HOLDOUT records entered the V2 BUILD source")
+    record_partition = _validate_build_only_record_membership(
+        included_record_ids=included_record_ids,
+        build_record_ids=build_record_ids,
+        calibration_record_ids=calibration_record_ids,
+        holdout_record_ids=holdout_record_ids,
+    )
 
     if package_manifest.get("production_eligible") is not False:
         raise ValueError("evaluation-only V2 package cannot be marked production eligible")
@@ -941,6 +966,11 @@ def _validate_build_only_v2_package(package_dir: Path) -> BuildOnlyV2SourceAttes
         "source_record_hashes_sha256": source_hashes_sha256,
         "source_record_count": replay_receipt.get("source_snapshot_record_count"),
         "build_snapshot_record_count": snapshot_record_count,
+        "build_split_record_count": len(build_record_ids),
+        "build_split_record_ids_sha256": sha256_text(
+            "\n".join(sorted(build_record_ids))
+        ),
+        **record_partition,
         "build_cutoff": build_cutoff_value,
         "calibration_case_count": len(split_case_ids["CALIBRATION"]),
         "calibration_record_count": len(calibration_record_ids),
@@ -1003,6 +1033,29 @@ def _validate_quality_cases_against_build_split(
         raise ValueError("evaluation case does not belong to its attested BUILD split")
 
 
+def _validate_build_only_record_membership(
+    *,
+    included_record_ids: set[str],
+    build_record_ids: set[str],
+    calibration_record_ids: set[str],
+    holdout_record_ids: set[str],
+) -> dict[str, int]:
+    non_build_record_ids = included_record_ids - build_record_ids
+    build_calibration_overlap = build_record_ids & calibration_record_ids
+    build_holdout_overlap = build_record_ids & holdout_record_ids
+    calibration_holdout_overlap = calibration_record_ids & holdout_record_ids
+    if non_build_record_ids:
+        raise ValueError("V2 BUILD source contains records outside the BUILD split")
+    if build_calibration_overlap or build_holdout_overlap or calibration_holdout_overlap:
+        raise ValueError("BUILD, CALIBRATION, and HOLDOUT record partitions overlap")
+    return {
+        "build_non_build_record_count": len(non_build_record_ids),
+        "build_calibration_split_overlap_count": len(build_calibration_overlap),
+        "build_holdout_split_overlap_count": len(build_holdout_overlap),
+        "calibration_holdout_split_overlap_count": len(calibration_holdout_overlap),
+    }
+
+
 def _verify_build_only_attestation_payload(payload: Any) -> None:
     if not isinstance(payload, dict):
         raise ValueError("BUILD-only source attestation is not an object")
@@ -1012,9 +1065,27 @@ def _verify_build_only_attestation_payload(payload: Any) -> None:
     core = {key: value for key, value in payload.items() if key != "attestation_sha256"}
     if not isinstance(attestation_sha256, str) or sha256_text(canonical_json(core)) != attestation_sha256:
         raise ValueError("BUILD-only source attestation hash is invalid")
+    source_record_count = payload.get("source_record_count")
+    build_snapshot_record_count = payload.get("build_snapshot_record_count")
+    build_split_record_count = payload.get("build_split_record_count")
+    build_split_record_ids_sha256 = payload.get("build_split_record_ids_sha256")
+    required_zero_counts = (
+        "calibration_overlap_count",
+        "holdout_overlap_count",
+        "build_non_build_record_count",
+        "build_calibration_split_overlap_count",
+        "build_holdout_split_overlap_count",
+        "calibration_holdout_split_overlap_count",
+    )
     if (
-        payload.get("calibration_overlap_count") != 0
-        or payload.get("holdout_overlap_count") != 0
+        type(source_record_count) is not int
+        or type(build_snapshot_record_count) is not int
+        or type(build_split_record_count) is not int
+        or not 0 < build_snapshot_record_count <= build_split_record_count <= source_record_count
+        or not isinstance(build_split_record_ids_sha256, str)
+        or len(build_split_record_ids_sha256) != 64
+        or any(character not in "0123456789abcdef" for character in build_split_record_ids_sha256)
+        or any(type(payload.get(key)) is not int or payload[key] != 0 for key in required_zero_counts)
         or payload.get("full_corpus_centroids_used") is not False
         or payload.get("generated_embedding_count") != 0
     ):
@@ -1541,6 +1612,15 @@ def _render_score_markdown(report: dict[str, Any]) -> str:
             f"{source['holdout_record_count']:,} records / "
             f"{source['holdout_overlap_count']} overlap; full-corpus centroids "
             f"`{str(source['full_corpus_centroids_used']).lower()}`."
+        ),
+        (
+            "- Split membership: "
+            f"{source['build_split_record_count']:,} BUILD records; "
+            f"snapshot non-BUILD `{source['build_non_build_record_count']}`; "
+            "BUILD/CAL, BUILD/HOLDOUT, CAL/HOLDOUT overlaps "
+            f"`{source['build_calibration_split_overlap_count']}/"
+            f"{source['build_holdout_split_overlap_count']}/"
+            f"{source['calibration_holdout_split_overlap_count']}`."
         ),
         (
             f"- BUILD attestation: `{source_ref['artifact_path']}` "

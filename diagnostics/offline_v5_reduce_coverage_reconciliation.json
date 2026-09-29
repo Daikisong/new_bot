@@ -1,7 +1,7 @@
 {
   "schema_version": "nslab.offline_v5_reduce_coverage_reconciliation.v1",
   "observed_at": "2026-09-28T18:40:00+09:00",
-  "updated_at": "2026-09-29T14:42:45+09:00",
+  "updated_at": "2026-09-29T15:28:23+09:00",
   "compile_id": "OFFLINE-COMPILE-add3461bd175147e255d",
   "compiler_version": "nslab.offline_semantic_brain.compiler.v5",
   "planned_logical_calls": 7671,
@@ -75,22 +75,22 @@
     }
   },
   "latest_live_poll": {
-      "observed_at": "2026-09-29T14:42:45+09:00",
+      "observed_at": "2026-09-29T15:28:23+09:00",
     "compile_id": "OFFLINE-COMPILE-add3461bd175147e255d",
     "build_pid": 1216,
     "build_status": "RUNNING_REDUCE_REVIEW",
     "planned_logical_calls": 7671,
-      "successful_v5_checkpoints": 7882,
+      "successful_v5_checkpoints": 7892,
     "failed_v5_checkpoints": 0,
-      "checkpoint_count_over_plan": 211,
+      "checkpoint_count_over_plan": 221,
     "stage_success_counts": {
       "offline_long_payload_map": 90,
       "offline_semantic_leaf": 7423,
-        "offline_semantic_reduce": 363,
+        "offline_semantic_reduce": 373,
       "offline_category_review": 6
     },
-    "planned_reduce_review_estimate": 136,
-      "completed_reduce_review_checkpoints": 369,
+    "planned_reduce_review_estimate": 126,
+      "completed_reduce_review_checkpoints": 379,
     "planned_category_count": 9,
     "completed_category_reviews": [
       "beneficiary_discovery",
@@ -112,29 +112,28 @@
     },
     "world_model_root_checkpoint_seen": false,
     "minimum_known_review_checkpoints_pending": 4,
-      "latest_checkpoint_id": "LLMCKPT-9856867d4108037e",
-      "latest_checkpoint_at": "2026-09-29T14:35:49+09:00",
+      "latest_checkpoint_id": "LLMCKPT-a8b98e9a046a2a29",
+      "latest_checkpoint_at": "2026-09-29T15:23:28.957626+09:00",
     "active_codex_oauth_requests": 3,
-      "python_working_set_gib": 0.24,
+      "python_working_set_gib": 2.97,
       "python_private_memory_gib": 6.3,
-      "available_ram_gib": 18.95,
-    "c_drive_free_gib": 172.76,
-      "checkpoint_scan_completed_at": "2026-09-29T14:42:45+09:00",
+      "available_ram_gib": 16.23,
+    "c_drive_free_gib": 170.39,
+      "checkpoint_scan_completed_at": "2026-09-29T15:28:23+09:00",
       "memory_observation_latest": {
-        "observed_at": "2026-09-29T14:18:08+09:00",
+        "observed_at": "2026-09-29T15:28:23+09:00",
         "python_process_count": 39,
-        "total_python_working_set_gib": 0.79,
+        "total_python_working_set_gib": 3.51,
         "build_pid": 1216,
-        "build_working_set_gib": 0.25,
+        "build_working_set_gib": 2.97,
         "build_private_memory_gib": 6.3,
-        "host_available_ram_gib": 18.95,
+        "host_available_ram_gib": 16.23,
         "trim_or_process_control_performed": false
       },
-      "active_oauth_poll_at": "2026-09-29T14:42:45+09:00",
       "quality_gates": {
         "ruff": "PASS",
         "mypy": "PASS: 139 source files",
-        "pytest": "PASS: 1901 tests in 312.24 seconds"
+        "pytest": "PASS: 1902 tests in 320.94 seconds"
       },
       "windows_search_temp_exclusion": {
         "path": "C:/Users/Public/Documents/ESTsoft/CreatorTemp/",
@@ -224,14 +223,14 @@
     "plan_reconciliation": {
       "status": "PLAN_UNDERESTIMATES_RUNTIME_REDUCE_TREE",
       "source_formula": "Planning counts hash-prefix category buckets; runtime reduction batches are additionally split by maximum child count and prompt byte size.",
-      "completion_eta": "LOW_CONFIDENCE_LOWER_BOUND_PROJECTION. At 13:24:04, 7,869 successful checkpoints are complete versus 7,671 planned (+198), with zero failures: 90 long-payload maps, 7,423 leaf maps, 350 reduces, and six category reviews. With at most 16 child nodes per reduce call, the theoretical minimum is ceil((7423-9)/15)=495 internal reduce nodes, plus nine category reviews and one world root: at least 8,018 total logical calls. At least 149 calls remain (145 minimum reduce nodes, three category reviews, and one world root); the 180,000-byte prompt ceiling can increase the reduce count. Sixty-six reduce checkpoints landed from 07:30:31 to 13:22:38 (about 5.34 minutes per checkpoint). At that recent pace, the minimum remaining count maps to about 13h15m more from 13:24, around 2026-09-30 02:40 KST. This is a low-confidence workload projection, not a guaranteed finish time, and actual completion may be later. The run has elapsed about 18h27m.",
+      "completion_eta": "LOW_CONFIDENCE_LOWER_BOUND_PROJECTION. At 15:28 KST, 7,892 successful checkpoints are complete versus the stale 7,671 plan (+221), with zero failures: 90 long-payload maps, 7,423 leaves, 373 reduces, and six category reviews. With at most 16 child nodes per reduce call, the theoretical minimum remains 8,018 total logical calls. At least 126 calls remain (122 minimum reduces, three category reviews, and one world root); prompt-size splitting can increase this. Six reduces completed between 15:01:51 and 15:23:28 KST. Current low-confidence estimate is about 10-14 more hours, around 2026-09-30 01:30-05:30 KST; actual completion may be later. Elapsed runtime is about 20h31m.",
       "minimum_total_logical_calls_lower_bound": 8018,
-      "minimum_remaining_logical_calls_lower_bound": 149,
+      "minimum_remaining_logical_calls_lower_bound": 126,
       "lower_bound_basis": "ceil((7423 leaf nodes - 9 category roots)/15 reduction per max-16-child node) + 9 category reviews + 1 world root + 90 long-payload maps + 7423 leaf maps; byte-size packing can only increase the reduce count.",
       "next_action": "Preserve this build through package sealing; then bind the C-arm V2 package to the verified BUILD-only replay snapshot before formal A/B/C scoring, and make future plans simulate actual leaf/reduce packing."
     },
     "formal_evaluation_input_audit": {
-      "status": "BUILD_ONLY_SNAPSHOT_EXISTS_CODE_GATE_IMPLEMENTED_REAL_V2_PACKAGE_NOT_YET_VALIDATED",
+      "status": "BUILD_ONLY_RECORD_PARTITION_V2_GATE_PASS_REAL_V2_PACKAGE_NOT_YET_VALIDATED",
       "source_project": "C:/Users/eorb9/projects/nslab_semantic_upgrade_v7_eval_v2/project",
       "snapshot_id": "MEMIDX-4409624afdffd1d01018",
       "build_cutoff": "2026-01-02T00:00:00+09:00",
@@ -245,10 +244,23 @@
       "generated_embedding_count": 0,
       "full_corpus_centroids_used": false,
       "thin_daily_v2_predictor_verifies_build_snapshot_binding": true,
+      "build_only_source_attestation_version": "nslab.thin_daily_build_source_attestation.v2",
+      "build_snapshot_records_must_belong_to_build_split": true,
+      "all_pairwise_split_record_overlaps_rejected": true,
       "real_build_only_v2_package_validated": false,
       "formal_abc_scoring_started": false
     },
-    "production_activated": false
+    "production_activated": false,
+    "pr_staging_audit": {
+      "current_branch": "codex/quality-full-pr126",
+      "pushed_head": "00f4ef79b7f8b13043f53d7cb5a01377a7885320",
+      "commits_ahead_of_main": 27,
+      "matching_open_pull_request_count": 0,
+      "goal_requires_separate_stages": ["PR-A", "PR-B", "PR-C", "PR-D"],
+      "direct_pr_a_cherry_pick_to_main": "CONFLICT_MISSING_V2_BASE_FILES; isolated attempt aborted",
+      "monolithic_pull_request_opened": false,
+      "next_action": "Prepare dependency-correct staged branches; keep production build running."
+    }
   },
   "production_activated": false
 }

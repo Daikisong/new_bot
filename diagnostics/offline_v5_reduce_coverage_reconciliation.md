@@ -548,3 +548,18 @@ The pytest run created about 1.14 GB under `C:\Users\Public\Documents\ESTsoft\Cr
 Checkpoint poll: PID `1216` is alive with three Codex OAuth requests. There are 7,882 successful V5 calls and zero failures; latest `LLMCKPT-9856867d4108037e` completed at 14:35:49. Four reductions completed since the 14:18 poll. At least 136 calls remain against the 8,018 minimum (132 reductions, three category reviews, one world root). The recent pace projects roughly 12-14 hours remaining, about 2026-09-30 03:00-05:00 KST; prompt splits can extend this low-confidence estimate.
 
 Ruff, mypy (139 files), and full pytest (1,901 tests) pass. BUILD-only source verification is implemented but has not yet been exercised against a real V2 evaluation package. A/B/C scoring has not started and production remains inactive. The Windows Search scope for `CreatorTemp` remains excluded; no temporary files were deleted.
+## 2026-09-29 15:02 KST
+
+The V5 build is live as PID `1216`, with 7,886 successful checkpoints and zero failures. Latest checkpoint: `LLMCKPT-a7beb9036a3fdd02` at 14:54:01; three Codex OAuth requests remain active. At least 132 calls remain against the 8,018 minimum, and prompt-size splits may increase that count. This is approximately 12-14 hours remaining at the recent rate, with low confidence.
+
+Current code gates remain green: Ruff, mypy (139 files), and full pytest (1,901 tests). Korean commit `00f4ef7` is pushed; the source worktree is clean. PR audit found no open PR for `codex/quality-full-pr126`; it is 27 commits ahead of `main`, and the objective requires separate PR-A/B/C/D stages. Cherry-picking PR-A's one-call commit directly onto `main` produced modify/delete conflicts because V2 files are absent from the base. The isolated attempt was aborted and its scratch worktree removed. No PR was opened; stage dependency separation is still required.
+
+At 15:02, Python working sets totaled 0.70 GiB across 39 processes; build PID `1216` used 0.23 GiB working set and 6.30 GiB private memory. Available RAM was 16.93 GiB and C: had 170.93 GiB free. Windows Search reports `CreatorTemp` excluded, idle status, zero pending queues, and no current indexed URL. The 1.14 GB pytest temp tree was not deleted and is not indexed.
+
+## 2026-09-29 15:28 KST
+
+The active V5 build is still PID `1216`. Six successful V5 reduce checkpoints landed after the 15:01:51 baseline; the latest is `LLMCKPT-a8b98e9a046a2a29` at 15:23:28. The ledger has 7,892 successes, zero failures: 90 long-payload maps, 7,423 leaves, 373 reduces, and six category reviews. Against the 8,018-call theoretical minimum, at least 126 calls remain (122 minimum reduces, three category reviews, and one world root); byte-size splits can raise the total. Low-confidence ETA is 10-14 hours, approximately 2026-09-30 01:30-05:30 KST.
+
+The BUILD-only evaluation attestation is now v2. It rejects any snapshot record not present in BUILD and any record-ID overlap across BUILD/CALIBRATION/HOLDOUT; the score artifact surfaces the split counts and overlap gates. Ruff and mypy pass, and full pytest passes all 1,902 tests in 320.94 seconds. The real BUILD-only package has not yet been validated, A/B/C scoring has not started, and production remains inactive.
+
+At 15:28, PID `1216` used 2.97 GiB working set and 6.30 GiB private memory; Python processes totaled 3.51 GiB working set, host available RAM was 16.23 GiB, and C: had 170.39 GiB free. No trim or process control was performed because the build is active and memory headroom remains.
