@@ -13,6 +13,7 @@ from news_scalping_lab.contracts.offline_brain import (
 )
 from news_scalping_lab.contracts.quality_evaluation import (
     BlindRuntimeCase,
+    BlindRuntimeSelection,
     QualityArtifactReference,
     ThinDailyQualityPredictionManifest,
     quality_full_runtime_profile,
@@ -24,6 +25,7 @@ from news_scalping_lab.evaluation.thin_daily_quality import (
     _validate_quality_cases_against_build_split,
     _verify_build_only_attestation_payload,
     predict_thin_daily_quality,
+    score_thin_daily_quality,
 )
 from news_scalping_lab.utils import (
     KST,
@@ -149,6 +151,78 @@ def test_blind_prediction_entrypoint_has_no_outcome_parameter() -> None:
     assert "blind_selection_path" in parameters
     assert "outcome_selection_path" not in parameters
     assert "truth" not in parameters
+
+
+def test_formal_prediction_uses_the_product_analyzer_and_blind_only_inputs() -> None:
+    source = inspect.getsource(predict_thin_daily_quality)
+    assert source.count("ThinDailyAnalyzer(") == 1
+    assert "await analyzers[arm_id].analyze(" in source
+    assert "load_runtime_outcome_selection" not in source
+
+
+def test_blind_selection_contract_cannot_carry_outcome_references() -> None:
+    case = _runtime_case("CASE-1", "CALIBRATION", date(2026, 1, 2))
+    case_payload = case.model_dump(mode="json")
+    case_payload["outcome_ledger"] = {
+        "artifact_path": "outcomes.jsonl",
+        "sha256": "7" * 64,
+    }
+    with pytest.raises(ValidationError):
+        BlindRuntimeCase.model_validate(case_payload)
+
+    selection = {
+        "schema_version": "nslab.blind_runtime_selection.v3",
+        "selection_id": "QSEL-test",
+        "source_selection_sha256": "8" * 64,
+        "selection_policy": "ALL_SOURCE_SPLIT_CASES",
+        "cases": [case.model_dump(mode="json")],
+        "outcome_reference_count": 1,
+    }
+    with pytest.raises(ValidationError):
+        BlindRuntimeSelection.model_validate(selection)
+
+
+def test_scoring_rejects_unsealed_predictions_before_opening_outcomes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    profile = quality_full_runtime_profile(
+        provider="codex-oauth",
+        model="gpt-5.6-sol",
+        reasoning_effort="xhigh",
+    )
+    architectures = {arm: str(index) * 64 for index, arm in enumerate("ABC", start=1)}
+    paired = ThinDailyQualityPredictionManifest(
+        run_id="THINQUAL-test",
+        profile=profile,
+        blind_selection=QualityArtifactReference(
+            artifact_path="runs/blind_runtime_selection.json",
+            sha256="4" * 64,
+        ),
+        build_only_source_attestation=QualityArtifactReference(
+            artifact_path="runs/build_only_source_attestation.json",
+            sha256="5" * 64,
+        ),
+        expected_case_ids=["CASE-1"],
+        expected_arm_ids=["A", "B", "C"],
+        expected_arm_architecture_sha256=architectures,
+    )
+    paired_path = tmp_path / "paired_predictions.json"
+    write_json(paired_path, paired.model_dump(mode="json"))
+
+    def reject_outcome_open(_path):
+        raise AssertionError("outcome selection must stay unopened before prediction closure")
+
+    monkeypatch.setattr(
+        "news_scalping_lab.evaluation.thin_daily_quality.load_runtime_outcome_selection",
+        reject_outcome_open,
+    )
+    with pytest.raises(ValueError, match="complete predictions sealed before outcomes"):
+        score_thin_daily_quality(
+            tmp_path,
+            paired_prediction_manifest_path=paired_path,
+            outcome_selection_path=tmp_path / "outcome_selection.json",
+        )
 
 
 def test_formal_package_requires_evaluation_only_build_snapshot(tmp_path) -> None:
