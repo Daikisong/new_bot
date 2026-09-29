@@ -38,6 +38,8 @@ class StockWebPriceSource:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.atlas_root = root / "atlas" if (root / "atlas").exists() else root
+        self._known_ticker_cache: list[str] | None = None
+        self._column_alias_cache: dict[str, list[str]] | None = None
 
     def inspect_atlas_schema(self) -> dict[str, Any]:
         manifest_path = self.atlas_root / "manifest.json"
@@ -130,7 +132,7 @@ class StockWebPriceSource:
         return schemas
 
     def get_history(self, ticker: str, *, through: date) -> list[PriceRecord]:
-        records = [record for record in self._iter_records(ticker) if record.trade_date <= through]
+        records = self._iter_records(ticker, through=through)
         return sorted(records, key=lambda record: record.trade_date)
 
     def get_snapshot(self, ticker: str, *, as_of: date) -> PriceRecord | None:
@@ -171,24 +173,88 @@ class StockWebPriceSource:
             universe[ticker] = outcome
         return universe
 
-    def _iter_records(self, ticker: str) -> list[PriceRecord]:
+    def get_blind_snapshot_universe(self, *, through: date) -> list[PriceRecord]:
+        """Return only ticker snapshots that already existed by the cutoff date."""
+
+        snapshots: list[PriceRecord] = []
+        for ticker in self._known_tickers():
+            snapshot = self._latest_snapshot_from_shards(ticker, through=through)
+            if snapshot is not None:
+                snapshots.append(snapshot)
+        return snapshots
+
+    def _latest_snapshot_from_shards(
+        self,
+        ticker: str,
+        *,
+        through: date,
+    ) -> PriceRecord | None:
+        """Read only the newest usable year shard for one cutoff-safe snapshot."""
+
+        paths = self._ticker_shard_paths(ticker, through=through)
+        if not paths:
+            return self.get_snapshot(ticker, as_of=through)
+        for path in reversed(paths):
+            latest: PriceRecord | None = None
+            try:
+                with path.open("r", encoding="utf-8-sig", newline="") as handle:
+                    reader = csv.DictReader(handle)
+                    for row in reader:
+                        parsed = self._row_to_record(
+                            ticker,
+                            row,
+                            through=through,
+                        )
+                        if parsed is not None and (
+                            latest is None
+                            or parsed.trade_date > latest.trade_date
+                        ):
+                            latest = parsed
+            except UnicodeDecodeError:
+                continue
+            if latest is not None:
+                return latest
+        return None
+
+    def _iter_records(
+        self,
+        ticker: str,
+        *,
+        through: date | None = None,
+    ) -> list[PriceRecord]:
         records: list[PriceRecord] = []
-        paths = self._ticker_shard_paths(ticker)
+        paths = self._ticker_shard_paths(ticker, through=through)
         if not paths:
             paths = sorted(self.root.rglob(f"*{ticker}*.csv"))
+            if through is not None:
+                paths = [
+                    path
+                    for path in paths
+                    if not path.stem.isdigit() or int(path.stem) <= through.year
+                ]
         for path in paths:
             try:
                 with path.open("r", encoding="utf-8-sig", newline="") as handle:
                     reader = csv.DictReader(handle)
                     for row in reader:
-                        parsed = self._row_to_record(ticker, row)
+                        parsed = self._row_to_record(
+                            ticker,
+                            row,
+                            through=through,
+                        )
                         if parsed is not None:
                             records.append(parsed)
             except UnicodeDecodeError:
                 continue
         return records
 
-    def _row_to_record(self, ticker: str, row: dict[str, str]) -> PriceRecord | None:
+    def _row_to_record(
+        self,
+        ticker: str,
+        row: dict[str, str],
+        *,
+        through: date | None = None,
+    ) -> PriceRecord | None:
         lowered = {_normalize_column_name(key): value for key, value in row.items()}
         aliases = self._column_aliases()
         date_value = _first_value(lowered, aliases["date"])
@@ -197,6 +263,8 @@ class StockWebPriceSource:
         try:
             trade_day = date.fromisoformat(date_value[:10])
         except ValueError:
+            return None
+        if through is not None and trade_day > through:
             return None
 
         def number(field: str) -> float | None:
@@ -225,11 +293,20 @@ class StockWebPriceSource:
             listed_shares=number("listed_shares"),
         )
 
-    def _ticker_shard_paths(self, ticker: str) -> list[Path]:
+    def _ticker_shard_paths(
+        self,
+        ticker: str,
+        *,
+        through: date | None = None,
+    ) -> list[Path]:
         normalized = _normalize_ticker(ticker)
         if normalized is None:
             return []
-        years = self._available_years(normalized)
+        years = [
+            year
+            for year in self._available_years(normalized)
+            if through is None or year <= through.year
+        ]
         prefix = normalized[:3]
         paths: list[Path] = []
         for root in self._preferred_shard_roots():
@@ -242,6 +319,8 @@ class StockWebPriceSource:
         return []
 
     def _known_tickers(self) -> list[str]:
+        if self._known_ticker_cache is not None:
+            return list(self._known_ticker_cache)
         tickers: set[str] = set()
         profile_root = self.atlas_root / "symbol_profiles"
         if profile_root.exists():
@@ -261,7 +340,8 @@ class StockWebPriceSource:
                     normalized = _normalize_ticker(ticker_dir.name)
                     if normalized is not None:
                         tickers.add(normalized)
-        return sorted(tickers)
+        self._known_ticker_cache = sorted(tickers)
+        return list(self._known_ticker_cache)
 
     def _available_years(self, ticker: str) -> list[int]:
         years = set(self._profile_available_years(ticker))
@@ -329,6 +409,8 @@ class StockWebPriceSource:
         return fields
 
     def _column_aliases(self) -> dict[str, list[str]]:
+        if self._column_alias_cache is not None:
+            return self._column_alias_cache
         aliases = {
             field: {_normalize_column_name(value) for value in values}
             for field, values in DEFAULT_COLUMN_ALIASES.items()
@@ -344,7 +426,10 @@ class StockWebPriceSource:
                     continue
                 aliases[canonical].add(_normalize_column_name(str(raw_key)))
                 aliases[canonical].add(_normalize_column_name(str(raw_value)))
-        return {field: sorted(values) for field, values in aliases.items()}
+        self._column_alias_cache = {
+            field: sorted(values) for field, values in aliases.items()
+        }
+        return self._column_alias_cache
 
 
 DEFAULT_COLUMN_ALIASES: dict[str, set[str]] = {

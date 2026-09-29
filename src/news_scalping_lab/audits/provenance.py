@@ -6034,20 +6034,100 @@ def _check_final_synthesis_semantic_cluster_coverage_context(
     if not isinstance(context, dict):
         findings.append(f"{prediction_path.name}: final_synthesis_context semantic_cluster_coverage mismatch")
         return
-    expected = {
-        "artifact": manifest.get("semantic_cluster_coverage_artifact"),
-        "summary": manifest.get("semantic_cluster_coverage_summary"),
-        "rows": semantic_cluster_coverage_rows,
-        "covered_cluster_ids": manifest.get("semantic_cluster_coverage_ids"),
-        "missing_cluster_ids": manifest.get("semantic_cluster_coverage_missing_ids"),
-        "promoted_record_ids": manifest.get("semantic_cluster_coverage_promoted_record_ids"),
-    }
-    if "daily_memory_context" not in context_payload:
-        expected["promoted_records"] = _record_context_for_ids(
-            root,
-            _string_list(manifest.get("semantic_cluster_coverage_promoted_record_ids")),
+    if (
+        context.get("prompt_rows_policy")
+        == "NONZERO_RESULT_ROWS_ONLY_WITH_COMPLETE_LANE_COUNTS_AND_FULL_ROW_ROOT.v1"
+    ):
+        row_identities = [
+            {
+                "cluster_id": row.get("cluster_id"),
+                "category": row.get("category"),
+                "query_sha256": row.get("query_sha256"),
+                "included_episode_ids": row.get("included_episode_ids", []),
+                "excluded_episode_ids": row.get("excluded_episode_ids", []),
+                "included_record_ids": row.get("included_record_ids", []),
+                "excluded_record_ids": row.get("excluded_record_ids", []),
+            }
+            for row in semantic_cluster_coverage_rows
+        ]
+        hit_rows = [
+            identity
+            for identity in row_identities
+            if any(
+                identity[key]
+                for key in (
+                    "included_episode_ids",
+                    "excluded_episode_ids",
+                    "included_record_ids",
+                    "excluded_record_ids",
+                )
+            )
+        ]
+        lane_counts = Counter(
+            str(row.get("category", ""))
+            for row in semantic_cluster_coverage_rows
         )
-    elif "promoted_records" in context:
+        lane_hit_counts = Counter(
+            str(row.get("category", ""))
+            for row, identity in zip(
+                semantic_cluster_coverage_rows,
+                row_identities,
+                strict=True,
+            )
+            if identity in hit_rows
+        )
+        covered_ids = _string_list(
+            manifest.get("semantic_cluster_coverage_ids")
+        )
+        expected = {
+            "artifact": manifest.get("semantic_cluster_coverage_artifact"),
+            "artifact_sha256": manifest.get(
+                "semantic_cluster_coverage_sha256"
+            ),
+            "summary": manifest.get("semantic_cluster_coverage_summary"),
+            "full_row_count": len(semantic_cluster_coverage_rows),
+            "full_row_identity_root_sha256": sha256_text(
+                canonical_json(row_identities)
+            ),
+            "prompt_rows_policy": (
+                "NONZERO_RESULT_ROWS_ONLY_WITH_COMPLETE_LANE_COUNTS_AND_FULL_ROW_ROOT.v1"
+            ),
+            "lane_row_counts": dict(sorted(lane_counts.items())),
+            "lane_hit_row_counts": dict(sorted(lane_hit_counts.items())),
+            "hit_rows": hit_rows,
+            "covered_cluster_count": len(covered_ids),
+            "covered_cluster_root_sha256": sha256_text(
+                canonical_json(covered_ids)
+            ),
+            "missing_cluster_ids": manifest.get(
+                "semantic_cluster_coverage_missing_ids"
+            ),
+            "promoted_record_ids": manifest.get(
+                "semantic_cluster_coverage_promoted_record_ids"
+            ),
+            "full_rows_silently_truncated": False,
+        }
+        forbidden_fields = {"rows", "covered_cluster_ids", "promoted_records"}
+    else:
+        expected = {
+            "artifact": manifest.get("semantic_cluster_coverage_artifact"),
+            "summary": manifest.get("semantic_cluster_coverage_summary"),
+            "rows": semantic_cluster_coverage_rows,
+            "covered_cluster_ids": manifest.get("semantic_cluster_coverage_ids"),
+            "missing_cluster_ids": manifest.get("semantic_cluster_coverage_missing_ids"),
+            "promoted_record_ids": manifest.get("semantic_cluster_coverage_promoted_record_ids"),
+        }
+        if "daily_memory_context" not in context_payload:
+            expected["promoted_records"] = _record_context_for_ids(
+                root,
+                _string_list(
+                    manifest.get("semantic_cluster_coverage_promoted_record_ids")
+                ),
+            )
+            forbidden_fields = set()
+        else:
+            forbidden_fields = {"promoted_records"}
+    if forbidden_fields & set(context):
         findings.append(
             f"{prediction_path.name}: final_synthesis_context semantic_cluster_coverage mismatch"
         )

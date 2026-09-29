@@ -213,7 +213,7 @@ def test_lane_balancing() -> None:
     assert {lane for _candidate_row, lane in selected} == set(RUNTIME_LANES)
 
 
-def test_offline_unexposed_record_can_be_recovered() -> None:
+def test_runtime_v4_retrieves_offline_unexposed_records() -> None:
     exposed = _candidate(_record("REC-EXPOSED"), score=0.9, exposed=True)
     unexposed = _candidate(_record("REC-UNEXPOSED"), score=0.8, exposed=False)
     selected, _dropped = select_runtime_candidates(
@@ -324,7 +324,7 @@ def test_rare_reasoning_record_is_not_suppressed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_selected_record_enters_runtime_evidence_memo(
+async def test_selected_record_payload_enters_evidence_memo(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

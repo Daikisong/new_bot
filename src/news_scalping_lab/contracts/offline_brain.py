@@ -430,6 +430,11 @@ class DailyBrainContext(StrictModel):
     brain_version: str
     brain_package_root: str
     brain_build_cutoff: datetime
+    brain_projection_mode: Literal[
+        "FULL_PACKAGE",
+        "POINT_IN_TIME_EVIDENCE_ONLY",
+        "NO_HISTORICAL_BRAIN",
+    ] = "FULL_PACKAGE"
     retrieval_basis: Literal["CURRENT_NEWS", "MODEL_INTERPRETATION"]
     current_event_capsules_sha256: str
     interpretation_sha256: str | None = None
@@ -464,6 +469,22 @@ class DailyBrainContext(StrictModel):
             raise ValueError("daily brain context cannot perform a full corpus scan")
         if self.future_record_count != 0:
             raise ValueError("daily brain context cannot contain future records")
+        if self.brain_projection_mode == "POINT_IN_TIME_EVIDENCE_ONLY" and self.compiled_brain_guidance:
+            raise ValueError("point-in-time projection cannot expose full-corpus guidance")
+        if self.brain_projection_mode == "NO_HISTORICAL_BRAIN" and any(
+            (
+                self.compiled_brain_guidance,
+                self.selected_semantic_capsules,
+                self.selected_mechanism_claims,
+                self.population_statistics,
+                self.beneficiary_graph,
+                self.leader_selection_memory,
+                self.continuation_memory,
+                self.unresolved_contradictions,
+                self.exact_witnesses,
+            )
+        ):
+            raise ValueError("no-brain baseline cannot contain historical knowledge")
         return self
 
 
@@ -505,6 +526,11 @@ class ThinDailyRunManifest(StrictModel):
     llm_model_config: dict[str, Any]
     brain_version: str
     brain_package_root: str
+    brain_projection_mode: Literal[
+        "FULL_PACKAGE",
+        "POINT_IN_TIME_EVIDENCE_ONLY",
+        "NO_HISTORICAL_BRAIN",
+    ] = "FULL_PACKAGE"
     brain_context_loaded_before_first_llm: Literal[True]
     brain_retrieval_basis: Literal["CURRENT_NEWS"]
     compiled_brain_guidance_count: int

@@ -30,6 +30,7 @@ from news_scalping_lab.contracts.offline_brain import (
     SemanticMemoryCapsule,
     SemanticReduceNode,
 )
+from news_scalping_lab.inference.thin_daily import _validate_brain_context_as_of
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.utils import (
     KST,
@@ -635,6 +636,46 @@ async def test_daily_reader_uses_only_precompiled_package(tmp_path: Path) -> Non
         representative_title="fixture event",
         published_times=[datetime(2026, 1, 2, 7, 0, tzinfo=KST)],
     )
+    initial_context = await provider.retrieve(
+        interpretation=None,
+        current_event_capsules=[current],
+        cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
+        max_exact_witnesses=24,
+    )
+    assert initial_context.retrieval_basis == "CURRENT_NEWS"
+    assert initial_context.interpretation_sha256 is None
+    assert initial_context.selected_semantic_capsules
+    assert initial_context.brain_build_cutoff == result.package_manifest.build_cutoff
+    assert initial_context.compiled_brain_guidance[0].content == (
+        result.package_dir / "world_model.md"
+    ).read_text(encoding="utf-8")
+    assert len(initial_context.compiled_brain_guidance) == 1 + len(list(
+        (result.package_dir / "category_brain").glob("*.md")
+    ))
+    historical_provider = BrainPackageDailyContextProvider(
+        settings,
+        package_dir=result.package_dir,
+        embedding_provider=Embedding384(),
+        allow_point_in_time_projection=True,
+    )
+    historical_cutoff = datetime(2025, 1, 5, 8, 0, tzinfo=KST)
+    historical_context = await historical_provider.retrieve(
+        interpretation=None,
+        current_event_capsules=[current],
+        cutoff_at=historical_cutoff,
+        max_exact_witnesses=24,
+    )
+    assert historical_context.brain_projection_mode == "POINT_IN_TIME_EVIDENCE_ONLY"
+    assert historical_context.compiled_brain_guidance == []
+    assert all(
+        capsule.available_from <= historical_cutoff
+        for capsule in historical_context.selected_semantic_capsules
+    )
+    assert all(
+        claim.available_from <= historical_cutoff
+        for claim in historical_context.selected_mechanism_claims
+    )
+    _validate_brain_context_as_of(historical_context, cutoff_at=historical_cutoff)
     context = await provider.retrieve(
         interpretation=interpretation,
         current_event_capsules=[current],

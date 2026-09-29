@@ -8,12 +8,16 @@ from typer.main import get_command
 
 from news_scalping_lab.cli import app
 from news_scalping_lab.llm.base import conservative_token_upper_bound
+from news_scalping_lab.memory import diversity as diversity_module
 from news_scalping_lab.memory.adaptive_retrieval import AdaptiveRetriever, _expansion_query
 from news_scalping_lab.memory.diversity import (
     REPRESENTATIVE_MAX_TRADE_DATE_CONCENTRATION,
+    RepresentativeSelectionBudgetError,
     RepresentativeSelector,
     _Candidate,
     _mmr_select,
+    _normalized_cosine,
+    _pairwise_normalized_cosines,
     _representative_row,
     _stratified_candidate_pool,
     _unit_candidates,
@@ -49,6 +53,23 @@ def _provider() -> AsyncEmbeddingProviderAdapter:
         embedding_method="llm_embedding:test:representative-v1",
         production_capability_attested=True,
     )
+
+
+def test_pairwise_similarity_matrix_preserves_cosine_and_zero_vector_semantics() -> None:
+    vectors = [
+        (1.0, 0.0),
+        (0.0, 1.0),
+        (-1.0, 0.0),
+        (0.0, 0.0),
+    ]
+
+    observed = _pairwise_normalized_cosines(vectors)
+
+    for row_index, left in enumerate(vectors):
+        for column_index, right in enumerate(vectors):
+            assert observed[row_index, column_index] == pytest.approx(
+                _normalized_cosine(left, right)
+            )
 
 
 def _record(
@@ -163,6 +184,30 @@ def test_representative_selection_preserves_units_strata_and_provenance(
     assert selector.inspect(result.manifest_path)["passed"] is True
 
 
+def test_representative_source_query_reuses_bounded_runtime_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index, _population_path = _build_population(tmp_path, monkeypatch)
+    record_ids = [f"REC-{value:03d}" for value in range(1, 19)]
+    first_snapshot, first_rows = index.representative_source_records(
+        record_ids,
+        cutoff_at=datetime(2030, 1, 20, tzinfo=KST),
+    )
+
+    def fail_database_connection(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("identical representative source query must use its cache")
+
+    monkeypatch.setattr(index, "_runtime_connection", fail_database_connection)
+    second_snapshot, second_rows = index.representative_source_records(
+        record_ids,
+        cutoff_at=datetime(2030, 1, 20, tzinfo=KST),
+    )
+
+    assert second_snapshot == first_snapshot
+    assert second_rows == first_rows
+
+
 def test_representative_inspection_detects_artifact_tamper(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -180,6 +225,11 @@ def test_representative_inspection_detects_artifact_tamper(
 
     assert inspection["passed"] is False
     assert "representative_records_hash_mismatch" in inspection["errors"]
+    with pytest.raises(ValueError, match="cached representative closure is invalid"):
+        selector.build(
+            population_manifest_path=population_path,
+            query="supply agreement market response",
+        )
 
 
 def test_representative_selection_is_deterministic(
@@ -193,6 +243,11 @@ def test_representative_selection_is_deterministic(
         population_manifest_path=population_path,
         query="supply agreement market response",
     )
+
+    def fail_source_query(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("verified representative resume must not repeat the source query")
+
+    monkeypatch.setattr(index, "representative_source_records", fail_source_query)
     second = selector.build(
         population_manifest_path=population_path,
         query="supply agreement market response",
@@ -259,6 +314,12 @@ def test_adaptive_retrieval_is_bounded_reproducible_and_auditable(
         max_record_count=32,
         max_token_count=72_000,
     )
+    original_search_cells = index.search_cells
+
+    def fail_adaptive_search(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("verified adaptive resume must not repeat cell search")
+
+    monkeypatch.setattr(index, "search_cells", fail_adaptive_search)
     second, second_path = adaptive.run(
         initial_population_manifest_path=initial_population.manifest_path,
         initial_representative_set_manifest_path=(
@@ -270,6 +331,7 @@ def test_adaptive_retrieval_is_bounded_reproducible_and_auditable(
         max_record_count=32,
         max_token_count=72_000,
     )
+    monkeypatch.setattr(index, "search_cells", original_search_cells)
 
     assert first == second
     assert trace_path == second_path
@@ -463,6 +525,63 @@ def test_distribution_constraint_overrides_relevance_bias() -> None:
     assert len(selected) >= 16
     assert abs(counts["POSITIVE"] / len(selected) - 0.5) <= 0.25
     assert abs(counts["NEGATIVE"] / len(selected) - 0.5) <= 0.25
+
+
+def test_quality_full_never_relaxes_distribution_tolerance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(diversity_module, "REPRESENTATIVE_MAX_SELECTED_RECORDS", 3)
+    monkeypatch.setattr(
+        diversity_module,
+        "REPRESENTATIVE_DISTRIBUTION_SHARE_ERROR_TOLERANCE",
+        0.0,
+    )
+    candidates = []
+    source_by_id = {}
+    population_strata = {
+        "polarity:POSITIVE": set(),
+        "polarity:NEGATIVE": set(),
+    }
+    for index in range(10):
+        polarity = "POSITIVE" if index < 5 else "NEGATIVE"
+        record_id = f"REC-SHORTFALL-{index:03d}"
+        unit_id = f"UNIT-SHORTFALL-{index:03d}"
+        candidate = _Candidate(
+            record_id=record_id,
+            independent_unit_id=unit_id,
+            trade_date=date(2030, 1, 1) + timedelta(days=index % 8),
+            concentration_key=unit_id,
+            strata=(f"polarity:{polarity}",),
+            record_label_quality="verified",
+        )
+        candidates.append(candidate)
+        population_strata[f"polarity:{polarity}"].add(unit_id)
+        source_by_id[record_id] = RepresentativeSourceRecord(
+            record_id=record_id,
+            embedding=(1.0, 0.0),
+            document=f"structural evidence {record_id}",
+            source_sha256=sha256_text(record_id),
+            provenance_source_ids=(f"SRC-{record_id}",),
+        )
+
+    with pytest.raises(RepresentativeSelectionBudgetError, match="population distribution"):
+        _mmr_select(
+            candidates,
+            source_by_id,
+            [1.0, 0.0],
+            target_selected_record_count=3,
+            population_strata=population_strata,
+        )
+
+    with pytest.raises(RepresentativeSelectionBudgetError, match="population distribution"):
+        _mmr_select(
+            candidates,
+            source_by_id,
+            [1.0, 0.0],
+            target_selected_record_count=3,
+            population_strata=population_strata,
+            max_token_count=48_000,
+        )
 
 
 def test_multi_record_unit_keeps_member_specific_minority_candidate() -> None:

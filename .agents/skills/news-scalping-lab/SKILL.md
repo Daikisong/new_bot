@@ -142,6 +142,29 @@ python -m news_scalping_lab.cli memory run-runtime-variant-shadow \
   --split CALIBRATION
 ```
 
+`run-runtime-variant-shadow` is a legacy diagnostic-only command. Its v1 split
+selection contains outcome-reference strings even though the implementation now
+defers every outcome open until global V0/V1 prediction closure. Do not use it
+for a formal quality claim, model selection, or promotion. Formal evaluation
+requires the physically separated commands below.
+
+Formal `QUALITY_FULL` runtime evaluation uses three physically separated steps:
+
+```bash
+python -m news_scalping_lab.cli memory prepare-quality-runtime-selection \
+  --project-root <evaluation-project> \
+  --source-selection <sealed-source-selection> \
+  --split CALIBRATION \
+  --scope THREE_CASE
+python -m news_scalping_lab.cli memory predict-runtime-variants \
+  --project-root <evaluation-project> \
+  --blind-selection <blind-runtime-selection.json>
+python -m news_scalping_lab.cli memory score-runtime-variants \
+  --project-root <evaluation-project> \
+  --paired-predictions <paired-prediction-manifest.json> \
+  --outcome-selection <runtime-outcome-selection.json>
+```
+
 - Preserve source `available_from`; replay snapshots store a separate effective
   next-session timestamp and are always `evaluation_only`.
 - BUILD excludes every CALIBRATION/HOLDOUT record, outcome, claim, centroid,

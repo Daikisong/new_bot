@@ -406,6 +406,179 @@
       "title": "Cutoff At",
       "type": "string"
     },
+    "d_minus_one_candidate_universe_root_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "D Minus One Candidate Universe Root Sha256"
+    },
+    "d_minus_one_consumed_payload_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "D Minus One Consumed Payload Sha256"
+    },
+    "d_minus_one_context_artifact": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "D Minus One Context Artifact"
+    },
+    "d_minus_one_context_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "D Minus One Context Sha256"
+    },
+    "d_minus_one_payload_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "D Minus One Payload Sha256"
+    },
+    "d_minus_one_projection_missing_ticker_count": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "D Minus One Projection Missing Ticker Count"
+    },
+    "d_minus_one_projection_policy": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "D Minus One Projection Policy"
+    },
+    "d_minus_one_projection_requested_ticker_count": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "D Minus One Projection Requested Ticker Count"
+    },
+    "d_minus_one_projection_root_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "D Minus One Projection Root Sha256"
+    },
+    "d_minus_one_projection_snapshot_count": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "D Minus One Projection Snapshot Count"
+    },
+    "d_minus_one_projection_status": {
+      "anyOf": [
+        {
+          "enum": [
+            "PENDING",
+            "BOUND"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "D Minus One Projection Status"
+    },
+    "d_minus_one_snapshot_root_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "D Minus One Snapshot Root Sha256"
+    },
+    "d_minus_one_snapshot_session_date": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "D Minus One Snapshot Session Date"
+    },
+    "d_minus_one_source_revision_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "D Minus One Source Revision Sha256"
+    },
     "daily_memory_context_artifact": {
       "anyOf": [
         {
@@ -448,6 +621,18 @@
       },
       "title": "Errors",
       "type": "array"
+    },
+    "evaluation_profile": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evaluation Profile"
     },
     "event_cluster_artifact": {
       "anyOf": [
@@ -934,6 +1119,18 @@
       "title": "Open World First Analysis Summary",
       "type": "object"
     },
+    "parsed_news_root_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parsed News Root Sha256"
+    },
     "phase_state_artifact": {
       "anyOf": [
         {
@@ -969,6 +1166,19 @@
       ],
       "default": null,
       "title": "Prediction Artifact"
+    },
+    "prediction_input_boundary_version": {
+      "anyOf": [
+        {
+          "const": "SEALED_BLIND_INPUT.v3",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Prediction Input Boundary Version"
     },
     "prediction_sha256": {
       "anyOf": [
@@ -1119,6 +1329,18 @@
       "title": "Schema Version",
       "type": "string"
     },
+    "sealed_blind_input_manifest_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sealed Blind Input Manifest Sha256"
+    },
     "semantic_cluster_coverage_artifact": {
       "anyOf": [
         {
@@ -1259,6 +1481,59 @@
       },
       "title": "Shard Brain Files",
       "type": "array"
+    },
+    "shared_pre_retrieval_context_artifact": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Shared Pre Retrieval Context Artifact"
+    },
+    "shared_pre_retrieval_context_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Shared Pre Retrieval Context Sha256"
+    },
+    "shared_pre_retrieval_manifest_artifact": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Shared Pre Retrieval Manifest Artifact"
+    },
+    "shared_pre_retrieval_manifest_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Shared Pre Retrieval Manifest Sha256"
+    },
+    "shared_pre_retrieval_summary": {
+      "additionalProperties": true,
+      "title": "Shared Pre Retrieval Summary",
+      "type": "object"
     },
     "source_ledger_artifact": {
       "anyOf": [

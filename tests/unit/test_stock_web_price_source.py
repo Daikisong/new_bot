@@ -45,6 +45,75 @@ def _write_minimal_stock_web_atlas(root: Path) -> None:
     )
 
 
+def test_blind_snapshot_universe_excludes_future_listings_and_rows(
+    tmp_path: Path,
+) -> None:
+    _write_minimal_stock_web_atlas(tmp_path)
+    atlas = tmp_path / "atlas" / "ohlcv_tradable_by_symbol_year"
+    historical_dir = atlas / "111" / "111111"
+    future_dir = atlas / "222" / "222222"
+    historical_dir.mkdir(parents=True)
+    future_dir.mkdir(parents=True)
+    (historical_dir / "2030.csv").write_text(
+        "d,o,h,l,c\n"
+        "2030-01-09,100,101,99,100\n"
+        "2030-01-10,999,999,999,999\n",
+        encoding="utf-8",
+    )
+    (future_dir / "2030.csv").write_text(
+        "d,o,h,l,c\n2030-01-10,200,201,199,200\n",
+        encoding="utf-8",
+    )
+
+    snapshots = StockWebPriceSource(tmp_path).get_blind_snapshot_universe(
+        through=date(2030, 1, 9)
+    )
+
+    assert [(row.ticker, row.trade_date, row.close) for row in snapshots] == [
+        ("111111", date(2030, 1, 9), 100.0)
+    ]
+
+
+def test_blind_snapshot_universe_latest_shard_matches_full_history_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_minimal_stock_web_atlas(tmp_path)
+    ticker_dir = (
+        tmp_path
+        / "atlas"
+        / "ohlcv_tradable_by_symbol_year"
+        / "111"
+        / "111111"
+    )
+    ticker_dir.mkdir(parents=True)
+    old_path = ticker_dir / "2029.csv"
+    old_path.write_text(
+        "d,o,h,l,c\n2029-12-30,80,81,79,80\n",
+        encoding="utf-8",
+    )
+    (ticker_dir / "2030.csv").write_text(
+        "d,o,h,l,c\n"
+        "2030-01-08,90,91,89,90\n"
+        "2030-01-10,999,999,999,999\n"
+        "2030-01-09,100,101,99,100\n",
+        encoding="utf-8",
+    )
+    source = StockWebPriceSource(tmp_path)
+    expected = source.get_snapshot("111111", as_of=date(2030, 1, 9))
+    original_open = Path.open
+
+    def guarded_open(path: Path, *args: object, **kwargs: object) -> object:
+        if path.resolve() == old_path.resolve():
+            raise AssertionError("optimized snapshot reopened an older year shard")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", guarded_open)
+    snapshots = source.get_blind_snapshot_universe(through=date(2030, 1, 9))
+
+    assert snapshots == [expected]
+
+
 def test_stock_web_reads_manifest_schema_and_symbol_year_shards(tmp_path) -> None:
     atlas = tmp_path / "atlas"
     upper_limit_ticker = "901001"

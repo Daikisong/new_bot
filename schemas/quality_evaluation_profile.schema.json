@@ -1,0 +1,94 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "call_count_is_blocking": {
+      "default": false,
+      "title": "Call Count Is Blocking",
+      "type": "boolean"
+    },
+    "checkpoint_resume_required": {
+      "default": true,
+      "title": "Checkpoint Resume Required",
+      "type": "boolean"
+    },
+    "daily_p95_gate_seconds": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Daily P95 Gate Seconds"
+    },
+    "latency_is_blocking": {
+      "default": false,
+      "title": "Latency Is Blocking",
+      "type": "boolean"
+    },
+    "live_latency_target_source": {
+      "default": "DISABLED",
+      "enum": [
+        "DISABLED",
+        "USER_DEFINED_ONLY"
+      ],
+      "title": "Live Latency Target Source",
+      "type": "string"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "profile": {
+      "enum": [
+        "QUALITY_FULL",
+        "LIVE_OPERATIONAL"
+      ],
+      "title": "Profile",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "reasoning_effort": {
+      "title": "Reasoning Effort",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "nslab.quality_evaluation_profile.v1",
+      "default": "nslab.quality_evaluation_profile.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "token_is_blocking": {
+      "default": false,
+      "title": "Token Is Blocking",
+      "type": "boolean"
+    },
+    "wall_clock_limit_seconds": {
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0.0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Wall Clock Limit Seconds"
+    }
+  },
+  "required": [
+    "profile",
+    "provider",
+    "model",
+    "reasoning_effort"
+  ],
+  "title": "QualityEvaluationProfile",
+  "type": "object"
+}
