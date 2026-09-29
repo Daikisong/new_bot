@@ -91,6 +91,7 @@ from news_scalping_lab.utils import (
 )
 
 QUALITY_RUNTIME_SELECTION_VERSION = "nslab.quality_runtime_selection.v3"
+POST_CUTOFF_MIN_TRADE_DATE = date(2026, 6, 24)
 BLIND_INPUT_CANONICALIZATION_VERSION = "quality_blind_news_csv.v2"
 D_MINUS_ONE_CANONICALIZATION_VERSION = "quality_sealed_d_minus_one.v1"
 BLIND_INPUT_ROOT = Path(
@@ -157,7 +158,7 @@ class BlindCaseNewsInput:
 class _PreparedQualityCase:
     episode_id: str
     trade_date: date
-    split: Literal["CALIBRATION", "HOLDOUT"]
+    split: Literal["CALIBRATION", "HOLDOUT", "POST_CUTOFF"]
     cutoff_at: datetime
     cutoff_derivation: Literal[
         "NORMALIZED_INDEX",
@@ -174,7 +175,7 @@ def prepare_quality_runtime_selection(
     root: Path,
     *,
     source_selection_path: Path,
-    split: Literal["CALIBRATION", "HOLDOUT"],
+    split: Literal["CALIBRATION", "HOLDOUT", "POST_CUTOFF"],
     scope: QualitySelectionScope,
     price_source: BlindSnapshotUniversePriceSource,
 ) -> QualityRuntimeSelectionResult:
@@ -298,8 +299,18 @@ def _validate_blind_runtime_selection_payload(
     }
     scope = scope_by_policy.get(selection.selection_policy)
     splits = {case.split for case in selection.cases}
-    if scope is None or not splits.issubset({"CALIBRATION", "HOLDOUT"}) or len(splits) != 1:
+    if (
+        scope is None
+        or not splits.issubset({"CALIBRATION", "HOLDOUT", "POST_CUTOFF"})
+        or len(splits) != 1
+    ):
         raise ValueError("blind runtime selection policy identity is invalid")
+    if any(
+        case.split == "POST_CUTOFF"
+        and case.trade_date < POST_CUTOFF_MIN_TRADE_DATE
+        for case in selection.cases
+    ):
+        raise ValueError("post-cutoff quality cases must be dated after 2026-06-23")
     expected_selection_id = stable_id(
         "QSEL",
         canonical_json(
@@ -476,7 +487,7 @@ def _prepare_source_case(
     root: Path,
     *,
     row: dict[str, Any],
-    split: Literal["CALIBRATION", "HOLDOUT"],
+    split: Literal["CALIBRATION", "HOLDOUT", "POST_CUTOFF"],
 ) -> _PreparedQualityCase:
     episode_id = row.get("episode_id")
     trade_date = row.get("trade_date")
@@ -495,6 +506,10 @@ def _prepare_source_case(
         raise ValueError("quality runtime normalized index identity mismatch")
     cutoff_value = index.get("cutoff_at")
     parsed_trade_date = date.fromisoformat(str(trade_date))
+    if split == "POST_CUTOFF" and parsed_trade_date < POST_CUTOFF_MIN_TRADE_DATE:
+        raise ValueError(
+            "post-cutoff quality cases must be dated after 2026-06-23"
+        )
     if isinstance(cutoff_value, str) and cutoff_value.strip():
         cutoff_at = as_kst(parse_datetime(cutoff_value))
         cutoff_derivation: Literal[

@@ -352,6 +352,89 @@ def test_blind_selection_identity_rejects_case_swap(tmp_path: Path) -> None:
         load_blind_runtime_selection(tmp_path, prepared.blind_selection_path)
 
 
+def test_post_cutoff_full_split_is_sealed_and_date_gated(tmp_path: Path) -> None:
+    source_path = tmp_path / "source_selection.json"
+    cases = [
+        _source_case(
+            tmp_path,
+            index=index,
+            row_count=index,
+            split="POST_CUTOFF",
+            trade_date=date(2026, 6, 23 + index),
+        )
+        for index in range(1, 4)
+    ]
+    write_json(
+        source_path,
+        {
+            "schema_version": "nslab.semantic_upgrade_split_selection.v1",
+            "cases": cases,
+        },
+    )
+
+    prepared = prepare_quality_runtime_selection(
+        tmp_path,
+        source_selection_path=source_path,
+        split="POST_CUTOFF",
+        scope="FULL_SPLIT",
+    )
+
+    loaded = load_blind_runtime_selection(tmp_path, prepared.blind_selection_path)
+    assert {case.split for case in loaded.cases} == {"POST_CUTOFF"}
+    assert {case.split for case in prepared.outcome_selection.cases} == {"POST_CUTOFF"}
+    assert len(loaded.cases) == len(prepared.outcome_selection.cases) == 3
+
+    forged_payload = json.loads(prepared.blind_selection_path.read_bytes())
+    forged_payload["cases"][0]["trade_date"] = "2026-06-23"
+    forged_payload["cases"][0]["cutoff_at"] = "2026-06-23T08:59:59+09:00"
+    forged_selection_id = quality_runtime_module.stable_id(
+        "QSEL",
+        canonical_json(
+            {
+                "version": quality_runtime_module.QUALITY_RUNTIME_SELECTION_VERSION,
+                "source_selection_sha256": forged_payload["source_selection_sha256"],
+                "split": "POST_CUTOFF",
+                "scope": "FULL_SPLIT",
+                "cases": forged_payload["cases"],
+            }
+        ),
+        length=20,
+    )
+    forged_payload["selection_id"] = forged_selection_id
+    forged_path = (
+        tmp_path
+        / quality_runtime_module.BLIND_SELECTION_ROOT
+        / forged_selection_id
+        / quality_runtime_module.BLIND_SELECTION_FILENAME
+    )
+    write_json(forged_path, forged_payload)
+    with pytest.raises(ValueError, match="dated after 2026-06-23"):
+        load_blind_runtime_selection(tmp_path, forged_path)
+
+    early_source_path = tmp_path / "early_source_selection.json"
+    early_case = _source_case(
+        tmp_path,
+        index=4,
+        row_count=1,
+        split="POST_CUTOFF",
+        trade_date=date(2026, 6, 23),
+    )
+    write_json(
+        early_source_path,
+        {
+            "schema_version": "nslab.semantic_upgrade_split_selection.v1",
+            "cases": [early_case],
+        },
+    )
+    with pytest.raises(ValueError, match="dated after 2026-06-23"):
+        prepare_quality_runtime_selection(
+            tmp_path,
+            source_selection_path=early_source_path,
+            split="POST_CUTOFF",
+            scope="FULL_SPLIT",
+        )
+
+
 def test_price_source_revision_changes_qinput_and_selection_identity(
     tmp_path: Path,
 ) -> None:
@@ -1899,12 +1982,19 @@ def _blind_selection_payload(root: Path) -> dict[str, object]:
     }
 
 
-def _source_case(root: Path, *, index: int, row_count: int) -> dict[str, object]:
+def _source_case(
+    root: Path,
+    *,
+    index: int,
+    row_count: int,
+    split: str = "CALIBRATION",
+    trade_date: date | None = None,
+) -> dict[str, object]:
     episode_id = f"CASE-{index}"
     episode_dir = root / "research" / episode_id
     episode_dir.mkdir(parents=True, exist_ok=True)
     normalized_path = episode_dir / "normalized.json"
-    trade_date = date(2026, 1, index)
+    trade_date = trade_date or date(2026, 1, index)
     write_json(
         normalized_path,
         {
@@ -1930,7 +2020,7 @@ def _source_case(root: Path, *, index: int, row_count: int) -> dict[str, object]
     return {
         "episode_id": episode_id,
         "trade_date": trade_date.isoformat(),
-        "split": "CALIBRATION",
+        "split": split,
         "normalized_index": {
             "artifact_path": normalized_path.relative_to(root).as_posix(),
             "sha256": file_sha256(normalized_path),

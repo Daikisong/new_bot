@@ -37,6 +37,7 @@ from news_scalping_lab.contracts.quality_evaluation import (
     quality_full_runtime_profile,
 )
 from news_scalping_lab.evaluation.quality_runtime import (
+    POST_CUTOFF_MIN_TRADE_DATE,
     load_blind_runtime_selection,
     load_runtime_outcome_selection,
     materialize_blind_case_news,
@@ -997,6 +998,8 @@ def _validate_quality_cases_against_build_split(
         if case.split == "POST_CUTOFF":
             if case.episode_id in build_ids | calibration_ids | holdout_ids:
                 raise ValueError("post-cutoff case overlaps the historical evaluation split")
+            if case.trade_date < POST_CUTOFF_MIN_TRADE_DATE:
+                raise ValueError("post-cutoff case is not after 2026-06-23")
             if case.trade_date <= build_cutoff.date():
                 raise ValueError("post-cutoff case is not after the BUILD snapshot cutoff")
             continue

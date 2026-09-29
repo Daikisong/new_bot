@@ -444,7 +444,7 @@ def test_formal_cases_must_match_the_attested_split() -> None:
     cases = [
         _runtime_case("CAL-1", "CALIBRATION", date(2026, 1, 2)),
         _runtime_case("HOLD-1", "HOLDOUT", date(2026, 1, 3)),
-        _runtime_case("POST-1", "POST_CUTOFF", date(2026, 1, 5)),
+        _runtime_case("POST-1", "POST_CUTOFF", date(2026, 6, 24)),
     ]
 
     _validate_quality_cases_against_build_split(
@@ -455,6 +455,12 @@ def test_formal_cases_must_match_the_attested_split() -> None:
     with pytest.raises(ValueError, match="attested BUILD split"):
         _validate_quality_cases_against_build_split(
             [_runtime_case("BUILD-1", "CALIBRATION", date(2026, 1, 2))],
+            split_case_ids=split_ids,
+            build_cutoff=cutoff,
+        )
+    with pytest.raises(ValueError, match="not after 2026-06-23"):
+        _validate_quality_cases_against_build_split(
+            [_runtime_case("POST-EARLY", "POST_CUTOFF", date(2026, 6, 23))],
             split_case_ids=split_ids,
             build_cutoff=cutoff,
         )

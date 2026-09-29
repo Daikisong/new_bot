@@ -9024,7 +9024,7 @@ def memory_prepare_quality_runtime_selection(
 ) -> None:
     normalized_split = split.strip().upper()
     normalized_scope = scope.strip().upper()
-    if normalized_split not in {"CALIBRATION", "HOLDOUT"}:
+    if normalized_split not in {"CALIBRATION", "HOLDOUT", "POST_CUTOFF"}:
         _exit_with_error(ValueError("quality runtime selection split is invalid"))
     if normalized_scope not in {"THREE_CASE", "FULL_SPLIT"}:
         _exit_with_error(ValueError("quality runtime selection scope is invalid"))
@@ -9047,7 +9047,10 @@ def memory_prepare_quality_runtime_selection(
         result = prepare_quality_runtime_selection(
             settings.project_root,
             source_selection_path=resolved_selection,
-            split=cast(Literal["CALIBRATION", "HOLDOUT"], normalized_split),
+            split=cast(
+                Literal["CALIBRATION", "HOLDOUT", "POST_CUTOFF"],
+                normalized_split,
+            ),
             scope=cast(Literal["THREE_CASE", "FULL_SPLIT"], normalized_scope),
             price_source=price_source,
         )

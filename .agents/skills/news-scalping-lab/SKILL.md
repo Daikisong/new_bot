@@ -165,6 +165,18 @@ python -m news_scalping_lab.cli memory score-runtime-variants \
   --outcome-selection <runtime-outcome-selection.json>
 ```
 
+Formal thin-daily A/B/C evaluation may also prepare the complete
+post-cutoff population after 2026-06-23, provided the source selection contains
+sealed cases and separate outcome references for those dates:
+
+```bash
+python -m news_scalping_lab.cli memory prepare-quality-runtime-selection \
+  --project-root <evaluation-project> \
+  --source-selection <post-cutoff-source-selection> \
+  --split POST_CUTOFF \
+  --scope FULL_SPLIT
+```
+
 - Preserve source `available_from`; replay snapshots store a separate effective
   next-session timestamp and are always `evaluation_only`.
 - BUILD excludes every CALIBRATION/HOLDOUT record, outcome, claim, centroid,
