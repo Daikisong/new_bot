@@ -1302,6 +1302,7 @@ def _require_offline_production_llm_identity(settings: Settings) -> None:
 def brain_build_offline(
     source_project: Annotated[Path, typer.Option("--source-project")],
     output_root: Annotated[Path | None, typer.Option("--output-root")] = None,
+    checkpoint_dir: Annotated[Path | None, typer.Option("--checkpoint-dir")] = None,
     expected_manifest_sha256: Annotated[
         str | None,
         typer.Option("--expected-manifest-sha256"),
@@ -1313,7 +1314,10 @@ def brain_build_offline(
     try:
         _require_offline_production_llm_identity(settings)
         result = asyncio.run(
-            OfflineSemanticBrainCompiler(settings).build(
+            OfflineSemanticBrainCompiler(
+                settings,
+                checkpoint_dir=checkpoint_dir,
+            ).build(
                 source_project=source_project,
                 output_root=output_root,
                 expected_manifest_sha256=expected_manifest_sha256,
@@ -1359,6 +1363,7 @@ def brain_update_offline(
     source_project: Annotated[Path, typer.Option("--source-project")],
     previous_package: Annotated[Path, typer.Option("--previous-package")],
     output_root: Annotated[Path | None, typer.Option("--output-root")] = None,
+    checkpoint_dir: Annotated[Path | None, typer.Option("--checkpoint-dir")] = None,
     expected_manifest_sha256: Annotated[
         str | None,
         typer.Option("--expected-manifest-sha256"),
@@ -1370,7 +1375,10 @@ def brain_update_offline(
     try:
         _require_offline_production_llm_identity(settings)
         result = asyncio.run(
-            OfflineSemanticBrainCompiler(settings).build(
+            OfflineSemanticBrainCompiler(
+                settings,
+                checkpoint_dir=checkpoint_dir,
+            ).build(
                 source_project=source_project,
                 output_root=output_root,
                 previous_package=previous_package,

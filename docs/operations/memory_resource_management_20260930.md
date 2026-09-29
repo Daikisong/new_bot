@@ -136,10 +136,32 @@ available memory는 약 19 GiB였다. 이 상주 서비스를 임의로 종료�
 7,902개 content-addressed checkpoint에서 재개하며, 첫 재개 실행을 기준 측정으로
 삼는다.
 
+Checkpoint 경로도 worktree별로 확인했다. 기존 build root
+`C:\Users\eorb9\projects\news_bot\runs\checkpoints\llm`에는 전체 7,965개
+checkpoint 파일이 있고, 그중 compiler v5 metadata 파일은 7,903개다. 확인한
+마지막 성공 ID는 `LLMCKPT-6fae813701eb8246`, 바로 다음 OAuth quota 오류 ID는
+`LLMCKPT-1d6d8295e6996522`다. 현재 PR worktree의 기본 `runs/checkpoints/llm`은
+6개 파일이며 compiler v5 metadata는 0개다. 다른 worktree의 기본 경로로 재개하면
+오래된 성공 checkpoint를 못 찾아 중복 호출을 할 수 있다. `--checkpoint-dir`로 기존
+폴더를 명시하도록 compiler와 두 build CLI 경로를 연결했으며, checkpoint를 복사하거나
+삭제하지 않았다. 명시 경로가 없거나 directory가 아니면 LLM provider 생성 전에
+실패하도록 했다.
+
+재개 source project는 goal 명령에 적힌
+`C:\Users\eorb9\projects\news_bot\production\staging\P9IMPORT-3D770A7DD72457C97098\project`다.
+그 안의 snapshot manifest를 다시 해시한 값은 externally attested SHA
+`6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576`과 일치했고,
+snapshot DB는 5,213,270,016 bytes다. source snapshot은 수정하지 않았다.
+
 compiler 코드에서는 payload 수치와 exposure ledger를 만든 뒤 중복 projected/chunk
 계획을 해제하고, leaf capsule 생성 직후 원문 prompt 행을 해제하도록 했다. Reduce는
 capsule 및 검증된 child ID만 사용한다. 관련 단위 테스트 14개, Ruff, mypy 139개
 source file을 통과했지만, 이 수명 단축의 실 corpus 메모리 절감량은 아직 측정하지 않았다.
+
+실제 `python -m` import도 점검했다. `PYTHONPATH`를 지정하지 않으면 이 PC의 editable
+install이 `news_bot\src`를 가져와 PR worktree의 `--checkpoint-dir` 옵션을 보지 못한다.
+재개 명령은 반드시 `PYTHONPATH=C:\Users\eorb9\projects\news_bot_next\src`를 설정하고
+`news_scalping_lab.cli.__file__`이 그 worktree를 가리키는지 확인해야 한다.
 
 재개 시 compiler PID의 private bytes, working set, host available memory를 10초
 간격으로 단계/완료 호출 수와 함께 기록한다. 정상적인 단일 단계 피크인지 판단할

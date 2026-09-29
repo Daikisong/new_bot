@@ -71,6 +71,35 @@ compiler version으로 content-addressed checkpoint를 만든다. 프로세스�
 중단돼도 이미 `ok`로 봉인된 node는 동일 입력에서 다시 호출하지 않는다.
 오류나 미완료 checkpoint를 성공 결과로 취급하지 않는다.
 
+기본 checkpoint 폴더는 현재 project root의 `runs/checkpoints/llm`이다.
+다른 worktree에서 동일 build를 재개할 때는 `build-offline` 또는
+`update-offline`에 `--checkpoint-dir <existing-v5-checkpoint-directory>`를
+지정한다. 저장 위치는 checkpoint ID에 들어가지 않으며, 기존 v5 checkpoint는
+입력 hash, purpose, model metadata가 일치하고 status가 `ok`일 때만 재사용한다.
+공유 폴더를 지정하지 않은 채 worktree 기본 경로에서 재개하면 이전 성공 작업을
+놓쳐 중복 호출할 수 있으므로, 호출 전에 대상 디렉터리와 v5 checkpoint 수를 확인한다.
+명시 경로가 없거나 directory가 아니면 build를 시작하기 전에 실패한다. 새 build는
+`--checkpoint-dir`을 생략해 project 기본 폴더를 사용한다.
+
+현재 중단된 V5 build는 OAuth retry time 이후, build 프로세스가 없고 checkpoint
+폴더를 다시 확인한 다음 다음처럼 재개한다. 이 repository의 `news_bot_next` 설정은
+provider 기본값이 `mock`이고 `.env`가 없으므로, model identity 세 값은 실행 환경에
+고정한다. 인증정보는 공식 Codex CLI OAuth session을 사용하며 파일에서 읽거나 복사하지 않는다.
+이 PC의 editable install은 기본적으로 `news_bot\src`를 가리킨다. 아래 명령은
+`PYTHONPATH`를 현재 PR worktree의 `src`로 먼저 고정하고 import 위치를 출력해 확인한다.
+
+```powershell
+$env:PYTHONPATH = 'C:\Users\eorb9\projects\news_bot_next\src'
+python -c "import news_scalping_lab.cli as c; print(c.__file__)"
+$env:NSLAB_LLM_PROVIDER = 'codex-oauth'
+$env:NSLAB_CODEX_MODEL = 'gpt-5.6-sol'
+$env:NSLAB_CODEX_REASONING_EFFORT = 'xhigh'
+python -m news_scalping_lab.cli brain build-offline `
+  --source-project 'C:\Users\eorb9\projects\news_bot\production\staging\P9IMPORT-3D770A7DD72457C97098\project' `
+  --expected-manifest-sha256 '6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576' `
+  --checkpoint-dir 'C:\Users\eorb9\projects\news_bot\runs\checkpoints\llm'
+```
+
 incremental update는 이전 package의 `semantic_unit_id + member_record_root`가
 같은 capsule과 동일 content-addressed reduce node를 재사용한다. 새 연구로
 영향받은 unit과 그 조상만 다시 합성한다.

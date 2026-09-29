@@ -35,6 +35,7 @@ from news_scalping_lab.contracts.offline_brain import (
 )
 from news_scalping_lab.inference.thin_daily import _validate_brain_context_as_of
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
+from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.utils import (
     KST,
     canonical_json,
@@ -218,6 +219,59 @@ def _source_project(root: Path, *, oversized_document: bool = False) -> Path:
         },
     )
     return root
+
+
+def test_offline_compiler_reuses_shared_checkpoint_identity_across_worktrees(
+    tmp_path: Path,
+) -> None:
+    checkpoint_dir = tmp_path / "origin" / "runs" / "checkpoints" / "llm"
+    checkpoint_dir.mkdir(parents=True)
+    payload = {"prompt_sha256": "a" * 64, "prompt_utf8_bytes": 128}
+    compiler_a = OfflineSemanticBrainCompiler(
+        Settings(project_root=tmp_path / "worktree-a"),
+        llm=DeterministicMockLLMProvider(),
+        checkpoint_dir=checkpoint_dir,
+    )
+    compiler_b = OfflineSemanticBrainCompiler(
+        Settings(project_root=tmp_path / "worktree-b"),
+        llm=DeterministicMockLLMProvider(),
+        checkpoint_dir=checkpoint_dir,
+    )
+
+    assert isinstance(compiler_a.llm, TracingLLMProvider)
+    assert isinstance(compiler_b.llm, TracingLLMProvider)
+    assert compiler_a.llm.checkpoint_dir == checkpoint_dir
+    assert compiler_b.llm.checkpoint_dir == checkpoint_dir
+    checkpoint_id = compiler_a.llm._write_checkpoint(
+        operation="generate_structured",
+        purpose="offline_semantic_reduce.REDUCE-fixture",
+        status="ok",
+        input_payload=payload,
+        output={"result": "cached"},
+    )
+    assert checkpoint_id == compiler_b.llm._checkpoint_id(
+        operation="generate_structured",
+        purpose="offline_semantic_reduce.REDUCE-fixture",
+        input_payload=payload,
+    )
+    cached = compiler_b.llm._read_ok_checkpoint(
+        operation="generate_structured",
+        purpose="offline_semantic_reduce.REDUCE-fixture",
+        input_payload=payload,
+    )
+    assert cached is not None
+    assert cached["output"] == {"result": "cached"}
+
+
+def test_offline_compiler_rejects_missing_explicit_checkpoint_directory(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(FileNotFoundError, match="explicit offline checkpoint directory"):
+        OfflineSemanticBrainCompiler(
+            Settings(project_root=tmp_path / "worktree"),
+            llm=DeterministicMockLLMProvider(),
+            checkpoint_dir=tmp_path / "missing-checkpoints",
+        )
 
 
 @pytest.mark.asyncio

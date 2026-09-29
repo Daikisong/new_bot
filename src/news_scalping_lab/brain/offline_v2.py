@@ -192,16 +192,29 @@ class OfflineSemanticBrainCompiler:
         settings: Settings,
         *,
         llm: LLMProvider | None = None,
+        checkpoint_dir: Path | None = None,
     ) -> None:
         self.settings = settings
         self.root = settings.project_root
+        resolved_checkpoint_dir = None
+        if checkpoint_dir is not None:
+            resolved_checkpoint_dir = settings.path(checkpoint_dir)
+            if not resolved_checkpoint_dir.is_dir():
+                raise FileNotFoundError(
+                    "explicit offline checkpoint directory is missing or not a directory"
+                )
         base_llm = llm or create_llm_provider(settings)
         self.model_config = {
             "provider": str(getattr(base_llm, "provider_name", settings.llm_provider)),
             "model": str(getattr(base_llm, "model", settings.llm.model)),
             "reasoning_effort": str(getattr(base_llm, "reasoning_effort", settings.llm.reasoning_effort)),
         }
-        self.llm = _trace_offline_llm(settings, base_llm, self.model_config)
+        self.llm = _trace_offline_llm(
+            settings,
+            base_llm,
+            self.model_config,
+            checkpoint_dir=resolved_checkpoint_dir,
+        )
         self._logical_llm_call_count = 0
         self._prompt_token_count = 0
         self._reused_capsule_count = 0
@@ -3218,12 +3231,17 @@ def _trace_offline_llm(
     settings: Settings,
     provider: LLMProvider,
     model_config: dict[str, Any],
+    *,
+    checkpoint_dir: Path | None = None,
 ) -> LLMProvider:
     if isinstance(provider, TracingLLMProvider):
+        if checkpoint_dir is not None and provider.checkpoint_dir.resolve() != checkpoint_dir.resolve():
+            raise ValueError("wrapped LLM provider uses a different checkpoint directory")
         return provider
     return TracingLLMProvider(
         provider,
         trace_dir=settings.path(settings.output_dirs.traces),
+        checkpoint_dir=checkpoint_dir,
         model_config={**model_config, "compiler_version": OFFLINE_COMPILER_VERSION},
         default_metadata={"compiler_version": OFFLINE_COMPILER_VERSION},
         max_retries=settings.llm.max_retries,
