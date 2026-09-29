@@ -1,0 +1,52 @@
+{
+  "schema_version": "nslab.daily_llm_call_graph_audit.v1",
+  "audit_kind": "USER_CORRECTION_BRAIN_INFORMED_SINGLE_CALL",
+  "date": "2026-09-07",
+  "architecture_version": "one_time_brain_thin_daily.v2",
+  "production_entrypoint": "news_scalping_lab.inference.thin_daily.ThinDailyAnalyzer.analyze",
+  "production_command": "nslab analyze-daily",
+  "normal_logical_call_count": 1,
+  "maximum_live_agent_call_count_including_schema_repairs": 2,
+  "brain_context_loaded_before_first_llm": true,
+  "preliminary_interpretation_call_count": 0,
+  "retrieval_basis": "CURRENT_NEWS",
+  "call_sites": [
+    {
+      "function": "ThinDailyAnalyzer.analyze",
+      "purpose": "final_market_decision",
+      "inside_loop": false,
+      "potential_call_count_formula": "1",
+      "response_model": "BrainInformedDecision",
+      "input_source": "Current event capsules, compiled world/category guidance, related semantic capsules and claims, population summaries, bounded witnesses, optional D-1 context"
+    }
+  ],
+  "local_steps_before_llm": [
+    "CSV parse, cutoff filtering, event clustering and coverage",
+    "Read precompiled world/category guidance from the immutable package",
+    "Query capsule/claim indexes directly with observed current-news facts",
+    "Validate package cutoff, current-news binding and knowledge content hashes",
+    "Save the brain context before calling the model"
+  ],
+  "offline_reuse_audit": {
+    "comparison": "AST comparison against HEAD before this change",
+    "offline_compiler_class_unchanged": true,
+    "offline_version_constants_unchanged": true,
+    "offline_synthesis_contracts_unchanged": true,
+    "compiler_version": "nslab.offline_semantic_brain.compiler.v5",
+    "daily_change_requires_offline_recompile": false
+  },
+  "verification": {
+    "ruff": "PASS",
+    "mypy": "PASS_138_SOURCE_FILES",
+    "targeted_daily_and_offline_regression": "PASS_24_TESTS",
+    "full_pytest": "1886_PASSED_1_DOCUMENTATION_LAYOUT_FAILURE_IN_345_58_SECONDS",
+    "documentation_failure_fix": "Move new product-intent bullets below the fixed-size Repository Rules section; no production code or tests changed",
+    "failed_test_rerun": "PASS_python_-m_pytest_--lf",
+    "remaining_known_test_failures": 0,
+    "production_quality_evaluated": false,
+    "production_latency_measured": false,
+    "production_activated": false
+  },
+  "historical_audit": "diagnostics/daily_llm_call_graph_after.json",
+  "historical_audit_status": "Preserved as the earlier two-call implementation; superseded for daily operation by this user correction"
+}

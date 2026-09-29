@@ -2503,6 +2503,7 @@ async def test_brain_mode_loads_shard_brains_and_sweeps_available_episodes(
 async def test_exhaustive_analyze_sweeps_one_hundred_accepted_episodes(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
     settings.limits.shard_episode_count = 10
+    settings.limits.final_synthesis_token_budget = 100_000
     ensure_project_dirs(settings)
     store = ResearchStore(tmp_path)
     for index in range(100):

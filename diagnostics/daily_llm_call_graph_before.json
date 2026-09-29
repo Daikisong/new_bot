@@ -1,0 +1,121 @@
+{
+  "schema_version": "nslab.daily_llm_call_graph_audit.v1",
+  "audit_kind": "BEFORE_ARCHITECTURE_CORRECTION",
+  "audited_commit": "4c289eae23f1ee9d634c9c7ecf575d7899c2bec9",
+  "entrypoint": "news_scalping_lab.inference.analyzer.DailyAnalyzer.analyze",
+  "entrypoint_command": "nslab analyze",
+  "logical_call_count_formula": "B_open_world + B_novelty + P_runtime_evidence + 5",
+  "normal_nonempty_minimum_without_runtime_evidence": 7,
+  "call_sites": [
+    {
+      "function": "DailyAnalyzer._run_open_world_first_analysis",
+      "source": "src/news_scalping_lab/inference/analyzer.py:1132",
+      "purpose": "open_world_first_analysis[.batch_N]",
+      "reachable_from_daily_analyze": true,
+      "inside_loop": true,
+      "loop_dimension": "current material event-cluster batches",
+      "potential_call_count_formula": "B_open_world = len(_open_world_cluster_batches(material_clusters))",
+      "input_source": "current cutoff-safe event-cluster projections",
+      "historical_raw_payload": false
+    },
+    {
+      "function": "DailyAnalyzer._run_news_novelty_review",
+      "source": "src/news_scalping_lab/inference/analyzer.py:1820",
+      "purpose": "news_novelty_review[.batch_N]",
+      "reachable_from_daily_analyze": true,
+      "inside_loop": true,
+      "loop_dimension": "current event-cluster batches",
+      "potential_call_count_formula": "B_novelty = len(novelty_batches(material_clusters))",
+      "input_source": "current cutoff-safe event clusters plus local memory context",
+      "historical_raw_payload": false
+    },
+    {
+      "function": "build_runtime_evidence_memos_packed",
+      "source": "src/news_scalping_lab/memory/runtime_v4.py",
+      "daily_reachability_source": "src/news_scalping_lab/inference/analyzer.py:4634",
+      "purpose": "runtime_evidence_map_reduce.pack_N",
+      "reachable_from_daily_analyze": true,
+      "inside_loop": true,
+      "loop_dimension": "packed selected (cluster_id, record_id, lane) assignments",
+      "potential_call_count_formula": "P_runtime_evidence = len(content_addressed_runtime_pack_plan)",
+      "input_source": "historical BrainRecordEnvelope payloads selected for every material cluster",
+      "historical_raw_payload": true
+    },
+    {
+      "function": "DailyAnalyzer._run_semantic_retrieval_plan",
+      "source": "src/news_scalping_lab/inference/analyzer.py:2133",
+      "purpose": "semantic_retrieval_plan",
+      "reachable_from_daily_analyze": true,
+      "inside_loop": false,
+      "loop_dimension": null,
+      "potential_call_count_formula": "1",
+      "input_source": "current news, first-pass mechanisms, memory manifest",
+      "historical_raw_payload": false
+    },
+    {
+      "function": "DailyAnalyzer._run_candidate_expansion",
+      "source": "src/news_scalping_lab/inference/analyzer.py:2632",
+      "purpose": "candidate_expansion",
+      "reachable_from_daily_analyze": true,
+      "inside_loop": false,
+      "loop_dimension": null,
+      "potential_call_count_formula": "1",
+      "input_source": "current news and locally retrieved memory context",
+      "historical_raw_payload": false
+    },
+    {
+      "function": "DailyAnalyzer._generate_prediction",
+      "source": "src/news_scalping_lab/inference/analyzer.py:6062",
+      "purpose": "daily_blind_analysis",
+      "reachable_from_daily_analyze": true,
+      "inside_loop": false,
+      "loop_dimension": null,
+      "potential_call_count_formula": "1",
+      "input_source": "current news plus assembled candidate-generation context",
+      "historical_raw_payload": false
+    },
+    {
+      "function": "run_red_team_pass",
+      "source": "src/news_scalping_lab/inference/red_team.py:65",
+      "daily_reachability_source": "src/news_scalping_lab/inference/analyzer.py:948",
+      "purpose": "red_team_candidate_review",
+      "reachable_from_daily_analyze": true,
+      "inside_loop": false,
+      "loop_dimension": null,
+      "potential_call_count_formula": "1",
+      "input_source": "candidate set and assembled context manifest",
+      "historical_raw_payload": false
+    },
+    {
+      "function": "DailyAnalyzer._run_final_synthesis",
+      "source": "src/news_scalping_lab/inference/analyzer.py:3801",
+      "purpose": "final_synthesis",
+      "reachable_from_daily_analyze": true,
+      "inside_loop": false,
+      "loop_dimension": null,
+      "potential_call_count_formula": "1",
+      "input_source": "prediction, red-team result, D-1 context, memory and beneficiary context",
+      "historical_raw_payload": false
+    }
+  ],
+  "dynamic_evidence": {
+    "status": "HALTED_MISALIGNED_DIAGNOSTIC_ONLY",
+    "selection_id": "QSEL-19b3c80ba392db8564c9",
+    "paired_prediction_id": "QPRED-704f15cde6e4152b6931",
+    "runtime_run_id": "RUN-9701018d4a4e",
+    "case_id": "NSLAB-20260102-be50ec83",
+    "material_cluster_count": 478,
+    "runtime_assignment_count": 49984,
+    "unique_historical_record_count": 1560,
+    "historical_payload_occurrence_count_after_deduplication": 1914,
+    "runtime_evidence_planned_call_count": 379,
+    "runtime_evidence_completed_call_count": 5,
+    "resume_forbidden": true
+  },
+  "findings": [
+    "The legacy daily entrypoint has a call graph proportional to current cluster batching.",
+    "The v4 runtime-evidence branch adds LLM calls over historical raw-record assignments.",
+    "The legacy entrypoint cannot satisfy the two-normal/four-maximum daily call contract.",
+    "The halted dynamic run is forensic evidence only and must never be resumed or scored."
+  ]
+}
