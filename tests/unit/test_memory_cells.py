@@ -1071,6 +1071,82 @@ def test_streaming_audit_threshold_counts_future_partition(
 
     assert inspection["passed"] is True
     assert inspection["streaming_audit"] is True
+    assert list((tmp_path / "data/cache/memory-audit").iterdir()) == []
+
+
+def test_memory_audit_connection_limits_buffers_and_preserves_source(tmp_path: Path) -> None:
+    database = tmp_path / "source.duckdb"
+    with duckdb.connect(str(database)) as connection:
+        connection.execute("CREATE TABLE source AS SELECT 42 AS value")
+    before = file_sha256(database)
+
+    connection, workspace = memory_index_module._connect_memory_audit(tmp_path, database)
+    try:
+        settings = connection.execute(
+            "SELECT current_setting('memory_limit'), current_setting('max_temp_directory_size'), "
+            "current_setting('threads'), current_setting('temp_directory')"
+        ).fetchone()
+        assert settings is not None
+        assert settings[:3] == ("3.7 GiB", "14.9 GiB", 2)
+        assert Path(settings[3]) == Path(workspace.name).resolve()
+        assert Path(workspace.name).is_relative_to(tmp_path / "data/cache/memory-audit")
+        connection.execute("CREATE TEMP TABLE expected AS SELECT * FROM source")
+        assert connection.execute("SELECT value FROM expected").fetchone() == (42,)
+        with pytest.raises(duckdb.Error, match="read-only"):
+            connection.execute("INSERT INTO source VALUES (7)")
+    finally:
+        connection.close()
+        workspace.cleanup()
+
+    assert file_sha256(database) == before
+    assert not Path(workspace.name).exists()
+
+
+def test_memory_audit_setup_failure_removes_scratch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database = tmp_path / "source.duckdb"
+    duckdb.connect(str(database)).close()
+    monkeypatch.setattr(memory_index_module, "MEMORY_AUDIT_MEMORY_LIMIT", "invalid")
+
+    with pytest.raises(duckdb.Error):
+        memory_index_module._connect_memory_audit(tmp_path, database)
+
+    assert list((tmp_path / "data/cache/memory-audit").iterdir()) == []
+    # Reopening read-write would fail if the failed read-only connection leaked.
+    duckdb.connect(str(database)).close()
+
+
+@pytest.mark.parametrize("failure", [ValueError("projection failure"), KeyboardInterrupt()])
+def test_streaming_audit_failure_closes_connection_and_scratch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: BaseException,
+) -> None:
+    cutoff = datetime(2030, 1, 10, 12, 0, tzinfo=KST)
+    record = _record(
+        "REC-SAFE", available_from=cutoff, ticker="000001", response_class="POSITIVE", high_return_pct=12.0,
+    )
+    monkeypatch.setattr(BrainRecordStore, "list_records", lambda self: [record])
+    manifest = ProductionMemoryIndex(
+        tmp_path, embedding_provider=_RealLikeEmbeddingProvider(), production=True,
+    ).build(as_of=cutoff)
+    database = tmp_path / manifest.database.artifact_path
+    before = file_sha256(database)
+
+    def fail(_root: Path):
+        raise failure
+
+    monkeypatch.setattr(memory_index_module, "_iter_source_records", fail)
+    if isinstance(failure, KeyboardInterrupt):
+        with pytest.raises(KeyboardInterrupt):
+            memory_index_module._streaming_snapshot_integrity_errors(tmp_path, manifest)
+    else:
+        assert memory_index_module._streaming_snapshot_integrity_errors(tmp_path, manifest) == [
+            "streaming_database_invalid:projection failure"
+        ]
+
+    assert list((tmp_path / "data/cache/memory-audit").iterdir()) == []
+    assert file_sha256(database) == before
+    duckdb.connect(str(database)).close()
 
 
 def test_reasoning_cell_search_is_not_reweighted_by_audit_fts_documents(

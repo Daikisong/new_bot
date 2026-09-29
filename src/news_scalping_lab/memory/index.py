@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import math
 import os
 import shutil
@@ -98,6 +99,9 @@ REPLAY_AVAILABILITY_PROJECTION_VERSION = "nslab.replay_availability_projection.v
 MEMORY_INDEX_EMBEDDING_BATCH_SIZE = 128
 MEMORY_INDEX_QUERY_CANDIDATE_MULTIPLIER = 4
 MEMORY_INDEX_STREAMING_AUDIT_THRESHOLD = 10_000
+# These bound DuckDB-managed buffers, not total Python/native process memory.
+MEMORY_AUDIT_MEMORY_LIMIT = "4GB"
+MEMORY_AUDIT_SPILL_LIMIT = "16GB"
 MEMORY_INDEX_ANN_TIE_ABS_TOLERANCE = 1e-12
 MEMORY_INDEX_RUNTIME_FTS_CACHE_SIZE = 24
 MEMORY_INDEX_RUNTIME_POPULATION_CACHE_SIZE = 48
@@ -107,6 +111,7 @@ MEMORY_INDEX_RUNTIME_REPRESENTATIVE_CACHE_MAX_ROWS = 1_024
 _ORIGINAL_LIST_RECORDS = BrainRecordStore.list_records
 _PROCESS_VERIFIED_DATABASE_FILES: dict[str, tuple[int, int, int]] = {}
 _PROCESS_DATABASE_VERIFICATION_LOCK = threading.Lock()
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -2143,6 +2148,7 @@ class ProductionMemoryIndex:
 
 def inspect_memory_snapshot(root: Path, snapshot_id: str) -> dict[str, object]:
     root = root.resolve()
+    _LOGGER.info("Memory audit %s: verifying manifest and artifact hashes", snapshot_id)
     snapshot_dir = root / MEMORY_INDEX_ROOT / MEMORY_SNAPSHOT_DIR / snapshot_id
     manifest_path = snapshot_dir / MEMORY_MANIFEST_FILE
     base: dict[str, object] = {
@@ -2532,9 +2538,8 @@ def _current_source_partition_verified(
     root: Path,
     manifest: MemoryCellSnapshotManifest,
 ) -> bool:
-    connection = duckdb.connect(
-        str(root / manifest.database.artifact_path),
-        read_only=True,
+    connection, workspace = _connect_memory_audit(
+        root, root / manifest.database.artifact_path,
     )
     try:
         connection.execute("CREATE TEMP TABLE expected_all_source (record_id VARCHAR PRIMARY KEY, sha256 VARCHAR)")
@@ -2571,7 +2576,10 @@ def _current_source_partition_verified(
     except (duckdb.Error, OSError, ValueError):
         return False
     finally:
-        connection.close()
+        try:
+            connection.close()
+        finally:
+            workspace.cleanup()
 
 
 def _streaming_snapshot_integrity_errors(
@@ -2584,8 +2592,11 @@ def _streaming_snapshot_integrity_errors(
     except (OSError, ValueError) as exc:
         return [f"availability_projection_invalid:{exc}"]
     database_path = root / manifest.database.artifact_path
-    connection = _connect_index(database_path, read_only=True)
+    connection, workspace = _connect_memory_audit(root, database_path)
     try:
+        connection.execute("LOAD fts")
+        connection.execute("LOAD vss")
+        _LOGGER.info("Memory audit %s: projecting source records", manifest.snapshot_id)
         connection.execute(
             """
             CREATE TEMP TABLE expected_records (
@@ -2627,7 +2638,9 @@ def _streaming_snapshot_integrity_errors(
         provenance_rows: list[tuple[str, str]] = []
         future_rows: list[tuple[str, str]] = []
         observed_next_available_from: datetime | None = None
-        for record in _iter_source_records(root):
+        for processed, record in enumerate(_iter_source_records(root), start=1):
+            if processed % 10_000 == 0:
+                _LOGGER.info("Memory audit %s: source records %d", manifest.snapshot_id, processed)
             source_hash = brain_record_envelope_sha256(record)
             effective_available_from = _effective_record_available_from(
                 record,
@@ -2719,6 +2732,7 @@ def _streaming_snapshot_integrity_errors(
             as_kst(manifest.next_available_from) if manifest.next_available_from is not None else None
         ):
             errors.append("next_available_from_stale")
+        _LOGGER.info("Memory audit %s: loading sidecars", manifest.snapshot_id)
         _load_hash_sidecar(
             connection,
             table_name="declared_source_hashes",
@@ -2742,6 +2756,7 @@ def _streaming_snapshot_integrity_errors(
             connection,
             path=root / manifest.cell_entries.artifact_path,
         )
+        _LOGGER.info("Memory audit %s: comparing source projections", manifest.snapshot_id)
         if _sql_symmetric_difference_count(
             connection,
             "SELECT record_id, source_sha256 FROM expected_records",
@@ -2787,13 +2802,44 @@ def _streaming_snapshot_integrity_errors(
         )
         if expected_routing_root != manifest.routing_metadata_sha256:
             errors.append("routing_metadata_hash_stale")
+        _LOGGER.info("Memory audit %s: checking cell integrity", manifest.snapshot_id)
         errors.extend(_streaming_cell_integrity_errors(connection))
+        _LOGGER.info("Memory audit %s: checking retrieval indexes", manifest.snapshot_id)
         errors.extend(_database_index_readiness_errors(connection, manifest))
     except (duckdb.Error, OSError, ValueError) as exc:
         errors.append(f"streaming_database_invalid:{exc}")
     finally:
-        connection.close()
+        try:
+            connection.close()
+        finally:
+            workspace.cleanup()
     return errors
+
+
+def _connect_memory_audit(
+    root: Path,
+    database_path: Path,
+) -> tuple[duckdb.DuckDBPyConnection, tempfile.TemporaryDirectory[str]]:
+    """Keep deep-audit scratch data out of immutable snapshots and OS temp."""
+
+    scratch_root = root / "data" / "cache" / "memory-audit"
+    scratch_root.mkdir(parents=True, exist_ok=True)
+    workspace = tempfile.TemporaryDirectory(prefix="audit-", dir=scratch_root)
+    connection: duckdb.DuckDBPyConnection | None = None
+    try:
+        connection = duckdb.connect(str(database_path), read_only=True)
+        connection.execute(f"SET memory_limit = '{MEMORY_AUDIT_MEMORY_LIMIT}'")
+        connection.execute(f"SET max_temp_directory_size = '{MEMORY_AUDIT_SPILL_LIMIT}'")
+        connection.execute("SET threads = 2")
+        connection.execute("SET temp_directory = ?", [str(Path(workspace.name).resolve())])
+        return connection, workspace
+    except BaseException:
+        try:
+            if connection is not None:
+                connection.close()
+        finally:
+            workspace.cleanup()
+        raise
 
 
 def _load_hash_sidecar(
