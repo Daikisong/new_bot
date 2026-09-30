@@ -82,6 +82,7 @@ from news_scalping_lab.diagnostics import (
 from news_scalping_lab.evaluation.evaluator import Evaluator
 from news_scalping_lab.evaluation.quality_runtime import (
     predict_runtime_variants,
+    prepare_quality_blind_runtime_selection,
     prepare_quality_runtime_selection,
     score_runtime_variants,
 )
@@ -107,6 +108,7 @@ from news_scalping_lab.evaluation.shadow import (
 )
 from news_scalping_lab.evaluation.thin_daily_quality import (
     predict_thin_daily_quality,
+    prepare_thin_daily_outcome_selection,
     score_thin_daily_quality,
 )
 from news_scalping_lab.inference.analyzer import (
@@ -9098,6 +9100,81 @@ def memory_prepare_quality_runtime_selection(
     )
 
 
+@memory_app.command("prepare-quality-blind-runtime-selection")
+def memory_prepare_quality_blind_runtime_selection(
+    project_root: Annotated[Path, typer.Option("--project-root")],
+    source_selection: Annotated[Path, typer.Option("--source-selection")],
+    split: Annotated[str, typer.Option("--split")],
+    scope: Annotated[str, typer.Option("--scope")] = "FULL_SPLIT",
+) -> None:
+    normalized_split = split.strip().upper()
+    normalized_scope = scope.strip().upper()
+    if normalized_split not in {"CALIBRATION", "HOLDOUT", "POST_CUTOFF"}:
+        _exit_with_error(ValueError("quality runtime selection split is invalid"))
+    if normalized_scope not in {"THREE_CASE", "FULL_SPLIT"}:
+        _exit_with_error(ValueError("quality runtime selection scope is invalid"))
+    settings = load_settings(
+        project_root,
+        resolve_production=False,
+        dotenv_root=Path.cwd(),
+    )
+    resolved_selection = (
+        source_selection.resolve()
+        if source_selection.is_absolute()
+        else (settings.project_root / source_selection).resolve()
+    )
+    try:
+        price_source = create_price_source(settings)
+        if not isinstance(price_source, BlindSnapshotUniversePriceSource):
+            raise ValueError(
+                "quality runtime preparation requires a cutoff-safe universe price source"
+            )
+        result = prepare_quality_blind_runtime_selection(
+            settings.project_root,
+            source_selection_path=resolved_selection,
+            split=cast(
+                Literal["CALIBRATION", "HOLDOUT", "POST_CUTOFF"],
+                normalized_split,
+            ),
+            scope=cast(Literal["THREE_CASE", "FULL_SPLIT"], normalized_scope),
+            price_source=price_source,
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "selection_id": result.blind_selection.selection_id,
+            "case_count": len(result.blind_selection.cases),
+            "cases": [
+                {
+                    "episode_id": case.episode_id,
+                    "trade_date": case.trade_date.isoformat(),
+                    "cutoff_safe_news_row_count": case.cutoff_safe_news_row_count,
+                    "d_minus_one_context_sha256": case.d_minus_one_context_sha256,
+                    "d_minus_one_candidate_universe_root_sha256": (
+                        case.d_minus_one_candidate_universe_root_sha256
+                    ),
+                    "d_minus_one_snapshot_root_sha256": (
+                        case.d_minus_one_snapshot_root_sha256
+                    ),
+                    "d_minus_one_snapshot_session_date": (
+                        case.d_minus_one_snapshot_session_date.isoformat()
+                        if case.d_minus_one_snapshot_session_date is not None
+                        else None
+                    ),
+                }
+                for case in result.blind_selection.cases
+            ],
+            "blind_selection_path": relative_to_root(
+                result.blind_selection_path,
+                settings.project_root,
+            ),
+            "outcome_reference_count": 0,
+            "production_activation_status": "NOT_PRODUCTION_ACTIVATED",
+        }
+    )
+
+
 @memory_app.command("predict-runtime-variants")
 def memory_predict_runtime_variants(
     project_root: Annotated[Path, typer.Option("--project-root")],
@@ -9298,6 +9375,60 @@ def memory_score_thin_daily_quality(
                 "production_activation_status"
             ],
             "promotion_decision": result.report["promotion_decision"],
+        }
+    )
+
+
+@memory_app.command("prepare-thin-daily-outcome-selection")
+def memory_prepare_thin_daily_outcome_selection(
+    project_root: Annotated[Path, typer.Option("--project-root")],
+    paired_predictions: Annotated[Path, typer.Option("--paired-predictions")],
+    outcome_source_selection: Annotated[
+        Path,
+        typer.Option("--outcome-source-selection"),
+    ],
+) -> None:
+    settings = load_settings(
+        project_root,
+        resolve_production=False,
+        dotenv_root=Path.cwd(),
+    )
+
+    def resolved(path: Path) -> Path:
+        return (
+            path.resolve()
+            if path.is_absolute()
+            else (settings.project_root / path).resolve()
+        )
+
+    outcome_source_path = (
+        outcome_source_selection
+        if outcome_source_selection.is_absolute()
+        else settings.project_root / outcome_source_selection
+    )
+
+    try:
+        result = prepare_thin_daily_outcome_selection(
+            settings.project_root,
+            paired_prediction_manifest_path=resolved(paired_predictions),
+            outcome_source_selection_path=outcome_source_path,
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "selection_id": result.outcome_selection.selection_id,
+            "case_count": len(result.outcome_selection.cases),
+            "outcome_selection_path": relative_to_root(
+                result.outcome_selection_path,
+                settings.project_root,
+            ),
+            "receipt_path": relative_to_root(
+                result.receipt_path,
+                settings.project_root,
+            ),
+            "outcome_ledger_contents_opened": False,
+            "production_activation_status": "NOT_PRODUCTION_ACTIVATED",
         }
     )
 

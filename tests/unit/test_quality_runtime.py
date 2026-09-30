@@ -32,6 +32,9 @@ from news_scalping_lab.evaluation.quality_runtime import (
     score_runtime_variants,
 )
 from news_scalping_lab.evaluation.quality_runtime import (
+    prepare_quality_blind_runtime_selection as _prepare_quality_blind_runtime_selection,
+)
+from news_scalping_lab.evaluation.quality_runtime import (
     prepare_quality_runtime_selection as _prepare_quality_runtime_selection,
 )
 from news_scalping_lab.evaluation.shadow import SHADOW_DAILY_P95_BUDGET_MS
@@ -56,6 +59,14 @@ def prepare_quality_runtime_selection(
 ) -> quality_runtime_module.QualityRuntimeSelectionResult:
     kwargs.setdefault("price_source", _TestPriceSource())
     return _prepare_quality_runtime_selection(root, **kwargs)
+
+
+def prepare_quality_blind_runtime_selection(
+    root: Path,
+    **kwargs: Any,
+) -> quality_runtime_module.QualityBlindRuntimeSelectionResult:
+    kwargs.setdefault("price_source", _TestPriceSource())
+    return _prepare_quality_blind_runtime_selection(root, **kwargs)
 
 
 async def build_shared_pre_retrieval_context(
@@ -324,6 +335,69 @@ def test_three_case_selection_uses_news_rows_without_opening_outcomes(
         verified_blind_payload,
     )
     assert blind_read_count == 1
+
+
+def test_blind_only_selection_accepts_source_without_outcome_references(
+    tmp_path: Path,
+) -> None:
+    source_case = _source_case(tmp_path, index=1, row_count=2)
+    source_case.pop("outcome_ledger")
+    source_path = tmp_path / "blind_source_selection.json"
+    write_json(
+        source_path,
+        {
+            "schema_version": "nslab.semantic_upgrade_split_selection.v1",
+            "cases": [source_case],
+        },
+    )
+
+    result = prepare_quality_blind_runtime_selection(
+        tmp_path,
+        source_selection_path=source_path,
+        split="CALIBRATION",
+        scope="FULL_SPLIT",
+    )
+
+    assert not hasattr(result, "outcome_selection_path")
+    payload = json.loads(result.blind_selection_path.read_text(encoding="utf-8"))
+    assert payload["outcome_reference_count"] == 0
+    assert all("outcome_ledger" not in case for case in payload["cases"])
+    assert not (result.blind_selection_path.parent / "runtime_outcome_selection.json").exists()
+
+
+def test_blind_only_selection_rejects_outcome_reference_without_resolving_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_case = _source_case(tmp_path, index=1, row_count=2)
+    source_case["outcome_ledger"] = {
+        "artifact_path": "research/truth-do-not-touch/outcome.jsonl",
+        "sha256": "a" * 64,
+    }
+    source_path = tmp_path / "blind_source_selection.json"
+    write_json(
+        source_path,
+        {
+            "schema_version": "nslab.semantic_upgrade_split_selection.v1",
+            "cases": [source_case],
+        },
+    )
+    original_resolve = Path.resolve
+
+    def guarded_resolve(path: Path, *args: object, **kwargs: object) -> Path:
+        if path.name == "outcome.jsonl":
+            raise AssertionError("blind-only preparation resolved an outcome path")
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", guarded_resolve)
+
+    with pytest.raises(ValueError, match="must omit every outcome_ledger"):
+        prepare_quality_blind_runtime_selection(
+            tmp_path,
+            source_selection_path=source_path,
+            split="CALIBRATION",
+            scope="FULL_SPLIT",
+        )
 
 
 def test_blind_selection_identity_rejects_case_swap(tmp_path: Path) -> None:
