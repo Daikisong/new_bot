@@ -228,3 +228,67 @@ build. It is also not directly comparable to the earlier 0.3265% audit of a
 different compiler artifact and exposure definition. A built package must still
 prove exact record assignment, leaf/capsule coverage, payload-ledger roots, and
 the provenance of synthesized claims before any result is described as complete.
+
+## 2026-09-30 20:26 KST Production-source guarded planner projection
+
+A fresh production-source `plan-offline` completed from a clean sparse worktree
+at `origin/main` commit `b64b02b2c6e5976f5756234285ffb7aa4f029993`. The CLI was
+verified to import from that worktree. The source was the immutable production
+staging project and the externally attested actual manifest SHA was checked
+before launch; the planner revalidated and recorded that same SHA:
+
+```text
+snapshot                    MEMIDX-1e64a1b6e6ba7b07b799
+actual manifest SHA-256     6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576
+record corpus root          2d25581cdc98d89cb0f1d2fa00bec917442171ee279c001edfc764e2941f6d75
+plan ID                     OFFLINE-PLAN-149450301220655b94fe
+plan artifact               diagnostics/offline_brain_v2_production_plan_20260930_guarded_projection.json
+plan artifact SHA-256       5cfbd40e5f14fd4f37c455a35ff7182e132657aaadc4943209485b01ae26be7f
+records / semantic units   823,279 / 52,644
+provider / planning calls  mock / 0
+import / embedding reuse   true / true
+production activated       false
+```
+
+The plan projects 7,683 logical calls, with a separate guaranteed minimum of
+7,522. The projected count is not a remaining-call count or ETA: it includes
+171 proxy reduce/review calls, while actual reduce topology depends on
+model-generated capsule IDs. The guaranteed floor consists of the exact map
+count plus mandatory category reviews and the world root.
+
+Full-population geometry selected 181,978 of 823,279 records (22.1040%) for
+complete source-payload reads; the other 641,301 were not selected as direct raw
+payload input by this plan. The selected payload total is 231,041,529
+characters; 203 long representatives are chunked and planned truncation is
+zero. These are plan fields, not completed GPT exposure or proof of semantic
+influence. Package payload ledgers and claim provenance remain the evidence
+gate.
+
+This replan intentionally ran with BLAS/OpenMP/NumExpr thread-pool environment
+limits set to two. Its wall time was 1,149.12 seconds. Resource samples were
+approximately one minute apart: observed private memory reached at least 7.32
+GiB at the representative/distribution phase transition; the lowest sampled
+host available RAM was 13.21 GiB, and it was 21.06 GiB after normal process
+exit. The process exited successfully, the compile work directory was removed,
+and no compiler process remained. These are sampled observations, not an exact
+private-memory high-water mark or proof of leak freedom. Progress advanced
+through the full 823,279-record assignment; no long no-progress/high-CPU period
+was observed.
+
+Do not treat this thread-limited plan as an identity change or a fixed build
+topology. The required pinned `7198b6b` build command and content-addressed
+checkpoint directory remain unchanged; the eventual package and actual
+checkpoint reuse decide what completes. The earlier tracked
+`diagnostics/offline_brain_v2_full_plan.json` has the same plan ID and source
+roots but a different representative-read root and projection (181,979 payload
+reads / 7,671 estimated calls versus 181,978 / 7,683 here). A plan ID is not a
+content hash, and neither projection proves the build's exact runtime topology.
+Preserve the earlier artifact for comparison; do not subtract either plan from
+the 7,902 successful checkpoints to estimate remaining work.
+
+The source manifest pointer still carries its legacy SHA
+`fc0d847d4eb0db688cf19570a3519d357a93558463797e26321a106d60040804`; the actual
+manifest remained the externally attested `6c05...4576`, supplied explicitly
+to the planner. Import, embeddings, source pointer, package output, and
+production activation were not modified. OAuth quota still prevents the V5
+synthesis resume until `2026-10-04 03:31 KST`; production remains HOLD.
