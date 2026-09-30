@@ -348,3 +348,26 @@ pinned worktree. The observed checkpoint inventory was 7,965 JSON files / 300,05
 bytes. Invoking `-StartBuild` before the reset was separately verified to stop
 at the quota guard before process creation. The build remains unstarted; this
 check does not advance semantic synthesis or change its checkpoint state.
+
+### Shared checkpoint integrity audit
+
+At 2026-09-30 22:40 KST, a read-only streaming audit parsed all 7,965 shared
+`LLMCKPT-*.json` files without emitting prompt or output bodies and found no
+JSON, schema, ID, input-hash, output-hash, or content-address mismatches. For
+each file it recomputed the V5-compatible checkpoint ID from operation,
+purpose, input, model config, and metadata using the pinned compiler's
+`stable_id`/`canonical_json` implementation; the result matched both the file
+stem and embedded `checkpoint_id`.
+
+The store contains exactly 7,902 successful V5 OAuth checkpoints
+(`gpt-5.6-sol/xhigh`), one V5 OAuth error checkpoint
+(`LLMCKPT-1d6d8295e6996522.json`, the quota failure), 11 successful V4
+checkpoints, and 51 successful deterministic-mock checkpoints. Thus the
+previously recorded 7,902 successful V5 count is confirmed; the other 62 files
+are not counted as V5 successes. V5 cache identity includes the compiler
+version, provider, model, reasoning effort, and exact request metadata, so the
+V4 and mock files do not collide with V5 requests. The failed quota checkpoint
+has `status=error` and is not a reusable success. This confirms existing cache
+integrity, not the number of uncached future nodes or an ETA. No checkpoint was
+modified, removed, copied, or reissued; the production build remains pending
+the quota reset.

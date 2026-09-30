@@ -2658,3 +2658,18 @@ checkpoint JSON / 300,054,677 bytes, 현재 32 논리 프로세서가 확인됐�
 CPU/affinity, available RAM, pagefile, C: free를 별도 JSONL로 기록한다. 8 GiB 이상은 경고,
 available RAM 6 GiB 미만이 60초 유지되면 검증된 compiler tree만 중단한다. 이 작업은 준비와
 사전점검이며 semantic synthesis는 아직 시작되지 않았다. OAuth reset 전 build를 시작하지 않는다.
+
+## 2026-09-30 Shared checkpoint 무결성 전수 감사
+
+Pinned V5의 checkpoint 재사용 근거를 강화하려고 공유 `LLMCKPT-*.json` 7,965개를 read-only
+스트리밍 감사했다. Prompt/output 본문은 출력하지 않고 JSON/schema, 파일명과 embedded ID,
+compiler 코드와 같은 `stable_id`/`canonical_json`로 재계산한 content-address ID, input/output
+SHA-256을 전수 검증했으며 불일치 0건이었다.
+
+분류 결과는 V5 `gpt-5.6-sol/xhigh` 성공 7,902개, quota 실패 1개, V4 성공 11개, deterministic
+mock 성공 51개다. 이전에 기록된 V5 성공 7,902개가 실제 cache 파일 기준으로 확인됐다. V4/mock
+항목은 compiler version/provider/model identity가 달라 V5 성공 수에 합산되지 않으며, 실패
+checkpoint는 `status=ok`가 아니어서 compiler 재사용 대상이 아니다. 재개 시 성공 7,902개를
+content-addressed identity로 재사용한다. 이번 감사는 uncached 미래 node 수나 남은 ETA를 뜻하지
+않는다. checkpoint 파일을 변경/삭제하지 않았고 OAuth call은 0회다. Production V5 synthesis는
+quota reset `2026-10-04 03:31 KST` 전까지 미시작 상태로 유지한다.
