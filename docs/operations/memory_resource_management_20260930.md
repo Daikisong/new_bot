@@ -170,3 +170,41 @@ install이 `news_bot\src`를 가져와 PR worktree의 `--checkpoint-dir` 옵션�
 계속 증가해 회수 징후가 없으면 checkpoint 보존을 확인한 뒤 중단하고 원인을
 분석한다. 한 번의 순간 피크만으로 중단하거나, 반대로 `gc.collect()`만 호출하고
 안전하다고 판정하지 않는다. 중단 시 다른 MCP/프로젝트 프로세스는 종료하지 않는다.
+
+## 2026-09-30 compiler 객체 수명 보강
+
+PR worktree의 `offline_v2.py`에는 대형 Python 객체의 불필요한 동시 보유를 줄이는
+보강이 추가됐다. `_UnitBuild`는 semantic unit마다 전체 member record ID tuple을
+계속 보관하지 않고 count/root만 보관한다. 전체 membership의 진실 원본은 그대로
+assignment ledger이며, prompt row를 만든 뒤에는 `_UnitBuild` 목록 참조를 해제한다.
+Incremental leaf 재합성도 payload plan과 변경 row를 사용 직후 해제하고, worker별
+완성 capsule batch 목록을 별도 누적하지 않고 최종 unit map에 바로 넣는다.
+
+신규 close-return status 통계는 raw record 객체 전체를 Python으로 적재하지 않는다.
+DuckDB 결과를 `fetchmany(4096)` 단위로 읽어 semantic unit별 작은 count 집계만 만든다.
+통계는 LLM prompt나 content-addressed checkpoint 입력에는 넣지 않고 leaf 합성 후
+capsule에 붙인다. 따라서 기존 V5 prompt/checkpoint identity와 OAuth 호출 수는
+바뀌지 않는다. Capsule population count와 influence root/count를 대조해 집계 누락도
+실패 처리한다.
+
+이 변경은 확인된 메모리 누수를 고쳤다는 증거가 아니라, Python heap의 live set과
+중복 batch 보유를 줄이는 구조 개선이다. Python에서 참조를 해제해도 allocator 또는
+native extension이 OS에 메모리를 즉시 반환한다고 보장할 수 없다. 실제 절감량과
+compiler peak는 기존 checkpoint를 재사용하는 첫 재개 실행에서 PID private bytes,
+working set, host available memory를 함께 계측해 판단한다. 실패해도 checkpoint와
+source snapshot은 보존한다.
+
+이번 변경 검증은 focused 58 tests, `ruff check src tests`, mypy 139 source
+files를 통과했다. 전체 pytest도 짧은 basetemp `C:\ptd80471`에서 통과했다.
+첫 전체 실행은 사용자 TEMP의 긴 basetemp 경로 때문에 23개 테스트가
+`FileNotFoundError`로 실패했고, 짧은 경로 재실행에서 해결됐다. 실행 중 두 시점의
+pytest working set은 406.1 MiB와 423.1 MiB였고 available RAM은 각각 14.48 GiB,
+13.14 GiB였다. 이는 표본 관측이지 전체 실행의 peak 측정은 아니다.
+
+pytest가 아래 두 basetemp에 각각 약 1.13 GB와 1.06 GB의 fixture 파일을 남겼다.
+이것은 프로세스 메모리가 아니라 테스트 디스크 산출물이다. 두 경로만 대상으로 한
+정리 시도는 실행 도구에서 정확히 `Rejected(... rejected: blocked by policy)`로
+거부되어 남겨뒀다. 기존 user/generated pytest 디렉터리는 건드리지 않았다.
+
+- `C:\ptd80471` (39,473 files; 1,131,053,654 bytes)
+- `%TEMP%\nslab-full-pytest-d1f8bcb4eebb423b9fc912768d9173e6` (39,015 files; 1,059,157,354 bytes)

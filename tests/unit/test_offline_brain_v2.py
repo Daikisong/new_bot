@@ -177,7 +177,7 @@ def _source_project(root: Path, *, oversized_document: bool = False) -> Path:
                     else f"fixture mechanism payload {index} axis {embedding_axis}"
                 ),
                 "OBSERVED_POSITIVE" if positive else "OBSERVED_NEGATIVE",
-                "OBSERVED_POSITIVE" if positive else "OBSERVED_NEGATIVE",
+                ("VALID", "MISSING", "INVALID_CONFLICT")[index % 3],
                 "TOUCHED" if index == 0 else "NOT_TOUCHED",
                 "fixture-regime",
                 "REASONING",
@@ -309,6 +309,8 @@ async def test_offline_brain_build_closes_all_records_and_reduce_nodes(
     )
     assert result.influence_manifest.primary_assignment_count == 12
     assert result.influence_manifest.population_contribution_record_count == 12
+    assert result.influence_manifest.close_return_status_accounted_record_count == 12
+    assert result.influence_manifest.close_return_status_distribution_root
     assert result.influence_manifest.representative_payload_exposed_record_count <= 12
     assert (
         result.influence_manifest.representative_payload_exposed_record_count
@@ -327,6 +329,34 @@ async def test_offline_brain_build_closes_all_records_and_reduce_nodes(
     assert result.influence_manifest.final_covered_capsule_count == (
         result.package_manifest.semantic_capsule_count
     )
+    capsule_rows = [
+        json.loads(line)
+        for line in (result.package_dir / "semantic_capsules.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert all(
+        sum(row["close_return_status_distribution"].values())
+        == row["member_record_count"]
+        for row in capsule_rows
+    )
+    status_root_rows = sorted(
+        (row["semantic_unit_id"], status, count)
+        for row in capsule_rows
+        for status, count in row["close_return_status_distribution"].items()
+    )
+    assert result.influence_manifest.close_return_status_distribution_root == (
+        sha256_text(canonical_json(status_root_rows))
+    )
+    population_rows = [
+        json.loads(line)
+        for line in (
+            result.package_dir / "population_cube" / "capsule_populations.jsonl"
+        )
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert all(row["close_return_status_distribution"] for row in population_rows)
 
     connection = duckdb.connect(
         str(result.package_dir / "semantic_capsule_index.duckdb"),
@@ -382,6 +412,12 @@ def test_full_population_outlier_beyond_old_sample_boundary_gets_own_unit() -> N
     assert len(builds) == 2
     assert len(assignments) == 4097
     assert assignments[-1][5] is True
+    for build in builds:
+        member_ids = sorted(
+            str(row[0]) for row in assignments if row[1] == build.semantic_unit_id
+        )
+        assert build.member_record_count == len(member_ids)
+        assert build.member_record_root == sha256_text(canonical_json(member_ids))
 
 
 def test_utf8_long_payload_chunking_is_lossless() -> None:
@@ -691,6 +727,9 @@ async def test_incremental_update_matches_clean_full_rebuild(tmp_path: Path) -> 
     assert incremental.influence_manifest.reduce_tree_root == (
         clean.influence_manifest.reduce_tree_root
     )
+    assert incremental.influence_manifest.close_return_status_distribution_root == (
+        clean.influence_manifest.close_return_status_distribution_root
+    )
     assert incremental.compile_manifest.llm_call_count == 0
     assert incremental.compile_manifest.reused_semantic_capsule_count == (
         incremental.package_manifest.semantic_capsule_count
@@ -750,6 +789,11 @@ async def test_daily_reader_uses_only_precompiled_package(tmp_path: Path) -> Non
     assert initial_context.retrieval_basis == "CURRENT_NEWS"
     assert initial_context.interpretation_sha256 is None
     assert initial_context.selected_semantic_capsules
+    assert all(
+        sum(row["close_return_status_distribution"].values())
+        == row["member_record_count"]
+        for row in initial_context.population_statistics
+    )
     assert initial_context.brain_build_cutoff == result.package_manifest.build_cutoff
     assert initial_context.compiled_brain_guidance[0].content == (
         result.package_dir / "world_model.md"

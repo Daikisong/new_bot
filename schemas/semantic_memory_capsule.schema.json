@@ -67,6 +67,14 @@
       "title": "Category",
       "type": "string"
     },
+    "close_return_status_distribution": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "description": "Complete counts of source close-return status labels among capsule members; database null values use the __NULL__ key.",
+      "title": "Close Return Status Distribution",
+      "type": "object"
+    },
     "continuation_implications": {
       "items": {
         "type": "string"
