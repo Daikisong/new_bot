@@ -63,15 +63,42 @@ stratum from retaining every intermediate dense matrix. A watchdog may stop an
 evaluation-only plan above `12GB` private memory; an incomplete plan is never
 treated as evidence and can be regenerated from the immutable source.
 
-The corrected BUILD-only evaluation plan was regenerated read-only at
-`C:\Users\eorb9\projects\nslab_semantic_upgrade_v7_eval_v2\project\diagnostics\offline_brain_v2_build_only_full_plan_20260929_updated.json`.
-It binds to `MEMIDX-4409624afdffd1d01018`, contains 759,308 records and 49,385
-semantic units, projects 7,158 logical calls (73 long-payload, 6,917 leaf, 168
-proxy reduce/review), and made zero LLM calls. This estimate is not a lower
-bound because its leaf buckets are proxies. The run peaked below
-the watchdog threshold and returned memory to the host after the Python child
-exited. The earlier 7,147-call plan remains preserved for comparison; the new
-plan is authoritative for future evaluation build planning.
+The authoritative BUILD-only evaluation plan was regenerated read-only at
+`C:\Users\eorb9\projects\nslab_semantic_upgrade_v7_eval_v2\project\diagnostics\offline_brain_v2_build_only_full_plan_20260930_projection_audit.json`.
+Its SHA-256 is `8362f4bac91a4734053e4fea2aa9cae18afb48556b5b7a17848f1d79c4ffa8db`.
+It binds to `MEMIDX-4409624afdffd1d01018` and attested manifest SHA
+`f47cac17eb3f97bf856e358c078eca023e12d6cefce6a044878dcd87ab4e4f41`, with
+759,308 records and 49,385 semantic units. The 7,158-call figure (73
+long-payload, 6,917 leaf, 168 proxy reduce/review) is a projection, not a lower
+bound; the separate guaranteed full-build floor is 7,000 calls, including ten
+mandatory reduce/review calls. Planning made zero LLM calls, the representative
+payload truncation count is zero, and no package or production pointer was
+created or changed.
+
+The earlier file
+`offline_brain_v2_build_only_full_plan_20260929_updated.json` is preserved but
+superseded. Its stable source, geometry, representative-root, and call-count
+fields match the regenerated plan, but it incorrectly marks estimated call
+counts as lower bounds and omits the guaranteed minimum fields. Do not use its
+bound flags or infer an exact remaining call count from either projection. The
+original 7,147-call plan is also forensic comparison only.
+
+The corrected plan took 915.59 seconds. Its Python process peaked at 9,693 MiB
+private bytes (9.47 GiB) and 8,494 MiB working set (8.30 GiB); host available
+RAM reached a low of 12.72 GiB. During the next cleanup interval private bytes
+fell to 3,485 MiB (3.40 GiB), and after normal process exit host available RAM
+was 22.58 GiB. The planner scratch files peaked at 291,585,012 bytes and were
+removed by normal completion. This measures one evaluation-only planning run,
+not the production V5 build or proof that all Python/native stages are leak-free.
+
+During this run, C: free-space readings fluctuated without a measured planner
+artifact explaining the full change. A single Windows `SearchIndexer` sample
+(PID 15460) reported 123,586,425 bytes/sec written and 245,745,069 bytes/sec
+read while the volume reported 2.89 GiB free; later samples returned to 30.21
+GiB free and the process was idle. The Search service and settings were not
+changed. Reading its ProgramData index directory returned `Access is denied`,
+so the cause remains unknown. Defer another spill-heavy run if free space is
+unstable; do not attribute these volume readings to Python memory use.
 
 ## Resume protocol
 
@@ -154,8 +181,9 @@ implied by either a successful production build or an evaluation build.
 
 ## Current evaluation-only plan
 
-The evaluation-only geometry plan is
-`OFFLINE-PLAN-f0fccb71afdb623e2609`, with an estimated `7,147` logical calls.
-It made zero LLM calls and did not create a package or mutate a production
-pointer. It must not be mistaken for the production V5 build or used as a
-reason to restart a second full build.
+The current evaluation-only geometry plan is
+`OFFLINE-PLAN-f0fccb71afdb623e2609`, with 7,158 projected logical calls and a
+separate 7,000-call guaranteed floor. It made zero LLM calls and did not create
+a package or mutate a production pointer. It is only a plan for the separate
+BUILD-only C package; it is not the production V5 build and is not an exact
+remaining-call ETA or a reason to start a second full build.
