@@ -286,13 +286,12 @@ def derive_quality_blind_source_selection(
     if source_path == destination:
         raise ValueError("blind source selection output cannot overwrite its parent")
 
-    parent_reference = _path_reference(root, source_path)
     try:
         destination.relative_to(root)
     except ValueError as exc:
         raise ValueError("blind source selection output escapes the project root") from exc
 
-    source = _read_source_selection(source_path)
+    source, parent_reference = _read_source_selection_reference(root, source_path)
     if any(not isinstance(row, dict) for row in source["cases"]):
         raise ValueError("semantic upgrade source selection contains an invalid case")
     selected = [row for row in source["cases"] if row.get("split") == split]
@@ -374,7 +373,10 @@ def _prepare_quality_blind_selection(
     require_outcome_references: bool,
 ) -> tuple[BlindRuntimeSelection, Path, list[_PreparedQualityCase]]:
     source_selection_path = source_selection_path.resolve()
-    source = _read_source_selection(source_selection_path)
+    source, source_reference = _read_source_selection_reference(
+        root,
+        source_selection_path,
+    )
     if not require_outcome_references and any(
         isinstance(row, dict) and "outcome_ledger" in row
         for row in source["cases"]
@@ -411,8 +413,8 @@ def _prepare_quality_blind_selection(
             del source_rows
         prepared_and_sealed.sort(
             key=lambda item: (
-                item[0].cutoff_safe_news_row_count,
                 item[0].trade_date,
+                item[0].cutoff_safe_news_row_count,
                 item[0].episode_id,
             )
         )
@@ -464,7 +466,7 @@ def _prepare_quality_blind_selection(
             )
             for case in selected_prepared
         ]
-    source_sha256 = file_sha256(source_selection_path)
+    source_sha256 = source_reference.sha256
     blind_payload = {
         "version": QUALITY_RUNTIME_SELECTION_VERSION,
         "source_selection_sha256": source_sha256,
@@ -699,8 +701,7 @@ def materialize_blind_case_news(
     )
 
 
-def _read_source_selection(path: Path) -> dict[str, Any]:
-    payload = read_json(path)
+def _read_source_selection_payload(payload: object) -> dict[str, Any]:
     if (
         not isinstance(payload, dict)
         or payload.get("schema_version")
@@ -709,6 +710,34 @@ def _read_source_selection(path: Path) -> dict[str, Any]:
     ):
         raise ValueError("semantic upgrade source selection is invalid")
     return payload
+
+
+def _read_source_selection(path: Path) -> dict[str, Any]:
+    return _read_source_selection_payload(read_json(path))
+
+
+def _read_source_selection_reference(
+    root: Path,
+    path: Path,
+) -> tuple[dict[str, Any], QualityArtifactReference]:
+    resolved_root = root.resolve()
+    resolved_path = path.resolve()
+    try:
+        relative_path = resolved_path.relative_to(resolved_root).as_posix()
+    except ValueError as exc:
+        raise ValueError("quality runtime artifact escapes the project root") from exc
+    payload_bytes = resolved_path.read_bytes()
+    try:
+        payload = json.loads(payload_bytes.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("semantic upgrade source selection is invalid") from exc
+    return (
+        _read_source_selection_payload(payload),
+        QualityArtifactReference(
+            artifact_path=relative_path,
+            sha256=sha256_bytes(payload_bytes),
+        ),
+    )
 
 
 def _prepare_source_case(

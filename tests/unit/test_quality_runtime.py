@@ -388,13 +388,27 @@ def test_derive_blind_source_selection_drops_outcome_without_resolving_it(
             "cases": [calibration_case, holdout_case],
         },
     )
+    parent_sha256 = file_sha256(parent_path)
+    parent_bytes = parent_path.read_bytes()
+    original_read_bytes = Path.read_bytes
+    parent_read_count = 0
     original_resolve = Path.resolve
+
+    def guarded_read_bytes(path: Path) -> bytes:
+        nonlocal parent_read_count
+        if path == parent_path:
+            parent_read_count += 1
+            if parent_read_count > 1:
+                raise AssertionError("parent selection was read more than once")
+            return parent_bytes
+        return original_read_bytes(path)
 
     def guarded_resolve(path: Path, *args: object, **kwargs: object) -> Path:
         if path.name == "missing-outcome.jsonl":
             raise AssertionError("blind source derivation resolved an outcome path")
         return original_resolve(path, *args, **kwargs)
 
+    monkeypatch.setattr(Path, "read_bytes", guarded_read_bytes)
     monkeypatch.setattr(Path, "resolve", guarded_resolve)
     output_path = tmp_path / "blind_holdout_selection.json"
 
@@ -408,8 +422,9 @@ def test_derive_blind_source_selection_drops_outcome_without_resolving_it(
     payload = json.loads(output_path.read_text(encoding="utf-8"))
     assert derived.case_count == 1
     assert derived.stripped_outcome_reference_count == 1
-    assert derived.parent_selection_sha256 == file_sha256(parent_path)
-    assert payload["source_selection_parent"]["sha256"] == file_sha256(parent_path)
+    assert parent_read_count == 1
+    assert derived.parent_selection_sha256 == parent_sha256
+    assert payload["source_selection_parent"]["sha256"] == parent_sha256
     assert payload["source_selection_parent_plan_sha256"] == "b" * 64
     assert payload["source_selection_parent_seed"] == "registered-split-seed"
     assert payload["outcome_reference_count"] == 0
@@ -430,8 +445,17 @@ def test_full_split_seals_each_case_before_preparing_the_next(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cases = [
-        _source_case(tmp_path, index=index, row_count=index)
-        for index in (1, 2)
+        _source_case(
+            tmp_path,
+            index=index,
+            row_count=row_count,
+            trade_date=trade_date,
+        )
+        for index, row_count, trade_date in (
+            (1, 1, date(2026, 1, 3)),
+            (2, 3, date(2026, 1, 1)),
+            (3, 2, date(2026, 1, 2)),
+        )
     ]
     for case in cases:
         case.pop("outcome_ledger")
@@ -474,12 +498,19 @@ def test_full_split_seals_each_case_before_preparing_the_next(
         scope="FULL_SPLIT",
     )
 
-    assert len(result.blind_selection.cases) == 2
+    assert len(result.blind_selection.cases) == 3
+    assert [case.episode_id for case in result.blind_selection.cases] == [
+        "CASE-2",
+        "CASE-3",
+        "CASE-1",
+    ]
     assert events == [
         "prepared:CASE-1",
         "sealed:CASE-1",
         "prepared:CASE-2",
         "sealed:CASE-2",
+        "prepared:CASE-3",
+        "sealed:CASE-3",
     ]
 
 
