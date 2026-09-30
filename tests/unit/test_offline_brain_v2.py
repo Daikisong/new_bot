@@ -709,6 +709,37 @@ def test_offline_plan_uses_embeddings_but_zero_llm_calls(tmp_path: Path) -> None
     assert plan["full_population_embedding_geometry"] is True
 
 
+def test_offline_plan_cleans_workdir_after_assignment_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source_project(tmp_path / "source")
+    compiler_root = tmp_path / "compiler"
+    output_path = tmp_path / "plan.json"
+    work_roots: list[Path] = []
+
+    def fail_assignments(
+        connection: duckdb.DuckDBPyConnection,
+        *,
+        source: Any,
+        progress_path: Path,
+    ) -> list[Any]:
+        del connection, source
+        work_roots.append(progress_path.parent)
+        raise RuntimeError("injected assignment failure")
+
+    monkeypatch.setattr(offline_v2, "_build_semantic_assignments", fail_assignments)
+    with pytest.raises(RuntimeError, match="injected assignment failure"):
+        OfflineSemanticBrainCompiler(
+            Settings(project_root=compiler_root),
+            llm=DeterministicMockLLMProvider(),
+        ).plan(source_project=source, output_path=output_path)
+
+    assert len(work_roots) == 1
+    assert not work_roots[0].exists()
+    assert not output_path.exists()
+
+
 def test_planner_reduce_projection_uses_runtime_byte_packer() -> None:
     children = [
         SemanticReduceNode(
