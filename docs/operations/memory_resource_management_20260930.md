@@ -224,10 +224,11 @@ rows에 제자리 반영하고 소비한 digest map 항목을 제거해 출력 �
 요청하지 않는지 검증한다.
 
 `tests/unit/test_offline_brain_v2.py` 17개 통과, `ruff check src tests`,
-`mypy src/news_scalping_lab` 통과. 전체 pytest는 이 후속 변경 뒤 아직 재실행하지
-않았으며 PR CI가 전체 gate를 검증해야 한다. `ruff check .`는 기존 untracked pytest
-fixture 3개에서 hardcoding lint finding 3건을 냈고 해당 generated 디렉터리는 수정하지
-않았다.
+`mypy src/news_scalping_lab` 통과. 후속 변경을 포함한 PR CI run `36656852252`가
+9m15s 만에 Ruff, Mypy, schema parity, production targeted regression, full pytest,
+generated drift/whitespace를 모두 통과했다. 로컬 `ruff check .`는 기존 untracked
+pytest fixture 3개에서 hardcoding lint finding 3건을 냈고 해당 generated 디렉터리는
+수정하지 않았다.
 
 현재 머신 표본에서 NSLAB/pytest Python 프로세스는 없었다. Python 42개 프로세스의
 aggregate working set은 약 1.1 GiB, private memory는 약 1.6 GiB, host available RAM은
