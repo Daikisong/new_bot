@@ -371,3 +371,23 @@ has `status=error` and is not a reusable success. This confirms existing cache
 integrity, not the number of uncached future nodes or an ETA. No checkpoint was
 modified, removed, copied, or reissued; the production build remains pending
 the quota reset.
+
+## Progress and resource guard behavior
+
+The guarded launcher reads the pinned compiler's `brain/.work/OFFLINE-COMPILE-*/progress.json` only when its file timestamp is no earlier than the verified compiler process start. It accepts the expected progress schema and sane field ranges; missing, partial, malformed, or ambiguous progress telemetry is logged as unavailable and does not stop the build. The file is not modified.
+
+Progress is intentionally coarse. `semantic_assignments` updates the record count while assignments are built. Once that phase finishes, the compiler writes `representative_and_distribution_build` with all source records processed, then performs payload planning, leaf LLM maps, reductions, and package finalization without more progress-file updates. Therefore `records=823279/823279` means assignment geometry completed; it does not mean the LLM synthesis or package is complete. The broad phase label gives context, not a reliable remaining-time estimate.
+
+The launcher sets and rechecks affinity mask `0xF` for the verified compiler and resolvable, identity-checked descendants, limiting those processes to logical CPUs 0-3. `max_concurrency=4` separately bounds compiler LLM concurrency. It does not impose a timeout on a valid provider request or declare high CPU use a failure. Private bytes at/above 8 GiB, or six consecutive increasing 10-second samples above that threshold within one reported phase, produce warnings only; they are not a leak diagnosis and do not trigger automatic termination. The JSONL log records phase and available record/unit counters next to process-tree and host-resource samples.
+
+Automatic resource stop is narrower: if host available RAM stays below 6 GiB for 60 seconds, the launcher revalidates the exact pinned build root and descendants, force-stops only that compiler tree, and exits with code 2. The shared content-addressed checkpoints remain untouched. A forced stop does not run Python cleanup, so it may leave an incomplete `brain/.work/<compile_id>` scratch directory; it is not a completed package and must not be reused as one. Preserve it for inspection, verify the exact compiler tree is gone, and only remove that compile's scratch after confirming no build process still owns it. Do not remove or rewrite checkpoint JSON files.
+
+An operator can request a controlled stop without guessing a PID:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\guarded_offline_v5_resume.ps1 -StopBuild
+```
+
+At launch, the runner writes an external `active_offline_v5_build.json` receipt binding a random run ID, pinned compiler root/commit, source/manifest/checkpoint identity, Python executable, exact command line, root PID and creation time, and parent PID. `-StopBuild` reads only this receipt; it never discovers a process by shared CLI arguments. It rechecks the pinned checkout commit and every recorded root identity before stopping the process tree. A missing, malformed, stale, or mismatched receipt fails closed without process control. Ambiguous descendants are left untouched; a process under the protected Bithumb project is never controlled. The receipt is removed only after the recorded root and all resolvable descendants are gone. If verification is incomplete, the receipt remains and blocks another build until the process tree is inspected. Shared checkpoints are preserved; forced stop may leave compiler scratch for inspection. Use the default no-build preflight to check readiness; neither preflight nor stop mode makes an OAuth call.
+
+Before the OAuth reset, validation may cover PowerShell parsing, read-only preflight, an early `-StartBuild` refusal, and `-StopBuild` failing closed when no launcher receipt exists, even if a separate process happens to use similar arguments. Do not launch a mock/alternate compiler to exercise the runtime guard, and do not start production synthesis until the quota reset and the existing preflight conditions pass.
