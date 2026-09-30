@@ -67,6 +67,69 @@ def test_offline_build_requires_pinned_production_llm_identity(tmp_path: Path) -
     cli_module._require_offline_production_llm_identity(settings)
 
 
+def test_derive_quality_blind_source_selection_cli(tmp_path: Path) -> None:
+    source_path = tmp_path / "shadow_split" / "shadow_case_selection.json"
+    write_json(
+        source_path,
+        {
+            "schema_version": "nslab.semantic_upgrade_split_selection.v1",
+            "plan_sha256": "b" * 64,
+            "seed": "registered-split-seed",
+            "seed_sha256": "c" * 64,
+            "cases": [
+                {
+                    "episode_id": "CASE-1",
+                    "trade_date": "2026-01-01",
+                    "split": "CALIBRATION",
+                    "normalized_index": {
+                        "artifact_path": "research/CASE-1/normalized.json",
+                        "sha256": "a" * 64,
+                    },
+                    "source_ledger": {
+                        "artifact_path": "research/CASE-1/source.jsonl",
+                        "sha256": "d" * 64,
+                    },
+                    "outcome_ledger": {
+                        "artifact_path": "research/CASE-1/never-open.jsonl",
+                        "sha256": "e" * 64,
+                    },
+                }
+            ],
+        },
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "memory",
+            "derive-quality-blind-source-selection",
+            "--project-root",
+            str(tmp_path),
+            "--source-selection",
+            str(source_path),
+            "--split",
+            "CALIBRATION",
+            "--output",
+            "diagnostics/calibration_blind_source_selection.json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    response = json.loads(result.output)
+    derived_path = (
+        tmp_path / "diagnostics" / "calibration_blind_source_selection.json"
+    )
+    derived = json.loads(derived_path.read_text(encoding="utf-8"))
+    assert response["case_count"] == 1
+    assert response["stripped_outcome_reference_count"] == 1
+    assert response["source_selection_path"] == (
+        "diagnostics/calibration_blind_source_selection.json"
+    )
+    assert derived["source_selection_parent"]["sha256"] == file_sha256(source_path)
+    assert derived["outcome_reference_count"] == 0
+    assert all("outcome_ledger" not in case for case in derived["cases"])
+
+
 @pytest.mark.parametrize("command", ["build-offline", "update-offline"])
 def test_offline_build_cli_accepts_shared_checkpoint_directory(
     tmp_path: Path,

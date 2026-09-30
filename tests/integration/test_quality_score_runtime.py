@@ -471,8 +471,10 @@ def _write_source_selection(root: Path) -> Path:
         },
     )
     source.write_text(
-        '{"available_before_cutoff":true,"source_id":"SRC-1",'
+        '{"available_before_cutoff":true,"source_type":"NEWS_CSV_ROW",'
+        '"source_id":"SRC-1",'
         '"published_at_kst":"2030-01-10T08:00:00+09:00",'
+        '"time_verified":true,'
         '"title":"Issuer 000001 contract","body":"Confirmed agreement."}\n',
         encoding="utf-8",
     )

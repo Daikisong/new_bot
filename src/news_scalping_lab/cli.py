@@ -81,6 +81,7 @@ from news_scalping_lab.diagnostics import (
 )
 from news_scalping_lab.evaluation.evaluator import Evaluator
 from news_scalping_lab.evaluation.quality_runtime import (
+    derive_quality_blind_source_selection,
     predict_runtime_variants,
     prepare_quality_blind_runtime_selection,
     prepare_quality_runtime_selection,
@@ -9171,6 +9172,52 @@ def memory_prepare_quality_blind_runtime_selection(
             ),
             "outcome_reference_count": 0,
             "production_activation_status": "NOT_PRODUCTION_ACTIVATED",
+        }
+    )
+
+
+@memory_app.command("derive-quality-blind-source-selection")
+def memory_derive_quality_blind_source_selection(
+    project_root: Annotated[Path, typer.Option("--project-root")],
+    source_selection: Annotated[Path, typer.Option("--source-selection")],
+    split: Annotated[str, typer.Option("--split")],
+    output: Annotated[Path, typer.Option("--output")],
+) -> None:
+    normalized_split = split.strip().upper()
+    if normalized_split not in {"CALIBRATION", "HOLDOUT", "POST_CUTOFF"}:
+        _exit_with_error(ValueError("blind source selection split is invalid"))
+    root = project_root.resolve()
+    resolved_source = (
+        source_selection
+        if source_selection.is_absolute()
+        else root / source_selection
+    )
+    resolved_output = output if output.is_absolute() else root / output
+    try:
+        result = derive_quality_blind_source_selection(
+            root,
+            source_selection_path=resolved_source,
+            output_path=resolved_output,
+            split=cast(
+                Literal["CALIBRATION", "HOLDOUT", "POST_CUTOFF"],
+                normalized_split,
+            ),
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        _exit_with_error(exc)
+    _echo(
+        {
+            "selection_id": result.selection_id,
+            "split": result.split,
+            "case_count": result.case_count,
+            "stripped_outcome_reference_count": (
+                result.stripped_outcome_reference_count
+            ),
+            "parent_selection_sha256": result.parent_selection_sha256,
+            "source_selection_sha256": result.source_selection_sha256,
+            "source_selection_path": relative_to_root(
+                result.source_selection_path, root
+            ),
         }
     )
 

@@ -245,6 +245,92 @@ def test_blind_selection_allowlist_rejects_before_touching_untrusted_path(
         load_blind_runtime_selection(tmp_path, candidate)
 
 
+def test_cutoff_safe_news_projection_excludes_metadata_and_uses_verified_timestamp_fallback() -> None:
+    cutoff_at = datetime(2026, 3, 20, 8, 59, 59, tzinfo=KST)
+    source_rows = [
+        {
+            "available_before_cutoff": True,
+            "source_type": "MAIN_PROMPT",
+            "source_id": "SRC-PROMPT",
+        },
+        {
+            "available_before_cutoff": True,
+            "source_type": "NEWS_CSV_FILE",
+            "source_id": "SRC-CSV-FILE",
+        },
+        {
+            "available_before_cutoff": True,
+            "source_type": "news_csv_row",
+            "source_id": "SRC-NEWS-1",
+            "published_at": "2026-03-20T08:58:59+09:00",
+            "time_verified": True,
+            "title": "headline",
+            "body": "story",
+        },
+        {
+            "available_before_cutoff": False,
+            "source_type": "UNSEEN_FUTURE_TYPE",
+        },
+    ]
+
+    rows, source_ids = quality_runtime_module._cutoff_safe_news_rows(
+        source_rows,
+        cutoff_at=cutoff_at,
+    )
+
+    assert quality_runtime_module._cutoff_safe_row_count(source_rows) == 1
+    assert source_ids == ["SRC-NEWS-1"]
+    assert rows == [
+        {
+            "date": "2026-03-20",
+            "time": "08:58:59",
+            "title": "headline",
+            "body": "story",
+        }
+    ]
+
+
+def test_cutoff_safe_news_projection_rejects_unknown_source_type() -> None:
+    with pytest.raises(
+        ValueError,
+        match="unknown cutoff-safe source ledger type: UNSEEN_SOURCE_TYPE",
+    ):
+        quality_runtime_module._cutoff_safe_row_count(
+            [
+                {
+                    "available_before_cutoff": True,
+                    "source_type": "UNSEEN_SOURCE_TYPE",
+                }
+            ]
+        )
+
+
+@pytest.mark.parametrize(
+    ("published_at", "time_verified"),
+    [
+        ("2026-03-20T08:58:59", True),
+        ("2026-03-20T08:58:59+09:00", False),
+    ],
+)
+def test_cutoff_safe_news_projection_rejects_unverified_or_timezone_missing_fallback(
+    published_at: str,
+    time_verified: bool,
+) -> None:
+    with pytest.raises(ValueError, match="verified publication time|no timezone"):
+        quality_runtime_module._cutoff_safe_news_rows(
+            [
+                {
+                    "available_before_cutoff": True,
+                    "source_type": "NEWS_CSV_ROW",
+                    "source_id": "SRC-NEWS-1",
+                    "published_at": published_at,
+                    "time_verified": time_verified,
+                }
+            ],
+            cutoff_at=datetime(2026, 3, 20, 8, 59, 59, tzinfo=KST),
+        )
+
+
 def test_three_case_selection_uses_news_rows_without_opening_outcomes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -363,6 +449,155 @@ def test_blind_only_selection_accepts_source_without_outcome_references(
     assert payload["outcome_reference_count"] == 0
     assert all("outcome_ledger" not in case for case in payload["cases"])
     assert not (result.blind_selection_path.parent / "runtime_outcome_selection.json").exists()
+
+
+def test_derive_blind_source_selection_drops_outcome_without_resolving_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calibration_case = _source_case(
+        tmp_path, index=1, row_count=1, split="CALIBRATION"
+    )
+    holdout_case = _source_case(tmp_path, index=2, row_count=2, split="HOLDOUT")
+    holdout_case["outcome_ledger"] = {
+        "artifact_path": "research/truth-do-not-touch/missing-outcome.jsonl",
+        "sha256": "a" * 64,
+    }
+    parent_path = tmp_path / "shadow_case_selection.json"
+    write_json(
+        parent_path,
+        {
+            "schema_version": "nslab.semantic_upgrade_split_selection.v1",
+            "plan_sha256": "b" * 64,
+            "seed": "registered-split-seed",
+            "seed_sha256": "c" * 64,
+            "cases": [calibration_case, holdout_case],
+        },
+    )
+    parent_sha256 = file_sha256(parent_path)
+    parent_bytes = parent_path.read_bytes()
+    original_read_bytes = Path.read_bytes
+    parent_read_count = 0
+    original_resolve = Path.resolve
+
+    def guarded_read_bytes(path: Path) -> bytes:
+        nonlocal parent_read_count
+        if path == parent_path:
+            parent_read_count += 1
+            if parent_read_count > 1:
+                raise AssertionError("parent selection was read more than once")
+            return parent_bytes
+        return original_read_bytes(path)
+
+    def guarded_resolve(path: Path, *args: object, **kwargs: object) -> Path:
+        if path.name == "missing-outcome.jsonl":
+            raise AssertionError("blind source derivation resolved an outcome path")
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_bytes", guarded_read_bytes)
+    monkeypatch.setattr(Path, "resolve", guarded_resolve)
+    output_path = tmp_path / "blind_holdout_selection.json"
+
+    derived = quality_runtime_module.derive_quality_blind_source_selection(
+        tmp_path,
+        source_selection_path=parent_path,
+        output_path=output_path,
+        split="HOLDOUT",
+    )
+
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    assert derived.case_count == 1
+    assert derived.stripped_outcome_reference_count == 1
+    assert parent_read_count == 1
+    assert derived.parent_selection_sha256 == parent_sha256
+    assert payload["source_selection_parent"]["sha256"] == parent_sha256
+    assert payload["source_selection_parent_plan_sha256"] == "b" * 64
+    assert payload["source_selection_parent_seed"] == "registered-split-seed"
+    assert payload["outcome_reference_count"] == 0
+    assert [case["episode_id"] for case in payload["cases"]] == ["CASE-2"]
+    assert all("outcome_ledger" not in case for case in payload["cases"])
+
+    prepared = prepare_quality_blind_runtime_selection(
+        tmp_path,
+        source_selection_path=output_path,
+        split="HOLDOUT",
+        scope="FULL_SPLIT",
+    )
+    assert len(prepared.blind_selection.cases) == 1
+
+
+def test_full_split_seals_each_case_before_preparing_the_next(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cases = [
+        _source_case(
+            tmp_path,
+            index=index,
+            row_count=row_count,
+            trade_date=trade_date,
+        )
+        for index, row_count, trade_date in (
+            (1, 1, date(2026, 1, 3)),
+            (2, 3, date(2026, 1, 1)),
+            (3, 2, date(2026, 1, 2)),
+        )
+    ]
+    for case in cases:
+        case.pop("outcome_ledger")
+    source_path = tmp_path / "blind_source_selection.json"
+    write_json(
+        source_path,
+        {
+            "schema_version": "nslab.semantic_upgrade_split_selection.v1",
+            "cases": cases,
+        },
+    )
+    events: list[str] = []
+    original_prepare = quality_runtime_module._prepare_source_case
+    original_seal = quality_runtime_module._seal_blind_case_input
+
+    def tracked_prepare(*args: Any, **kwargs: Any) -> Any:
+        prepared = original_prepare(*args, **kwargs)
+        events.append(f"prepared:{prepared[0].episode_id}")
+        return prepared
+
+    def tracked_seal(*args: Any, **kwargs: Any) -> Any:
+        events.append(f"sealed:{kwargs['prepared'].episode_id}")
+        return original_seal(*args, **kwargs)
+
+    monkeypatch.setattr(
+        quality_runtime_module,
+        "_prepare_source_case",
+        tracked_prepare,
+    )
+    monkeypatch.setattr(
+        quality_runtime_module,
+        "_seal_blind_case_input",
+        tracked_seal,
+    )
+
+    result = prepare_quality_blind_runtime_selection(
+        tmp_path,
+        source_selection_path=source_path,
+        split="CALIBRATION",
+        scope="FULL_SPLIT",
+    )
+
+    assert len(result.blind_selection.cases) == 3
+    assert [case.episode_id for case in result.blind_selection.cases] == [
+        "CASE-2",
+        "CASE-3",
+        "CASE-1",
+    ]
+    assert events == [
+        "prepared:CASE-1",
+        "sealed:CASE-1",
+        "prepared:CASE-2",
+        "sealed:CASE-2",
+        "prepared:CASE-3",
+        "sealed:CASE-3",
+    ]
 
 
 def test_blind_only_selection_rejects_outcome_reference_without_resolving_it(
@@ -2081,8 +2316,10 @@ def _source_case(
         "".join(
             (
                 '{"available_before_cutoff":true,'
+                '"source_type":"NEWS_CSV_ROW",'
                 f'"source_id":"SRC-{row_index:06d}",'
                 f'"published_at_kst":"{trade_date.isoformat()}T08:00:00+09:00",'
+                '"time_verified":true,'
                 '"title":"row","body":"body"}\n'
             )
             for row_index in range(1, row_count + 1)

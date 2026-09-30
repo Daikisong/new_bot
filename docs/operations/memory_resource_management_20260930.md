@@ -234,3 +234,70 @@ pytest fixture 3개에서 hardcoding lint finding 3건을 냈고 해당 generate
 aggregate working set은 약 1.1 GiB, private memory는 약 1.6 GiB, host available RAM은
 약 21.4 GiB였으며 상위 프로세스 경로는 MCP/Posting 서비스였다. 이 스냅샷은 누수
 판정이 아니며 다른 프로젝트 서비스는 종료하지 않았다.
+
+## 2026-09-30 blind selection preparation review
+
+별도 프로세스 점검에서는 Python 프로세스 50개 중 NSLAB build/evaluation 프로세스는
+0개였고, host available memory는 약 19.0 GiB였다. MCP 및 Posting 서비스는 다른
+프로젝트 소유이므로 종료하지 않았다. 이 수치는 누수 발생 여부가 아니라 한 시점의
+관측값이다.
+
+평가 프로젝트의 공식 split source ledger 파일 크기는 CALIBRATION 40개 합계
+113.03 MiB(최대 7.93 MiB), HOLDOUT 40개 합계 155.36 MiB(최대 12.07 MiB)였다.
+기존 `FULL_SPLIT` 준비기는 검증된 JSONL의 파싱 결과를 split 전체에 걸쳐 보유하므로
+파일 bytes보다 Python heap peak가 커질 수 있었다. 변경 후 `FULL_SPLIT`은 한 사례의
+JSONL을 읽고 그 사례를 바로 봉인한 뒤 다음 사례로 이동한다. 각 ledger는 해시 검증과
+사용을 같은 읽기 결과에 대해 수행해 TOCTOU 회귀 테스트의 단일 읽기 조건을 유지한다.
+`THREE_CASE` 진단은 min/median/max 사례를 고르기 위해 여전히 후보 행들을 함께 보유한다.
+
+blind source derivation은 공식 parent selection SHA
+`46cd4af66271910e837b6c6bf4681d2f1980f3ce79f6466d09dc2796a3d0ba81`, plan SHA
+`7ca4f1ad4471759fec09b66bfe5640ef997abd67a467aa58e091aeec41f7c63e`에서
+CALIBRATION/HOLDOUT 각각 40건을 파생했다. 각 파생 manifest에서 40개의
+`outcome_ledger` 참조를 제거했으며 outcome 파일을 해석하거나 열지 않았다. 결과는
+`runs/semantic_brain_upgrade/shadow_split/` 아래에 저장되었다.
+
+첫 blind input 준비는 프로젝트 `price_provider=mock` 때문에
+`quality runtime preparation requires a cutoff-safe universe price source`로 fail-closed
+했다. 저장소 안의 기존 stock-web 자료
+`C:\Users\eorb9\projects\news_bot\data\cache\stock-web`를 확인했고,
+manifest max date는 2026-06-22였다. 공식 CALIBRATION/HOLDOUT trade date 범위는
+2025-12-30부터 2026-06-19까지여서 cutoff-safe D-1 조회 범위에 들어왔다. 설정 파일을
+수정하거나 자료를 다운로드하지 않고 해당 경로를 준비 명령 프로세스에만 환경변수로
+지정했다.
+
+이 과정에서 source ledger의 `available_before_cutoff=true`는 뉴스 기사 행뿐 아니라
+prompt, 원본 CSV 파일, 가격 스냅샷, 거래일, 라우팅 및 일일자료 manifest 메타데이터도
+포함한다는 점을 발견했다. 실제 뉴스 행은 `NEWS_CSV_ROW`만 선택하도록 분류했고, 관측한
+비뉴스 metadata type은 명시적으로 제외했다. 미지의 cutoff-safe type은 버리지 않고
+fail-closed 한다. 일부 뉴스 행은 `published_at_kst` 대신 offset이 붙은 `published_at`을
+사용하므로, `time_verified=true`이고 timezone이 실제로 있는 경우에만 fallback을
+허용한다. source ledger 80개 전부 공식 SHA-256과 일치했으며 outcome selection/file은
+열거나 해시하지 않았다.
+
+공식 blind 입력 준비 결과:
+
+- CALIBRATION: 40 cases, selection ID `QSEL-e3f61fcf722f30e0e7dc`,
+  SHA-256 `a9e7f31a18b06988725d5fe63012a0b2b484473422576743151501cfa566ba72`.
+- HOLDOUT: 40 cases, selection ID `QSEL-44030751cb3dfdec3b17`,
+  SHA-256 `4be25ad5d864a8de2cbc3db1c76d59b3735a0ce9793e086ec9db696027bf1403`.
+- 두 split 모두 `outcome_reference_count=0`; sealed case manifest 및 뉴스/D-1 입력
+  artifact hash를 40/40 재검증했다.
+- 각 split 준비는 약 9분 걸렸고 LLM/OAuth 호출은 0회였다.
+
+실행 중 준비 명령 PID 하나만 10초 간격으로 관찰했다. 두 successful run의 Python
+private memory는 약 835–865 MiB, working set은 약 120–149 MiB 사이에서 오르내렸고,
+case가 처리되어도 누적 증가하지 않았다. host available RAM 관측 범위는 약
+13.4–20.6 GiB여서 8 GiB 경고 기준에 닿지 않았다. 두 Python 프로세스 모두 정상 종료했고
+마지막 확인에서 여유 RAM은 20.1 GiB였다. 이는 이 준비 경로의 관측이지 다른 단계의
+누수 부재나 1회 전체 compiler peak를 증명하는 것은 아니다.
+
+첫 번째 실패 시도에서 생성된 부분 QINPUT은 삭제하지 않고 보존했다. 공식 split의
+잘못된 parent를 사용해 파생했던 오래된 대안 manifest 두 개도 아래 경고처럼 보존하며
+공식 평가 입력에 사용하지 않는다.
+
+주의: 검증 중 공식 parent 대신 오래된 대안 split(plan SHA
+`cc6fdf0ec99725928121115121568b347be9ff435e0ea9f46c3d005c80c06157`)에서 파생된
+CALIBRATION/HOLDOUT source manifest도 각각 하나씩 생성되었다. 두 파일은 outcome 파일
+접근, blind input 준비, 예측에 사용하지 않았다. 파일은 삭제하지 않고 보존하며,
+공식 evaluation 입력으로 사용하지 않는다.
