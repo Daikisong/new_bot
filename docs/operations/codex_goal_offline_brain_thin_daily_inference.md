@@ -2410,7 +2410,7 @@ merge됐다. Merge commit은 `cdc500b41058fd54c05f1e0e9ca5f75155ebb511`이며 �
 
 메모리/임시공간 확인 중 `news_bot_next` worktree 아래 과거 pytest 실행이 만든 폴더 5개를 발견했다. 총 47,704 files, 1,200,482,749 bytes다. 네 폴더는 untracked이고 하나는 `.gitignore`의 `data/cache/*` 규칙에 따라 ignored다. 정확한 작업 PID 또는 compiler가 이 폴더들을 사용하지 않는 것을 확인했다. 지정된 다섯 경로만 검증한 PowerShell 정리 명령은 실행 도구에서 `Rejected(... rejected: blocked by policy)`로 거부됐다. 이 거부를 다른 삭제 경로로 우회하지 않았으므로 폴더는 남아 있고 `C:` free는 측정 시점에 30,003,773,440 bytes였다. 이는 디스크 임시 잔여물이지 실행 중인 Python 메모리 누수가 아니다.
 
-빌드 재개 시 정확한 compiler PID의 private bytes/working set과 host available RAM을 10초 간격으로 기록한다. 8 GiB 미만은 경고, available RAM 6 GiB 미만이 60초 지속되거나 같은 단계에서 private memory가 계속 증가할 때만 checkpoint를 보존하고 해당 compiler 실행을 중단·분석한다. `gc.collect()`만으로 회수됐다고 판단하거나 다른 프로젝트의 Python/MCP/Posting 프로세스를 종료하지 않는다.
+빌드 재개 시 정확한 compiler PID의 private bytes/working set과 host available RAM을 10초 간격으로 기록한다. Private memory 8 GiB 이상은 경고로 다루며, available RAM 6 GiB 미만이 60초 지속되거나 같은 단계에서 private memory가 계속 증가할 때는 checkpoint를 보존하고 해당 compiler 실행만 중단·분석한다. `gc.collect()`만으로 회수됐다고 판단하거나 다른 프로젝트의 Python/MCP/Posting 프로세스를 종료하지 않는다.
 
 Production V5 brain synthesis/package audit, 별도의 BUILD-only C package, CALIBRATION/HOLDOUT/POST_CUTOFF A/B/C prediction과 scoring, 외부 artifact audit, production activation은 미완료다. 제품 goal은 활성 상태이며 production은 HOLD다.
 
@@ -2620,3 +2620,28 @@ source와 shared content-addressed checkpoint 경로를 유지해 production bui
 이미 끝난 import/embedding은 반복하지 않는다. package audit, 별도 BUILD-only C package,
 실제 daily-path CALIBRATION/HOLDOUT 평가와 외부 artifact review, production activation은
 계속 별도 미완료 gate다.
+
+## 2026-09-30 Production V5 CPU·메모리 가드 감사
+
+고정 build source와 immutable config를 read-only로 확인했다. `configs/default.yaml`의
+`max_concurrency` 기본값은 4이고 compiler의 LLM semaphore/batch worker가 유효값을 사용한다.
+`NSLAB_MAX_CONCURRENCY` 환경변수로 override할 수 있으므로 재개 직전 유효값이 정확히 4인지
+검증한다. 이는 동시 OAuth/LLM 요청 제한이지 CPU core 제한은 아니다. Pinned commit
+`7198b6b`은 DuckDB 1.5.4를 사용하며 connection에 8 GB `memory_limit`과 전용 spill 경로를
+설정하지만 DuckDB `threads`는 명시하지 않는다. 현재 32 논리 프로세서 호스트에서 local
+DuckDB probe의 기본값은 32였다. DuckDB의 memory limit도 buffer manager 한도이지 process RSS
+전체 상한은 아니다.
+
+고정 compiler와 기존 checkpoint를 보존하기 위해 코드, prompt, model, source, cache 경로는
+수정하지 않는다. 다음 Windows build에서는 command line을 확인한 정확한 compiler PID에
+affinity mask `0xF`를 적용해 논리 프로세서 0-3에서만 실행되게 하고, 실제 mask와 compiler
+child를 첫 source-assignment 단계 전에 검증한다. 격리된 `timeout.exe` smoke test에서 mask
+설정/회수는 성공했다. project build PID에는 적용하지 않았다. Child에 별도 affinity를 적용할
+때는 절대 경로와 command line을 먼저 확인하고 보호된 Bithumb process tree를 배제한다.
+
+10초마다 해당 compiler와 확인된 child만 private bytes, working set, CPU time/affinity,
+available RAM, pagefile 사용량을 기록한다. Private memory 8 GiB 이상은 경고이며 누수 확정이나
+RSS 상한이 아니다. Available RAM 6 GiB 미만이 60초 지속되면 완료 checkpoint를 보존하고
+compiler만 중단해 phase/workdir를 조사한다. 임의의 valid-call 시간 제한, 다른 프로젝트
+process 종료, `gc.collect()`만으로 누수 해결을 주장하는 방식은 쓰지 않는다. 자세한 재개 절차는
+[`offline_v5_resume_and_audit.md`](offline_v5_resume_and_audit.md)에 기록한다.
