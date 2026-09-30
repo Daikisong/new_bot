@@ -2135,11 +2135,13 @@ spill target, 4,096-row streaming, bounded prompt batches, explicit release of
 large intermediate references, and NumPy recursive-clustering temporary-array
 release. These are allocation bounds, not a claim that Python/native memory
 cannot grow. During an actual compiler run, sample that exact PID's private
-bytes and working set plus host available RAM every 10 seconds. Warn below
-8 GiB available; stop only the identified compiler, preserving source and
-checkpoints, if available RAM stays below 6 GiB for 60 seconds or private bytes
-keep rising within the same stage. Do not treat `gc.collect()` alone as a leak
-fix or stop unrelated Python/MCP/Posting processes.
+bytes and working set plus host available RAM every 10 seconds. Private bytes at
+or above 8 GiB, or six consecutive increasing 10-second samples above 8 GiB
+within one phase, are
+warning/inspection signals only. Stop only the receipt-identified compiler
+tree, preserving source and checkpoints, if host available RAM stays below
+6 GiB for 60 seconds. Do not treat `gc.collect()` alone as a leak fix or stop
+unrelated Python/MCP/Posting processes.
 
 At 2026-09-30 13:14:46 KST, the idle host snapshot showed 56 Python processes,
 1.84 GiB aggregate private memory, 1.01 GiB aggregate working set, 200.6 MiB
@@ -2410,7 +2412,7 @@ merge됐다. Merge commit은 `cdc500b41058fd54c05f1e0e9ca5f75155ebb511`이며 �
 
 메모리/임시공간 확인 중 `news_bot_next` worktree 아래 과거 pytest 실행이 만든 폴더 5개를 발견했다. 총 47,704 files, 1,200,482,749 bytes다. 네 폴더는 untracked이고 하나는 `.gitignore`의 `data/cache/*` 규칙에 따라 ignored다. 정확한 작업 PID 또는 compiler가 이 폴더들을 사용하지 않는 것을 확인했다. 지정된 다섯 경로만 검증한 PowerShell 정리 명령은 실행 도구에서 `Rejected(... rejected: blocked by policy)`로 거부됐다. 이 거부를 다른 삭제 경로로 우회하지 않았으므로 폴더는 남아 있고 `C:` free는 측정 시점에 30,003,773,440 bytes였다. 이는 디스크 임시 잔여물이지 실행 중인 Python 메모리 누수가 아니다.
 
-빌드 재개 시 정확한 compiler PID의 private bytes/working set과 host available RAM을 10초 간격으로 기록한다. Private memory 8 GiB 이상은 경고로 다루며, available RAM 6 GiB 미만이 60초 지속되거나 같은 단계에서 private memory가 계속 증가할 때는 checkpoint를 보존하고 해당 compiler 실행만 중단·분석한다. `gc.collect()`만으로 회수됐다고 판단하거나 다른 프로젝트의 Python/MCP/Posting 프로세스를 종료하지 않는다.
+당시 작성된 재개 메모에는 같은 단계의 private memory 지속 증가를 중지 사유로 적었으나, 후속 guarded runner에서 그 기준은 자동 중지 조건에서 제외됐다. 현재는 정확한 compiler PID의 private bytes/working set과 host available RAM을 10초 간격으로 기록하고, private memory 8 GiB 이상 또는 8 GiB 초과 상태에서 같은 단계의 10초 표본이 6회 연속 증가하는 경우를 경고·점검 신호로만 다룬다. 자동 중지는 host available RAM 6 GiB 미만이 60초 지속될 때만 완료 checkpoint를 보존하고 receipt로 식별된 compiler tree에 적용한다. `gc.collect()`만으로 회수됐다고 판단하거나 다른 프로젝트의 Python/MCP/Posting 프로세스를 종료하지 않는다.
 
 Production V5 brain synthesis/package audit, 별도의 BUILD-only C package, CALIBRATION/HOLDOUT/POST_CUTOFF A/B/C prediction과 scoring, 외부 artifact audit, production activation은 미완료다. 제품 goal은 활성 상태이며 production은 HOLD다.
 
@@ -2673,3 +2675,34 @@ checkpoint는 `status=ok`가 아니어서 compiler 재사용 대상이 아니다
 content-addressed identity로 재사용한다. 이번 감사는 uncached 미래 node 수나 남은 ETA를 뜻하지
 않는다. checkpoint 파일을 변경/삭제하지 않았고 OAuth call은 0회다. Production V5 synthesis는
 quota reset `2026-10-04 03:31 KST` 전까지 미시작 상태로 유지한다.
+
+## 2026-10-01 재개 전 자원·문서 점검
+
+PR #144는 squash merge됐고 `origin/main`은 `697638e730b24ef969f9c6c0cc7c23e73a9e2578`이다.
+2026-10-01 00:02 KST에 production compiler 실행 여부와 host 상태를 한 번 확인했다. 정확한
+build 명령행에 해당하는 프로세스는 없었고 available RAM은 19.84 GiB, logical processor는
+32개였다. 공유 checkpoint는 JSON 7,965개, 300,054,677 bytes로 기존 read-only 감사와 일치한다.
+OAuth quota reset은 2026-10-04 03:31 KST이므로 OAuth/model call은 하지 않았고 compiler도 시작하지
+않았다.
+
+00:05 KST guarded runner no-build preflight도 `PASS`했다. Pinned commit, CLI/Python import 위치,
+실제 manifest SHA, Codex OAuth `gpt-5.6-sol/xhigh`, `max_concurrency=4`, checkpoint 7,965개와
+quota sentinel을 확인했다. 당시 available RAM은 19.47 GiB, pagefile use 4,226 MiB, C: free
+410.67 GiB였다. runner가 명시한 대로 build process는 시작하지 않았고 OAuth/model call도 0회다.
+
+병합된 guarded runner 기준은 private bytes 8 GiB 이상 또는 8 GiB 초과 상태에서 동일 phase의
+10초 표본이 6회 연속 증가할 때 경고·점검만 하는 것이다. 자동 중지는 host available RAM 6 GiB 미만이 60초 지속될 때만
+receipt로 식별한 compiler tree에 적용한다. 예전의 “단계 내 private-memory 증가만으로 중단” 문구가
+memory resource guide와 goal snapshot에 남아 있어 이 정책으로 바로잡았다. 4 logical processor
+affinity와 LLM concurrency 4는 유지한다. 유효 LLM 요청에 임의 timeout을 추가하지 않는다.
+
+CreatorTemp의 pytest 임시 폴더 3개(`pytest-6122`~`pytest-6124`, 각각 619 files / 3,480,619 bytes)는
+해당 경로를 참조하는 프로세스가 없음을 확인한 뒤
+`C:\Users\eorb9\Downloads\trash\nslab-pytest-temp-20261001`로 이동했다. 삭제하지 않았다. 총
+10,441,857 bytes이며 같은 C: 볼륨 안 이동이라 디스크 여유 공간을 늘린 것은 아니다. 예전에
+기록된 `news_bot_next` 경로는 현재 없어 당시의 다섯 임시 폴더는 다시 확인하거나 이동하지 않았다.
+다른 Python/MCP/Posting 프로세스는 제어하지 않았다.
+
+다음 단계는 quota reset 이후 exact pinned V5 재개뿐이다. import, embeddings, planner 및 성공
+checkpoint 재생성은 하지 않는다. synthesis, package audit, BUILD-only C package, 동일 배포 경로의
+평가, 외부 audit, production activation은 미완료이며 production은 HOLD다.
