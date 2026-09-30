@@ -299,6 +299,12 @@ class OfflineSemanticBrainCompiler:
         planned_leaf_nodes = _planned_reduce_leaf_nodes(unit_rows)
         estimated_reduce_calls = _estimate_reduce_review_call_count(planned_leaf_nodes)
         estimated_leaf_node_count = sum(len(rows) for rows in planned_leaf_nodes.values())
+        guaranteed_minimum_reduce_review_calls = len(category_unit_counts) + 1
+        guaranteed_minimum_total_calls = (
+            payload_plan.long_payload_chunk_map_call_count
+            + len(leaf_batches)
+            + guaranteed_minimum_reduce_review_calls
+        )
         plan = {
             "schema_version": "nslab.offline_semantic_brain_plan.v1",
             "plan_id": plan_id,
@@ -344,11 +350,16 @@ class OfflineSemanticBrainCompiler:
             "rare_outlier_unit_count": outlier_unit_count,
             "leaf_map_call_count": len(leaf_batches),
             "estimated_reduce_leaf_node_count": estimated_leaf_node_count,
+            "estimated_reduce_leaf_node_count_is_runtime_count": False,
             "estimated_reduce_review_call_count": estimated_reduce_calls,
-            # Capsule prose is not available during the zero-LLM planning pass.
-            # The same byte-aware packer is therefore run against coverage-only
-            # leaf proxies; the resulting count is explicitly a lower bound.
-            "estimated_reduce_review_call_count_is_lower_bound": True,
+            # Planned leaves hash semantic-unit IDs, while runtime hashes
+            # model-derived capsule IDs. Their bucket counts are unrelated, so
+            # this byte-packer simulation is a projection, not a bound.
+            "estimated_reduce_review_call_count_is_lower_bound": False,
+            "estimated_reduce_review_call_count_is_projection": True,
+            "guaranteed_minimum_reduce_review_call_count": (
+                guaranteed_minimum_reduce_review_calls
+            ),
             "estimated_reduce_prompt_byte_packing_simulated": True,
             "estimated_reduce_prompt_byte_packing_simulation": (
                 "coverage_only_leaf_proxy.v1"
@@ -358,7 +369,12 @@ class OfflineSemanticBrainCompiler:
                 + len(leaf_batches)
                 + estimated_reduce_calls
             ),
-            "estimated_total_logical_llm_call_count_is_lower_bound": True,
+            "estimated_total_logical_llm_call_count_is_lower_bound": False,
+            "estimated_total_logical_llm_call_count_is_projection": True,
+            "guaranteed_minimum_total_logical_llm_call_count": (
+                guaranteed_minimum_total_calls
+            ),
+            "guaranteed_minimum_total_logical_llm_call_count_is_lower_bound": True,
             "first_n_shortcut_used": False,
             "silent_truncation_count": 0,
             "planning_llm_call_count": 0,
@@ -2211,9 +2227,9 @@ def _planned_reduce_leaf_nodes(
 
     Runtime leaf buckets use the final capsule IDs, which include model-authored
     capsule prose and therefore do not exist during planning. Semantic-unit IDs
-    provide the same stable two-hex bucket geometry without making a model call.
-    The proxies retain every planned capsule ID but intentionally omit generated
-    prose, so byte-aware estimates remain lower bounds until real leaves exist.
+    provide deterministic proxy buckets without making a model call, but their
+    bucket population is not a bound on model-derived capsule-ID buckets. The
+    proxies retain every planned capsule ID and omit generated prose.
     """
 
     buckets: dict[tuple[str, str], list[str]] = defaultdict(list)
@@ -2256,10 +2272,10 @@ def _estimate_reduce_review_call_count(
     """Count reduce/review/root calls using the runtime byte-aware packer.
 
     The next-level proxies preserve child identity and covered capsule IDs but
-    leave generated prose empty. This makes the estimate deterministic and
-    conservative while exercising the exact `_pack_reduce_nodes` byte and child
-    limits. One category review is added per non-empty category, followed by the
-    single world root call.
+    leave generated prose empty. This makes the projection deterministic while
+    exercising the exact `_pack_reduce_nodes` byte and child limits for proxy
+    inputs; it may under- or overestimate runtime. One category review is added
+    per non-empty category, followed by the single world root call.
     """
 
     calls = 0
@@ -2284,8 +2300,8 @@ def _estimate_reduce_review_call_count(
             ]
             # A coverage-only proxy can stay over the byte budget forever when
             # it has multiple oversized children. Real model prose may shrink
-            # at the next level, so stop this lower-bound simulation rather
-            # than claiming an infinite tree or burning memory.
+            # at the next level, so stop this proxy simulation rather than
+            # claiming an infinite tree or burning memory.
             if len(next_level) >= len(current):
                 break
             current = next_level

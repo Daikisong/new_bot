@@ -686,9 +686,23 @@ def test_offline_plan_uses_embeddings_but_zero_llm_calls(tmp_path: Path) -> None
     assert plan["leaf_map_call_count"] >= 1
     assert plan["estimated_total_logical_llm_call_count"] > plan["leaf_map_call_count"]
     assert plan["estimated_reduce_leaf_node_count"] >= 1
-    assert plan["estimated_reduce_review_call_count_is_lower_bound"] is True
+    assert plan["estimated_reduce_leaf_node_count_is_runtime_count"] is False
+    assert plan["estimated_reduce_review_call_count_is_lower_bound"] is False
+    assert plan["estimated_reduce_review_call_count_is_projection"] is True
+    mandatory_reduce_calls = len(plan["category_semantic_unit_counts"]) + 1
+    assert plan["guaranteed_minimum_reduce_review_call_count"] == mandatory_reduce_calls
     assert plan["estimated_reduce_prompt_byte_packing_simulated"] is True
-    assert plan["estimated_total_logical_llm_call_count_is_lower_bound"] is True
+    assert plan["estimated_reduce_review_call_count"] >= mandatory_reduce_calls
+    assert plan["estimated_total_logical_llm_call_count_is_lower_bound"] is False
+    assert plan["estimated_total_logical_llm_call_count_is_projection"] is True
+    minimum_total = (
+        plan["long_payload_chunk_map_call_count"]
+        + plan["leaf_map_call_count"]
+        + mandatory_reduce_calls
+    )
+    assert plan["guaranteed_minimum_total_logical_llm_call_count"] == minimum_total
+    assert plan["guaranteed_minimum_total_logical_llm_call_count_is_lower_bound"] is True
+    assert plan["estimated_total_logical_llm_call_count"] >= minimum_total
     assert plan["planning_llm_call_count"] == 0
     assert plan["embedding_reused"] is True
     assert plan["import_reused"] is True

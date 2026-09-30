@@ -162,8 +162,8 @@ chunked representative records           203
 full payload chunks                      341
 long-payload map calls                    90
 leaf calls                              7,423
-reduce/review calls                       158
-total logical calls                     7,671
+proxy reduce/review estimate               158
+proxy total-call estimate                7,671
 max concurrency                              4
 truncated representative payloads            0
 wall clock                          1,060.07초
@@ -195,11 +195,13 @@ mean call         54.39초
 p90 call          87.13초
 ```
 
-7,671 logical calls와 동시성 4가 이상적으로 유지될 때 단순 예측은 중앙
-25.4시간, 평균 29.0시간, p90 46.4시간이다. rate limit, schema repair,
-OAuth 경쟁에 따라 더 길어질 수 있다. 완료된 content-addressed checkpoint는
-재실행하지 않으므로 중단 뒤 처음부터 다시 시작하지 않는다. 다만 시작 시
-전수 local geometry 약 16분은 현재 구현에서 재계산한다.
+7,671은 proxy topology에 따른 계획치이지 보장된 호출 하한이 아니다.
+동시성 4가 이상적으로 유지될 때의 시나리오 예측은 중앙 25.4시간, 평균
+29.0시간, p90 46.4시간이다. 실제 topology는 더 적거나 많을 수 있고 rate
+limit, schema repair, OAuth 경쟁에 따라 더 길어질 수 있다. 완료된
+content-addressed checkpoint는 재실행하지 않으므로 중단 뒤 처음부터 다시
+시작하지 않는다. 다만 시작 시 전수 local geometry 약 16분은 현재 구현에서
+재계산한다.
 
 ## 외부 리뷰 질문
 
@@ -240,10 +242,17 @@ PRODUCTION_ACTIVATED                  false
 다음 재시도 가능 시각을 `Oct 4th, 2026 3:31 AM`으로 안내한다.
 
 현재 build plan에 속한 성공 작업은 90 long-payload maps, 7,423 leaf maps,
-383 reductions, 6 category reviews로 **7,902개**다. 확정된 topology의 최소
-호출 하한은 8,018개라 최소 116개가 남았고, 180,000-byte prompt 분할로 더
-늘 수 있다. 예전 계획·진단 호출이 함께 있는 공유 checkpoint 디렉터리의
-전체 파일 수를 build 호출 수로 오인하지 않는다.
+383 reductions, 6 category reviews로 **7,902개**다. 이전 문서의 8,018 및
+116-call remaining은 semantic-unit hash proxy topology를 runtime topology의
+하한으로 잘못 취급한 값이므로 철회한다. Runtime은 model-derived capsule ID로
+leaf bucket을 만들며, 해당 proxy는 실제보다 크거나 작을 수 있다. 안전하게
+보장되는 전체-build floor는 90 + 7,423 + 9개 category review + 1개 world root
+= **7,523 logical calls**로 이미 성공 수보다 낮아 remaining-call ETA에는 쓸 수
+없다. 현재 최소 다섯 logical node는 아직 성공하지 않았다: quota 오류 reduce
+재시도 1개, 남은 category review 3개, world root 1개. 추가 reduce 수는 실제
+capsule/reduce output에 달려 있어 정확한 remaining count는 아직 미확정이다.
+공유 checkpoint 디렉터리에는 예전 계획·진단 호출도 있으므로 전체 파일 수를
+build 호출 수로 오인하지 않는다.
 
 합성 프로세스는 현재 실행 중이 아니다. 마지막 `progress.json`의 record
 100%는 local representative/distribution preparation과 52,644 semantic unit
