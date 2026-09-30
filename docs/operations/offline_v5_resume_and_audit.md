@@ -77,24 +77,37 @@ plan is authoritative for future evaluation build planning.
 
 1. Confirm the OAuth retry window has passed and confirm that no process with
    this compile ID is already running.
-2. Pin the original LLM identity in the shell. The CLI now fails closed if any
-   of these values differ, rather than silently creating a new mock-provider
-   compile identity.
+2. Use the tested compiler code from `C:\Users\eorb9\projects\news_bot_next`
+   at commit `7198b6b74bbd10f1cf2451ca399c0b63f14706a9` (the code was merged to
+   `main` as `afd8e8f951d3b0c097ae49054d85f0b5c90ce60f`). The existing
+   `C:\Users\eorb9\projects\news_bot` checkout is on a different branch with
+   tracked local changes; do not fast-forward or use it for this resume. Set and
+   verify `PYTHONPATH` so the CLI comes from the tested worktree. The CLI now
+   fails closed if the original LLM identity differs.
 
 ```powershell
+$repo = "C:\Users\eorb9\projects\news_bot_next"
+Set-Location $repo
+$env:PYTHONPATH = "$repo\src"
+$expectedCli = Join-Path $repo "src\news_scalping_lab\cli.py"
+$actualCli = python -c "import news_scalping_lab.cli as cli; print(cli.__file__)"
+if ($actualCli.Trim() -ne $expectedCli) { throw "Unexpected CLI import: $actualCli" }
 $env:NSLAB_LLM_PROVIDER = "codex-oauth"
 $env:NSLAB_CODEX_MODEL = "gpt-5.6-sol"
 $env:NSLAB_CODEX_REASONING_EFFORT = "xhigh"
 ```
 
-3. Run the exact command below from the repository environment. Do not change
-   the source project, expected manifest hash, compiler version, model,
+3. Run the exact command below from that worktree. `--checkpoint-dir` must point
+   to the original shared directory so successful content-addressed replies are
+   found instead of reissued from the PR worktree's empty default cache. Do not
+   change the source project, expected manifest hash, compiler version, model,
    reasoning effort, prompt schemas, or checkpoint identity.
 
 ```powershell
 python -m news_scalping_lab.cli brain build-offline `
   --source-project "C:\Users\eorb9\projects\news_bot\production\staging\P9IMPORT-3D770A7DD72457C97098\project" `
-  --expected-manifest-sha256 "6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576"
+  --expected-manifest-sha256 "6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576" `
+  --checkpoint-dir "C:\Users\eorb9\projects\news_bot\runs\checkpoints\llm"
 ```
 
 4. Verify that content-addressed successful checkpoints are reused. A resumed
