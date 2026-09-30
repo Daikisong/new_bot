@@ -1957,8 +1957,9 @@ all Python/native memory leaks are impossible or establish the full compiler pea
 On the current host snapshot no NSLAB/pytest Python process was running. The 42
 Python processes across unrelated services used about 1.1 GiB working set and 1.6
 GiB private memory, with 21.4 GiB host RAM available. None were stopped. The first
-resumed compiler run must still record compiler PID private bytes, working set, and
-host available memory at 10-second intervals under the documented 8/6 GiB thresholds.
+resumed compiler run must record aggregate `BuildTreePrivateBytes` for the verified
+compiler tree at 10-second intervals under the documented 8/6 GiB thresholds. Record
+root `RootPrivateBytes` and `RootWorkingSetBytes` separately as diagnostics.
 
 ## Current Progress - 2026-09-30 Blind-only POST_CUTOFF and Late Outcomes
 
@@ -2134,14 +2135,15 @@ runbook. The compiler uses an 8GB DuckDB buffer limit with a work-directory
 spill target, 4,096-row streaming, bounded prompt batches, explicit release of
 large intermediate references, and NumPy recursive-clustering temporary-array
 release. These are allocation bounds, not a claim that Python/native memory
-cannot grow. During an actual compiler run, sample that exact PID's private
-bytes and working set plus host available RAM every 10 seconds. Private bytes at
-or above 8 GiB, or six consecutive increasing 10-second samples above 8 GiB
-within one phase, are
-warning/inspection signals only. Stop only the receipt-identified compiler
-tree, preserving source and checkpoints, if host available RAM stays below
-6 GiB for 60 seconds. Do not treat `gc.collect()` alone as a leak fix or stop
-unrelated Python/MCP/Posting processes.
+cannot grow. During an actual compiler run, sample aggregate
+`BuildTreePrivateBytes` for the verified compiler tree plus host available RAM
+every 10 seconds. Record root `RootPrivateBytes` and `RootWorkingSetBytes`
+separately for diagnosis. Aggregate private bytes at or above 8 GiB, or six
+consecutive increasing 10-second aggregate samples above 8 GiB within one
+phase, are warning/inspection signals only. Stop only the receipt-identified
+compiler tree, preserving source and checkpoints, if host available RAM stays
+below 6 GiB for 60 seconds. Do not treat `gc.collect()` alone as a leak fix or
+stop unrelated Python/MCP/Posting processes.
 
 At 2026-09-30 13:14:46 KST, the idle host snapshot showed 56 Python processes,
 1.84 GiB aggregate private memory, 1.01 GiB aggregate working set, 200.6 MiB
@@ -2300,11 +2302,14 @@ THREE_CASE 진단 경로는 min/median/max 선정을 위해 후보를 유지하�
 
 이번 작업은 blind 입력 80건을 준비하고 SHA 참조를 확인한 단계에서 멈췄다. 두 split
 모두 outcome reference는 0건이다. 예측, 점수화, LLM/OAuth 호출, package seal, production
-activation은 하지 않았다. Python 누수 관리는 각 장시간 단계에서 정확한 작업 PID의
-private bytes와 host available RAM을 함께 관찰하는 방식으로 계속한다. 8 GiB 아래는
-경고 기준이며, `gc.collect()` 단독 호출이나 다른 프로젝트 서비스를 종료하는 것을
-해결책으로 간주하지 않는다. OAuth 제한이 해제될 때까지 prediction work는 보류하고
-production은 HOLD로 유지한다. 이 goal은 여전히 활성 상태다.
+activation은 하지 않았다. 이 당시 PID 단위 관찰 메모는 이후 guarded runner가 정한 정책
+metric을 반영하지 못하므로 superseded다. 재개 시 verified tree의 aggregate
+`BuildTreePrivateBytes`를 warning/growth 기준으로 사용하고 root `RootPrivateBytes`와
+`RootWorkingSetBytes`는 진단값으로 별도 기록한다. 8 GiB 이상 또는 8 GiB 초과 상태의
+6회 연속 phase 증가만 경고하며, 자동 중지는 available RAM 6 GiB 미만이 60초 지속될 때만
+receipt-identified tree에 적용한다. `gc.collect()` 단독 호출이나 다른 프로젝트 서비스를
+종료하는 것을 해결책으로 간주하지 않는다. OAuth 제한이 해제될 때까지 prediction work는
+보류하고 production은 HOLD로 유지한다. 이 goal은 여전히 활성 상태다.
 
 ## 2026-09-30 OAuth 재개 전 무결성 점검
 
@@ -2412,7 +2417,7 @@ merge됐다. Merge commit은 `cdc500b41058fd54c05f1e0e9ca5f75155ebb511`이며 �
 
 메모리/임시공간 확인 중 `news_bot_next` worktree 아래 과거 pytest 실행이 만든 폴더 5개를 발견했다. 총 47,704 files, 1,200,482,749 bytes다. 네 폴더는 untracked이고 하나는 `.gitignore`의 `data/cache/*` 규칙에 따라 ignored다. 정확한 작업 PID 또는 compiler가 이 폴더들을 사용하지 않는 것을 확인했다. 지정된 다섯 경로만 검증한 PowerShell 정리 명령은 실행 도구에서 `Rejected(... rejected: blocked by policy)`로 거부됐다. 이 거부를 다른 삭제 경로로 우회하지 않았으므로 폴더는 남아 있고 `C:` free는 측정 시점에 30,003,773,440 bytes였다. 이는 디스크 임시 잔여물이지 실행 중인 Python 메모리 누수가 아니다.
 
-당시 작성된 재개 메모에는 같은 단계의 private memory 지속 증가를 중지 사유로 적었으나, 후속 guarded runner에서 그 기준은 자동 중지 조건에서 제외됐다. 현재는 정확한 compiler PID의 private bytes/working set과 host available RAM을 10초 간격으로 기록하고, private memory 8 GiB 이상 또는 8 GiB 초과 상태에서 같은 단계의 10초 표본이 6회 연속 증가하는 경우를 경고·점검 신호로만 다룬다. 자동 중지는 host available RAM 6 GiB 미만이 60초 지속될 때만 완료 checkpoint를 보존하고 receipt로 식별된 compiler tree에 적용한다. `gc.collect()`만으로 회수됐다고 판단하거나 다른 프로젝트의 Python/MCP/Posting 프로세스를 종료하지 않는다.
+당시 작성된 재개 메모에는 같은 단계의 private memory 지속 증가를 중지 사유로 적었으나, 후속 guarded runner에서 그 기준은 자동 중지 조건에서 제외됐다. 현재 warning/growth 기준은 verified compiler tree의 aggregate `BuildTreePrivateBytes`이며, root PID의 `RootPrivateBytes`와 `RootWorkingSetBytes`는 별도 진단값으로 기록한다. Aggregate private bytes 8 GiB 이상 또는 8 GiB 초과 상태에서 같은 단계의 10초 aggregate 표본이 6회 연속 증가하면 경고·점검만 한다. 자동 중지는 host available RAM 6 GiB 미만이 60초 지속될 때만 완료 checkpoint를 보존하고 receipt로 식별된 compiler tree에 적용한다. `gc.collect()`만으로 회수됐다고 판단하거나 다른 프로젝트의 Python/MCP/Posting 프로세스를 종료하지 않는다.
 
 Production V5 brain synthesis/package audit, 별도의 BUILD-only C package, CALIBRATION/HOLDOUT/POST_CUTOFF A/B/C prediction과 scoring, 외부 artifact audit, production activation은 미완료다. 제품 goal은 활성 상태이며 production은 HOLD다.
 
@@ -2641,9 +2646,10 @@ child를 첫 source-assignment 단계 전에 검증한다. 격리된 `timeout.ex
 설정/회수는 성공했다. project build PID에는 적용하지 않았다. Child에 별도 affinity를 적용할
 때는 절대 경로와 command line을 먼저 확인하고 보호된 Bithumb process tree를 배제한다.
 
-10초마다 해당 compiler와 확인된 child만 private bytes, working set, CPU time/affinity,
-available RAM, pagefile 사용량을 기록한다. Private memory 8 GiB 이상은 경고이며 누수 확정이나
-RSS 상한이 아니다. Available RAM 6 GiB 미만이 60초 지속되면 완료 checkpoint를 보존하고
+10초마다 verified compiler tree의 aggregate `BuildTreePrivateBytes`와
+`BuildTreeWorkingSetBytes`, CPU/affinity, available RAM, pagefile 사용량을 기록한다. Root
+`RootPrivateBytes`와 `RootWorkingSetBytes`는 별도 진단값이다. Tree aggregate private memory
+8 GiB 이상은 경고이며 누수 확정이나 RSS 상한이 아니다. Available RAM 6 GiB 미만이 60초 지속되면 완료 checkpoint를 보존하고
 compiler만 중단해 phase/workdir를 조사한다. 임의의 valid-call 시간 제한, 다른 프로젝트
 process 종료, `gc.collect()`만으로 누수 해결을 주장하는 방식은 쓰지 않는다. 자세한 재개 절차는
 [`offline_v5_resume_and_audit.md`](offline_v5_resume_and_audit.md)에 기록한다.
@@ -2656,8 +2662,9 @@ compiler commit, 실제 source manifest SHA, shared checkpoint sentinel/count, C
 명시적 `-StartBuild`와 quota reset 시각 이후로 제한된다. 2026-09-30 사전점검과 PowerShell
 parser 검증이 통과했고, 조기 `-StartBuild`는 실행 전에 거부됐다. Python `3.14.2`, 7,965개
 checkpoint JSON / 300,054,677 bytes, 현재 32 논리 프로세서가 확인됐다. 실행 시 compiler와
-식별된 자식에 4-core affinity를 적용하며 10초마다 process tree private bytes/working set,
-CPU/affinity, available RAM, pagefile, C: free를 별도 JSONL로 기록한다. 8 GiB 이상은 경고,
+식별된 자식에 4-core affinity를 적용하며 10초마다 aggregate `BuildTreePrivateBytes`와
+tree working set, CPU/affinity, available RAM, pagefile, C: free를 별도 JSONL로 기록한다.
+Root `RootPrivateBytes`와 `RootWorkingSetBytes`는 별도 진단값이다. Tree aggregate 8 GiB 이상은 경고,
 available RAM 6 GiB 미만이 60초 유지되면 검증된 compiler tree만 중단한다. 이 작업은 준비와
 사전점검이며 semantic synthesis는 아직 시작되지 않았다. OAuth reset 전 build를 시작하지 않는다.
 
@@ -2690,8 +2697,9 @@ OAuth quota reset은 2026-10-04 03:31 KST이므로 OAuth/model call은 하지 �
 quota sentinel을 확인했다. 당시 available RAM은 19.47 GiB, pagefile use 4,226 MiB, C: free
 410.67 GiB였다. runner가 명시한 대로 build process는 시작하지 않았고 OAuth/model call도 0회다.
 
-병합된 guarded runner 기준은 private bytes 8 GiB 이상 또는 8 GiB 초과 상태에서 동일 phase의
-10초 표본이 6회 연속 증가할 때 경고·점검만 하는 것이다. 자동 중지는 host available RAM 6 GiB 미만이 60초 지속될 때만
+병합된 guarded runner 기준은 verified tree aggregate `BuildTreePrivateBytes` 8 GiB 이상 또는
+8 GiB 초과 상태에서 동일 phase의 10초 aggregate 표본이 6회 연속 증가할 때 경고·점검만 하는 것이다.
+Root `RootPrivateBytes`/`RootWorkingSetBytes`는 별도 진단값이다. 자동 중지는 host available RAM 6 GiB 미만이 60초 지속될 때만
 receipt로 식별한 compiler tree에 적용한다. 예전의 “단계 내 private-memory 증가만으로 중단” 문구가
 memory resource guide와 goal snapshot에 남아 있어 이 정책으로 바로잡았다. 4 logical processor
 affinity와 LLM concurrency 4는 유지한다. 유효 LLM 요청에 임의 timeout을 추가하지 않는다.

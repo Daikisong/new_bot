@@ -163,11 +163,13 @@ install이 `news_bot\src`를 가져와 PR worktree의 `--checkpoint-dir` 옵션�
 재개 명령은 반드시 `PYTHONPATH=C:\Users\eorb9\projects\news_bot_next\src`를 설정하고
 `news_scalping_lab.cli.__file__`이 그 worktree를 가리키는지 확인해야 한다.
 
-재개 시 verified compiler PID의 private bytes, working set, host available memory를
-10초 간격으로 단계와 완료 단위 수에 함께 기록한다. 같은 단계의 연속 구간은
-증가 추세를 조사하는 데 사용하되, private bytes가 8 GiB 이상이거나 8 GiB를 넘은
-상태에서 같은 단계의 10초 표본이 6회 연속 증가하는 것은 경고·점검 신호일 뿐 자동
-중지 사유가 아니다. 자동 중지는
+재개 시 verified compiler tree의 aggregate `BuildTreePrivateBytes`와
+`BuildTreeWorkingSetBytes`, CPU/affinity, host available memory, pagefile을 10초
+간격으로 phase와 완료 단위 수에 함께 기록한다. Root PID의 `RootPrivateBytes`와
+`RootWorkingSetBytes`도 별도 진단값으로 남기되, private-memory warning/growth 기준에는
+tree aggregate만 사용한다. 같은 phase의 aggregate 추세를 조사하되,
+`BuildTreePrivateBytes`가 8 GiB 이상이거나 8 GiB 초과 상태에서 10초 표본이 6회 연속
+증가하는 것은 경고·점검 신호일 뿐 자동 중지 사유가 아니다. 자동 중지는
 host available RAM이 6 GiB 미만으로 60초 지속될 때만 적용하며, 완료 checkpoint를
 보존한 뒤 receipt로 식별된 compiler tree만 중지한다. 경고가 나면 phase, working set,
 host RAM, pagefile, 최근 checkpoint를 확인한다. 한 번의 순간 피크만으로 중단하거나,
