@@ -292,3 +292,15 @@ manifest remained the externally attested `6c05...4576`, supplied explicitly
 to the planner. Import, embeddings, source pointer, package output, and
 production activation were not modified. OAuth quota still prevents the V5
 synthesis resume until `2026-10-04 03:31 KST`; production remains HOLD.
+
+## 2026-09-30 Production V5 CPU and memory guard
+
+A read-only audit of the pinned build source and immutable project config found:
+
+- `configs/default.yaml` sets `max_concurrency: 4`. The compiler's semaphore and batch worker counts use the effective value, but `NSLAB_MAX_CONCURRENCY` can override it; verify that the effective value is exactly 4 before resume. This bounds LLM concurrency, not CPU cores.
+- Compiler commit `7198b6b` pins DuckDB `1.5.4`. Its connection setup sets `memory_limit=8GB` and a per-workdir spill directory, but does not set DuckDB `threads`. The local Python/DuckDB probe reported the default as 32 threads on this 32-logical-processor host.
+- DuckDB documents `threads` as the parallel-query limit. Its `memory_limit` applies to the buffer manager and is not a hard process-RSS ceiling. See [DuckDB resource pragmas](https://duckdb.org/docs/lts/configuration/pragmas) and [DuckDB OOM guidance](https://duckdb.org/docs/lts/guides/performance/oom).
+
+Do not patch the pinned compiler, change prompt/model/source identity, or invalidate successful checkpoints to add a thread setting mid-resume. For the next Windows build launch, apply processor affinity mask `0xF` (logical processors 0-3) to the exact, command-line-verified compiler PID before its source-assignment phase. This limits that PID to four logical processors without changing its compiler commit or checkpoint namespace; exact prompt/input hashes remain the cache-reuse authority. An isolated `timeout.exe` smoke test successfully set and read back this mask; no project process was changed. Verify the actual compiler mask and inspect its process descendants before model calls begin. Apply affinity to a descendant only after resolving its absolute executable and command line and confirming it is not under the protected Bithumb root.
+
+Keep the 10-second resource samples scoped to that verified compiler and its verified build descendants: private bytes, working set, CPU time/affinity, host available RAM, and pagefile usage. A private-memory value at or above 8 GiB is a warning, not a claimed leak or a hard RSS cap. If available RAM remains below 6 GiB for 60 seconds, first preserve any completed checkpoint and stop only the identified compiler tree, then inspect the phase and workdir. Do not terminate unrelated Python, MCP, Posting, indexing, or trading processes; do not use `gc.collect()` as proof of release. The compiler PID is limited to four logical processors; verify descendant affinity separately. CPU load is observed rather than treated as a timeout for a valid LLM call.
