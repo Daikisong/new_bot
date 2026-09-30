@@ -229,7 +229,7 @@ different compiler artifact and exposure definition. A built package must still
 prove exact record assignment, leaf/capsule coverage, payload-ledger roots, and
 the provenance of synthesized claims before any result is described as complete.
 
-## 2026-09-30 20:26 KST Production-source guarded planner projection
+## 2026-09-30 Production-source guarded planner projection
 
 A fresh production-source `plan-offline` completed from a clean sparse worktree
 at `origin/main` commit `b64b02b2c6e5976f5756234285ffb7aa4f029993`. The CLI was
