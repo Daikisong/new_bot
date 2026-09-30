@@ -77,24 +77,47 @@ plan is authoritative for future evaluation build planning.
 
 1. Confirm the OAuth retry window has passed and confirm that no process with
    this compile ID is already running.
-2. Pin the original LLM identity in the shell. The CLI now fails closed if any
-   of these values differ, rather than silently creating a new mock-provider
-   compile identity.
+2. Use an isolated clean worktree at tested compiler commit
+   `7198b6b74bbd10f1cf2451ca399c0b63f14706a9` (merged to `main` as
+   `afd8e8f951d3b0c097ae49054d85f0b5c90ce60f`). Do not use the existing
+   `news_bot` checkout with tracked edits or `news_bot_next` with generated
+   pytest artifacts. The exact revision and a completely clean worktree are
+   checked below before Python imports or any provider call. Set and verify
+   `PYTHONPATH` so the CLI comes from that worktree. The CLI also fails closed
+   if the original LLM identity differs.
 
 ```powershell
+$repo = "C:\Users\eorb9\projects\news_bot_resume_clean_7198b6b"
+$expectedCommit = "7198b6b74bbd10f1cf2451ca399c0b63f14706a9"
+$actualCommit = (git -C $repo rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $actualCommit -ne $expectedCommit) {
+  throw "Unexpected compiler revision: $actualCommit"
+}
+$worktreeStatus = git -C $repo status --porcelain --untracked-files=all
+if ($LASTEXITCODE -ne 0 -or -not [string]::IsNullOrWhiteSpace(($worktreeStatus -join "`n"))) {
+  throw "Compiler worktree must be completely clean before build-offline."
+}
+Set-Location $repo
+$env:PYTHONPATH = "$repo\src"
+$expectedCli = Join-Path $repo "src\news_scalping_lab\cli.py"
+$actualCli = python -c "import news_scalping_lab.cli as cli; print(cli.__file__)"
+if ($actualCli.Trim() -ne $expectedCli) { throw "Unexpected CLI import: $actualCli" }
 $env:NSLAB_LLM_PROVIDER = "codex-oauth"
 $env:NSLAB_CODEX_MODEL = "gpt-5.6-sol"
 $env:NSLAB_CODEX_REASONING_EFFORT = "xhigh"
 ```
 
-3. Run the exact command below from the repository environment. Do not change
-   the source project, expected manifest hash, compiler version, model,
+3. Run the exact command below from that worktree. `--checkpoint-dir` must point
+   to the original shared directory so successful content-addressed replies are
+   found instead of reissued from the PR worktree's empty default cache. Do not
+   change the source project, expected manifest hash, compiler version, model,
    reasoning effort, prompt schemas, or checkpoint identity.
 
 ```powershell
 python -m news_scalping_lab.cli brain build-offline `
   --source-project "C:\Users\eorb9\projects\news_bot\production\staging\P9IMPORT-3D770A7DD72457C97098\project" `
-  --expected-manifest-sha256 "6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576"
+  --expected-manifest-sha256 "6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576" `
+  --checkpoint-dir "C:\Users\eorb9\projects\news_bot\runs\checkpoints\llm"
 ```
 
 4. Verify that content-addressed successful checkpoints are reused. A resumed
