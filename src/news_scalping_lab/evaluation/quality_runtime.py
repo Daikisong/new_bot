@@ -148,6 +148,17 @@ class QualityBlindRuntimeSelectionResult:
 
 
 @dataclass(frozen=True)
+class QualityBlindSourceSelectionResult:
+    source_selection_path: Path
+    source_selection_sha256: str
+    selection_id: str
+    parent_selection_sha256: str
+    split: Literal["CALIBRATION", "HOLDOUT", "POST_CUTOFF"]
+    case_count: int
+    stripped_outcome_reference_count: int
+
+
+@dataclass(frozen=True)
 class BlindCaseNewsInput:
     news_csv_path: Path
     news_sha256: str
@@ -173,7 +184,6 @@ class _PreparedQualityCase:
     normalized_index: QualityArtifactReference
     source_ledger: QualityArtifactReference
     outcome_ledger: QualityArtifactReference | None
-    source_ledger_rows: tuple[dict[str, Any], ...]
     cutoff_safe_news_row_count: int
 
 
@@ -253,6 +263,107 @@ def prepare_quality_blind_runtime_selection(
     )
 
 
+def derive_quality_blind_source_selection(
+    root: Path,
+    *,
+    source_selection_path: Path,
+    output_path: Path,
+    split: Literal["CALIBRATION", "HOLDOUT", "POST_CUTOFF"],
+) -> QualityBlindSourceSelectionResult:
+    """Project one registered split while dropping outcome refs without resolving them."""
+
+    root = root.resolve()
+    source_path = (
+        source_selection_path
+        if source_selection_path.is_absolute()
+        else root / source_selection_path
+    ).resolve()
+    destination = (
+        output_path if output_path.is_absolute() else root / output_path
+    ).resolve()
+    if split not in {"CALIBRATION", "HOLDOUT", "POST_CUTOFF"}:
+        raise ValueError("blind source selection split is invalid")
+    if source_path == destination:
+        raise ValueError("blind source selection output cannot overwrite its parent")
+
+    parent_reference = _path_reference(root, source_path)
+    try:
+        destination.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("blind source selection output escapes the project root") from exc
+
+    source = _read_source_selection(source_path)
+    if any(not isinstance(row, dict) for row in source["cases"]):
+        raise ValueError("semantic upgrade source selection contains an invalid case")
+    selected = [row for row in source["cases"] if row.get("split") == split]
+    if not selected:
+        raise ValueError(f"semantic upgrade source selection has no {split} cases")
+
+    cases: list[dict[str, Any]] = []
+    episode_ids: set[str] = set()
+    trade_dates: set[date] = set()
+    for row in selected:
+        episode_id = row.get("episode_id")
+        if not isinstance(episode_id, str) or not episode_id.strip():
+            raise ValueError("quality runtime source case has no episode ID")
+        trade_date = date.fromisoformat(str(row.get("trade_date")))
+        if split == "POST_CUTOFF" and trade_date < POST_CUTOFF_MIN_TRADE_DATE:
+            raise ValueError("post-cutoff quality cases must be dated after 2026-06-23")
+        if episode_id in episode_ids or trade_date in trade_dates:
+            raise ValueError("blind source split must have unique episodes and trade dates")
+        episode_ids.add(episode_id)
+        trade_dates.add(trade_date)
+        cases.append(
+            {
+                "episode_id": episode_id,
+                "trade_date": trade_date.isoformat(),
+                "split": split,
+                "normalized_index": _reference(row.get("normalized_index")).model_dump(
+                    mode="json"
+                ),
+                "source_ledger": _reference(row.get("source_ledger")).model_dump(
+                    mode="json"
+                ),
+            }
+        )
+    cases.sort(key=lambda row: (row["trade_date"], row["episode_id"]))
+
+    stripped_outcome_reference_count = sum(
+        "outcome_ledger" in row for row in selected
+    )
+    identity = {
+        "schema_version": "nslab.quality_blind_source_selection.v1",
+        "parent_selection_sha256": parent_reference.sha256,
+        "split": split,
+        "cases": cases,
+    }
+    selection_id = stable_id("QBLIND-SOURCE", canonical_json(identity), length=20)
+    payload = {
+        "schema_version": "nslab.semantic_upgrade_split_selection.v1",
+        "blind_source_selection_id": selection_id,
+        "selection_policy": "BLIND_ONLY_DERIVED_FULL_SOURCE_SPLIT_V1",
+        "source_selection_parent": parent_reference.model_dump(mode="json"),
+        "source_selection_parent_plan_sha256": source.get("plan_sha256"),
+        "source_selection_parent_seed": source.get("seed"),
+        "source_selection_parent_seed_sha256": source.get("seed_sha256"),
+        "split": split,
+        "case_count": len(cases),
+        "parent_outcome_reference_count_removed": stripped_outcome_reference_count,
+        "outcome_reference_count": 0,
+        "cases": cases,
+    }
+    _write_immutable_bytes(destination, _pretty_json_bytes(payload))
+    return QualityBlindSourceSelectionResult(
+        source_selection_path=destination,
+        source_selection_sha256=file_sha256(destination),
+        selection_id=selection_id,
+        parent_selection_sha256=parent_reference.sha256,
+        split=split,
+        case_count=len(cases),
+        stripped_outcome_reference_count=stripped_outcome_reference_count,
+    )
+
+
 def _prepare_quality_blind_selection(
     root: Path,
     *,
@@ -279,32 +390,80 @@ def _prepare_quality_blind_selection(
     if not source_cases:
         raise ValueError(f"quality runtime source selection has no {split} cases")
 
-    prepared = [
-        _prepare_source_case(
-            root,
-            row=row,
-            split=split,
-            require_outcome_reference=require_outcome_references,
+    if scope == "FULL_SPLIT":
+        prepared_and_sealed: list[
+            tuple[_PreparedQualityCase, BlindRuntimeCase]
+        ] = []
+        for row in source_cases:
+            case, source_rows = _prepare_source_case(
+                root,
+                row=row,
+                split=split,
+                require_outcome_reference=require_outcome_references,
+            )
+            sealed_case = _seal_blind_case_input(
+                root,
+                prepared=case,
+                source_rows=source_rows,
+                price_source=price_source,
+            )
+            prepared_and_sealed.append((case, sealed_case))
+            del source_rows
+        prepared_and_sealed.sort(
+            key=lambda item: (
+                item[0].cutoff_safe_news_row_count,
+                item[0].trade_date,
+                item[0].episode_id,
+            )
         )
-        for row in source_cases
-    ]
-    ordered = sorted(
-        prepared,
-        key=lambda case: (
-            case.cutoff_safe_news_row_count,
-            case.trade_date,
-            case.episode_id,
-        ),
-    )
-    selected_prepared = _select_scope(ordered, scope=scope)
-    sealed_cases = [
-        _seal_blind_case_input(
-            root,
-            prepared=case,
-            price_source=price_source,
+        selected_prepared = [case for case, _ in prepared_and_sealed]
+        sealed_cases = [sealed for _, sealed in prepared_and_sealed]
+    else:
+        prepared_pairs = [
+            _prepare_source_case(
+                root,
+                row=row,
+                split=split,
+                require_outcome_reference=require_outcome_references,
+            )
+            for row in source_cases
+        ]
+        ordered_pairs = sorted(
+            prepared_pairs,
+            key=lambda item: (
+                item[0].cutoff_safe_news_row_count,
+                item[0].trade_date,
+                item[0].episode_id,
+            ),
         )
-        for case in selected_prepared
-    ]
+        selected_prepared = _select_scope(
+            [case for case, _ in ordered_pairs],
+            scope=scope,
+        )
+        source_rows_by_case = {
+            (case.episode_id, case.trade_date): source_rows
+            for case, source_rows in ordered_pairs
+        }
+        selected_keys = {
+            (case.episode_id, case.trade_date) for case in selected_prepared
+        }
+        source_rows_by_case = {
+            key: source_rows
+            for key, source_rows in source_rows_by_case.items()
+            if key in selected_keys
+        }
+        del prepared_pairs, ordered_pairs
+        sealed_cases = [
+            _seal_blind_case_input(
+                root,
+                prepared=case,
+                source_rows=source_rows_by_case[
+                    (case.episode_id, case.trade_date)
+                ],
+                price_source=price_source,
+            )
+            for case in selected_prepared
+        ]
     source_sha256 = file_sha256(source_selection_path)
     blind_payload = {
         "version": QUALITY_RUNTIME_SELECTION_VERSION,
@@ -558,7 +717,7 @@ def _prepare_source_case(
     row: dict[str, Any],
     split: Literal["CALIBRATION", "HOLDOUT", "POST_CUTOFF"],
     require_outcome_reference: bool,
-) -> _PreparedQualityCase:
+) -> tuple[_PreparedQualityCase, list[dict[str, Any]]]:
     episode_id = row.get("episode_id")
     trade_date = row.get("trade_date")
     if not isinstance(episode_id, str) or not episode_id.strip():
@@ -574,6 +733,7 @@ def _prepare_source_case(
     source_path = _resolve_reference(root, source_ledger)
     index = _read_verified_json_reference(normalized_index, normalized_path)
     source_rows = _read_verified_jsonl_reference(source_ledger, source_path)
+    cutoff_safe_news_row_count = _cutoff_safe_row_count(source_rows)
     if not isinstance(index, dict) or str(index.get("trade_date")) != str(
         trade_date
     ):
@@ -595,17 +755,19 @@ def _prepare_source_case(
         cutoff_derivation = "TRADE_DATE_08_59_59_KST"
     if cutoff_at.date() != parsed_trade_date:
         raise ValueError("quality runtime normalized cutoff and trade date differ")
-    return _PreparedQualityCase(
-        episode_id=episode_id,
-        trade_date=parsed_trade_date,
-        split=split,
-        cutoff_at=cutoff_at,
-        cutoff_derivation=cutoff_derivation,
-        normalized_index=normalized_index,
-        source_ledger=source_ledger,
-        outcome_ledger=outcome_ledger,
-        source_ledger_rows=tuple(source_rows),
-        cutoff_safe_news_row_count=_cutoff_safe_row_count(source_rows),
+    return (
+        _PreparedQualityCase(
+            episode_id=episode_id,
+            trade_date=parsed_trade_date,
+            split=split,
+            cutoff_at=cutoff_at,
+            cutoff_derivation=cutoff_derivation,
+            normalized_index=normalized_index,
+            source_ledger=source_ledger,
+            outcome_ledger=outcome_ledger,
+            cutoff_safe_news_row_count=cutoff_safe_news_row_count,
+        ),
+        source_rows,
     )
 
 
@@ -613,12 +775,14 @@ def _seal_blind_case_input(
     root: Path,
     *,
     prepared: _PreparedQualityCase,
+    source_rows: list[dict[str, Any]],
     price_source: BlindSnapshotUniversePriceSource,
 ) -> BlindRuntimeCase:
     rows, source_row_ids = _cutoff_safe_news_rows(
-        prepared.source_ledger_rows,
+        source_rows,
         cutoff_at=prepared.cutoff_at,
     )
+    source_rows.clear()
     if len(rows) != prepared.cutoff_safe_news_row_count:
         raise ValueError("sealed blind input row count drifted during preparation")
     news_bytes = _canonical_news_csv_bytes(rows)

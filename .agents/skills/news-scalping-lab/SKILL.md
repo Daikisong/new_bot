@@ -171,9 +171,14 @@ all `outcome_ledger` fields. The outcome-reference selection is created only
 after every A/B/C prediction and citation artifact has been verified:
 
 ```bash
+python -m news_scalping_lab.cli memory derive-quality-blind-source-selection \
+  --project-root <evaluation-project> \
+  --source-selection <registered-split-selection> \
+  --split POST_CUTOFF \
+  --output diagnostics/post_cutoff_blind_source_selection.json
 python -m news_scalping_lab.cli memory prepare-quality-blind-runtime-selection \
   --project-root <evaluation-project> \
-  --source-selection <blind-only-post-cutoff-source-selection> \
+  --source-selection diagnostics/post_cutoff_blind_source_selection.json \
   --split POST_CUTOFF \
   --scope FULL_SPLIT
 python -m news_scalping_lab.cli memory predict-thin-daily-quality \
@@ -192,6 +197,14 @@ python -m news_scalping_lab.cli memory score-thin-daily-quality \
   --paired-predictions <paired-thin-daily-predictions.json> \
   --outcome-selection <runtime-outcome-selection.json>
 ```
+
+Repeat the derivation and preparation for CALIBRATION and HOLDOUT when preparing
+their blind inputs. The derivation reads and hashes the registered selection
+manifest, copies only the selected split's normalized-index and source-ledger
+references, and records the parent hash/plan/seed. It drops each
+`outcome_ledger` field without resolving or opening any referenced outcome file.
+The resulting source manifest is a derived blind input, not an outcome or
+prediction artifact.
 
 The reference-only outcome selection uses schema
 `nslab.thin_daily_outcome_source_selection.v1` and contains exactly

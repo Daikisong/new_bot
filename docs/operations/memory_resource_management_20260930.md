@@ -234,3 +234,37 @@ pytest fixture 3개에서 hardcoding lint finding 3건을 냈고 해당 generate
 aggregate working set은 약 1.1 GiB, private memory는 약 1.6 GiB, host available RAM은
 약 21.4 GiB였으며 상위 프로세스 경로는 MCP/Posting 서비스였다. 이 스냅샷은 누수
 판정이 아니며 다른 프로젝트 서비스는 종료하지 않았다.
+
+## 2026-09-30 blind selection preparation review
+
+별도 프로세스 점검에서는 Python 프로세스 50개 중 NSLAB build/evaluation 프로세스는
+0개였고, host available memory는 약 19.0 GiB였다. MCP 및 Posting 서비스는 다른
+프로젝트 소유이므로 종료하지 않았다. 이 수치는 누수 발생 여부가 아니라 한 시점의
+관측값이다.
+
+평가 프로젝트의 공식 split source ledger 파일 크기는 CALIBRATION 40개 합계
+113.03 MiB(최대 7.93 MiB), HOLDOUT 40개 합계 155.36 MiB(최대 12.07 MiB)였다.
+기존 `FULL_SPLIT` 준비기는 검증된 JSONL의 파싱 결과를 split 전체에 걸쳐 보유하므로
+파일 bytes보다 Python heap peak가 커질 수 있었다. 변경 후 `FULL_SPLIT`은 한 사례의
+JSONL을 읽고 그 사례를 바로 봉인한 뒤 다음 사례로 이동한다. 각 ledger는 해시 검증과
+사용을 같은 읽기 결과에 대해 수행해 TOCTOU 회귀 테스트의 단일 읽기 조건을 유지한다.
+`THREE_CASE` 진단은 min/median/max 사례를 고르기 위해 여전히 후보 행들을 함께 보유한다.
+
+blind source derivation은 공식 parent selection SHA
+`46cd4af66271910e837b6c6bf4681d2f1980f3ce79f6466d09dc2796a3d0ba81`, plan SHA
+`7ca4f1ad4471759fec09b66bfe5640ef997abd67a467aa58e091aeec41f7c63e`에서
+CALIBRATION/HOLDOUT 각각 40건을 파생했다. 각 파생 manifest에서 40개의
+`outcome_ledger` 참조를 제거했으며 outcome 파일을 해석하거나 열지 않았다. 결과는
+`runs/semantic_brain_upgrade/shadow_split/` 아래에 저장되었다.
+
+실제 blind input 준비는 아직 수행하지 않았다. 프로젝트 `price_provider`가 `mock`이고
+stock-web snapshot 경로 및 cache가 설정되지 않아 CLI가
+`quality runtime preparation requires a cutoff-safe universe price source`로 fail-closed
+했다. Mock 가격으로 대체하거나 guard를 낮추지 않았다. 따라서 40개 source ledger를
+로드하는 Python 단계는 시작되지 않았고, memory peak도 아직 측정하지 않았다.
+
+주의: 검증 중 공식 parent 대신 오래된 대안 split(plan SHA
+`cc6fdf0ec99725928121115121568b347be9ff435e0ea9f46c3d005c80c06157`)에서 파생된
+CALIBRATION/HOLDOUT source manifest도 각각 하나씩 생성되었다. 두 파일은 outcome 파일
+접근, blind input 준비, 예측에 사용하지 않았다. 파일은 삭제하지 않고 보존하며,
+공식 evaluation 입력으로 사용하지 않는다.
