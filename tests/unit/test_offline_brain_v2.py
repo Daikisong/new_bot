@@ -298,6 +298,38 @@ def test_offline_compiler_rejects_missing_explicit_checkpoint_directory(
 
 
 @pytest.mark.asyncio
+async def test_offline_brain_build_cleans_workdir_after_compile_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _source_project(tmp_path / "source")
+    compiler_root = tmp_path / "compiler"
+    checkpoint_dir = tmp_path / "shared-checkpoints"
+    checkpoint_dir.mkdir()
+    checkpoint = checkpoint_dir / "existing-checkpoint.json"
+    write_json(checkpoint, {"marker": "preserve"})
+    compiler = OfflineSemanticBrainCompiler(
+        Settings(project_root=compiler_root),
+        llm=DeterministicMockLLMProvider(),
+        checkpoint_dir=checkpoint_dir,
+    )
+
+    async def fail_leaf_compile(unit_rows: list[dict[str, Any]]) -> tuple[list[Any], list[Any]]:
+        del unit_rows
+        raise RuntimeError("injected semantic synthesis failure")
+
+    monkeypatch.setattr(compiler, "_compile_leaf_capsules", fail_leaf_compile)
+    with pytest.raises(RuntimeError, match="injected semantic synthesis failure"):
+        await compiler.build(source_project=source, output_root=tmp_path / "packages")
+
+    work_root = compiler_root / "brain" / ".work"
+    assert work_root.is_dir()
+    assert list(work_root.iterdir()) == []
+    assert read_json(checkpoint) == {"marker": "preserve"}
+    assert not (tmp_path / "packages").exists()
+
+
+@pytest.mark.asyncio
 async def test_offline_brain_build_closes_all_records_and_reduce_nodes(
     tmp_path: Path,
 ) -> None:

@@ -428,9 +428,10 @@ class OfflineSemanticBrainCompiler:
         if database_path.exists():
             database_path.unlink()
 
-        connection = duckdb.connect(str(database_path))
-        _configure_offline_duckdb(connection, temp_directory=work_root / "duckdb_tmp")
+        connection: duckdb.DuckDBPyConnection | None = None
         try:
+            connection = duckdb.connect(str(database_path))
+            _configure_offline_duckdb(connection, temp_directory=work_root / "duckdb_tmp")
             _initialize_package_database(connection, source=source)
             unit_builds = _build_semantic_assignments(
                 connection,
@@ -532,8 +533,16 @@ class OfflineSemanticBrainCompiler:
                     canonical_json(self._payload_exposure_rows)
                 ),
             )
-        finally:
             connection.close()
+            connection = None
+        except BaseException:
+            try:
+                if connection is not None:
+                    connection.close()
+            finally:
+                # Durable LLM checkpoints live outside this rebuildable work directory.
+                shutil.rmtree(work_root, ignore_errors=True)
+            raise
 
         capsule_root = _model_population_root(capsules, key="capsule_id")
         claim_root = _model_population_root(claims, key="claim_id")
