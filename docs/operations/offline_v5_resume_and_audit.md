@@ -187,3 +187,22 @@ separate 7,000-call guaranteed floor. It made zero LLM calls and did not create
 a package or mutate a production pointer. It is only a plan for the separate
 BUILD-only C package; it is not the production V5 build and is not an exact
 remaining-call ETA or a reason to start a second full build.
+
+Its payload exposure projection must also be reported precisely. The immutable
+evaluation snapshot has 759,308 records and 49,385 semantic units. Full-population
+embedding geometry is enabled; the planner selects 170,333 representative records
+for complete source-payload reads, an exposure ratio of 22.4327%. The other
+588,975 records (77.5673%) are not selected for direct raw-payload LLM input by
+this plan, although their embeddings participate in full-population semantic
+geometry and the compiler's population/assignment accounting. The selected
+payloads total 212,838,762 characters; 143 long representatives are chunked, and
+the projected representative truncation count is zero.
+
+This plan used the mock provider and made zero model calls: the exposure fields
+describe planned input selection, not completed GPT reading or semantic
+influence. The 22.4327% is specific to the evaluation-only 759,308-record
+snapshot; it must not be extrapolated to the separate 823,279-record production
+build. It is also not directly comparable to the earlier 0.3265% audit of a
+different compiler artifact and exposure definition. A built package must still
+prove exact record assignment, leaf/capsule coverage, payload-ledger roots, and
+the provenance of synthesized claims before any result is described as complete.
