@@ -2645,3 +2645,16 @@ RSS 상한이 아니다. Available RAM 6 GiB 미만이 60초 지속되면 완료
 compiler만 중단해 phase/workdir를 조사한다. 임의의 valid-call 시간 제한, 다른 프로젝트
 process 종료, `gc.collect()`만으로 누수 해결을 주장하는 방식은 쓰지 않는다. 자세한 재개 절차는
 [`offline_v5_resume_and_audit.md`](offline_v5_resume_and_audit.md)에 기록한다.
+
+## 2026-09-30 Guarded V5 resume 준비
+
+`scripts/guarded_offline_v5_resume.ps1`를 추가했다. 기본 모드는 OAuth/model call 없이 pinned
+compiler commit, 실제 source manifest SHA, shared checkpoint sentinel/count, CLI import 위치와
+유효 `codex-oauth/gpt-5.6-sol/xhigh`, `max_concurrency=4`를 확인하는 사전점검이다. Build 시작은
+명시적 `-StartBuild`와 quota reset 시각 이후로 제한된다. 2026-09-30 사전점검과 PowerShell
+parser 검증이 통과했고, 조기 `-StartBuild`는 실행 전에 거부됐다. Python `3.14.2`, 7,965개
+checkpoint JSON / 300,054,677 bytes, 현재 32 논리 프로세서가 확인됐다. 실행 시 compiler와
+식별된 자식에 4-core affinity를 적용하며 10초마다 process tree private bytes/working set,
+CPU/affinity, available RAM, pagefile, C: free를 별도 JSONL로 기록한다. 8 GiB 이상은 경고,
+available RAM 6 GiB 미만이 60초 유지되면 검증된 compiler tree만 중단한다. 이 작업은 준비와
+사전점검이며 semantic synthesis는 아직 시작되지 않았다. OAuth reset 전 build를 시작하지 않는다.

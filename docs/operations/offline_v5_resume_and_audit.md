@@ -304,3 +304,47 @@ A read-only audit of the pinned build source and immutable project config found:
 Do not patch the pinned compiler, change prompt/model/source identity, or invalidate successful checkpoints to add a thread setting mid-resume. For the next Windows build launch, apply processor affinity mask `0xF` (logical processors 0-3) to the exact, command-line-verified compiler PID before its source-assignment phase. This limits that PID to four logical processors without changing its compiler commit or checkpoint namespace; exact prompt/input hashes remain the cache-reuse authority. An isolated `timeout.exe` smoke test successfully set and read back this mask; no project process was changed. Verify the actual compiler mask and inspect its process descendants before model calls begin. Apply affinity to a descendant only after resolving its absolute executable and command line and confirming it is not under the protected Bithumb root.
 
 Keep the 10-second resource samples scoped to that verified compiler and its verified build descendants: private bytes, working set, CPU time/affinity, host available RAM, and pagefile usage. A private-memory value at or above 8 GiB is a warning, not a claimed leak or a hard RSS cap. If available RAM remains below 6 GiB for 60 seconds, first preserve any completed checkpoint and stop only the identified compiler tree, then inspect the phase and workdir. Do not terminate unrelated Python, MCP, Posting, indexing, or trading processes; do not use `gc.collect()` as proof of release. The compiler PID is limited to four logical processors; verify descendant affinity separately. CPU load is observed rather than treated as a timeout for a valid LLM call.
+
+### Guarded Windows resume launcher
+
+`scripts/guarded_offline_v5_resume.ps1` encodes the pinned resume identity and
+resource guard above. Its default mode is a no-build preflight: it verifies the
+clean `7198b6b` compiler worktree, resolves the source pointer inside the
+immutable project, hashes the actual manifest against the attested SHA, checks
+the shared checkpoint sentinel/count, imports the CLI from the pinned worktree,
+and confirms the effective provider/model/reasoning/concurrency. It does not
+read credential files or make an OAuth/model call. `-StartBuild` is required to
+launch anything and fails closed before `2026-10-04 03:31 KST`.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\guarded_offline_v5_resume.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\guarded_offline_v5_resume.ps1 -StartBuild
+```
+
+At launch it rechecks the quota time and available RAM, starts the exact V5
+command with the original source, actual manifest SHA, and shared checkpoint
+directory, then verifies the process command line before applying affinity
+mask `0xF`. It reapplies the mask to descendants only after resolving their
+absolute executable/command line and excluding the protected Bithumb tree.
+Every 10 seconds it writes a JSONL sample outside the repository under
+`news_bot_trash\20260930_nslab_resource_guard\resource_logs`: compiler/tree
+private bytes and working set, CPU time and affinity, host available RAM,
+pagefile use, and C: free space. Eight GiB private bytes and six consecutive
+increasing samples above that level raise warnings; those samples are evidence
+to inspect, not by themselves proof of a leak. If available RAM stays below 6
+GiB for 60 seconds, it stops only the re-verified compiler descendants and
+root, preserving the shared checkpoints. No other process is managed.
+
+The launcher was added while the OAuth quota window is unavailable. Until the
+reset, run only its preflight and early-start refusal checks; do not substitute
+a mock or alternate identity to bypass the boundary. The production build
+remains unstarted.
+
+On 2026-09-30, the launcher passed PowerShell parser validation and its
+preflight without starting a build or making an OAuth/model call. It verified
+the exact compiler/source/manifest/checkpoint identity above, effective
+`codex-oauth/gpt-5.6-sol/xhigh`, concurrency `4`, and Python `3.14.2` from the
+pinned worktree. The observed checkpoint inventory was 7,965 JSON files / 300,054,677
+bytes. Invoking `-StartBuild` before the reset was separately verified to stop
+at the quota guard before process creation. The build remains unstarted; this
+check does not advance semantic synthesis or change its checkpoint state.
