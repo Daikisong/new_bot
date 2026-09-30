@@ -2574,3 +2574,49 @@ private bytes/working set, available RAM, C: free와 pagefile current usage를 �
 메모리 또는 디스크 임계치 도달 시 compiler만 정확히 식별해 중단하고 checkpoint는 보존하며,
 scratch 정리는 먼저 예외/정상 종료 경로에서 확인한다. C: free 급변이 해소되기 전까지
 production planner/build 재시도는 보류한다.
+
+## 2026-09-30 Production planner 재실행 및 현재 재개 경계
+
+production source와 외부 감사된 실제 manifest SHA를 지정해 `plan-offline`을 정상 완료했다.
+이 작업은 전체 823,279 records / 52,644 semantic units의 local geometry와 대표 입력·호출
+topology를 계산한 무호출 planning이다. brain 합성은 수행하지 않았다.
+
+```text
+plan ID                  OFFLINE-PLAN-149450301220655b94fe
+artifact                 diagnostics/offline_brain_v2_production_plan_20260930_guarded_projection.json
+artifact SHA-256         5cfbd40e5f14fd4f37c455a35ff7182e132657aaadc4943209485b01ae26be7f
+source snapshot          MEMIDX-1e64a1b6e6ba7b07b799
+actual manifest SHA      6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576
+provider / LLM calls     mock / 0
+import / embedding reuse true / true
+projected / guaranteed   7,683 / 7,522 logical calls
+planned payload reads    181,978 / 823,279 records (22.1040%)
+planned truncation       0
+```
+
+7,683은 reduce/review simulation을 포함한 projection이고 7,522는 별도 guaranteed floor다.
+둘 다 실제 남은 호출 수, GPT가 읽은 비율, 완료 시간 예측이 아니다. 직접 payload 입력으로
+선택되지 않은 641,301 records도 geometry와 모집단 회계에는 포함되지만, 이 계획에서 그
+원문이 GPT에 노출된 것은 아니다. 실질 semantic influence는 build package의 payload ledger와
+claim provenance를 감사해야 판단할 수 있다.
+
+planner는 이 실행에서 native thread-pool 환경을 2개로 제한했다. 약 1분 간격의 표본에서
+private memory는 최대 7.32 GiB였고, available RAM 최저 표본은 13.21 GiB였다.
+정상 종료 후 available RAM은 21.06 GiB였으며 process와 전용 scratch는 남지 않았다.
+표본 간격 때문에 정확한 peak나 누수 부재를 증명하지는 않는다. 이 실행은 progress가
+record 100%와 대표 분포 단계까지 진행됐고 장시간 정체는 없었다.
+
+기존 tracked plan과 새 plan은 plan ID/source roots가 같아도 representative-read root 및
+projection이 다르다(이전 181,979 / 7,671, 새 plan 181,978 / 7,683). plan ID는 artifact
+content hash가 아니므로 둘을 동일 결과로 취급하거나, 성공 checkpoint 7,902개에서 빼서 남은
+호출 수를 계산하지 않는다. 새 산출물과 한계는 PR #139로 기록됐고 merge commit은
+`121aadf0e396cc550bb854ebade73bdbe71ef563`이다. CI quality-gate 전체가 통과했다.
+
+이 planner는 연구자료를 GPT가 해석해 brain에 반영한 단계가 아니며, 일일 08시 사용 가능성을
+검증한 것도 아니다. production package는 아직 없고 activation도 하지 않아 production은 HOLD다.
+quota 재시도 가능 시각인 `2026-10-04 03:31 KST` 전에는 OAuth/model call을 시도하지 않는다.
+그 이후에도 고정된 compiler commit `7198b6b74bbd10f1cf2451ca399c0b63f14706a9`, immutable
+source와 shared content-addressed checkpoint 경로를 유지해 production build를 재개한다.
+이미 끝난 import/embedding은 반복하지 않는다. package audit, 별도 BUILD-only C package,
+실제 daily-path CALIBRATION/HOLDOUT 평가와 외부 artifact review, production activation은
+계속 별도 미완료 gate다.
