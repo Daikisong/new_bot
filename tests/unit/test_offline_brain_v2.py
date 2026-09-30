@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import date, datetime
 from pathlib import Path
@@ -27,6 +28,7 @@ from news_scalping_lab.contracts.offline_brain import (
     LongPayloadChunkDigestDraft,
     LongPayloadDigestBatch,
     MechanismClaimDraft,
+    SemanticCapsuleDraftBatch,
     SemanticMemoryCapsule,
     SemanticReduceNode,
 )
@@ -74,6 +76,36 @@ class ReduceCoverageMismatchLLM(DeterministicMockLLMProvider):
             child_node_ids=child_node_ids,
             covered_capsule_ids=[*required_capsule_ids[:-1], "CAP-not-in-child-tree"],
             synthesis="fixture reduce",
+        )
+
+
+class LeafWorkerFailureLLM(DeterministicMockLLMProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.leaf_call_count = 0
+        self.first_worker_cancelled = False
+
+    async def generate_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[Any],
+        purpose: str,
+    ) -> Any:
+        if response_model is SemanticCapsuleDraftBatch:
+            self.leaf_call_count += 1
+            if self.leaf_call_count == 1:
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    self.first_worker_cancelled = True
+                    raise
+            if self.leaf_call_count == 2:
+                raise RuntimeError("fixture leaf failure")
+        return await super().generate_structured(
+            prompt=prompt,
+            response_model=response_model,
+            purpose=purpose,
         )
 
 
@@ -372,6 +404,30 @@ async def test_offline_brain_build_closes_all_records_and_reduce_nodes(
         assert "HNSW_INDEX_SCAN" in claim_plan
     finally:
         connection.close()
+
+
+@pytest.mark.asyncio
+async def test_leaf_failure_cancels_sibling_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "news_scalping_lab.brain.offline_v2.MAX_LEAF_OUTPUT_UNITS",
+        1,
+    )
+    source = _source_project(tmp_path / "source")
+    settings = Settings(project_root=tmp_path / "compiler")
+    settings.limits.max_concurrency = 2
+    llm = LeafWorkerFailureLLM()
+
+    with pytest.raises(RuntimeError, match="fixture leaf failure"):
+        await OfflineSemanticBrainCompiler(settings, llm=llm).build(
+            source_project=source,
+            output_root=tmp_path / "packages",
+        )
+
+    assert llm.leaf_call_count == 2
+    assert llm.first_worker_cancelled is True
 
 
 def test_full_population_outlier_beyond_old_sample_boundary_gets_own_unit() -> None:
