@@ -114,6 +114,14 @@ assignment failure and asserts the scratch directory and output file are absent.
 The run was not retried; a plan must be regenerated only after disk free space
 is stable, and its result remains a projection rather than build completion.
 
+The production `build()` path applies the same scratch rule to Python exceptions
+or cancellation during DuckDB setup, semantic assignment, LLM map/reduce, and
+influence-manifest generation: close the connection, remove only the compile's
+`brain/.work/<compile_id>`, then re-raise. Content-addressed LLM checkpoints are
+stored outside that directory and remain available for resume. A forced process
+termination does not execute Python cleanup; after confirming the exact compiler
+PID is gone, treat any remaining `.work` files as scratch, not completed state.
+
 ## Resume protocol
 
 1. Confirm the OAuth retry window has passed and confirm that no process with
