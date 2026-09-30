@@ -100,6 +100,20 @@ changed. Reading its ProgramData index directory returned `Access is denied`,
 so the cause remains unknown. Defer another spill-heavy run if free space is
 unstable; do not attribute these volume readings to Python memory use.
 
+## Planner failure cleanup
+
+A production-source `plan-offline` attempt on 2026-09-30 used the mock provider
+and made zero LLM/OAuth calls. DuckDB failed to commit its planner WAL with a
+disk-full error; no plan JSON was produced. The process peaked at about 5.18 GiB
+private bytes and 4.40 GiB working set while host available RAM remained above
+17 GiB, so the failure was disk pressure, not evidence of a Python memory leak.
+The old success-only scratch cleanup left the failed plan's `.work` directory
+behind. `plan()` now closes the DuckDB connection and removes that directory in
+`finally`, including setup/assignment failures. A regression test injects an
+assignment failure and asserts the scratch directory and output file are absent.
+The run was not retried; a plan must be regenerated only after disk free space
+is stable, and its result remains a projection rather than build completion.
+
 ## Resume protocol
 
 1. Confirm the OAuth retry window has passed and confirm that no process with

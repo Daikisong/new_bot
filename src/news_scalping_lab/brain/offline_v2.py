@@ -258,9 +258,10 @@ class OfflineSemanticBrainCompiler:
         database_path = work_root / "semantic_plan.duckdb"
         if database_path.exists():
             database_path.unlink()
-        connection = duckdb.connect(str(database_path))
-        _configure_offline_duckdb(connection, temp_directory=work_root / "duckdb_tmp")
+        connection: duckdb.DuckDBPyConnection | None = None
         try:
+            connection = duckdb.connect(str(database_path))
+            _configure_offline_duckdb(connection, temp_directory=work_root / "duckdb_tmp")
             _initialize_package_database(connection, source=source)
             unit_builds = _build_semantic_assignments(
                 connection,
@@ -289,7 +290,11 @@ class OfflineSemanticBrainCompiler:
                 )
             ]
         finally:
-            connection.close()
+            try:
+                if connection is not None:
+                    connection.close()
+            finally:
+                shutil.rmtree(work_root, ignore_errors=True)
         category_unit_counts: dict[str, int] = defaultdict(int)
         outlier_unit_count = 0
         for row in unit_rows:
@@ -387,7 +392,6 @@ class OfflineSemanticBrainCompiler:
         }
         destination = output_path or (self.root / "diagnostics" / "offline_brain_v2_plan.json")
         write_json(destination, plan)
-        shutil.rmtree(work_root, ignore_errors=True)
         return plan
 
     async def build(
