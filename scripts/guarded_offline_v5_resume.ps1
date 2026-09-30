@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [switch]$StartBuild
+    [switch]$StartBuild,
+    [switch]$StopBuild
 )
 
 Set-StrictMode -Version Latest
@@ -198,11 +199,92 @@ function Get-HostResourceSnapshot {
     }
 }
 
+function Get-CompileProgress {
+    param([datetime]$RootCreationTime)
+
+    try {
+        $workRoot = Join-Path $CompilerRoot "brain\.work"
+        if (-not (Test-Path -LiteralPath $workRoot -PathType Container)) {
+            return $null
+        }
+
+        $notBeforeUtc = $RootCreationTime.ToUniversalTime().AddSeconds(-2)
+        $candidates = @(
+            Get-ChildItem -LiteralPath $workRoot -Directory -Filter "OFFLINE-COMPILE-*" |
+                ForEach-Object {
+                    $progressPath = Join-Path $_.FullName "progress.json"
+                    if (Test-Path -LiteralPath $progressPath -PathType Leaf) {
+                        $progressFile = Get-Item -LiteralPath $progressPath
+                        if ($progressFile.LastWriteTimeUtc -ge $notBeforeUtc) {
+                            [pscustomobject]@{
+                                CompileId = $_.Name
+                                ProgressPath = $progressPath
+                                LastWriteTimeUtc = $progressFile.LastWriteTimeUtc
+                            }
+                        }
+                    }
+                } |
+                Where-Object { $null -ne $_ }
+        )
+        if ($candidates.Count -ne 1) {
+            return $null
+        }
+
+        $progress = Get-Content -LiteralPath $candidates[0].ProgressPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $requiredProperties = @(
+            "schema_version",
+            "phase",
+            "processed_record_count",
+            "total_record_count",
+            "record_progress_ratio",
+            "semantic_unit_count",
+            "updated_at"
+        )
+        foreach ($propertyName in $requiredProperties) {
+            $property = $progress.PSObject.Properties[$propertyName]
+            if ($null -eq $property -or $null -eq $property.Value) {
+                return $null
+            }
+        }
+        if ([string]$progress.schema_version -ne "nslab.offline_brain_progress.v1") {
+            return $null
+        }
+
+        $processedRecords = [long]$progress.processed_record_count
+        $totalRecords = [long]$progress.total_record_count
+        $progressRatio = [double]$progress.record_progress_ratio
+        $semanticUnits = [long]$progress.semantic_unit_count
+        if ([string]::IsNullOrWhiteSpace([string]$progress.phase) -or
+            [string]::IsNullOrWhiteSpace([string]$progress.updated_at) -or
+            $processedRecords -lt 0 -or $totalRecords -lt 0 -or
+            $processedRecords -gt $totalRecords -or $semanticUnits -lt 0 -or
+            [double]::IsNaN($progressRatio) -or [double]::IsInfinity($progressRatio) -or
+            $progressRatio -lt 0.0 -or $progressRatio -gt 1.0) {
+            return $null
+        }
+
+        return [pscustomobject]@{
+            CompileId = [string]$candidates[0].CompileId
+            Phase = [string]$progress.phase
+            ProcessedRecordCount = $processedRecords
+            TotalRecordCount = $totalRecords
+            RecordProgressRatio = $progressRatio
+            SemanticUnitCount = $semanticUnits
+            UpdatedAt = [string]$progress.updated_at
+        }
+    }
+    catch {
+        # Progress is observational only; unreadable or partial telemetry must not stop a valid build.
+        return $null
+    }
+}
+
 function Get-BuildResourceSnapshot {
     param(
         [int]$RootProcessId,
         [object[]]$Descendants,
         [int[]]$AmbiguousProcessIds,
+        [object]$CompileProgress,
         [object]$HostResources
     )
 
@@ -247,6 +329,13 @@ function Get-BuildResourceSnapshot {
         BuildTreePrivateBytes = $totalPrivate
         BuildTreeWorkingSetBytes = $totalWorkingSet
         BuildTreeCpuSeconds = $totalCpuSeconds
+        CompileId = if ($null -ne $CompileProgress) { [string]$CompileProgress.CompileId } else { $null }
+        CompilePhase = if ($null -ne $CompileProgress) { [string]$CompileProgress.Phase } else { $null }
+        ProcessedRecordCount = if ($null -ne $CompileProgress) { [long]$CompileProgress.ProcessedRecordCount } else { $null }
+        TotalRecordCount = if ($null -ne $CompileProgress) { [long]$CompileProgress.TotalRecordCount } else { $null }
+        RecordProgressRatio = if ($null -ne $CompileProgress) { [double]$CompileProgress.RecordProgressRatio } else { $null }
+        SemanticUnitCount = if ($null -ne $CompileProgress) { [long]$CompileProgress.SemanticUnitCount } else { $null }
+        ProgressUpdatedAt = if ($null -ne $CompileProgress) { [string]$CompileProgress.UpdatedAt } else { $null }
         AmbiguousProcessIds = @($AmbiguousProcessIds)
         ChildAffinities = @($rows | Where-Object ProcessId -ne $RootProcessId | Select-Object ProcessId, Name, AffinityMask)
         AvailableBytes = [long]$HostResources.AvailableBytes
@@ -480,6 +569,31 @@ print(json.dumps({
     }
 }
 
+if ($StartBuild -and $StopBuild) {
+    throw "Choose at most one of -StartBuild or -StopBuild."
+}
+
+if ($StopBuild) {
+    $activeBuilds = @(
+        Get-CimInstance -ClassName Win32_Process -Filter "Name = 'python.exe' OR Name = 'pythonw.exe'" |
+            Where-Object {
+                $command = [string]$_.CommandLine
+                $command -match "news_scalping_lab\.cli.*brain\s+build-offline" -and
+                ($command.IndexOf($SourceProject, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+                 $command.IndexOf($CheckpointDirectory, [StringComparison]::OrdinalIgnoreCase) -ge 0)
+            }
+    )
+    if ($activeBuilds.Count -ne 1) {
+        throw "StopBuild requires exactly one process matching the pinned build identity; found $($activeBuilds.Count)."
+    }
+    $stopRoot = $activeBuilds[0]
+    Assert-ExpectedBuildProcess $stopRoot
+    $stopRootCreationTime = Get-ProcessCreationTime $stopRoot
+    Stop-VerifiedBuildTree -RootProcessId ([int]$stopRoot.ProcessId) -RootCreationTime $stopRootCreationTime
+    Write-Host ("Stopped verified compiler tree rooted at PID {0}; shared checkpoints were preserved." -f $stopRoot.ProcessId)
+    return
+}
+
 $preflight = Get-Preflight
 Write-Host "Preflight: PASS (no LLM/OAuth call made)"
 Write-Host ("Compiler: {0} @ {1}" -f $preflight.CompilerCommit, $preflight.CompilerRoot)
@@ -554,6 +668,7 @@ Write-Host ("Started guarded build PID {0}; affinity readback 0x{1:X}; log {2}" 
 
 $lowMemorySince = $null
 $previousPrivateBytes = $null
+$previousPhase = $null
 $privateGrowthSamples = 0
 $growthWarningWritten = $false
 $highPrivateWarningWritten = $false
@@ -598,10 +713,15 @@ try {
         $now = [DateTimeOffset]::UtcNow
         if ($now -ge $nextSample) {
             $hostResources = Get-HostResourceSnapshot
-            $sample = Get-BuildResourceSnapshot -RootProcessId $build.Id -Descendants $tree.Descendants -AmbiguousProcessIds $tree.AmbiguousProcessIds -HostResources $hostResources
+            $compileProgress = Get-CompileProgress -RootCreationTime $rootCreationTime
+            $sample = Get-BuildResourceSnapshot -RootProcessId $build.Id -Descendants $tree.Descendants -AmbiguousProcessIds $tree.AmbiguousProcessIds -CompileProgress $compileProgress -HostResources $hostResources
             $jsonLine = $sample | ConvertTo-Json -Depth 6 -Compress
             Add-Content -LiteralPath $logPath -Value $jsonLine -Encoding UTF8
-            Write-Host ("{0} PID {1}: private {2:N2} GiB (tree {3:N2}), working set {4:N2} GiB, CPU {5:N1}s, RAM available {6:N2} GiB, pagefile {7:N0} MiB, C: free {8:N2} GiB" -f $sample.TimestampUtc, $build.Id, ($sample.RootPrivateBytes / 1GB), ($sample.BuildTreePrivateBytes / 1GB), ($sample.RootWorkingSetBytes / 1GB), $sample.RootCpuSeconds, ($sample.AvailableBytes / 1GB), $sample.PagefileCurrentMiB, ($sample.DriveCFreeBytes / 1GB))
+            $progressText = "phase=unavailable"
+            if ($null -ne $sample.CompilePhase) {
+                $progressText = "phase={0} records={1}/{2} units={3}" -f $sample.CompilePhase, $sample.ProcessedRecordCount, $sample.TotalRecordCount, $sample.SemanticUnitCount
+            }
+            Write-Host ("{0} PID {1}: {2}; private {3:N2} GiB (tree {4:N2}), working set {5:N2} GiB, CPU {6:N1}s, RAM available {7:N2} GiB, pagefile {8:N0} MiB, C: free {9:N2} GiB" -f $sample.TimestampUtc, $build.Id, $progressText, ($sample.RootPrivateBytes / 1GB), ($sample.BuildTreePrivateBytes / 1GB), ($sample.RootWorkingSetBytes / 1GB), $sample.RootCpuSeconds, ($sample.AvailableBytes / 1GB), $sample.PagefileCurrentMiB, ($sample.DriveCFreeBytes / 1GB))
 
             if ([long]$sample.BuildTreePrivateBytes -ge $WarningPrivateBytes -and -not $highPrivateWarningWritten) {
                 Write-Warning "Build process tree private bytes reached 8 GiB; inspect the logged trend (this is a warning, not itself a leak diagnosis)."
@@ -610,7 +730,12 @@ try {
             elseif ([long]$sample.BuildTreePrivateBytes -lt $WarningPrivateBytes) {
                 $highPrivateWarningWritten = $false
             }
-            if ($null -ne $previousPrivateBytes -and
+            $samePhase = $null -ne $previousPhase -and $sample.CompilePhase -eq $previousPhase
+            if (-not $samePhase) {
+                $privateGrowthSamples = 0
+                $growthWarningWritten = $false
+            }
+            if ($samePhase -and $null -ne $previousPrivateBytes -and
                 [long]$sample.BuildTreePrivateBytes -ge $WarningPrivateBytes -and
                 [long]$sample.BuildTreePrivateBytes -gt [long]$previousPrivateBytes) {
                 $privateGrowthSamples++
@@ -620,10 +745,11 @@ try {
                 $growthWarningWritten = $false
             }
             if ($privateGrowthSamples -ge 6 -and -not $growthWarningWritten) {
-                Write-Warning "Build process tree private bytes rose across six consecutive samples above 8 GiB; this is a sustained-growth signal, not proof of a leak."
+                Write-Warning ("Build process tree private bytes rose across six consecutive samples above 8 GiB in phase '{0}' (records {1}/{2}); inspect progress/workdir before treating it as a leak." -f $sample.CompilePhase, $sample.ProcessedRecordCount, $sample.TotalRecordCount)
                 $growthWarningWritten = $true
             }
             $previousPrivateBytes = [long]$sample.BuildTreePrivateBytes
+            $previousPhase = [string]$sample.CompilePhase
 
             if ([long]$sample.AvailableBytes -lt $MinimumAvailableBytes) {
                 if ($null -eq $lowMemorySince) {
