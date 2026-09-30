@@ -77,16 +77,26 @@ plan is authoritative for future evaluation build planning.
 
 1. Confirm the OAuth retry window has passed and confirm that no process with
    this compile ID is already running.
-2. Use the tested compiler code from `C:\Users\eorb9\projects\news_bot_next`
-   at commit `7198b6b74bbd10f1cf2451ca399c0b63f14706a9` (the code was merged to
-   `main` as `afd8e8f951d3b0c097ae49054d85f0b5c90ce60f`). The existing
-   `C:\Users\eorb9\projects\news_bot` checkout is on a different branch with
-   tracked local changes; do not fast-forward or use it for this resume. Set and
-   verify `PYTHONPATH` so the CLI comes from the tested worktree. The CLI now
-   fails closed if the original LLM identity differs.
+2. Use an isolated clean worktree at tested compiler commit
+   `7198b6b74bbd10f1cf2451ca399c0b63f14706a9` (merged to `main` as
+   `afd8e8f951d3b0c097ae49054d85f0b5c90ce60f`). Do not use the existing
+   `news_bot` checkout with tracked edits or `news_bot_next` with generated
+   pytest artifacts. The exact revision and a completely clean worktree are
+   checked below before Python imports or any provider call. Set and verify
+   `PYTHONPATH` so the CLI comes from that worktree. The CLI also fails closed
+   if the original LLM identity differs.
 
 ```powershell
-$repo = "C:\Users\eorb9\projects\news_bot_next"
+$repo = "C:\Users\eorb9\projects\news_bot_resume_clean_7198b6b"
+$expectedCommit = "7198b6b74bbd10f1cf2451ca399c0b63f14706a9"
+$actualCommit = (git -C $repo rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $actualCommit -ne $expectedCommit) {
+  throw "Unexpected compiler revision: $actualCommit"
+}
+$worktreeStatus = git -C $repo status --porcelain --untracked-files=all
+if ($LASTEXITCODE -ne 0 -or -not [string]::IsNullOrWhiteSpace(($worktreeStatus -join "`n"))) {
+  throw "Compiler worktree must be completely clean before build-offline."
+}
 Set-Location $repo
 $env:PYTHONPATH = "$repo\src"
 $expectedCli = Join-Path $repo "src\news_scalping_lab\cli.py"
