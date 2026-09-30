@@ -9,6 +9,7 @@ import duckdb
 import numpy as np
 import pytest
 
+import news_scalping_lab.brain.offline_v2 as offline_v2
 from news_scalping_lab.brain.offline_v2 import (
     BrainPackageDailyContextProvider,
     OfflineSemanticBrainCompiler,
@@ -16,6 +17,7 @@ from news_scalping_lab.brain.offline_v2 import (
     _estimate_reduce_review_call_count,
     _materialize_long_payload_chunk_digest,
     _pack_reduce_nodes,
+    _plan_long_payloads,
     _planned_reduce_leaf_nodes,
     _split_semantic_stratum,
     _utf8_chunks,
@@ -94,6 +96,27 @@ class ReduceCoverageMismatchLLM(DeterministicMockLLMProvider):
             child_node_ids=child_node_ids,
             covered_capsule_ids=[*required_capsule_ids[:-1], "CAP-not-in-child-tree"],
             synthesis="fixture reduce",
+        )
+
+
+class TrackingLongPayloadLLM(DeterministicMockLLMProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.long_payload_calls = 0
+
+    async def generate_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[Any],
+        purpose: str,
+    ) -> Any:
+        if response_model is LongPayloadDigestBatch:
+            self.long_payload_calls += 1
+        return await super().generate_structured(
+            prompt=prompt,
+            response_model=response_model,
+            purpose=purpose,
         )
 
 
@@ -553,6 +576,55 @@ async def test_reduce_still_rejects_an_omitted_child_node(tmp_path: Path) -> Non
             children=_fixture_reduce_children(),
             review=False,
         )
+
+
+@pytest.mark.asyncio
+async def test_long_payload_batches_are_consumed_incrementally(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = "long payload evidence " * 20_000
+    payload_plan = _plan_long_payloads(
+        [
+            {
+                "semantic_unit_id": "SUNIT-long-payload",
+                "category": "single_event",
+                "representatives": [
+                    {
+                        "record_id": "RECORD-long-payload",
+                        "document": document,
+                        "document_sha256": sha256_text(document),
+                    }
+                ],
+            }
+        ]
+    )
+    assert payload_plan.long_payload_chunk_map_call_count > 1
+
+    settings = Settings(project_root=tmp_path / "compiler")
+    settings.limits.max_concurrency = 1
+    llm = TrackingLongPayloadLLM()
+    compiler = OfflineSemanticBrainCompiler(settings, llm=llm)
+    original_pack = offline_v2._pack_long_payload_chunks
+    yielded_batches = 0
+
+    def observed_batches(chunks: list[dict[str, Any]]) -> Any:
+        nonlocal yielded_batches
+        for batch in original_pack(chunks):
+            if yielded_batches:
+                assert llm.long_payload_calls >= yielded_batches
+            yielded_batches += 1
+            yield batch
+
+    monkeypatch.setattr(offline_v2, "_pack_long_payload_chunks", observed_batches)
+    projected_rows = await compiler._compile_long_payload_digests(payload_plan)
+
+    assert projected_rows is payload_plan.projected_rows
+    assert yielded_batches == payload_plan.long_payload_chunk_map_call_count
+    assert llm.long_payload_calls == payload_plan.long_payload_chunk_map_call_count
+    assert len(
+        projected_rows[0]["representatives"][0]["full_payload_chunk_digests"]
+    ) == payload_plan.long_payload_chunk_count
 
 
 @pytest.mark.asyncio

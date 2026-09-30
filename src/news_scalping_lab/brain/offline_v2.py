@@ -727,12 +727,17 @@ class OfflineSemanticBrainCompiler:
         changed_payload_plan = _plan_long_payloads(changed_rows)
         changed_rows = await self._compile_long_payload_digests(changed_payload_plan)
         del changed_payload_plan
-        work: list[tuple[str, list[dict[str, Any]]]] = []
-        for category in sorted({str(row["category"]) for row in changed_rows}):
-            rows = [row for row in changed_rows if row["category"] == category]
-            for batch in _pack_leaf_rows(rows):
-                work.append((category, batch))
-        del changed_rows
+        categories = sorted({str(row["category"]) for row in changed_rows})
+
+        def batches() -> Iterable[tuple[str, list[dict[str, Any]]]]:
+            for category in categories:
+                category_rows = (
+                    row for row in changed_rows if row["category"] == category
+                )
+                for batch in _pack_leaf_rows(category_rows):
+                    yield category, batch
+
+        batch_iterator = iter(batches())
 
         async def compile_batch(
             category: str,
@@ -759,29 +764,32 @@ class OfflineSemanticBrainCompiler:
                 for row in batch
             ]
 
-        queue: asyncio.Queue[tuple[str, list[dict[str, Any]]]] = asyncio.Queue()
-        for item in work:
-            queue.put_nowait(item)
-        worker_count = min(max(1, self.settings.limits.max_concurrency), len(work))
-        del work
+        worker_count = min(
+            max(1, self.settings.limits.max_concurrency),
+            len(changed_rows),
+        )
 
         async def worker() -> None:
             while True:
                 try:
-                    category, batch = queue.get_nowait()
-                except asyncio.QueueEmpty:
+                    category, batch = next(batch_iterator)
+                except StopIteration:
                     return
-                try:
-                    compiled = await compile_batch(category, batch)
-                    for capsule in compiled:
-                        capsules_by_unit[capsule.semantic_unit_id] = capsule
-                    self._recompiled_capsule_count += len(compiled)
-                finally:
-                    queue.task_done()
+                compiled = await compile_batch(category, batch)
+                for capsule in compiled:
+                    capsules_by_unit[capsule.semantic_unit_id] = capsule
+                self._recompiled_capsule_count += len(compiled)
+                del batch, compiled
 
-        await asyncio.gather(
-            *(worker() for _ in range(worker_count))
-        )
+        if worker_count:
+            workers = [asyncio.create_task(worker()) for _ in range(worker_count)]
+            try:
+                await asyncio.gather(*workers)
+            except BaseException:
+                for task in workers:
+                    task.cancel()
+                await asyncio.gather(*workers, return_exceptions=True)
+                raise
         expected_units = {str(row["semantic_unit_id"]) for row in unit_rows}
         if set(capsules_by_unit) != expected_units:
             raise ValueError("offline semantic capsule compile omitted units")
@@ -792,10 +800,9 @@ class OfflineSemanticBrainCompiler:
         self,
         payload_plan: _LongPayloadPlan,
     ) -> list[dict[str, Any]]:
-        batches = list(_pack_long_payload_chunks(payload_plan.chunk_inputs))
-        self._long_payload_chunk_map_call_count += len(batches)
-        if not batches:
+        if not payload_plan.chunk_inputs:
             return payload_plan.projected_rows
+        batch_iterator = iter(_pack_long_payload_chunks(payload_plan.chunk_inputs))
 
         async def compile_batch(batch: list[dict[str, Any]]) -> list[LongPayloadChunkDigest]:
             chunk_ids = [str(row["chunk_id"]) for row in batch]
@@ -821,44 +828,54 @@ class OfflineSemanticBrainCompiler:
                 for digest in result.digests
             ]
 
-        queue: asyncio.Queue[list[dict[str, Any]]] = asyncio.Queue()
-        for batch in batches:
-            queue.put_nowait(batch)
-        digests: list[LongPayloadChunkDigest] = []
+        digests_by_id: dict[str, LongPayloadChunkDigest] = {}
 
         async def worker() -> None:
             while True:
                 try:
-                    batch = queue.get_nowait()
-                except asyncio.QueueEmpty:
+                    batch = next(batch_iterator)
+                except StopIteration:
                     return
-                digests.extend(await compile_batch(batch))
-                queue.task_done()
+                self._long_payload_chunk_map_call_count += 1
+                compiled = await compile_batch(batch)
+                for digest in compiled:
+                    if digest.chunk_id in digests_by_id:
+                        raise ValueError("long payload digest stage duplicated a chunk")
+                    digests_by_id[digest.chunk_id] = digest
+                del batch, compiled
 
-        await asyncio.gather(
-            *(
-                worker()
-                for _ in range(min(max(1, self.settings.limits.max_concurrency), len(batches)))
-            )
+        worker_count = min(
+            max(1, self.settings.limits.max_concurrency),
+            len(payload_plan.chunk_inputs),
         )
-        by_id = {row.chunk_id: row for row in digests}
-        expected_ids = {str(row["chunk_id"]) for row in payload_plan.chunk_inputs}
-        if set(by_id) != expected_ids:
+        workers = [asyncio.create_task(worker()) for _ in range(worker_count)]
+        try:
+            await asyncio.gather(*workers)
+        except BaseException:
+            for task in workers:
+                task.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
+            raise
+        if len(digests_by_id) != len(payload_plan.chunk_inputs):
             raise ValueError("long payload digest stage omitted or added chunks")
-        output: list[dict[str, Any]] = []
+
         for row in payload_plan.projected_rows:
-            representatives: list[dict[str, Any]] = []
             for representative in row["representatives"]:
-                projected = dict(representative)
-                placeholders = projected.get("full_payload_chunk_digests")
+                placeholders = representative.get("full_payload_chunk_digests")
                 if isinstance(placeholders, list):
-                    projected["full_payload_chunk_digests"] = [
-                        by_id[str(value["chunk_id"])].model_dump(mode="json")
-                        for value in placeholders
-                    ]
-                representatives.append(projected)
-            output.append({**row, "representatives": representatives})
-        return output
+                    materialized: list[dict[str, Any]] = []
+                    for value in placeholders:
+                        chunk_id = str(value["chunk_id"])
+                        digest = digests_by_id.pop(chunk_id, None)
+                        if digest is None:
+                            raise ValueError(
+                                "long payload digest stage omitted a representative chunk"
+                            )
+                        materialized.append(digest.model_dump(mode="json"))
+                    representative["full_payload_chunk_digests"] = materialized
+        if digests_by_id:
+            raise ValueError("long payload digest stage produced unused chunks")
+        return payload_plan.projected_rows
 
     async def _reduce_category(
         self,
@@ -1806,7 +1823,7 @@ def _plan_long_payloads(unit_rows: list[dict[str, Any]]) -> _LongPayloadPlan:
     oversized_units = 0
     chunked_records = 0
     for row in unit_rows:
-        representatives = [dict(value) for value in row["representatives"]]
+        representatives = row["representatives"]
         representative_count += len(representatives)
         payload_chars += sum(len(str(value["document"])) for value in representatives)
         if len(canonical_json(row).encode("utf-8")) <= MAX_LEAF_PROMPT_BYTES:
@@ -1814,6 +1831,7 @@ def _plan_long_payloads(unit_rows: list[dict[str, Any]]) -> _LongPayloadPlan:
             continue
         oversized_units += 1
         chunked_records += len(representatives)
+        representatives = [dict(value) for value in representatives]
         projected_representatives: list[dict[str, Any]] = []
         for representative in representatives:
             document = str(representative.pop("document"))
@@ -1868,7 +1886,7 @@ def _plan_long_payloads(unit_rows: list[dict[str, Any]]) -> _LongPayloadPlan:
                 "payload_projection": "FULL_CHUNK_MAP_THEN_LEAF",
             }
         )
-    chunk_batches = list(_pack_long_payload_chunks(chunk_inputs))
+    chunk_batch_count = sum(1 for _ in _pack_long_payload_chunks(chunk_inputs))
     return _LongPayloadPlan(
         projected_rows=projected_rows,
         chunk_inputs=chunk_inputs,
@@ -1877,7 +1895,7 @@ def _plan_long_payloads(unit_rows: list[dict[str, Any]]) -> _LongPayloadPlan:
         oversized_unit_count=oversized_units,
         chunked_representative_record_count=chunked_records,
         long_payload_chunk_count=len(chunk_inputs),
-        long_payload_chunk_map_call_count=len(chunk_batches),
+        long_payload_chunk_map_call_count=chunk_batch_count,
     )
 
 
@@ -2117,7 +2135,7 @@ def _attach_close_return_status_distributions(
     return capsules
 
 
-def _pack_leaf_rows(rows: list[dict[str, Any]]) -> Iterable[list[dict[str, Any]]]:
+def _pack_leaf_rows(rows: Iterable[dict[str, Any]]) -> Iterable[list[dict[str, Any]]]:
     current: list[dict[str, Any]] = []
     current_bytes = 0
     for row in rows:

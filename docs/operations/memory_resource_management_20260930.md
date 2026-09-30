@@ -208,3 +208,28 @@ pytest가 아래 두 basetemp에 각각 약 1.13 GB와 1.06 GB의 fixture 파일
 
 - `C:\ptd80471` (39,473 files; 1,131,053,654 bytes)
 - `%TEMP%\nslab-full-pytest-d1f8bcb4eebb423b9fc912768d9173e6` (39,015 files; 1,059,157,354 bytes)
+
+## 2026-09-30 bounded compiler staging follow-up
+
+추가 확인에서 long-payload 및 leaf 합성 단계가 전체 batch 참조를 `list`와
+unbounded `asyncio.Queue`에 미리 적재하고 있었다. 이는 누수로 확정된 것은 아니지만
+대형 corpus에서 Python heap peak를 키울 수 있어 lazy batch iterator로 바꿨다. 각
+worker는 다음 batch를 처리할 때 가져오며, 대기 batch가 전체 corpus 크기에 비례하지
+않는다. 실패하면 남은 worker를 취소해 실행 중인 작업과 참조도 정리한다.
+
+추가로 `_plan_long_payloads`는 chunking이 필요 없는 대표 row를 복사하지 않고,
+chunk-map 호출 수를 전체 batch 목록 생성 없이 센다. Long-payload digest를 projected
+rows에 제자리 반영하고 소비한 digest map 항목을 제거해 출력 복사본 중첩도 피한다.
+회귀 테스트는 concurrency 1에서 이전 batch LLM 호출이 시작되기 전에 다음 batch를
+요청하지 않는지 검증한다.
+
+`tests/unit/test_offline_brain_v2.py` 17개 통과, `ruff check src tests`,
+`mypy src/news_scalping_lab` 통과. 전체 pytest는 이 후속 변경 뒤 아직 재실행하지
+않았으며 PR CI가 전체 gate를 검증해야 한다. `ruff check .`는 기존 untracked pytest
+fixture 3개에서 hardcoding lint finding 3건을 냈고 해당 generated 디렉터리는 수정하지
+않았다.
+
+현재 머신 표본에서 NSLAB/pytest Python 프로세스는 없었다. Python 42개 프로세스의
+aggregate working set은 약 1.1 GiB, private memory는 약 1.6 GiB, host available RAM은
+약 21.4 GiB였으며 상위 프로세스 경로는 MCP/Posting 서비스였다. 이 스냅샷은 누수
+판정이 아니며 다른 프로젝트 서비스는 종료하지 않았다.
