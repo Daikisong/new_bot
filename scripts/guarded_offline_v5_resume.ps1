@@ -16,6 +16,7 @@ $CheckpointDirectory = "C:\Users\eorb9\projects\news_bot\runs\checkpoints\llm"
 $CheckpointSentinel = "LLMCKPT-1d6d8295e6996522.json"
 $ProtectedRoot = "C:\Users\eorb9\projects\bithumb-quant-trader"
 $LogDirectory = "C:\Users\eorb9\projects\news_bot_trash\20260930_nslab_resource_guard\resource_logs"
+$BuildReceiptPath = Join-Path $LogDirectory "active_offline_v5_build.json"
 $QuotaResetUtc = [DateTimeOffset]::Parse("2026-10-03T18:31:00Z")
 $AffinityMaskValue = [long]0xF
 $SampleIntervalSeconds = 10
@@ -392,21 +393,108 @@ function Stop-VerifiedBuildTree {
     }
 }
 
-function Stop-VerifiedCompilerRoot {
+function New-ActiveBuildReceipt {
+    param([object]$Receipt)
+
+    $json = $Receipt | ConvertTo-Json -Depth 4
+    $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes($json)
+    $stream = [IO.File]::Open(
+        $BuildReceiptPath,
+        [IO.FileMode]::CreateNew,
+        [IO.FileAccess]::Write,
+        [IO.FileShare]::None
+    )
+    try {
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush()
+    }
+    finally {
+        $stream.Dispose()
+    }
+}
+
+function Get-ActiveBuildReceipt {
+    if (-not (Test-Path -LiteralPath $BuildReceiptPath -PathType Leaf)) {
+        throw "No guarded-launch receipt exists; refusing to stop a process found only by matching CLI arguments."
+    }
+
+    try {
+        $receipt = Get-Content -LiteralPath $BuildReceiptPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $requiredProperties = @(
+            "schema_version",
+            "state",
+            "run_id",
+            "compiler_root",
+            "compiler_commit",
+            "source_project",
+            "manifest_sha256",
+            "checkpoint_directory",
+            "expected_python_path",
+            "launcher_process_id",
+            "created_at_utc",
+            "root_process_id",
+            "root_creation_time_utc",
+            "root_executable_path",
+            "root_command_line",
+            "root_parent_process_id"
+        )
+        foreach ($propertyName in $requiredProperties) {
+            $property = $receipt.PSObject.Properties[$propertyName]
+            if ($null -eq $property -or $null -eq $property.Value) {
+                throw "Receipt is missing required field '$propertyName'."
+            }
+        }
+        if ([string]$receipt.schema_version -ne "nslab.guarded_offline_v5_build.v1" -or
+            [string]$receipt.state -ne "running" -or
+            [string]$receipt.compiler_commit -ne $ExpectedCommit -or
+            [string]$receipt.source_project -ne $SourceProject -or
+            [string]$receipt.manifest_sha256 -ne $ExpectedManifestSha256 -or
+            [string]$receipt.checkpoint_directory -ne $CheckpointDirectory) {
+            throw "Receipt does not match the pinned guarded-build identity."
+        }
+        Assert-PathEquals ([string]$receipt.compiler_root) $CompilerRoot "Receipt compiler root"
+        Assert-PathEquals ([string]$receipt.root_executable_path) ([string]$receipt.expected_python_path) "Receipt Python executable"
+        if ([int]$receipt.root_process_id -le 0 -or
+            [int]$receipt.root_parent_process_id -le 0 -or
+            [int]$receipt.launcher_process_id -le 0 -or
+            [string]::IsNullOrWhiteSpace([string]$receipt.run_id) -or
+            [string]::IsNullOrWhiteSpace([string]$receipt.root_executable_path) -or
+            [string]::IsNullOrWhiteSpace([string]$receipt.root_command_line)) {
+            throw "Receipt process identity is incomplete."
+        }
+        [void][DateTimeOffset]::Parse([string]$receipt.root_creation_time_utc)
+        [void][DateTimeOffset]::Parse([string]$receipt.created_at_utc)
+        return $receipt
+    }
+    catch {
+        throw "Guarded-build receipt is invalid; refusing process control: $($_.Exception.Message)"
+    }
+}
+
+function Remove-ActiveBuildReceipt {
     param(
+        [string]$RunId,
         [int]$RootProcessId,
         [datetime]$RootCreationTime
     )
 
+    $receipt = Get-ActiveBuildReceipt
+    if ([string]$receipt.run_id -ne $RunId -or
+        [int]$receipt.root_process_id -ne $RootProcessId -or
+        ([DateTimeOffset]::Parse([string]$receipt.root_creation_time_utc).UtcDateTime -ne $RootCreationTime.ToUniversalTime())) {
+        throw "Guarded-build receipt changed identity; refusing to remove it."
+    }
+
     $rootInfo = Get-ProcessInfo $RootProcessId
-    if ($null -eq $rootInfo) {
-        return
+    if ($null -ne $rootInfo -and (Get-ProcessCreationTime $rootInfo) -eq $RootCreationTime) {
+        throw "Compiler PID $RootProcessId is still running; receipt was preserved."
     }
-    Assert-ExpectedBuildProcess $rootInfo
-    if ((Get-ProcessCreationTime $rootInfo) -ne $RootCreationTime) {
-        throw "The compiler PID was reused; refusing to stop it."
+    $tree = Get-VerifiedBuildTree -RootProcessId $RootProcessId -RootCreationTime $RootCreationTime
+    if ($tree.Descendants.Count -gt 0 -or $tree.AmbiguousProcessIds.Count -gt 0) {
+        throw "Compiler descendants remain or are ambiguous; receipt was preserved."
     }
-    Stop-Process -Id $RootProcessId -Force -ErrorAction Stop
+
+    Remove-Item -LiteralPath $BuildReceiptPath -Force -ErrorAction Stop
 }
 
 function Set-ScopedEnvironment {
@@ -439,6 +527,9 @@ function Get-Preflight {
     $worktreeStatus = @(& git -C $CompilerRoot status --porcelain --untracked-files=all)
     if ($LASTEXITCODE -ne 0 -or -not [string]::IsNullOrWhiteSpace(($worktreeStatus -join "`n"))) {
         throw "Pinned compiler worktree is not clean."
+    }
+    if (Test-Path -LiteralPath $BuildReceiptPath -PathType Leaf) {
+        throw "A guarded-build receipt already exists; verify its exact process tree before starting another build."
     }
 
     $pointerPath = Join-Path $SourceProject "memory\retrieval_index\current.json"
@@ -574,22 +665,28 @@ if ($StartBuild -and $StopBuild) {
 }
 
 if ($StopBuild) {
-    $activeBuilds = @(
-        Get-CimInstance -ClassName Win32_Process -Filter "Name = 'python.exe' OR Name = 'pythonw.exe'" |
-            Where-Object {
-                $command = [string]$_.CommandLine
-                $command -match "news_scalping_lab\.cli.*brain\s+build-offline" -and
-                ($command.IndexOf($SourceProject, [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
-                 $command.IndexOf($CheckpointDirectory, [StringComparison]::OrdinalIgnoreCase) -ge 0)
-            }
-    )
-    if ($activeBuilds.Count -ne 1) {
-        throw "StopBuild requires exactly one process matching the pinned build identity; found $($activeBuilds.Count)."
+    $receipt = Get-ActiveBuildReceipt
+    $actualCommit = (& git -C $CompilerRoot rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or $actualCommit -ne $ExpectedCommit) {
+        throw "Pinned compiler commit mismatch; refusing process control: $actualCommit"
     }
-    $stopRoot = $activeBuilds[0]
+    $stopRoot = Get-ProcessInfo ([int]$receipt.root_process_id)
+    if ($null -eq $stopRoot) {
+        throw "Receipt PID $($receipt.root_process_id) is not running; no process was controlled and the receipt was preserved for inspection."
+    }
     Assert-ExpectedBuildProcess $stopRoot
+    Assert-PathEquals ([string]$stopRoot.ExecutablePath) ([string]$receipt.root_executable_path) "Receipt executable"
+    if ([string]$stopRoot.CommandLine -ne [string]$receipt.root_command_line -or
+        [int]$stopRoot.ParentProcessId -ne [int]$receipt.root_parent_process_id) {
+        throw "Receipt command line or parent PID mismatch; refusing process control."
+    }
     $stopRootCreationTime = Get-ProcessCreationTime $stopRoot
+    $recordedCreationTime = [DateTimeOffset]::Parse([string]$receipt.root_creation_time_utc).UtcDateTime
+    if ($stopRootCreationTime.ToUniversalTime() -ne $recordedCreationTime) {
+        throw "Receipt creation time does not match PID $($stopRoot.ProcessId); refusing process control."
+    }
     Stop-VerifiedBuildTree -RootProcessId ([int]$stopRoot.ProcessId) -RootCreationTime $stopRootCreationTime
+    Remove-ActiveBuildReceipt -RunId ([string]$receipt.run_id) -RootProcessId ([int]$stopRoot.ProcessId) -RootCreationTime $stopRootCreationTime
     Write-Host ("Stopped verified compiler tree rooted at PID {0}; shared checkpoints were preserved." -f $stopRoot.ProcessId)
     return
 }
@@ -618,6 +715,7 @@ if ([long]$preflight.HostResources.AvailableBytes -lt $MinimumAvailableBytes) {
 
 New-Item -ItemType Directory -Path $LogDirectory -Force | Out-Null
 $logPath = Join-Path $LogDirectory ("offline_v5_{0}.jsonl" -f [DateTimeOffset]::UtcNow.ToString("yyyyMMddTHHmmssZ"))
+$receiptRunId = [guid]::NewGuid().ToString("N")
 $buildArguments = "-m news_scalping_lab.cli brain build-offline --source-project `"$SourceProject`" --expected-manifest-sha256 $ExpectedManifestSha256 --checkpoint-dir `"$CheckpointDirectory`""
 $buildEnvironment = Set-ScopedEnvironment @{
     PYTHONPATH = (Join-Path $CompilerRoot "src")
@@ -648,6 +746,26 @@ try {
     }
     Assert-ExpectedBuildProcess $rootInfo
     $rootCreationTime = Get-ProcessCreationTime $rootInfo
+    $receipt = [pscustomobject]@{
+        schema_version = "nslab.guarded_offline_v5_build.v1"
+        state = "running"
+        run_id = $receiptRunId
+        compiler_root = [IO.Path]::GetFullPath($CompilerRoot)
+        compiler_commit = $ExpectedCommit
+        source_project = $SourceProject
+        manifest_sha256 = $ExpectedManifestSha256
+        checkpoint_directory = $CheckpointDirectory
+        expected_python_path = [IO.Path]::GetFullPath($preflight.Python)
+        launcher_process_id = [int]$PID
+        created_at_utc = [DateTimeOffset]::UtcNow.ToString("o")
+        root_process_id = [int]$rootInfo.ProcessId
+        root_creation_time_utc = $rootCreationTime.ToUniversalTime().ToString("o")
+        root_executable_path = [IO.Path]::GetFullPath([string]$rootInfo.ExecutablePath)
+        root_command_line = [string]$rootInfo.CommandLine
+        root_parent_process_id = [int]$rootInfo.ParentProcessId
+    }
+    Assert-PathEquals ([string]$rootInfo.ExecutablePath) $preflight.Python "Pinned Python executable"
+    New-ActiveBuildReceipt -Receipt $receipt
     $rootAffinity = Set-VerifiedAffinity $rootInfo
     if ($null -eq $rootAffinity) {
         throw "Compiler exited before affinity could be applied."
@@ -656,7 +774,8 @@ try {
 catch {
     if ($null -ne $rootCreationTime) {
         try {
-            Stop-VerifiedCompilerRoot -RootProcessId $build.Id -RootCreationTime $rootCreationTime
+            Stop-VerifiedBuildTree -RootProcessId $build.Id -RootCreationTime $rootCreationTime
+            Remove-ActiveBuildReceipt -RunId $receiptRunId -RootProcessId $build.Id -RootCreationTime $rootCreationTime
         }
         catch {
             Write-Warning "Startup guard failed and the exact compiler root could not be stopped: $($_.Exception.Message)"
@@ -774,18 +893,31 @@ try {
 catch {
     $monitorError = $_
     try {
-        Stop-VerifiedCompilerRoot -RootProcessId $build.Id -RootCreationTime $rootCreationTime
+        Stop-VerifiedBuildTree -RootProcessId $build.Id -RootCreationTime $rootCreationTime
+        Remove-ActiveBuildReceipt -RunId $receiptRunId -RootProcessId $build.Id -RootCreationTime $rootCreationTime
     }
     catch {
-        Write-Warning "Guard monitor failed and the exact compiler root could not be stopped: $($_.Exception.Message)"
+        Write-Warning "Guard monitor failed; the exact compiler tree could not be fully stopped or its receipt retained: $($_.Exception.Message)"
     }
     throw $monitorError
 }
 
 $build.Refresh()
 if ($stoppedForGuard) {
+    try {
+        Remove-ActiveBuildReceipt -RunId $receiptRunId -RootProcessId $build.Id -RootCreationTime $rootCreationTime
+    }
+    catch {
+        Write-Warning "Guard stop ended but the receipt remains because the process tree could not be fully verified as stopped: $($_.Exception.Message)"
+    }
     Write-Host "Guard stop complete. Shared checkpoints were not deleted. Review the JSONL resource log and compile workdir before resuming."
     exit 2
+}
+try {
+    Remove-ActiveBuildReceipt -RunId $receiptRunId -RootProcessId $build.Id -RootCreationTime $rootCreationTime
+}
+catch {
+    Write-Warning "Build exited but the receipt remains because the process tree could not be fully verified as stopped: $($_.Exception.Message)"
 }
 Write-Host ("Build process exited with code {0}. Resource log: {1}" -f $build.ExitCode, $logPath)
 if ($build.ExitCode -ne 0) {
