@@ -1930,4 +1930,10 @@ Four focused tests pass: full-build closure, incremental-update parity, the full
 
 At 2026-10-01 01:10 KST, no production build process was present; available RAM was 17.63 GiB, instantaneous CPU use 7.5%, and C: free space 407.57 GiB. OAuth quota reset remains 2026-10-04 03:31 KST. Production stays inactive; the goal remains active.
 
-The bounded-worker and audit-log changes are committed in Korean as `b100476` and pushed to `origin/codex/quality-full-pr126`. That branch is 40 commits behind and 30 ahead of `main`; `gh pr list --head codex/quality-full-pr126 --state all` returned no PR. It is not submitted as a monolithic PR. The pinned production resume source and shared checkpoints remain unchanged.
+The bounded-worker and audit-log changes are committed in Korean as `b100476` and pushed to `origin/codex/quality-full-pr126`. At that commit, the branch was 40 commits behind and 30 ahead of `main`; `gh pr list --head codex/quality-full-pr126 --state all` returned no PR. It is not submitted as a monolithic PR. The pinned production resume source and shared checkpoints remain unchanged.
+
+## 2026-10-01 Full Local Quality Gates
+
+At pushed HEAD `2bc0671`, `python -m ruff check .` passed, `python -m mypy src/news_scalping_lab` passed for 139 source files, and the full `python -m pytest` suite passed: 1,903 tests in 311.77 seconds. Pytest reported 1,208 warnings, primarily `pytest-asyncio` event-loop-policy deprecations under Python 3.14; there were no test failures. These are local results only: `gh run list --branch codex/quality-full-pr126` returned no GitHub Actions runs, and this branch has no PR.
+
+To limit compute, OpenBLAS/OMP/MKL/NumExpr thread counts were set to 1. The pytest process was verified as this worktree's Python test command with a PowerShell parent, no protected Bithumb path in either command line, then capped to affinity `0xF` (four logical processors). At the 87% sample it used 0.42 GiB working set/private memory with 16.83 GiB host RAM available. After completion no pytest/build Python process remained; available RAM was 16.81 GiB and C: free space was 405.21 GiB. Production V5, OAuth, and shared checkpoints were untouched. Quota reset remains 2026-10-04 03:31 KST; production remains HOLD.
