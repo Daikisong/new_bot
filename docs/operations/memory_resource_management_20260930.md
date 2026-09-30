@@ -257,11 +257,44 @@ CALIBRATION/HOLDOUT 각각 40건을 파생했다. 각 파생 manifest에서 40�
 `outcome_ledger` 참조를 제거했으며 outcome 파일을 해석하거나 열지 않았다. 결과는
 `runs/semantic_brain_upgrade/shadow_split/` 아래에 저장되었다.
 
-실제 blind input 준비는 아직 수행하지 않았다. 프로젝트 `price_provider`가 `mock`이고
-stock-web snapshot 경로 및 cache가 설정되지 않아 CLI가
+첫 blind input 준비는 프로젝트 `price_provider=mock` 때문에
 `quality runtime preparation requires a cutoff-safe universe price source`로 fail-closed
-했다. Mock 가격으로 대체하거나 guard를 낮추지 않았다. 따라서 40개 source ledger를
-로드하는 Python 단계는 시작되지 않았고, memory peak도 아직 측정하지 않았다.
+했다. 저장소 안의 기존 stock-web 자료
+`C:\Users\eorb9\projects\news_bot\data\cache\stock-web`를 확인했고,
+manifest max date는 2026-06-22였다. 공식 CALIBRATION/HOLDOUT trade date 범위는
+2025-12-30부터 2026-06-19까지여서 cutoff-safe D-1 조회 범위에 들어왔다. 설정 파일을
+수정하거나 자료를 다운로드하지 않고 해당 경로를 준비 명령 프로세스에만 환경변수로
+지정했다.
+
+이 과정에서 source ledger의 `available_before_cutoff=true`는 뉴스 기사 행뿐 아니라
+prompt, 원본 CSV 파일, 가격 스냅샷, 거래일, 라우팅 및 일일자료 manifest 메타데이터도
+포함한다는 점을 발견했다. 실제 뉴스 행은 `NEWS_CSV_ROW`만 선택하도록 분류했고, 관측한
+비뉴스 metadata type은 명시적으로 제외했다. 미지의 cutoff-safe type은 버리지 않고
+fail-closed 한다. 일부 뉴스 행은 `published_at_kst` 대신 offset이 붙은 `published_at`을
+사용하므로, `time_verified=true`이고 timezone이 실제로 있는 경우에만 fallback을
+허용한다. source ledger 80개 전부 공식 SHA-256과 일치했으며 outcome selection/file은
+열거나 해시하지 않았다.
+
+공식 blind 입력 준비 결과:
+
+- CALIBRATION: 40 cases, selection ID `QSEL-e3f61fcf722f30e0e7dc`,
+  SHA-256 `a9e7f31a18b06988725d5fe63012a0b2b484473422576743151501cfa566ba72`.
+- HOLDOUT: 40 cases, selection ID `QSEL-44030751cb3dfdec3b17`,
+  SHA-256 `4be25ad5d864a8de2cbc3db1c76d59b3735a0ce9793e086ec9db696027bf1403`.
+- 두 split 모두 `outcome_reference_count=0`; sealed case manifest 및 뉴스/D-1 입력
+  artifact hash를 40/40 재검증했다.
+- 각 split 준비는 약 9분 걸렸고 LLM/OAuth 호출은 0회였다.
+
+실행 중 준비 명령 PID 하나만 10초 간격으로 관찰했다. 두 successful run의 Python
+private memory는 약 835–865 MiB, working set은 약 120–149 MiB 사이에서 오르내렸고,
+case가 처리되어도 누적 증가하지 않았다. host available RAM 관측 범위는 약
+13.4–20.6 GiB여서 8 GiB 경고 기준에 닿지 않았다. 두 Python 프로세스 모두 정상 종료했고
+마지막 확인에서 여유 RAM은 20.1 GiB였다. 이는 이 준비 경로의 관측이지 다른 단계의
+누수 부재나 1회 전체 compiler peak를 증명하는 것은 아니다.
+
+첫 번째 실패 시도에서 생성된 부분 QINPUT은 삭제하지 않고 보존했다. 공식 split의
+잘못된 parent를 사용해 파생했던 오래된 대안 manifest 두 개도 아래 경고처럼 보존하며
+공식 평가 입력에 사용하지 않는다.
 
 주의: 검증 중 공식 parent 대신 오래된 대안 split(plan SHA
 `cc6fdf0ec99725928121115121568b347be9ff435e0ea9f46c3d005c80c06157`)에서 파생된

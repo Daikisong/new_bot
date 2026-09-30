@@ -101,6 +101,28 @@ BLIND_SELECTION_ROOT = Path(
     "runs/semantic_brain_upgrade/quality_full/selections"
 )
 BLIND_SELECTION_FILENAME = "blind_runtime_selection.json"
+_CUTOFF_SAFE_NEWS_SOURCE_TYPES = frozenset({"NEWS_CSV_ROW"})
+_CUTOFF_SAFE_NON_NEWS_SOURCE_TYPES = frozenset(
+    {
+        "ACCESS_ROUTING_RECEIPT",
+        "ACQUISITION_RECEIPT",
+        "CORE_FILE",
+        "MAIN_EXECUTION_PROMPT",
+        "MAIN_PROMPT",
+        "NEWS_CSV",
+        "NEWS_CSV_FILE",
+        "P_SNAPSHOT_FILE",
+        "RESEARCH_DAILY_ACCESS",
+        "RESEARCH_DAILY_ACCESS_WEB_VIEW",
+        "RESEARCH_DAILY_BLIND_SNAPSHOT",
+        "RESEARCH_DAILY_BLIND_SNAPSHOT_FILE",
+        "RESEARCH_DAILY_CALENDAR",
+        "RESEARCH_DAILY_MANIFEST",
+        "RESEARCH_DAILY_SCHEMA",
+        "TRADING_CALENDAR",
+        "WEB_VIEW_ROUTING",
+    }
+)
 PREDICTION_INPUT_BOUNDARY_VERSION = "SEALED_BLIND_INPUT.v3"
 QUALITY_RUNTIME_PREDICTION_CODE_VERSION = (
     "nslab.quality_runtime_prediction_code.v2"
@@ -1152,10 +1174,25 @@ def _read_verified_jsonl_reference(
 
 
 def _cutoff_safe_row_count(source_rows: Sequence[dict[str, Any]]) -> int:
-    count = sum(row.get("available_before_cutoff") is True for row in source_rows)
+    count = sum(_is_cutoff_safe_news_row(row) for row in source_rows)
     if count < 1:
         raise ValueError("quality runtime source ledger has no cutoff-safe news")
     return count
+
+
+def _is_cutoff_safe_news_row(row: dict[str, Any]) -> bool:
+    if row.get("available_before_cutoff") is not True:
+        return False
+    source_type = str(row.get("source_type") or row.get("source_kind") or "")
+    normalized_type = source_type.strip().upper()
+    if normalized_type in _CUTOFF_SAFE_NEWS_SOURCE_TYPES:
+        return True
+    if normalized_type in _CUTOFF_SAFE_NON_NEWS_SOURCE_TYPES:
+        return False
+    raise ValueError(
+        "unknown cutoff-safe source ledger type: "
+        f"{normalized_type or '(missing)'}"
+    )
 
 
 def _cutoff_safe_news_rows(
@@ -1166,15 +1203,35 @@ def _cutoff_safe_news_rows(
     rows: list[dict[str, str]] = []
     source_row_ids: list[str] = []
     for row in source_rows:
-        if row.get("available_before_cutoff") is not True:
+        if not _is_cutoff_safe_news_row(row):
             continue
         source_id = row.get("source_id")
         published_value = row.get("published_at_kst")
         if not isinstance(source_id, str) or not source_id.strip():
             raise ValueError("blind runtime source row has no source ID")
         if not isinstance(published_value, str) or not published_value.strip():
-            raise ValueError("blind runtime source row has no KST publication time")
-        published_at = as_kst(parse_datetime(published_value))
+            published_value = row.get("published_at")
+            if (
+                not isinstance(published_value, str)
+                or not published_value.strip()
+                or row.get("time_verified") is not True
+            ):
+                raise ValueError(
+                    "blind runtime source row has no verified publication time"
+                )
+            try:
+                parsed_published_at = datetime.fromisoformat(published_value)
+            except ValueError as exc:
+                raise ValueError(
+                    "blind runtime fallback publication time is invalid"
+                ) from exc
+            if parsed_published_at.tzinfo is None:
+                raise ValueError(
+                    "blind runtime fallback publication time has no timezone"
+                )
+            published_at = as_kst(parsed_published_at)
+        else:
+            published_at = as_kst(parse_datetime(published_value))
         if published_at > as_kst(cutoff_at):
             raise ValueError("cutoff-safe source row is later than the sealed cutoff")
         source_row_ids.append(source_id.strip())

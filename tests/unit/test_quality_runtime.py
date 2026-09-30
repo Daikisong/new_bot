@@ -245,6 +245,92 @@ def test_blind_selection_allowlist_rejects_before_touching_untrusted_path(
         load_blind_runtime_selection(tmp_path, candidate)
 
 
+def test_cutoff_safe_news_projection_excludes_metadata_and_uses_verified_timestamp_fallback() -> None:
+    cutoff_at = datetime(2026, 3, 20, 8, 59, 59, tzinfo=KST)
+    source_rows = [
+        {
+            "available_before_cutoff": True,
+            "source_type": "MAIN_PROMPT",
+            "source_id": "SRC-PROMPT",
+        },
+        {
+            "available_before_cutoff": True,
+            "source_type": "NEWS_CSV_FILE",
+            "source_id": "SRC-CSV-FILE",
+        },
+        {
+            "available_before_cutoff": True,
+            "source_type": "news_csv_row",
+            "source_id": "SRC-NEWS-1",
+            "published_at": "2026-03-20T08:58:59+09:00",
+            "time_verified": True,
+            "title": "headline",
+            "body": "story",
+        },
+        {
+            "available_before_cutoff": False,
+            "source_type": "UNSEEN_FUTURE_TYPE",
+        },
+    ]
+
+    rows, source_ids = quality_runtime_module._cutoff_safe_news_rows(
+        source_rows,
+        cutoff_at=cutoff_at,
+    )
+
+    assert quality_runtime_module._cutoff_safe_row_count(source_rows) == 1
+    assert source_ids == ["SRC-NEWS-1"]
+    assert rows == [
+        {
+            "date": "2026-03-20",
+            "time": "08:58:59",
+            "title": "headline",
+            "body": "story",
+        }
+    ]
+
+
+def test_cutoff_safe_news_projection_rejects_unknown_source_type() -> None:
+    with pytest.raises(
+        ValueError,
+        match="unknown cutoff-safe source ledger type: UNSEEN_SOURCE_TYPE",
+    ):
+        quality_runtime_module._cutoff_safe_row_count(
+            [
+                {
+                    "available_before_cutoff": True,
+                    "source_type": "UNSEEN_SOURCE_TYPE",
+                }
+            ]
+        )
+
+
+@pytest.mark.parametrize(
+    ("published_at", "time_verified"),
+    [
+        ("2026-03-20T08:58:59", True),
+        ("2026-03-20T08:58:59+09:00", False),
+    ],
+)
+def test_cutoff_safe_news_projection_rejects_unverified_or_timezone_missing_fallback(
+    published_at: str,
+    time_verified: bool,
+) -> None:
+    with pytest.raises(ValueError, match="verified publication time|no timezone"):
+        quality_runtime_module._cutoff_safe_news_rows(
+            [
+                {
+                    "available_before_cutoff": True,
+                    "source_type": "NEWS_CSV_ROW",
+                    "source_id": "SRC-NEWS-1",
+                    "published_at": published_at,
+                    "time_verified": time_verified,
+                }
+            ],
+            cutoff_at=datetime(2026, 3, 20, 8, 59, 59, tzinfo=KST),
+        )
+
+
 def test_three_case_selection_uses_news_rows_without_opening_outcomes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2230,8 +2316,10 @@ def _source_case(
         "".join(
             (
                 '{"available_before_cutoff":true,'
+                '"source_type":"NEWS_CSV_ROW",'
                 f'"source_id":"SRC-{row_index:06d}",'
                 f'"published_at_kst":"{trade_date.isoformat()}T08:00:00+09:00",'
+                '"time_verified":true,'
                 '"title":"row","body":"body"}\n'
             )
             for row_index in range(1, row_count + 1)
