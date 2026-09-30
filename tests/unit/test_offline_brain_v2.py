@@ -9,11 +9,16 @@ import duckdb
 import numpy as np
 import pytest
 
+import news_scalping_lab.brain.offline_v2 as offline_v2
 from news_scalping_lab.brain.offline_v2 import (
     BrainPackageDailyContextProvider,
     OfflineSemanticBrainCompiler,
     _claims_from_reduce_node,
+    _estimate_reduce_review_call_count,
     _materialize_long_payload_chunk_digest,
+    _pack_reduce_nodes,
+    _plan_long_payloads,
+    _planned_reduce_leaf_nodes,
     _split_semantic_stratum,
     _utf8_chunks,
     _VectorRow,
@@ -32,6 +37,7 @@ from news_scalping_lab.contracts.offline_brain import (
 )
 from news_scalping_lab.inference.thin_daily import _validate_brain_context_as_of
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
+from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.utils import (
     KST,
     canonical_json,
@@ -90,6 +96,27 @@ class ReduceCoverageMismatchLLM(DeterministicMockLLMProvider):
             child_node_ids=child_node_ids,
             covered_capsule_ids=[*required_capsule_ids[:-1], "CAP-not-in-child-tree"],
             synthesis="fixture reduce",
+        )
+
+
+class TrackingLongPayloadLLM(DeterministicMockLLMProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.long_payload_calls = 0
+
+    async def generate_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[Any],
+        purpose: str,
+    ) -> Any:
+        if response_model is LongPayloadDigestBatch:
+            self.long_payload_calls += 1
+        return await super().generate_structured(
+            prompt=prompt,
+            response_model=response_model,
+            purpose=purpose,
         )
 
 
@@ -173,7 +200,7 @@ def _source_project(root: Path, *, oversized_document: bool = False) -> Path:
                     else f"fixture mechanism payload {index} axis {embedding_axis}"
                 ),
                 "OBSERVED_POSITIVE" if positive else "OBSERVED_NEGATIVE",
-                "OBSERVED_POSITIVE" if positive else "OBSERVED_NEGATIVE",
+                ("VALID", "MISSING", "INVALID_CONFLICT")[index % 3],
                 "TOUCHED" if index == 0 else "NOT_TOUCHED",
                 "fixture-regime",
                 "REASONING",
@@ -217,6 +244,59 @@ def _source_project(root: Path, *, oversized_document: bool = False) -> Path:
     return root
 
 
+def test_offline_compiler_reuses_shared_checkpoint_identity_across_worktrees(
+    tmp_path: Path,
+) -> None:
+    checkpoint_dir = tmp_path / "origin" / "runs" / "checkpoints" / "llm"
+    checkpoint_dir.mkdir(parents=True)
+    payload = {"prompt_sha256": "a" * 64, "prompt_utf8_bytes": 128}
+    compiler_a = OfflineSemanticBrainCompiler(
+        Settings(project_root=tmp_path / "worktree-a"),
+        llm=DeterministicMockLLMProvider(),
+        checkpoint_dir=checkpoint_dir,
+    )
+    compiler_b = OfflineSemanticBrainCompiler(
+        Settings(project_root=tmp_path / "worktree-b"),
+        llm=DeterministicMockLLMProvider(),
+        checkpoint_dir=checkpoint_dir,
+    )
+
+    assert isinstance(compiler_a.llm, TracingLLMProvider)
+    assert isinstance(compiler_b.llm, TracingLLMProvider)
+    assert compiler_a.llm.checkpoint_dir == checkpoint_dir
+    assert compiler_b.llm.checkpoint_dir == checkpoint_dir
+    checkpoint_id = compiler_a.llm._write_checkpoint(
+        operation="generate_structured",
+        purpose="offline_semantic_reduce.REDUCE-fixture",
+        status="ok",
+        input_payload=payload,
+        output={"result": "cached"},
+    )
+    assert checkpoint_id == compiler_b.llm._checkpoint_id(
+        operation="generate_structured",
+        purpose="offline_semantic_reduce.REDUCE-fixture",
+        input_payload=payload,
+    )
+    cached = compiler_b.llm._read_ok_checkpoint(
+        operation="generate_structured",
+        purpose="offline_semantic_reduce.REDUCE-fixture",
+        input_payload=payload,
+    )
+    assert cached is not None
+    assert cached["output"] == {"result": "cached"}
+
+
+def test_offline_compiler_rejects_missing_explicit_checkpoint_directory(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(FileNotFoundError, match="explicit offline checkpoint directory"):
+        OfflineSemanticBrainCompiler(
+            Settings(project_root=tmp_path / "worktree"),
+            llm=DeterministicMockLLMProvider(),
+            checkpoint_dir=tmp_path / "missing-checkpoints",
+        )
+
+
 @pytest.mark.asyncio
 async def test_offline_brain_build_closes_all_records_and_reduce_nodes(
     tmp_path: Path,
@@ -252,6 +332,8 @@ async def test_offline_brain_build_closes_all_records_and_reduce_nodes(
     )
     assert result.influence_manifest.primary_assignment_count == 12
     assert result.influence_manifest.population_contribution_record_count == 12
+    assert result.influence_manifest.close_return_status_accounted_record_count == 12
+    assert result.influence_manifest.close_return_status_distribution_root
     assert result.influence_manifest.representative_payload_exposed_record_count <= 12
     assert (
         result.influence_manifest.representative_payload_exposed_record_count
@@ -270,6 +352,34 @@ async def test_offline_brain_build_closes_all_records_and_reduce_nodes(
     assert result.influence_manifest.final_covered_capsule_count == (
         result.package_manifest.semantic_capsule_count
     )
+    capsule_rows = [
+        json.loads(line)
+        for line in (result.package_dir / "semantic_capsules.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert all(
+        sum(row["close_return_status_distribution"].values())
+        == row["member_record_count"]
+        for row in capsule_rows
+    )
+    status_root_rows = sorted(
+        (row["semantic_unit_id"], status, count)
+        for row in capsule_rows
+        for status, count in row["close_return_status_distribution"].items()
+    )
+    assert result.influence_manifest.close_return_status_distribution_root == (
+        sha256_text(canonical_json(status_root_rows))
+    )
+    population_rows = [
+        json.loads(line)
+        for line in (
+            result.package_dir / "population_cube" / "capsule_populations.jsonl"
+        )
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert all(row["close_return_status_distribution"] for row in population_rows)
 
     connection = duckdb.connect(
         str(result.package_dir / "semantic_capsule_index.duckdb"),
@@ -325,6 +435,12 @@ def test_full_population_outlier_beyond_old_sample_boundary_gets_own_unit() -> N
     assert len(builds) == 2
     assert len(assignments) == 4097
     assert assignments[-1][5] is True
+    for build in builds:
+        member_ids = sorted(
+            str(row[0]) for row in assignments if row[1] == build.semantic_unit_id
+        )
+        assert build.member_record_count == len(member_ids)
+        assert build.member_record_root == sha256_text(canonical_json(member_ids))
 
 
 def test_utf8_long_payload_chunking_is_lossless() -> None:
@@ -463,6 +579,55 @@ async def test_reduce_still_rejects_an_omitted_child_node(tmp_path: Path) -> Non
 
 
 @pytest.mark.asyncio
+async def test_long_payload_batches_are_consumed_incrementally(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = "long payload evidence " * 20_000
+    payload_plan = _plan_long_payloads(
+        [
+            {
+                "semantic_unit_id": "SUNIT-long-payload",
+                "category": "single_event",
+                "representatives": [
+                    {
+                        "record_id": "RECORD-long-payload",
+                        "document": document,
+                        "document_sha256": sha256_text(document),
+                    }
+                ],
+            }
+        ]
+    )
+    assert payload_plan.long_payload_chunk_map_call_count > 1
+
+    settings = Settings(project_root=tmp_path / "compiler")
+    settings.limits.max_concurrency = 1
+    llm = TrackingLongPayloadLLM()
+    compiler = OfflineSemanticBrainCompiler(settings, llm=llm)
+    original_pack = offline_v2._pack_long_payload_chunks
+    yielded_batches = 0
+
+    def observed_batches(chunks: list[dict[str, Any]]) -> Any:
+        nonlocal yielded_batches
+        for batch in original_pack(chunks):
+            if yielded_batches:
+                assert llm.long_payload_calls >= yielded_batches
+            yielded_batches += 1
+            yield batch
+
+    monkeypatch.setattr(offline_v2, "_pack_long_payload_chunks", observed_batches)
+    projected_rows = await compiler._compile_long_payload_digests(payload_plan)
+
+    assert projected_rows is payload_plan.projected_rows
+    assert yielded_batches == payload_plan.long_payload_chunk_map_call_count
+    assert llm.long_payload_calls == payload_plan.long_payload_chunk_map_call_count
+    assert len(
+        projected_rows[0]["representatives"][0]["full_payload_chunk_digests"]
+    ) == payload_plan.long_payload_chunk_count
+
+
+@pytest.mark.asyncio
 async def test_oversized_representative_payload_is_fully_chunk_mapped(
     tmp_path: Path,
 ) -> None:
@@ -520,10 +685,72 @@ def test_offline_plan_uses_embeddings_but_zero_llm_calls(tmp_path: Path) -> None
     assert plan["dynamic_representative_count"] >= plan["semantic_unit_count"]
     assert plan["leaf_map_call_count"] >= 1
     assert plan["estimated_total_logical_llm_call_count"] > plan["leaf_map_call_count"]
+    assert plan["estimated_reduce_leaf_node_count"] >= 1
+    assert plan["estimated_reduce_leaf_node_count_is_runtime_count"] is False
+    assert plan["estimated_reduce_review_call_count_is_lower_bound"] is False
+    assert plan["estimated_reduce_review_call_count_is_projection"] is True
+    mandatory_reduce_calls = len(plan["category_semantic_unit_counts"]) + 1
+    assert plan["guaranteed_minimum_reduce_review_call_count"] == mandatory_reduce_calls
+    assert plan["estimated_reduce_prompt_byte_packing_simulated"] is True
+    assert plan["estimated_reduce_review_call_count"] >= mandatory_reduce_calls
+    assert plan["estimated_total_logical_llm_call_count_is_lower_bound"] is False
+    assert plan["estimated_total_logical_llm_call_count_is_projection"] is True
+    minimum_total = (
+        plan["long_payload_chunk_map_call_count"]
+        + plan["leaf_map_call_count"]
+        + mandatory_reduce_calls
+    )
+    assert plan["guaranteed_minimum_total_logical_llm_call_count"] == minimum_total
+    assert plan["guaranteed_minimum_total_logical_llm_call_count_is_lower_bound"] is True
+    assert plan["estimated_total_logical_llm_call_count"] >= minimum_total
     assert plan["planning_llm_call_count"] == 0
     assert plan["embedding_reused"] is True
     assert plan["import_reused"] is True
     assert plan["full_population_embedding_geometry"] is True
+
+
+def test_planner_reduce_projection_uses_runtime_byte_packer() -> None:
+    children = [
+        SemanticReduceNode(
+            node_id=f"LEAF-large-{index}",
+            child_node_ids=[],
+            covered_capsule_ids=[f"CAP-{index}"],
+            synthesis="x" * 100_000,
+        )
+        for index in range(2)
+    ]
+
+    assert [len(group) for group in _pack_reduce_nodes(children)] == [1, 1]
+    # The proxy cannot know whether model prose will shrink at the next level;
+    # it stops at the first non-progressing lower-bound level.
+    assert _estimate_reduce_review_call_count({"fixture": children}) == 4
+
+
+def test_planned_leaf_proxy_preserves_each_semantic_unit_once() -> None:
+    rows = [
+        {"category": "fixture", "semantic_unit_id": f"UNIT-{index}"}
+        for index in range(37)
+    ]
+    leaves = _planned_reduce_leaf_nodes(rows)
+    covered = [
+        capsule_id
+        for category_rows in leaves.values()
+        for node in category_rows
+        for capsule_id in node.covered_capsule_ids
+    ]
+
+    assert sorted(covered) == sorted(row["semantic_unit_id"] for row in rows)
+    assert len(covered) == len(set(covered))
+    first = next(iter(leaves["fixture"]))
+    model = SemanticReduceNode(
+        node_id=first.node_id,
+        child_node_ids=[],
+        covered_capsule_ids=list(first.covered_capsule_ids),
+        synthesis="",
+    )
+    assert first.payload_bytes == len(
+        canonical_json(model.model_dump(mode="json")).encode("utf-8")
+    )
 
 
 def test_source_manifest_pointer_drift_requires_explicit_attested_sha(
@@ -586,6 +813,9 @@ async def test_incremental_update_matches_clean_full_rebuild(tmp_path: Path) -> 
     assert incremental.influence_manifest.reduce_tree_root == (
         clean.influence_manifest.reduce_tree_root
     )
+    assert incremental.influence_manifest.close_return_status_distribution_root == (
+        clean.influence_manifest.close_return_status_distribution_root
+    )
     assert incremental.compile_manifest.llm_call_count == 0
     assert incremental.compile_manifest.reused_semantic_capsule_count == (
         incremental.package_manifest.semantic_capsule_count
@@ -645,6 +875,11 @@ async def test_daily_reader_uses_only_precompiled_package(tmp_path: Path) -> Non
     assert initial_context.retrieval_basis == "CURRENT_NEWS"
     assert initial_context.interpretation_sha256 is None
     assert initial_context.selected_semantic_capsules
+    assert all(
+        sum(row["close_return_status_distribution"].values())
+        == row["member_record_count"]
+        for row in initial_context.population_statistics
+    )
     assert initial_context.brain_build_cutoff == result.package_manifest.build_cutoff
     assert initial_context.compiled_brain_guidance[0].content == (
         result.package_dir / "world_model.md"

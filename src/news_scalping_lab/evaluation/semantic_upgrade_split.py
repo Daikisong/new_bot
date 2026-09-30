@@ -165,6 +165,11 @@ def _complete_gold_cases(root: Path, *, seed: str) -> list[SemanticUpgradeCase]:
             continue
         if source_path.stat().st_size == 0 or outcome_path.stat().st_size == 0:
             continue
+        # A complete episode must contain at least one source row that is
+        # explicitly cutoff-safe; otherwise the formal runtime selector cannot
+        # seal a blind input for the case.
+        if not _source_has_cutoff_safe_news(source_path):
+            continue
         try:
             index = NormalizedEpisodeIndex.model_validate(read_json(index_path))
         except (OSError, ValueError):
@@ -190,6 +195,25 @@ def _complete_gold_cases(root: Path, *, seed: str) -> list[SemanticUpgradeCase]:
         for _trade_date, rows in sorted(by_date.items())
     ]
     return sorted(selected, key=lambda item: (item.trade_date, item.episode_id))
+
+
+def _source_has_cutoff_safe_news(path: Path) -> bool:
+    """Return whether a source ledger contains an explicit safe news row."""
+
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                try:
+                    payload = read_json_line(line)
+                except (TypeError, ValueError):
+                    return False
+                if payload.get("available_before_cutoff") is True:
+                    return True
+    except OSError:
+        return False
+    return False
 
 
 def _case_payload(

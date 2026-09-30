@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import inspect
+import json
 from datetime import date, datetime
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
@@ -13,6 +16,7 @@ from news_scalping_lab.contracts.offline_brain import (
 )
 from news_scalping_lab.contracts.quality_evaluation import (
     BlindRuntimeCase,
+    BlindRuntimeSelection,
     QualityArtifactReference,
     ThinDailyQualityPredictionManifest,
     quality_full_runtime_profile,
@@ -24,6 +28,8 @@ from news_scalping_lab.evaluation.thin_daily_quality import (
     _validate_quality_cases_against_build_split,
     _verify_build_only_attestation_payload,
     predict_thin_daily_quality,
+    prepare_thin_daily_outcome_selection,
+    score_thin_daily_quality,
 )
 from news_scalping_lab.utils import (
     KST,
@@ -149,6 +155,195 @@ def test_blind_prediction_entrypoint_has_no_outcome_parameter() -> None:
     assert "blind_selection_path" in parameters
     assert "outcome_selection_path" not in parameters
     assert "truth" not in parameters
+
+
+def test_formal_prediction_uses_the_product_analyzer_and_blind_only_inputs() -> None:
+    source = inspect.getsource(predict_thin_daily_quality)
+    assert source.count("ThinDailyAnalyzer(") == 1
+    assert "await analyzers[arm_id].analyze(" in source
+    assert "load_runtime_outcome_selection" not in source
+
+
+def test_blind_selection_contract_cannot_carry_outcome_references() -> None:
+    case = _runtime_case("CASE-1", "CALIBRATION", date(2026, 1, 2))
+    case_payload = case.model_dump(mode="json")
+    case_payload["outcome_ledger"] = {
+        "artifact_path": "outcomes.jsonl",
+        "sha256": "7" * 64,
+    }
+    with pytest.raises(ValidationError):
+        BlindRuntimeCase.model_validate(case_payload)
+
+    selection = {
+        "schema_version": "nslab.blind_runtime_selection.v3",
+        "selection_id": "QSEL-test",
+        "source_selection_sha256": "8" * 64,
+        "selection_policy": "ALL_SOURCE_SPLIT_CASES",
+        "cases": [case.model_dump(mode="json")],
+        "outcome_reference_count": 1,
+    }
+    with pytest.raises(ValidationError):
+        BlindRuntimeSelection.model_validate(selection)
+
+
+def test_scoring_rejects_unsealed_predictions_before_opening_outcomes(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    profile = quality_full_runtime_profile(
+        provider="codex-oauth",
+        model="gpt-5.6-sol",
+        reasoning_effort="xhigh",
+    )
+    architectures = {arm: str(index) * 64 for index, arm in enumerate("ABC", start=1)}
+    paired = ThinDailyQualityPredictionManifest(
+        run_id="THINQUAL-test",
+        profile=profile,
+        blind_selection=QualityArtifactReference(
+            artifact_path="runs/blind_runtime_selection.json",
+            sha256="4" * 64,
+        ),
+        build_only_source_attestation=QualityArtifactReference(
+            artifact_path="runs/build_only_source_attestation.json",
+            sha256="5" * 64,
+        ),
+        expected_case_ids=["CASE-1"],
+        expected_arm_ids=["A", "B", "C"],
+        expected_arm_architecture_sha256=architectures,
+    )
+    paired_path = tmp_path / "paired_predictions.json"
+    write_json(paired_path, paired.model_dump(mode="json"))
+
+    def reject_outcome_open(_path):
+        raise AssertionError("outcome selection must stay unopened before prediction closure")
+
+    monkeypatch.setattr(
+        "news_scalping_lab.evaluation.thin_daily_quality.load_runtime_outcome_selection",
+        reject_outcome_open,
+    )
+    with pytest.raises(ValueError, match="complete predictions sealed before outcomes"):
+        score_thin_daily_quality(
+            tmp_path,
+            paired_prediction_manifest_path=paired_path,
+            outcome_selection_path=tmp_path / "outcome_selection.json",
+        )
+
+
+def test_late_outcome_selection_rejects_unsealed_predictions_before_resolving_source(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    profile = quality_full_runtime_profile(
+        provider="codex-oauth",
+        model="gpt-5.6-sol",
+        reasoning_effort="xhigh",
+    )
+    architectures = {arm: str(index) * 64 for index, arm in enumerate("ABC", start=1)}
+    paired = ThinDailyQualityPredictionManifest(
+        run_id="THINQUAL-test",
+        profile=profile,
+        blind_selection=QualityArtifactReference(
+            artifact_path="runs/blind_runtime_selection.json",
+            sha256="4" * 64,
+        ),
+        build_only_source_attestation=QualityArtifactReference(
+            artifact_path="runs/build_only_source_attestation.json",
+            sha256="5" * 64,
+        ),
+        expected_case_ids=["CASE-1"],
+        expected_arm_ids=["A", "B", "C"],
+        expected_arm_architecture_sha256=architectures,
+    )
+    paired_path = tmp_path / "paired_predictions.json"
+    write_json(paired_path, paired.model_dump(mode="json"))
+    outcome_source_path = tmp_path / "outcome-source-selection.json"
+    original_resolve = type(tmp_path).resolve
+
+    def guarded_resolve(path, *args, **kwargs):
+        if path == outcome_source_path:
+            raise AssertionError("outcome source path was resolved before prediction closure")
+        return original_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(tmp_path), "resolve", guarded_resolve)
+
+    with pytest.raises(ValueError, match="complete predictions sealed before outcomes"):
+        prepare_thin_daily_outcome_selection(
+            tmp_path,
+            paired_prediction_manifest_path=paired_path,
+            outcome_source_selection_path=outcome_source_path,
+        )
+
+
+def test_late_outcome_selection_binds_references_without_opening_ledgers(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    case = _runtime_case("CASE-1", "POST_CUTOFF", date(2026, 6, 24))
+    blind_selection = BlindRuntimeSelection(
+        selection_id="QSEL-late-outcome",
+        source_selection_sha256="8" * 64,
+        selection_policy="ALL_SOURCE_SPLIT_CASES",
+        cases=[case],
+    )
+    paired_path = tmp_path / "quality-run" / "paired_predictions.json"
+    paired_path.parent.mkdir(parents=True)
+    paired_path.write_text("{}", encoding="utf-8")
+    paired = SimpleNamespace(
+        blind_selection=QualityArtifactReference(
+            artifact_path="runs/blind_runtime_selection.json",
+            sha256="9" * 64,
+        ),
+        expected_case_ids=["CASE-1"],
+    )
+    monkeypatch.setattr(
+        "news_scalping_lab.evaluation.thin_daily_quality._verified_thin_daily_prediction_closure",
+        lambda _root, _path: (paired, blind_selection, {}, {}),
+    )
+
+    outcome_ledger_path = tmp_path / "research" / "CASE-1" / "outcome.jsonl"
+    source_path = tmp_path / "outcome_source_selection.json"
+    write_json(
+        source_path,
+        {
+            "schema_version": "nslab.thin_daily_outcome_source_selection.v1",
+            "cases": [
+                {
+                    "episode_id": "CASE-1",
+                    "trade_date": "2026-06-24",
+                    "split": "POST_CUTOFF",
+                    "outcome_ledger": {
+                        "artifact_path": outcome_ledger_path.relative_to(
+                            tmp_path
+                        ).as_posix(),
+                        "sha256": "a" * 64,
+                    },
+                }
+            ],
+        },
+    )
+    original_read_bytes = Path.read_bytes
+
+    def guarded_read_bytes(path: Path) -> bytes:
+        if path == outcome_ledger_path:
+            raise AssertionError("outcome ledger contents were opened during preparation")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", guarded_read_bytes)
+
+    result = prepare_thin_daily_outcome_selection(
+        tmp_path,
+        paired_prediction_manifest_path=paired_path,
+        outcome_source_selection_path=source_path,
+    )
+
+    assert not outcome_ledger_path.exists()
+    assert result.outcome_selection.cases[0].outcome_ledger.artifact_path == (
+        "research/CASE-1/outcome.jsonl"
+    )
+    receipt = json.loads(result.receipt_path.read_text(encoding="utf-8"))
+    assert receipt["all_predictions_sealed"] is True
+    assert receipt["prediction_artifacts_and_citations_verified"] is True
+    assert receipt["outcome_ledger_contents_opened"] is False
 
 
 def test_formal_package_requires_evaluation_only_build_snapshot(tmp_path) -> None:
@@ -370,7 +565,7 @@ def test_formal_cases_must_match_the_attested_split() -> None:
     cases = [
         _runtime_case("CAL-1", "CALIBRATION", date(2026, 1, 2)),
         _runtime_case("HOLD-1", "HOLDOUT", date(2026, 1, 3)),
-        _runtime_case("POST-1", "POST_CUTOFF", date(2026, 1, 5)),
+        _runtime_case("POST-1", "POST_CUTOFF", date(2026, 6, 24)),
     ]
 
     _validate_quality_cases_against_build_split(
@@ -381,6 +576,12 @@ def test_formal_cases_must_match_the_attested_split() -> None:
     with pytest.raises(ValueError, match="attested BUILD split"):
         _validate_quality_cases_against_build_split(
             [_runtime_case("BUILD-1", "CALIBRATION", date(2026, 1, 2))],
+            split_case_ids=split_ids,
+            build_cutoff=cutoff,
+        )
+    with pytest.raises(ValueError, match="not after 2026-06-23"):
+        _validate_quality_cases_against_build_split(
+            [_runtime_case("POST-EARLY", "POST_CUTOFF", date(2026, 6, 23))],
             split_case_ids=split_ids,
             build_cutoff=cutoff,
         )

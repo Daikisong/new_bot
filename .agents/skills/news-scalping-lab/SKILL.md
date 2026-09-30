@@ -165,6 +165,41 @@ python -m news_scalping_lab.cli memory score-runtime-variants \
   --outcome-selection <runtime-outcome-selection.json>
 ```
 
+Formal thin-daily A/B/C evaluation uses a blind-only source selection first.
+Every case must be post-cutoff dated, and the blind source selection must omit
+all `outcome_ledger` fields. The outcome-reference selection is created only
+after every A/B/C prediction and citation artifact has been verified:
+
+```bash
+python -m news_scalping_lab.cli memory prepare-quality-blind-runtime-selection \
+  --project-root <evaluation-project> \
+  --source-selection <blind-only-post-cutoff-source-selection> \
+  --split POST_CUTOFF \
+  --scope FULL_SPLIT
+python -m news_scalping_lab.cli memory predict-thin-daily-quality \
+  --project-root <evaluation-project> \
+  --blind-selection <blind-runtime-selection.json> \
+  --baseline-project-root <baseline-project> \
+  --baseline-manifest <baseline-brain-manifest.json> \
+  --category-index-manifest <baseline-category-index-manifest.json> \
+  --offline-package-dir <sealed-v2-package>
+python -m news_scalping_lab.cli memory prepare-thin-daily-outcome-selection \
+  --project-root <evaluation-project> \
+  --paired-predictions <paired-thin-daily-predictions.json> \
+  --outcome-source-selection <reference-only-outcome-selection.json>
+python -m news_scalping_lab.cli memory score-thin-daily-quality \
+  --project-root <evaluation-project> \
+  --paired-predictions <paired-thin-daily-predictions.json> \
+  --outcome-selection <runtime-outcome-selection.json>
+```
+
+The reference-only outcome selection uses schema
+`nslab.thin_daily_outcome_source_selection.v1` and contains exactly
+`episode_id`, `trade_date`, `split`, and an `outcome_ledger` artifact reference
+per case. Late preparation refuses incomplete A/B/C closure before resolving or
+reading this manifest, writes a receipt, and does not open outcome ledger bytes.
+Scoring revalidates the sealed prediction artifacts before reading outcomes.
+
 - Preserve source `available_from`; replay snapshots store a separate effective
   next-session timestamp and are always `evaluation_only`.
 - BUILD excludes every CALIBRATION/HOLDOUT record, outcome, claim, centroid,

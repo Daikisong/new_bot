@@ -2,17 +2,25 @@
   "schema_version": "nslab.daily_llm_call_graph_audit.v1",
   "audit_kind": "USER_CORRECTION_BRAIN_INFORMED_SINGLE_CALL",
   "date": "2026-09-07",
+  "last_verified_at": "2026-09-30",
+  "audited_commit": "707093423d1906070ba2f8655e7ca8ff6ae4f180",
   "architecture_version": "one_time_brain_thin_daily.v2",
   "production_entrypoint": "news_scalping_lab.inference.thin_daily.ThinDailyAnalyzer.analyze",
   "production_command": "nslab analyze-daily",
   "normal_logical_call_count": 1,
   "maximum_live_agent_call_count_including_schema_repairs": 2,
+  "daily_historical_raw_map_call_count": 0,
+  "daily_import_call_count": 0,
+  "daily_brain_rebuild_call_count": 0,
+  "blind_web_search_call_count": 0,
+  "maximum_exact_historical_witness_count": 24,
   "brain_context_loaded_before_first_llm": true,
   "preliminary_interpretation_call_count": 0,
   "retrieval_basis": "CURRENT_NEWS",
   "call_sites": [
     {
       "function": "ThinDailyAnalyzer.analyze",
+      "source": "src/news_scalping_lab/inference/thin_daily.py:275",
       "purpose": "final_market_decision",
       "inside_loop": false,
       "potential_call_count_formula": "1",
@@ -20,6 +28,27 @@
       "input_source": "Current event capsules, compiled world/category guidance, related semantic capsules and claims, population summaries, bounded witnesses, optional D-1 context"
     }
   ],
+  "structured_repair": {
+    "implementation": "CodexOAuthProvider.generate_structured",
+    "source": "src/news_scalping_lab/llm/codex_oauth_provider.py:74",
+    "trigger": "first structured response fails schema validation",
+    "maximum_retries": 1,
+    "additional_logical_call_site": false
+  },
+  "embedding_call_scope": {
+    "separate_from_generative_llm_call_count": true,
+    "operations": [
+      "current-news event clustering embeddings",
+      "current-news retrieval-query embeddings"
+    ],
+    "measurement_note": "Embedding calls, latency, and cost must be reported separately from GPT decision calls."
+  },
+  "legacy_path_boundary": {
+    "command": "nslab analyze",
+    "status": "LEGACY_EXHAUSTIVE_DIAGNOSTIC_ONLY",
+    "fallback_from_analyze_daily": false,
+    "missing_brain_behavior": "fail closed; no fallback to historical raw-record analysis"
+  },
   "local_steps_before_llm": [
     "CSV parse, cutoff filtering, event clustering and coverage",
     "Read precompiled world/category guidance from the immutable package",
@@ -37,12 +66,13 @@
   },
   "verification": {
     "ruff": "PASS",
-    "mypy": "PASS_138_SOURCE_FILES",
-    "targeted_daily_and_offline_regression": "PASS_24_TESTS",
-    "full_pytest": "1886_PASSED_1_DOCUMENTATION_LAYOUT_FAILURE_IN_345_58_SECONDS",
-    "documentation_failure_fix": "Move new product-intent bullets below the fixed-size Repository Rules section; no production code or tests changed",
-    "failed_test_rerun": "PASS_python_-m_pytest_--lf",
+    "mypy": "PASS_139_SOURCE_FILES",
+    "focused_regression": "PASS_58_TESTS",
+    "full_pytest": "PASS",
+    "github_quality_gate_run_id": "36652767437",
+    "github_quality_gate": "PASS_RUFF_MYPY_SCHEMA_PARITY_PRODUCTION_TARGETED_REGRESSION_FULL_PYTEST_GENERATED_DRIFT_WHITESPACE",
     "remaining_known_test_failures": 0,
+    "full_v2_package_runtime_verified": false,
     "production_quality_evaluated": false,
     "production_latency_measured": false,
     "production_activated": false

@@ -16,17 +16,62 @@ Snapshot date: 2026-09-29 20:09 KST
 | Semantic units | `52,644` |
 | Successful calls | `7,902` |
 | Successful call stages | `90` long-payload maps, `7,423` leaf maps, `383` reductions, `6` category reviews |
-| Minimum logical-call floor | `8,018` |
-| Minimum remaining calls | `116` |
+| Old planner projection | `8,018` (not a guaranteed bound) |
+| Guaranteed full-build logical-call floor | `7,523` |
+| Known mandatory nodes not yet successful | at least `5` |
 | Package | not sealed |
 | Production pointer | not activated |
 | Stop reason | Codex OAuth usage limit |
 | Earliest reported retry | `2026-10-04 03:31 KST` |
 
-The `116` value is a lower bound, not an exact final count. Runtime reduction
-prompts can split further at the byte limit, so the final total can be higher.
-The `progress.json` value `record_progress_ratio=1.0` means only that local
-record geometry finished; it does not mean semantic synthesis finished.
+The previous `116`-remaining claim is withdrawn. It subtracted successful calls
+from `8,018`, a planner projection based on semantic-unit hash buckets. Runtime
+leaf buckets use model-derived capsule IDs, so the proxy can produce either more
+or fewer buckets than runtime. The guaranteed `7,523` full-build floor is the
+known map-call count plus one category review per non-empty category and one
+world root call; it is already below the `7,902` successful checkpoints and
+cannot estimate remaining work. At least five logical nodes remain unresolved:
+the quota-failed reduce, three category reviews, and the world root. Additional
+reduce calls depend on completed capsule and reduce outputs, so an exact
+remaining call count is not currently established. The `progress.json` value
+`record_progress_ratio=1.0` means only that local record geometry finished; it
+does not mean semantic synthesis finished.
+
+## Planner estimate semantics
+
+The zero-LLM planner builds deterministic coverage-only leaf proxies and runs
+the same child-count and canonical-JSON byte packer used by runtime reductions.
+However, planned buckets hash semantic-unit IDs while runtime buckets hash
+model-derived capsule IDs. The `estimated_reduce_review_call_count` and
+`estimated_total_logical_llm_call_count` are therefore projections, not lower
+bounds; they may be higher or lower than runtime. The plan reports a separate
+guaranteed full-build floor from exact map-call counts, mandatory category
+reviews, and the world root. If a proxy level cannot make progress because its
+coverage alone exceeds the byte budget, the planner stops that simulation rather
+than looping. Dynamic reduce progress and final call count must be read from
+actual content-addressed build outputs.
+
+## Memory-bounded planning
+
+Full-population geometry and representative selection are local work, but their
+DuckDB joins and NumPy clustering can allocate native memory independently of
+Python garbage collection. Offline plan/build connections therefore use an
+explicit `8GB` DuckDB memory limit and a compile-work-directory spill target.
+Recursive clustering releases parent advanced-indexing arrays before descending.
+This preserves the geometry and split predicates while preventing a large
+stratum from retaining every intermediate dense matrix. A watchdog may stop an
+evaluation-only plan above `12GB` private memory; an incomplete plan is never
+treated as evidence and can be regenerated from the immutable source.
+
+The corrected BUILD-only evaluation plan was regenerated read-only at
+`C:\Users\eorb9\projects\nslab_semantic_upgrade_v7_eval_v2\project\diagnostics\offline_brain_v2_build_only_full_plan_20260929_updated.json`.
+It binds to `MEMIDX-4409624afdffd1d01018`, contains 759,308 records and 49,385
+semantic units, projects 7,158 logical calls (73 long-payload, 6,917 leaf, 168
+proxy reduce/review), and made zero LLM calls. This estimate is not a lower
+bound because its leaf buckets are proxies. The run peaked below
+the watchdog threshold and returned memory to the host after the Python child
+exited. The earlier 7,147-call plan remains preserved for comparison; the new
+plan is authoritative for future evaluation build planning.
 
 ## Resume protocol
 

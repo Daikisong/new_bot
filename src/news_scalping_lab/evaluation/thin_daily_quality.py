@@ -30,6 +30,8 @@ from news_scalping_lab.contracts.quality_evaluation import (
     BlindRuntimeSelection,
     QualityArtifactReference,
     QualityEvaluationProfile,
+    RuntimeOutcomeCase,
+    RuntimeOutcomeSelection,
     SealedBlindCaseInputManifest,
     SharedDMinusOneContext,
     ThinDailyQualityPredictionManifest,
@@ -37,6 +39,7 @@ from news_scalping_lab.contracts.quality_evaluation import (
     quality_full_runtime_profile,
 )
 from news_scalping_lab.evaluation.quality_runtime import (
+    POST_CUTOFF_MIN_TRADE_DATE,
     load_blind_runtime_selection,
     load_runtime_outcome_selection,
     materialize_blind_case_news,
@@ -91,6 +94,13 @@ class ThinDailyQualityScoreResult:
     report: dict[str, Any]
     report_path: Path
     markdown_path: Path
+
+
+@dataclass(frozen=True)
+class ThinDailyOutcomeSelectionResult:
+    outcome_selection: RuntimeOutcomeSelection
+    outcome_selection_path: Path
+    receipt_path: Path
 
 
 @dataclass(frozen=True)
@@ -525,6 +535,96 @@ async def predict_thin_daily_quality(
     return ThinDailyQualityPredictionResult(manifest=manifest, manifest_path=manifest_path)
 
 
+def prepare_thin_daily_outcome_selection(
+    repository_root: Path,
+    *,
+    paired_prediction_manifest_path: Path,
+    outcome_source_selection_path: Path,
+) -> ThinDailyOutcomeSelectionResult:
+    """Create outcome references only after the full A/B/C prediction closure verifies."""
+
+    root = repository_root.resolve()
+    paired_path = paired_prediction_manifest_path.resolve()
+    paired, selection, _build_source, _seal_by_key = (
+        _verified_thin_daily_prediction_closure(root, paired_path)
+    )
+
+    # Do not resolve or read the outcome-side reference manifest until all prediction
+    # artifacts and citations have been verified above.
+    source_path = outcome_source_selection_path.resolve()
+    if not _is_relative_to(source_path, root):
+        raise ValueError("thin daily outcome source selection escapes the repository root")
+    source_payload = _read_json_object(source_path)
+    if (
+        source_payload.get("schema_version")
+        != "nslab.thin_daily_outcome_source_selection.v1"
+        or not isinstance(source_payload.get("cases"), list)
+    ):
+        raise ValueError("thin daily outcome source selection is invalid")
+    source_cases: dict[str, dict[str, Any]] = {}
+    expected_fields = {"episode_id", "trade_date", "split", "outcome_ledger"}
+    for row in source_payload["cases"]:
+        if not isinstance(row, dict) or set(row) != expected_fields:
+            raise ValueError("thin daily outcome source case has an invalid shape")
+        case_id = row.get("episode_id")
+        if not isinstance(case_id, str) or case_id in source_cases:
+            raise ValueError("thin daily outcome source cases must have unique IDs")
+        source_cases[case_id] = row
+    if set(source_cases) != set(paired.expected_case_ids):
+        raise ValueError("thin daily outcome source population differs from sealed predictions")
+
+    outcome_cases: list[RuntimeOutcomeCase] = []
+    for case in selection.cases:
+        row = source_cases[case.episode_id]
+        if (
+            str(row.get("trade_date")) != case.trade_date.isoformat()
+            or row.get("split") != case.split
+        ):
+            raise ValueError("thin daily outcome source identity differs from blind case")
+        outcome_cases.append(
+            RuntimeOutcomeCase(
+                episode_id=case.episode_id,
+                trade_date=case.trade_date,
+                split=case.split,
+                outcome_ledger=QualityArtifactReference.model_validate(
+                    row.get("outcome_ledger")
+                ),
+            )
+        )
+
+    outcome_selection = RuntimeOutcomeSelection(
+        selection_id=selection.selection_id,
+        blind_selection_sha256=paired.blind_selection.sha256,
+        cases=outcome_cases,
+    )
+    output_dir = paired_path.parent
+    outcome_path = output_dir / "runtime_outcome_selection.json"
+    _write_immutable_json(outcome_path, outcome_selection.model_dump(mode="json"))
+    receipt_path = output_dir / "outcome_selection_preparation_receipt.json"
+    receipt = {
+        "schema_version": "nslab.thin_daily_outcome_selection_preparation.v1",
+        "paired_prediction_manifest": _artifact_reference(root, paired_path).model_dump(
+            mode="json"
+        ),
+        "blind_selection": paired.blind_selection.model_dump(mode="json"),
+        "outcome_source_selection": _artifact_reference(root, source_path).model_dump(
+            mode="json"
+        ),
+        "runtime_outcome_selection": _artifact_reference(root, outcome_path).model_dump(
+            mode="json"
+        ),
+        "all_predictions_sealed": True,
+        "prediction_artifacts_and_citations_verified": True,
+        "outcome_ledger_contents_opened": False,
+    }
+    _write_immutable_json(receipt_path, receipt)
+    return ThinDailyOutcomeSelectionResult(
+        outcome_selection=outcome_selection,
+        outcome_selection_path=outcome_path,
+        receipt_path=receipt_path,
+    )
+
+
 def score_thin_daily_quality(
     repository_root: Path,
     *,
@@ -535,53 +635,10 @@ def score_thin_daily_quality(
 
     root = repository_root.resolve()
     paired_path = paired_prediction_manifest_path.resolve()
-    if not _is_relative_to(paired_path, root):
-        raise ValueError("thin daily paired prediction manifest escapes the repository root")
-    paired = ThinDailyQualityPredictionManifest.model_validate(_read_json_object(paired_path))
-    if not paired.all_predictions_sealed or paired.outcome_opened:
-        raise ValueError("thin daily scoring requires complete predictions sealed before outcomes")
-    if paired.expected_arm_ids != ["A", "B", "C"]:
-        raise ValueError("thin daily scoring requires the complete A/B/C arm set")
-    if profile_identity(paired.profile) != ("codex-oauth", "gpt-5.6-sol", "xhigh"):
-        raise ValueError("thin daily quality manifest has an unsupported model identity")
-
-    blind_path = _resolve_artifact_path(root, paired.blind_selection)
-    selection = load_blind_runtime_selection(root, blind_path)
-    if _artifact_reference(root, blind_path) != paired.blind_selection:
-        raise ValueError("thin daily paired manifest blind selection hash drifted")
-    if [case.episode_id for case in selection.cases] != paired.expected_case_ids:
-        raise ValueError("thin daily paired manifest case population differs from BLIND selection")
-    build_source_attestation = _read_json_reference(
-        root,
-        paired.build_only_source_attestation,
+    paired, selection, build_source_attestation, seal_by_key = (
+        _verified_thin_daily_prediction_closure(root, paired_path)
     )
-    _verify_build_only_attestation_payload(build_source_attestation)
-    _validate_quality_cases_against_build_split(
-        selection.cases,
-        split_case_ids=build_source_attestation["split_case_ids"],
-        build_cutoff=datetime.fromisoformat(build_source_attestation["build_cutoff"]),
-    )
-    expected_c_architecture = _thin_daily_c_architecture_sha256(
-        brain_root=build_source_attestation["package_root"],
-        package_manifest_sha256=build_source_attestation["package_manifest_sha256"],
-        build_source_attestation_sha256=build_source_attestation["attestation_sha256"],
-    )
-    if paired.expected_arm_architecture_sha256["C"] != expected_c_architecture:
-        raise ValueError("thin daily C arm is not bound to its BUILD-only source attestation")
     case_by_id = {case.episode_id: case for case in selection.cases}
-    seal_by_key = {(seal.case_id, seal.arm_id): seal for seal in paired.seals}
-
-    # Validate every prediction-side artifact and citation closure before opening outcomes.
-    for case in selection.cases:
-        for arm_id in THIN_DAILY_QUALITY_ARMS:
-            seal = seal_by_key[(case.episode_id, arm_id)]
-            _verify_sealed_prediction_artifacts(
-                root,
-                selection_case=case,
-                seal=seal,
-                expected_architecture_sha256=paired.expected_arm_architecture_sha256[arm_id],
-                profile=paired.profile,
-            )
 
     outcome_path = outcome_selection_path.resolve()
     if not _is_relative_to(outcome_path, root):
@@ -595,6 +652,44 @@ def score_thin_daily_quality(
         raise ValueError("thin daily outcome selection differs from the sealed blind population")
     outcome_by_case = {case.episode_id: case for case in outcome_selection.cases}
     outcome_selection_ref = _artifact_reference(root, outcome_path)
+    outcome_receipt_path = outcome_path.parent / "outcome_selection_preparation_receipt.json"
+    outcome_source_selection_ref: QualityArtifactReference | None = None
+    outcome_receipt_ref: QualityArtifactReference | None = None
+    if outcome_receipt_path.exists():
+        receipt = _read_json_object(outcome_receipt_path)
+        if (
+            receipt.get("schema_version")
+            != "nslab.thin_daily_outcome_selection_preparation.v1"
+            or receipt.get("all_predictions_sealed") is not True
+            or receipt.get("prediction_artifacts_and_citations_verified") is not True
+            or receipt.get("outcome_ledger_contents_opened") is not False
+        ):
+            raise ValueError("thin daily outcome preparation receipt is invalid")
+        if (
+            QualityArtifactReference.model_validate(
+                receipt.get("paired_prediction_manifest")
+            )
+            != _artifact_reference(root, paired_path)
+            or QualityArtifactReference.model_validate(
+                receipt.get("blind_selection")
+            )
+            != paired.blind_selection
+            or QualityArtifactReference.model_validate(
+                receipt.get("runtime_outcome_selection")
+            )
+            != outcome_selection_ref
+        ):
+            raise ValueError("thin daily outcome preparation receipt binding drifted")
+        outcome_source_selection_ref = QualityArtifactReference.model_validate(
+            receipt.get("outcome_source_selection")
+        )
+        source_selection_path = _resolve_artifact_path(
+            root,
+            outcome_source_selection_ref,
+        )
+        if file_sha256(source_selection_path) != outcome_source_selection_ref.sha256:
+            raise ValueError("thin daily outcome source selection changed after preparation")
+        outcome_receipt_ref = _artifact_reference(root, outcome_receipt_path)
 
     per_case: list[dict[str, Any]] = []
     for case_id in paired.expected_case_ids:
@@ -689,6 +784,16 @@ def score_thin_daily_quality(
         },
         "outcome_selection_id": outcome_selection.selection_id,
         "outcome_selection_sha256": outcome_selection_ref.sha256,
+        "outcome_preparation_receipt": (
+            outcome_receipt_ref.model_dump(mode="json")
+            if outcome_receipt_ref is not None
+            else None
+        ),
+        "outcome_source_selection": (
+            outcome_source_selection_ref.model_dump(mode="json")
+            if outcome_source_selection_ref is not None
+            else None
+        ),
         "split": selection.cases[0].split,
         "case_count": len(selection.cases),
         "arm_count": len(THIN_DAILY_QUALITY_ARMS),
@@ -715,6 +820,64 @@ def score_thin_daily_quality(
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
     markdown_path.write_text(_render_score_markdown(report), encoding="utf-8", newline="\n")
     return ThinDailyQualityScoreResult(report, report_path, markdown_path)
+
+
+def _verified_thin_daily_prediction_closure(
+    root: Path,
+    paired_path: Path,
+) -> tuple[
+    ThinDailyQualityPredictionManifest,
+    BlindRuntimeSelection,
+    Any,
+    dict[tuple[str, Literal["A", "B", "C"]], ThinDailyQualitySeal],
+]:
+    if not _is_relative_to(paired_path, root):
+        raise ValueError("thin daily paired prediction manifest escapes the repository root")
+    paired = ThinDailyQualityPredictionManifest.model_validate(_read_json_object(paired_path))
+    if not paired.all_predictions_sealed or paired.outcome_opened:
+        raise ValueError("thin daily scoring requires complete predictions sealed before outcomes")
+    if paired.expected_arm_ids != ["A", "B", "C"]:
+        raise ValueError("thin daily scoring requires the complete A/B/C arm set")
+    if profile_identity(paired.profile) != ("codex-oauth", "gpt-5.6-sol", "xhigh"):
+        raise ValueError("thin daily quality manifest has an unsupported model identity")
+
+    blind_path = _resolve_artifact_path(root, paired.blind_selection)
+    selection = load_blind_runtime_selection(root, blind_path)
+    if _artifact_reference(root, blind_path) != paired.blind_selection:
+        raise ValueError("thin daily paired manifest blind selection hash drifted")
+    if [case.episode_id for case in selection.cases] != paired.expected_case_ids:
+        raise ValueError("thin daily paired manifest case population differs from BLIND selection")
+    build_source_attestation = _read_json_reference(
+        root,
+        paired.build_only_source_attestation,
+    )
+    _verify_build_only_attestation_payload(build_source_attestation)
+    _validate_quality_cases_against_build_split(
+        selection.cases,
+        split_case_ids=build_source_attestation["split_case_ids"],
+        build_cutoff=datetime.fromisoformat(build_source_attestation["build_cutoff"]),
+    )
+    expected_c_architecture = _thin_daily_c_architecture_sha256(
+        brain_root=build_source_attestation["package_root"],
+        package_manifest_sha256=build_source_attestation["package_manifest_sha256"],
+        build_source_attestation_sha256=build_source_attestation["attestation_sha256"],
+    )
+    if paired.expected_arm_architecture_sha256["C"] != expected_c_architecture:
+        raise ValueError("thin daily C arm is not bound to its BUILD-only source attestation")
+
+    seal_by_key = {(seal.case_id, seal.arm_id): seal for seal in paired.seals}
+    # Validate every prediction-side artifact and citation closure before outcomes.
+    for case in selection.cases:
+        for arm_id in THIN_DAILY_QUALITY_ARMS:
+            seal = seal_by_key[(case.episode_id, arm_id)]
+            _verify_sealed_prediction_artifacts(
+                root,
+                selection_case=case,
+                seal=seal,
+                expected_architecture_sha256=paired.expected_arm_architecture_sha256[arm_id],
+                profile=paired.profile,
+            )
+    return paired, selection, build_source_attestation, seal_by_key
 
 
 def _validate_build_only_v2_package(package_dir: Path) -> BuildOnlyV2SourceAttestation:
@@ -997,6 +1160,8 @@ def _validate_quality_cases_against_build_split(
         if case.split == "POST_CUTOFF":
             if case.episode_id in build_ids | calibration_ids | holdout_ids:
                 raise ValueError("post-cutoff case overlaps the historical evaluation split")
+            if case.trade_date < POST_CUTOFF_MIN_TRADE_DATE:
+                raise ValueError("post-cutoff case is not after 2026-06-23")
             if case.trade_date <= build_cutoff.date():
                 raise ValueError("post-cutoff case is not after the BUILD snapshot cutoff")
             continue
@@ -1151,6 +1316,22 @@ def _write_prediction_manifest(
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_text(canonical_json(manifest.model_dump(mode="json")) + "\n", encoding="utf-8")
     os.replace(temporary, path)
+
+
+def _write_immutable_json(path: Path, payload: dict[str, Any]) -> None:
+    encoded = (canonical_json(payload) + "\n").encode("utf-8")
+    if path.exists():
+        if path.read_bytes() != encoded:
+            raise ValueError(f"immutable thin daily outcome artifact drifted: {path}")
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    try:
+        temporary.write_bytes(encoded)
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
 
 
 def _verify_existing_prediction_seal(

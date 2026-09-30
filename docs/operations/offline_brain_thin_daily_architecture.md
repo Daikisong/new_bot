@@ -138,6 +138,23 @@ python -m news_scalping_lab.cli brain select-offline-evaluation --package <packa
 구현과 첫 전수 계획의 상세 감사 기준은
 `docs/operations/offline_semantic_brain_v2.md`에 기록한다.
 
+## A/B/C Outcome Boundary
+
+Formal thin-daily evaluation prepares `BlindRuntimeSelection` from a source
+selection that contains no `outcome_ledger` fields. A/B/C prediction accepts
+only that blind selection. After all prediction seals and citation artifacts
+verify, `prepare-thin-daily-outcome-selection` may read a separate
+reference-only manifest and write `runtime_outcome_selection.json` plus a
+provenance receipt. It does not read outcome-ledger bytes; scoring revalidates
+the prediction closure before opening them. Use the exact workflow in
+`.agents/skills/news-scalping-lab/SKILL.md`.
+
+The 2026-06-24 POST_CUTOFF candidate now has one sealed blind case with 1,182
+cutoff-safe news rows and zero outcome references. Its D-1 source's latest
+available session is 2026-06-22 (allowed-through 2026-06-23); it must not be
+described as a 2026-06-23 close. This is input preparation only: A/B/C
+prediction, V2 package closure, and outcome scoring are still pending.
+
 ## Activation State
 
 PR-A establishes the product boundary. PR-B implements and fixture-tests the V2

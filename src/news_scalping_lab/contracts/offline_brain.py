@@ -42,6 +42,13 @@ class SemanticMemoryCapsule(StrictModel):
     label_quality_distribution: dict[str, int] = Field(default_factory=dict)
     time_distribution: dict[str, int] = Field(default_factory=dict)
     regime_distribution: dict[str, int] = Field(default_factory=dict)
+    close_return_status_distribution: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Complete counts of source close-return status labels among capsule members; "
+            "database null values use the __NULL__ key."
+        ),
+    )
     event_or_mechanism_summary: str
     economic_transmission: list[str] = Field(default_factory=list)
     market_narrative: list[str] = Field(default_factory=list)
@@ -77,6 +84,10 @@ class SemanticMemoryCapsule(StrictModel):
         }
         if len(member_ids) > self.member_record_count:
             raise ValueError("semantic capsule role IDs exceed its member population")
+        if self.close_return_status_distribution and sum(
+            self.close_return_status_distribution.values()
+        ) != self.member_record_count:
+            raise ValueError("close-return status distribution does not cover capsule members")
         return self
 
 
@@ -279,6 +290,8 @@ class SemanticInfluenceManifest(StrictModel):
     representative_payload_read_root: str
     leaf_coverage_root: str
     reduce_tree_root: str
+    close_return_status_accounted_record_count: int = 0
+    close_return_status_distribution_root: str | None = None
 
     @model_validator(mode="after")
     def validate_semantic_exposure_accounting(self) -> Self:
@@ -296,6 +309,11 @@ class SemanticInfluenceManifest(StrictModel):
             raise ValueError("every representative payload must be fully read")
         if self.representative_payload_truncated_count:
             raise ValueError("representative payload truncation is forbidden")
+        if self.close_return_status_distribution_root is None:
+            if self.close_return_status_accounted_record_count:
+                raise ValueError("close-return status count is missing its commitment root")
+        elif self.close_return_status_accounted_record_count != self.record_count:
+            raise ValueError("close-return status distribution does not cover every record")
         return self
 
 

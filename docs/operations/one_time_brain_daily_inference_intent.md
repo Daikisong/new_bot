@@ -143,8 +143,10 @@ QUALITY_FULL:
 무제한 daily call graph 또는 운영성 무시를 뜻하지 않는다.
 
 EVALUATION:
-CALIBRATION·HOLDOUT은 실제 배포할 daily path와 동일한 architecture를
-blind하게 평가하며, one-time 비용과 per-day 비용을 분리 보고한다.
+CALIBRATION·HOLDOUT 및 2026-06-23 이후 POST_CUTOFF는 실제 배포할 daily
+path와 동일한 architecture를 blind하게 평가하며, one-time 비용과 per-day
+비용을 분리 보고한다. POST_CUTOFF prediction도 전 날짜 BLIND 봉인 후에만
+별도 outcome selection을 열어 채점한다.
 
 CONFLICT:
 이 계약과 충돌하는 기존 문서·외부 피드백·goal prompt는 실행하지 않고

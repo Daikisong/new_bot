@@ -8,7 +8,7 @@ import logging
 import math
 import shutil
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -71,6 +71,7 @@ MAX_LONG_PAYLOAD_BATCH_BYTES = 170_000
 MAX_LONG_PAYLOAD_DIGEST_BUDGET_BYTES = 8_000
 MAX_REDUCE_PROMPT_BYTES = 180_000
 MAX_REDUCE_CHILDREN = 16
+OFFLINE_DUCKDB_MEMORY_LIMIT = "8GB"
 SPLIT_P90_DISTANCE = 0.28
 SPLIT_MAX_DISTANCE = 0.55
 SPLIT_DEPTH_MARGIN = 16
@@ -140,7 +141,8 @@ class _UnitBuild:
     category: str
     primary_cell_id: str
     evidence_polarity: str
-    member_record_ids: tuple[str, ...]
+    # Full membership remains in the assignment ledger; retain only count and root here.
+    member_record_count: int
     outlier_record_ids: tuple[str, ...]
     member_record_root: str
     provenance_root: str
@@ -153,6 +155,16 @@ class _LeafNode:
     category: str
     capsule_ids: tuple[str, ...]
     synthesis: str
+
+
+@dataclass(frozen=True)
+class _PlannedReduceNode:
+    """Lightweight reduce proxy used only by the zero-LLM planner."""
+
+    node_id: str
+    child_node_ids: tuple[str, ...]
+    covered_capsule_ids: tuple[str, ...]
+    payload_bytes: int
 
 
 @dataclass(frozen=True)
@@ -181,16 +193,29 @@ class OfflineSemanticBrainCompiler:
         settings: Settings,
         *,
         llm: LLMProvider | None = None,
+        checkpoint_dir: Path | None = None,
     ) -> None:
         self.settings = settings
         self.root = settings.project_root
+        resolved_checkpoint_dir = None
+        if checkpoint_dir is not None:
+            resolved_checkpoint_dir = settings.path(checkpoint_dir)
+            if not resolved_checkpoint_dir.is_dir():
+                raise FileNotFoundError(
+                    "explicit offline checkpoint directory is missing or not a directory"
+                )
         base_llm = llm or create_llm_provider(settings)
         self.model_config = {
             "provider": str(getattr(base_llm, "provider_name", settings.llm_provider)),
             "model": str(getattr(base_llm, "model", settings.llm.model)),
             "reasoning_effort": str(getattr(base_llm, "reasoning_effort", settings.llm.reasoning_effort)),
         }
-        self.llm = _trace_offline_llm(settings, base_llm, self.model_config)
+        self.llm = _trace_offline_llm(
+            settings,
+            base_llm,
+            self.model_config,
+            checkpoint_dir=resolved_checkpoint_dir,
+        )
         self._logical_llm_call_count = 0
         self._prompt_token_count = 0
         self._reused_capsule_count = 0
@@ -234,6 +259,7 @@ class OfflineSemanticBrainCompiler:
         if database_path.exists():
             database_path.unlink()
         connection = duckdb.connect(str(database_path))
+        _configure_offline_duckdb(connection, temp_directory=work_root / "duckdb_tmp")
         try:
             _initialize_package_database(connection, source=source)
             unit_builds = _build_semantic_assignments(
@@ -241,14 +267,16 @@ class OfflineSemanticBrainCompiler:
                 source=source,
                 progress_path=work_root / "progress.json",
             )
+            semantic_unit_count = len(unit_builds)
             _write_offline_progress(
                 work_root / "progress.json",
                 phase="representative_and_distribution_planning",
                 processed_record_count=source.record_count,
                 total_record_count=source.record_count,
-                semantic_unit_count=len(unit_builds),
+                semantic_unit_count=semantic_unit_count,
             )
             unit_rows = _load_unit_prompt_rows(connection, unit_builds=unit_builds)
+            del unit_builds
             payload_plan = _plan_long_payloads(unit_rows)
             payload_exposure_rows = _representative_payload_exposure_rows(payload_plan)
             leaf_batches = [
@@ -263,15 +291,19 @@ class OfflineSemanticBrainCompiler:
         finally:
             connection.close()
         category_unit_counts: dict[str, int] = defaultdict(int)
-        category_bucket_ids: dict[str, set[str]] = defaultdict(set)
         outlier_unit_count = 0
         for row in unit_rows:
             category = str(row["category"])
             category_unit_counts[category] += 1
-            category_bucket_ids[category].add(sha256_text(str(row["semantic_unit_id"]))[:2])
             outlier_unit_count += int(bool(row["outlier_record_ids"]))
-        estimated_reduce_calls = (
-            sum(_reduce_call_count(len(bucket_ids)) + 1 for bucket_ids in category_bucket_ids.values()) + 1
+        planned_leaf_nodes = _planned_reduce_leaf_nodes(unit_rows)
+        estimated_reduce_calls = _estimate_reduce_review_call_count(planned_leaf_nodes)
+        estimated_leaf_node_count = sum(len(rows) for rows in planned_leaf_nodes.values())
+        guaranteed_minimum_reduce_review_calls = len(category_unit_counts) + 1
+        guaranteed_minimum_total_calls = (
+            payload_plan.long_payload_chunk_map_call_count
+            + len(leaf_batches)
+            + guaranteed_minimum_reduce_review_calls
         )
         plan = {
             "schema_version": "nslab.offline_semantic_brain_plan.v1",
@@ -291,7 +323,7 @@ class OfflineSemanticBrainCompiler:
             "embedding_reused": True,
             "import_reused": True,
             "full_population_embedding_geometry": True,
-            "semantic_unit_count": len(unit_builds),
+            "semantic_unit_count": semantic_unit_count,
             "split_p90_cosine_distance": SPLIT_P90_DISTANCE,
             "split_max_cosine_distance": SPLIT_MAX_DISTANCE,
             "category_semantic_unit_counts": dict(sorted(category_unit_counts.items())),
@@ -317,12 +349,32 @@ class OfflineSemanticBrainCompiler:
             ),
             "rare_outlier_unit_count": outlier_unit_count,
             "leaf_map_call_count": len(leaf_batches),
+            "estimated_reduce_leaf_node_count": estimated_leaf_node_count,
+            "estimated_reduce_leaf_node_count_is_runtime_count": False,
             "estimated_reduce_review_call_count": estimated_reduce_calls,
+            # Planned leaves hash semantic-unit IDs, while runtime hashes
+            # model-derived capsule IDs. Their bucket counts are unrelated, so
+            # this byte-packer simulation is a projection, not a bound.
+            "estimated_reduce_review_call_count_is_lower_bound": False,
+            "estimated_reduce_review_call_count_is_projection": True,
+            "guaranteed_minimum_reduce_review_call_count": (
+                guaranteed_minimum_reduce_review_calls
+            ),
+            "estimated_reduce_prompt_byte_packing_simulated": True,
+            "estimated_reduce_prompt_byte_packing_simulation": (
+                "coverage_only_leaf_proxy.v1"
+            ),
             "estimated_total_logical_llm_call_count": (
                 payload_plan.long_payload_chunk_map_call_count
                 + len(leaf_batches)
                 + estimated_reduce_calls
             ),
+            "estimated_total_logical_llm_call_count_is_lower_bound": False,
+            "estimated_total_logical_llm_call_count_is_projection": True,
+            "guaranteed_minimum_total_logical_llm_call_count": (
+                guaranteed_minimum_total_calls
+            ),
+            "guaranteed_minimum_total_logical_llm_call_count_is_lower_bound": True,
             "first_n_shortcut_used": False,
             "silent_truncation_count": 0,
             "planning_llm_call_count": 0,
@@ -373,6 +425,7 @@ class OfflineSemanticBrainCompiler:
             database_path.unlink()
 
         connection = duckdb.connect(str(database_path))
+        _configure_offline_duckdb(connection, temp_directory=work_root / "duckdb_tmp")
         try:
             _initialize_package_database(connection, source=source)
             unit_builds = _build_semantic_assignments(
@@ -380,14 +433,16 @@ class OfflineSemanticBrainCompiler:
                 source=source,
                 progress_path=work_root / "progress.json",
             )
+            semantic_unit_count = len(unit_builds)
             _write_offline_progress(
                 work_root / "progress.json",
                 phase="representative_and_distribution_build",
                 processed_record_count=source.record_count,
                 total_record_count=source.record_count,
-                semantic_unit_count=len(unit_builds),
+                semantic_unit_count=semantic_unit_count,
             )
             unit_rows = _load_unit_prompt_rows(connection, unit_builds=unit_builds)
+            del unit_builds
             package_payload_plan = _plan_long_payloads(unit_rows)
             self._representative_payload_char_count = (
                 package_payload_plan.representative_payload_char_count
@@ -402,7 +457,16 @@ class OfflineSemanticBrainCompiler:
             self._payload_exposure_rows = _representative_payload_exposure_rows(
                 package_payload_plan
             )
+            # The audit plan retains projected rows and copied long-payload chunks.
+            # Its metrics and exposure ledger are captured, so release those copies
+            # before leaf compilation builds the changed-row plan it actually uses.
+            del package_payload_plan
             capsules, leaf_nodes = await self._compile_leaf_capsules(unit_rows)
+            # Keep outcome labels out of content-addressed LLM prompts while binding
+            # their full-population distribution into the resulting capsules.
+            capsules = _attach_close_return_status_distributions(connection, capsules)
+            # Reduce operates on capsules and verified child IDs, not raw news payloads.
+            del unit_rows
             _write_capsules_to_database(connection, capsules)
             category_roots: dict[str, SemanticReduceNode] = {}
             reduce_nodes: list[SemanticReduceNode] = []
@@ -449,7 +513,7 @@ class OfflineSemanticBrainCompiler:
             influence = _build_influence_manifest(
                 connection,
                 brain_version="PENDING",
-                unit_builds=unit_builds,
+                semantic_unit_count=semantic_unit_count,
                 capsules=capsules,
                 world_root=world_root,
                 representative_payload_char_count=self._representative_payload_char_count,
@@ -542,7 +606,7 @@ class OfflineSemanticBrainCompiler:
             full_population_embedding_geometry=True,
             split_p90_cosine_distance=SPLIT_P90_DISTANCE,
             split_max_cosine_distance=SPLIT_MAX_DISTANCE,
-            semantic_unit_count=len(unit_builds),
+            semantic_unit_count=semantic_unit_count,
             leaf_node_count=len(leaf_nodes),
             reduce_node_count=len(reduce_nodes),
             category_root_count=len(category_roots),
@@ -586,7 +650,7 @@ class OfflineSemanticBrainCompiler:
             created_at=compile_manifest.completed_at,
             build_cutoff=source.build_cutoff,
             record_count=source.record_count,
-            semantic_unit_count=len(unit_builds),
+            semantic_unit_count=semantic_unit_count,
             semantic_capsule_count=len(capsules),
             synthesized_mechanism_claim_count=len(claims),
             population_contribution_record_count=influence.population_contribution_record_count,
@@ -678,11 +742,18 @@ class OfflineSemanticBrainCompiler:
                 changed_rows.append(row)
         changed_payload_plan = _plan_long_payloads(changed_rows)
         changed_rows = await self._compile_long_payload_digests(changed_payload_plan)
-        work: list[tuple[str, list[dict[str, Any]]]] = []
-        for category in sorted({str(row["category"]) for row in changed_rows}):
-            rows = [row for row in changed_rows if row["category"] == category]
-            for batch in _pack_leaf_rows(rows):
-                work.append((category, batch))
+        del changed_payload_plan
+        categories = sorted({str(row["category"]) for row in changed_rows})
+
+        def batches() -> Iterable[tuple[str, list[dict[str, Any]]]]:
+            for category in categories:
+                category_rows = (
+                    row for row in changed_rows if row["category"] == category
+                )
+                for batch in _pack_leaf_rows(category_rows):
+                    yield category, batch
+
+        batch_iterator = iter(batches())
 
         async def compile_batch(
             category: str,
@@ -709,30 +780,32 @@ class OfflineSemanticBrainCompiler:
                 for row in batch
             ]
 
-        queue: asyncio.Queue[tuple[str, list[dict[str, Any]]]] = asyncio.Queue()
-        for item in work:
-            queue.put_nowait(item)
-        compiled_batches: list[list[SemanticMemoryCapsule]] = []
+        worker_count = min(
+            max(1, self.settings.limits.max_concurrency),
+            len(changed_rows),
+        )
 
         async def worker() -> None:
             while True:
                 try:
-                    category, batch = queue.get_nowait()
-                except asyncio.QueueEmpty:
+                    category, batch = next(batch_iterator)
+                except StopIteration:
                     return
-                compiled_batches.append(await compile_batch(category, batch))
-                queue.task_done()
+                compiled = await compile_batch(category, batch)
+                for capsule in compiled:
+                    capsules_by_unit[capsule.semantic_unit_id] = capsule
+                self._recompiled_capsule_count += len(compiled)
+                del batch, compiled
 
-        await asyncio.gather(
-            *(
-                worker()
-                for _ in range(min(max(1, self.settings.limits.max_concurrency), len(work)))
-            )
-        )
-        for compiled in compiled_batches:
-            for capsule in compiled:
-                capsules_by_unit[capsule.semantic_unit_id] = capsule
-                self._recompiled_capsule_count += 1
+        if worker_count:
+            workers = [asyncio.create_task(worker()) for _ in range(worker_count)]
+            try:
+                await asyncio.gather(*workers)
+            except BaseException:
+                for task in workers:
+                    task.cancel()
+                await asyncio.gather(*workers, return_exceptions=True)
+                raise
         expected_units = {str(row["semantic_unit_id"]) for row in unit_rows}
         if set(capsules_by_unit) != expected_units:
             raise ValueError("offline semantic capsule compile omitted units")
@@ -743,10 +816,9 @@ class OfflineSemanticBrainCompiler:
         self,
         payload_plan: _LongPayloadPlan,
     ) -> list[dict[str, Any]]:
-        batches = list(_pack_long_payload_chunks(payload_plan.chunk_inputs))
-        self._long_payload_chunk_map_call_count += len(batches)
-        if not batches:
+        if not payload_plan.chunk_inputs:
             return payload_plan.projected_rows
+        batch_iterator = iter(_pack_long_payload_chunks(payload_plan.chunk_inputs))
 
         async def compile_batch(batch: list[dict[str, Any]]) -> list[LongPayloadChunkDigest]:
             chunk_ids = [str(row["chunk_id"]) for row in batch]
@@ -772,44 +844,54 @@ class OfflineSemanticBrainCompiler:
                 for digest in result.digests
             ]
 
-        queue: asyncio.Queue[list[dict[str, Any]]] = asyncio.Queue()
-        for batch in batches:
-            queue.put_nowait(batch)
-        digests: list[LongPayloadChunkDigest] = []
+        digests_by_id: dict[str, LongPayloadChunkDigest] = {}
 
         async def worker() -> None:
             while True:
                 try:
-                    batch = queue.get_nowait()
-                except asyncio.QueueEmpty:
+                    batch = next(batch_iterator)
+                except StopIteration:
                     return
-                digests.extend(await compile_batch(batch))
-                queue.task_done()
+                self._long_payload_chunk_map_call_count += 1
+                compiled = await compile_batch(batch)
+                for digest in compiled:
+                    if digest.chunk_id in digests_by_id:
+                        raise ValueError("long payload digest stage duplicated a chunk")
+                    digests_by_id[digest.chunk_id] = digest
+                del batch, compiled
 
-        await asyncio.gather(
-            *(
-                worker()
-                for _ in range(min(max(1, self.settings.limits.max_concurrency), len(batches)))
-            )
+        worker_count = min(
+            max(1, self.settings.limits.max_concurrency),
+            len(payload_plan.chunk_inputs),
         )
-        by_id = {row.chunk_id: row for row in digests}
-        expected_ids = {str(row["chunk_id"]) for row in payload_plan.chunk_inputs}
-        if set(by_id) != expected_ids:
+        workers = [asyncio.create_task(worker()) for _ in range(worker_count)]
+        try:
+            await asyncio.gather(*workers)
+        except BaseException:
+            for task in workers:
+                task.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
+            raise
+        if len(digests_by_id) != len(payload_plan.chunk_inputs):
             raise ValueError("long payload digest stage omitted or added chunks")
-        output: list[dict[str, Any]] = []
+
         for row in payload_plan.projected_rows:
-            representatives: list[dict[str, Any]] = []
             for representative in row["representatives"]:
-                projected = dict(representative)
-                placeholders = projected.get("full_payload_chunk_digests")
+                placeholders = representative.get("full_payload_chunk_digests")
                 if isinstance(placeholders, list):
-                    projected["full_payload_chunk_digests"] = [
-                        by_id[str(value["chunk_id"])].model_dump(mode="json")
-                        for value in placeholders
-                    ]
-                representatives.append(projected)
-            output.append({**row, "representatives": representatives})
-        return output
+                    materialized: list[dict[str, Any]] = []
+                    for value in placeholders:
+                        chunk_id = str(value["chunk_id"])
+                        digest = digests_by_id.pop(chunk_id, None)
+                        if digest is None:
+                            raise ValueError(
+                                "long payload digest stage omitted a representative chunk"
+                            )
+                        materialized.append(digest.model_dump(mode="json"))
+                    representative["full_payload_chunk_digests"] = materialized
+        if digests_by_id:
+            raise ValueError("long payload digest stage produced unused chunks")
+        return payload_plan.projected_rows
 
     async def _reduce_category(
         self,
@@ -1129,6 +1211,7 @@ class BrainPackageDailyContextProvider:
                 "label_quality_distribution": row.label_quality_distribution,
                 "time_distribution": row.time_distribution,
                 "regime_distribution": row.regime_distribution,
+                "close_return_status_distribution": row.close_return_status_distribution,
             }
             for row in selected_capsules
         ]
@@ -1400,6 +1483,11 @@ def _build_semantic_assignments(
 ) -> list[_UnitBuild]:
     category_case = _category_case_sql()
     source_connection = duckdb.connect(str(source.database_path), read_only=True)
+    _configure_offline_duckdb(
+        source_connection,
+        temp_directory=(progress_path.parent if progress_path is not None else source.project_root)
+        / "duckdb_source_tmp",
+    )
     cursor = source_connection.execute(
         f"""
         SELECT
@@ -1514,6 +1602,19 @@ def _build_semantic_assignments(
     return builds
 
 
+def _configure_offline_duckdb(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    temp_directory: Path,
+) -> None:
+    """Bound DuckDB native memory and spill large planning joins to disk."""
+
+    temp_directory.mkdir(parents=True, exist_ok=True)
+    escaped_directory = str(temp_directory.resolve()).replace("'", "''")
+    connection.execute(f"PRAGMA memory_limit='{OFFLINE_DUCKDB_MEMORY_LIMIT}'")
+    connection.execute(f"PRAGMA temp_directory='{escaped_directory}'")
+
+
 def _split_semantic_stratum(
     *,
     category: str,
@@ -1582,7 +1683,7 @@ def _split_semantic_stratum(
                 category=category,
                 primary_cell_id=primary_cell_id,
                 evidence_polarity=evidence_polarity,
-                member_record_ids=member_ids,
+                member_record_count=len(member_ids),
                 outlier_record_ids=outlier_ids,
                 member_record_root=sha256_text(canonical_json(member_ids)),
                 provenance_root=sha256_text(canonical_json(source_pairs)),
@@ -1643,9 +1744,18 @@ def _recursive_semantic_clusters(
         left_mask[order[len(order) // 2 :]] = True
         if bool(np.all(left_mask)) or bool(np.all(~left_mask)):
             raise ValueError("semantic stratum could not be split without truncation")
+    # Advanced indexing makes ``vectors`` a fresh dense array.  A large
+    # population-derived stratum can recurse many levels deep, so retaining
+    # every parent's temporary matrix while descending causes avoidable native
+    # memory growth.  Materialize child indexes first, then release the parent
+    # temporaries before entering the recursive calls; the geometry and split
+    # predicate remain unchanged.
+    left_indexes = indexes[left_mask]
+    right_indexes = indexes[~left_mask]
+    del vectors, centroid, distances, left_seed, right_seed, left_mask
     return [
-        *_recursive_semantic_clusters(matrix, indexes[left_mask], depth=depth + 1),
-        *_recursive_semantic_clusters(matrix, indexes[~left_mask], depth=depth + 1),
+        *_recursive_semantic_clusters(matrix, left_indexes, depth=depth + 1),
+        *_recursive_semantic_clusters(matrix, right_indexes, depth=depth + 1),
     ]
 
 
@@ -1703,7 +1813,7 @@ def _load_unit_prompt_rows(
                 "category": build.category,
                 "primary_cell_id": build.primary_cell_id,
                 "evidence_polarity": build.evidence_polarity,
-                "member_record_count": len(build.member_record_ids),
+                "member_record_count": build.member_record_count,
                 "member_independent_unit_count": stats["independent_unit_count"],
                 "member_record_root": build.member_record_root,
                 "provenance_root": build.provenance_root,
@@ -1729,7 +1839,7 @@ def _plan_long_payloads(unit_rows: list[dict[str, Any]]) -> _LongPayloadPlan:
     oversized_units = 0
     chunked_records = 0
     for row in unit_rows:
-        representatives = [dict(value) for value in row["representatives"]]
+        representatives = row["representatives"]
         representative_count += len(representatives)
         payload_chars += sum(len(str(value["document"])) for value in representatives)
         if len(canonical_json(row).encode("utf-8")) <= MAX_LEAF_PROMPT_BYTES:
@@ -1737,6 +1847,7 @@ def _plan_long_payloads(unit_rows: list[dict[str, Any]]) -> _LongPayloadPlan:
             continue
         oversized_units += 1
         chunked_records += len(representatives)
+        representatives = [dict(value) for value in representatives]
         projected_representatives: list[dict[str, Any]] = []
         for representative in representatives:
             document = str(representative.pop("document"))
@@ -1791,7 +1902,7 @@ def _plan_long_payloads(unit_rows: list[dict[str, Any]]) -> _LongPayloadPlan:
                 "payload_projection": "FULL_CHUNK_MAP_THEN_LEAF",
             }
         )
-    chunk_batches = list(_pack_long_payload_chunks(chunk_inputs))
+    chunk_batch_count = sum(1 for _ in _pack_long_payload_chunks(chunk_inputs))
     return _LongPayloadPlan(
         projected_rows=projected_rows,
         chunk_inputs=chunk_inputs,
@@ -1800,7 +1911,7 @@ def _plan_long_payloads(unit_rows: list[dict[str, Any]]) -> _LongPayloadPlan:
         oversized_unit_count=oversized_units,
         chunked_representative_record_count=chunked_records,
         long_payload_chunk_count=len(chunk_inputs),
-        long_payload_chunk_map_call_count=len(chunk_batches),
+        long_payload_chunk_map_call_count=chunk_batch_count,
     )
 
 
@@ -1999,7 +2110,48 @@ def _unit_distributions(
     return dict(output)
 
 
-def _pack_leaf_rows(rows: list[dict[str, Any]]) -> Iterable[list[dict[str, Any]]]:
+def _attach_close_return_status_distributions(
+    connection: duckdb.DuckDBPyConnection,
+    capsules: list[SemanticMemoryCapsule],
+) -> list[SemanticMemoryCapsule]:
+    distributions: dict[str, dict[str, int]] = defaultdict(dict)
+    cursor = connection.execute(
+        """
+        SELECT a.primary_semantic_unit_id,
+               COALESCE(CAST(r.close_return_status AS VARCHAR), '__NULL__'),
+               count(*)
+        FROM semantic_unit_assignments a
+        JOIN source_memory.records r USING (record_id)
+        GROUP BY 1, 2
+        ORDER BY 1, 2
+        """
+    )
+    while True:
+        rows = cursor.fetchmany(4096)
+        if not rows:
+            break
+        for semantic_unit_id, status, count in rows:
+            distributions[str(semantic_unit_id)][str(status)] = int(count)
+
+    for capsule in capsules:
+        status_distribution = distributions.pop(capsule.semantic_unit_id, None)
+        if not status_distribution:
+            raise ValueError(
+                "semantic unit is missing its close-return status distribution: "
+                f"{capsule.semantic_unit_id}"
+            )
+        if sum(status_distribution.values()) != capsule.member_record_count:
+            raise ValueError(
+                "close-return status population differs from capsule membership: "
+                f"{capsule.semantic_unit_id}"
+            )
+        capsule.close_return_status_distribution = status_distribution
+    if distributions:
+        raise ValueError("close-return status distribution contains unknown semantic units")
+    return capsules
+
+
+def _pack_leaf_rows(rows: Iterable[dict[str, Any]]) -> Iterable[list[dict[str, Any]]]:
     current: list[dict[str, Any]] = []
     current_bytes = 0
     for row in rows:
@@ -2068,21 +2220,212 @@ def _capsule_leaf_nodes(
     return nodes
 
 
+def _planned_reduce_leaf_nodes(
+    unit_rows: Sequence[dict[str, Any]],
+) -> dict[str, list[_PlannedReduceNode]]:
+    """Build deterministic, coverage-only leaf proxies for the zero-LLM plan.
+
+    Runtime leaf buckets use the final capsule IDs, which include model-authored
+    capsule prose and therefore do not exist during planning. Semantic-unit IDs
+    provide deterministic proxy buckets without making a model call, but their
+    bucket population is not a bound on model-derived capsule-ID buckets. The
+    proxies retain every planned capsule ID and omit generated prose.
+    """
+
+    buckets: dict[tuple[str, str], list[str]] = defaultdict(list)
+    for row in unit_rows:
+        category = str(row["category"])
+        semantic_unit_id = str(row["semantic_unit_id"])
+        bucket = sha256_text(semantic_unit_id)[:2]
+        buckets[(category, bucket)].append(semantic_unit_id)
+
+    output: dict[str, list[_PlannedReduceNode]] = defaultdict(list)
+    for (category, bucket), semantic_unit_ids in sorted(buckets.items()):
+        covered = sorted(set(semantic_unit_ids))
+        node_id = stable_id(
+            "PLANNED-LEAF-BUCKET",
+            category,
+            bucket,
+            covered,
+            length=20,
+        )
+        output[category].append(
+            _PlannedReduceNode(
+                node_id=node_id,
+                child_node_ids=(),
+                covered_capsule_ids=tuple(covered),
+                payload_bytes=_planned_reduce_payload_bytes(
+                    node_id=node_id,
+                    child_node_ids=(),
+                    covered_capsule_ids=covered,
+                ),
+            )
+        )
+    return dict(sorted(output.items()))
+
+
+def _estimate_reduce_review_call_count(
+    leaves_by_category: Mapping[
+        str, Sequence[SemanticReduceNode | _PlannedReduceNode]
+    ],
+) -> int:
+    """Count reduce/review/root calls using the runtime byte-aware packer.
+
+    The next-level proxies preserve child identity and covered capsule IDs but
+    leave generated prose empty. This makes the projection deterministic while
+    exercising the exact `_pack_reduce_nodes` byte and child limits for proxy
+    inputs; it may under- or overestimate runtime. One category review is added
+    per non-empty category, followed by the single world root call.
+    """
+
+    calls = 0
+    for category, leaves in sorted(leaves_by_category.items()):
+        current = [
+            row
+            if isinstance(row, _PlannedReduceNode)
+            else _planned_reduce_node_from_model(row)
+            for row in leaves
+        ]
+        level = 0
+        while len(current) > 1:
+            groups = list(_pack_planned_reduce_nodes(current))
+            calls += len(groups)
+            next_level = [
+                _planned_reduce_node(
+                    category=category,
+                    level=level,
+                    children=group,
+                )
+                for group in groups
+            ]
+            # A coverage-only proxy can stay over the byte budget forever when
+            # it has multiple oversized children. Real model prose may shrink
+            # at the next level, so stop this proxy simulation rather than
+            # claiming an infinite tree or burning memory.
+            if len(next_level) >= len(current):
+                break
+            current = next_level
+            level += 1
+        if current:
+            calls += 1
+    # `_reduce_world` always emits one root request for the category roots.
+    return calls + 1
+
+
+def _planned_reduce_node(
+    *,
+    category: str,
+    level: int,
+    children: Sequence[_PlannedReduceNode],
+) -> _PlannedReduceNode:
+    child_node_ids = tuple(row.node_id for row in children)
+    covered = tuple(
+        _unique(
+            capsule_id
+            for row in children
+            for capsule_id in row.covered_capsule_ids
+        )
+    )
+    node_id = stable_id(
+        "PLANNED-REDUCE",
+        category,
+        level,
+        child_node_ids,
+        length=20,
+    )
+    return _PlannedReduceNode(
+        node_id=node_id,
+        child_node_ids=child_node_ids,
+        covered_capsule_ids=covered,
+        payload_bytes=_planned_reduce_payload_bytes(
+            node_id=node_id,
+            child_node_ids=child_node_ids,
+            covered_capsule_ids=covered,
+        ),
+    )
+
+
+def _planned_reduce_node_from_model(node: SemanticReduceNode) -> _PlannedReduceNode:
+    return _PlannedReduceNode(
+        node_id=node.node_id,
+        child_node_ids=tuple(node.child_node_ids),
+        covered_capsule_ids=tuple(node.covered_capsule_ids),
+        payload_bytes=len(
+            canonical_json(node.model_dump(mode="json")).encode("utf-8")
+        ),
+    )
+
+
+def _planned_reduce_payload_bytes(
+    *,
+    node_id: str,
+    child_node_ids: Sequence[str],
+    covered_capsule_ids: Sequence[str],
+) -> int:
+    """Serialize the same empty-prose SemanticReduceNode shape once."""
+
+    return len(
+        canonical_json(
+            {
+                "boundary_conditions": [],
+                "child_node_ids": list(child_node_ids),
+                "claims": [],
+                "contradictions": [],
+                "covered_capsule_ids": list(covered_capsule_ids),
+                "failure_modes": [],
+                "mechanisms": [],
+                "node_id": node_id,
+                "schema_version": "nslab.semantic_reduce_node.v1",
+                "synthesis": "",
+                "conditions": [],
+            }
+        ).encode("utf-8")
+    )
+
+
+def _pack_planned_reduce_nodes(
+    nodes: Sequence[_PlannedReduceNode],
+) -> Iterable[list[_PlannedReduceNode]]:
+    """Byte-aware packer equivalent using cached proxy payload sizes."""
+
+    current: list[_PlannedReduceNode] = []
+    current_bytes = 2  # `[]` in canonical JSON
+    for node in nodes:
+        candidate_bytes = current_bytes + node.payload_bytes + (1 if current else 0)
+        if current and (
+            len(current) + 1 > MAX_REDUCE_CHILDREN
+            or candidate_bytes > MAX_REDUCE_PROMPT_BYTES
+        ):
+            yield current
+            current = [node]
+            current_bytes = 2 + node.payload_bytes
+        else:
+            current.append(node)
+            current_bytes = candidate_bytes
+    if current:
+        yield current
+
+
 def _pack_reduce_nodes(
     nodes: list[SemanticReduceNode],
 ) -> Iterable[list[SemanticReduceNode]]:
     current: list[SemanticReduceNode] = []
+    current_bytes = 2  # `[]` in canonical JSON
     for node in nodes:
-        candidate = [*current, node]
-        payload = [row.model_dump(mode="json") for row in candidate]
+        node_bytes = len(
+            canonical_json(node.model_dump(mode="json")).encode("utf-8")
+        )
+        candidate_bytes = current_bytes + node_bytes + (1 if current else 0)
         if current and (
-            len(candidate) > MAX_REDUCE_CHILDREN
-            or len(canonical_json(payload).encode("utf-8")) > MAX_REDUCE_PROMPT_BYTES
+            len(current) + 1 > MAX_REDUCE_CHILDREN
+            or candidate_bytes > MAX_REDUCE_PROMPT_BYTES
         ):
             yield current
             current = [node]
+            current_bytes = 2 + node_bytes
         else:
-            current = candidate
+            current.append(node)
+            current_bytes = candidate_bytes
     if current:
         yield current
 
@@ -2458,7 +2801,7 @@ def _build_influence_manifest(
     connection: duckdb.DuckDBPyConnection,
     *,
     brain_version: str,
-    unit_builds: list[_UnitBuild],
+    semantic_unit_count: int,
     capsules: list[SemanticMemoryCapsule],
     world_root: SemanticReduceNode,
     representative_payload_char_count: int,
@@ -2499,6 +2842,14 @@ def _build_influence_manifest(
         (row.semantic_unit_id, witness.record_id) for row in capsules for witness in row.representative_exact_witnesses
     )
     representative_record_count = len({record_id for _, record_id in representative_pairs})
+    status_distribution_rows = sorted(
+        (row.semantic_unit_id, status, count)
+        for row in capsules
+        for status, count in row.close_return_status_distribution.items()
+    )
+    close_return_status_accounted_record_count = sum(
+        count for _, _, count in status_distribution_rows
+    )
     return SemanticInfluenceManifest(
         brain_version=brain_version,
         record_count=int(record_count),
@@ -2506,7 +2857,7 @@ def _build_influence_manifest(
         distinct_primary_assigned_record_count=int(distinct_count),
         unassigned_record_count=0,
         duplicate_primary_assignment_count=duplicate_count,
-        semantic_unit_count=len(unit_builds),
+        semantic_unit_count=semantic_unit_count,
         rare_outlier_unit_count=len(outlier_unit_ids),
         rare_outlier_represented_unit_count=len(outlier_unit_ids.intersection(capsule_units)),
         unrepresented_reasoning_unit_count=len(reasoning_units - capsule_units),
@@ -2531,6 +2882,12 @@ def _build_influence_manifest(
         representative_payload_read_root=representative_payload_read_root,
         leaf_coverage_root=sha256_text(canonical_json(sorted(capsule_units))),
         reduce_tree_root=sha256_text(canonical_json(sorted(world_root.covered_capsule_ids))),
+        close_return_status_accounted_record_count=(
+            close_return_status_accounted_record_count
+        ),
+        close_return_status_distribution_root=sha256_text(
+            canonical_json(status_distribution_rows)
+        ),
     )
 
 
@@ -2620,6 +2977,7 @@ def _write_population_cube(
                 "label_quality_distribution": row.label_quality_distribution,
                 "time_distribution": row.time_distribution,
                 "regime_distribution": row.regime_distribution,
+                "close_return_status_distribution": row.close_return_status_distribution,
             }
             for row in capsules
         ],
@@ -2973,12 +3331,17 @@ def _trace_offline_llm(
     settings: Settings,
     provider: LLMProvider,
     model_config: dict[str, Any],
+    *,
+    checkpoint_dir: Path | None = None,
 ) -> LLMProvider:
     if isinstance(provider, TracingLLMProvider):
+        if checkpoint_dir is not None and provider.checkpoint_dir.resolve() != checkpoint_dir.resolve():
+            raise ValueError("wrapped LLM provider uses a different checkpoint directory")
         return provider
     return TracingLLMProvider(
         provider,
         trace_dir=settings.path(settings.output_dirs.traces),
+        checkpoint_dir=checkpoint_dir,
         model_config={**model_config, "compiler_version": OFFLINE_COMPILER_VERSION},
         default_metadata={"compiler_version": OFFLINE_COMPILER_VERSION},
         max_retries=settings.llm.max_retries,

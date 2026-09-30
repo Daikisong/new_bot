@@ -91,6 +91,7 @@ from news_scalping_lab.utils import (
 )
 
 QUALITY_RUNTIME_SELECTION_VERSION = "nslab.quality_runtime_selection.v3"
+POST_CUTOFF_MIN_TRADE_DATE = date(2026, 6, 24)
 BLIND_INPUT_CANONICALIZATION_VERSION = "quality_blind_news_csv.v2"
 D_MINUS_ONE_CANONICALIZATION_VERSION = "quality_sealed_d_minus_one.v1"
 BLIND_INPUT_ROOT = Path(
@@ -141,6 +142,12 @@ class QualityRuntimeSelectionResult:
 
 
 @dataclass(frozen=True)
+class QualityBlindRuntimeSelectionResult:
+    blind_selection: BlindRuntimeSelection
+    blind_selection_path: Path
+
+
+@dataclass(frozen=True)
 class BlindCaseNewsInput:
     news_csv_path: Path
     news_sha256: str
@@ -157,7 +164,7 @@ class BlindCaseNewsInput:
 class _PreparedQualityCase:
     episode_id: str
     trade_date: date
-    split: Literal["CALIBRATION", "HOLDOUT"]
+    split: Literal["CALIBRATION", "HOLDOUT", "POST_CUTOFF"]
     cutoff_at: datetime
     cutoff_derivation: Literal[
         "NORMALIZED_INDEX",
@@ -165,7 +172,7 @@ class _PreparedQualityCase:
     ]
     normalized_index: QualityArtifactReference
     source_ledger: QualityArtifactReference
-    outcome_ledger: QualityArtifactReference
+    outcome_ledger: QualityArtifactReference | None
     source_ledger_rows: tuple[dict[str, Any], ...]
     cutoff_safe_news_row_count: int
 
@@ -174,15 +181,96 @@ def prepare_quality_runtime_selection(
     root: Path,
     *,
     source_selection_path: Path,
-    split: Literal["CALIBRATION", "HOLDOUT"],
+    split: Literal["CALIBRATION", "HOLDOUT", "POST_CUTOFF"],
     scope: QualitySelectionScope,
     price_source: BlindSnapshotUniversePriceSource,
 ) -> QualityRuntimeSelectionResult:
     """Project source cases into physically separate blind and outcome manifests."""
 
     root = root.resolve()
+    blind, blind_path, selected_prepared = _prepare_quality_blind_selection(
+        root,
+        source_selection_path=source_selection_path,
+        split=split,
+        scope=scope,
+        price_source=price_source,
+        require_outcome_references=True,
+    )
+    outcome_cases = [
+        RuntimeOutcomeCase(
+            episode_id=case.episode_id,
+            trade_date=case.trade_date,
+            split=case.split,
+            outcome_ledger=case.outcome_ledger,
+        )
+        for case in selected_prepared
+        if case.outcome_ledger is not None
+    ]
+    if len(outcome_cases) != len(selected_prepared):
+        raise ValueError("quality runtime source case omitted its outcome reference")
+    blind_sha256 = file_sha256(blind_path)
+    outcome = RuntimeOutcomeSelection(
+        selection_id=blind.selection_id,
+        blind_selection_sha256=blind_sha256,
+        cases=outcome_cases,
+    )
+    output_dir = blind_path.parent
+    outcome_path = output_dir / "runtime_outcome_selection.json"
+    _write_immutable_bytes(
+        outcome_path,
+        _pretty_json_bytes(outcome.model_dump(mode="json")),
+    )
+    _verify_no_forbidden_prediction_keys(read_json(blind_path))
+    return QualityRuntimeSelectionResult(
+        blind_selection=blind,
+        blind_selection_path=blind_path,
+        outcome_selection=outcome,
+        outcome_selection_path=outcome_path,
+    )
+
+
+def prepare_quality_blind_runtime_selection(
+    root: Path,
+    *,
+    source_selection_path: Path,
+    split: Literal["CALIBRATION", "HOLDOUT", "POST_CUTOFF"],
+    scope: QualitySelectionScope,
+    price_source: BlindSnapshotUniversePriceSource,
+) -> QualityBlindRuntimeSelectionResult:
+    """Seal cutoff-safe inputs from a source selection that contains no outcomes."""
+
+    blind, blind_path, _selected_prepared = _prepare_quality_blind_selection(
+        root.resolve(),
+        source_selection_path=source_selection_path,
+        split=split,
+        scope=scope,
+        price_source=price_source,
+        require_outcome_references=False,
+    )
+    return QualityBlindRuntimeSelectionResult(
+        blind_selection=blind,
+        blind_selection_path=blind_path,
+    )
+
+
+def _prepare_quality_blind_selection(
+    root: Path,
+    *,
+    source_selection_path: Path,
+    split: Literal["CALIBRATION", "HOLDOUT", "POST_CUTOFF"],
+    scope: QualitySelectionScope,
+    price_source: BlindSnapshotUniversePriceSource,
+    require_outcome_references: bool,
+) -> tuple[BlindRuntimeSelection, Path, list[_PreparedQualityCase]]:
     source_selection_path = source_selection_path.resolve()
     source = _read_source_selection(source_selection_path)
+    if not require_outcome_references and any(
+        isinstance(row, dict) and "outcome_ledger" in row
+        for row in source["cases"]
+    ):
+        raise ValueError(
+            "blind-only source selection must omit every outcome_ledger reference"
+        )
     source_cases = [
         row
         for row in source["cases"]
@@ -192,7 +280,13 @@ def prepare_quality_runtime_selection(
         raise ValueError(f"quality runtime source selection has no {split} cases")
 
     prepared = [
-        _prepare_source_case(root, row=row, split=split) for row in source_cases
+        _prepare_source_case(
+            root,
+            row=row,
+            split=split,
+            require_outcome_reference=require_outcome_references,
+        )
+        for row in source_cases
     ]
     ordered = sorted(
         prepared,
@@ -203,19 +297,11 @@ def prepare_quality_runtime_selection(
         ),
     )
     selected_prepared = _select_scope(ordered, scope=scope)
-    selected = [
-        (
-            _seal_blind_case_input(
-                root,
-                prepared=case,
-                price_source=price_source,
-            ),
-            RuntimeOutcomeCase(
-                episode_id=case.episode_id,
-                trade_date=case.trade_date,
-                split=case.split,
-                outcome_ledger=case.outcome_ledger,
-            ),
+    sealed_cases = [
+        _seal_blind_case_input(
+            root,
+            prepared=case,
+            price_source=price_source,
         )
         for case in selected_prepared
     ]
@@ -225,7 +311,7 @@ def prepare_quality_runtime_selection(
         "source_selection_sha256": source_sha256,
         "split": split,
         "scope": scope,
-        "cases": [case.model_dump(mode="json") for case, _outcome in selected],
+        "cases": [case.model_dump(mode="json") for case in sealed_cases],
     }
     selection_id = stable_id(
         "QSEL",
@@ -240,7 +326,7 @@ def prepare_quality_runtime_selection(
             if scope == "THREE_CASE"
             else "ALL_SOURCE_SPLIT_CASES"
         ),
-        cases=[case for case, _outcome in selected],
+        cases=sealed_cases,
     )
     output_dir = (
         root
@@ -250,29 +336,13 @@ def prepare_quality_runtime_selection(
         / "selections"
         / selection_id
     )
-    blind_path = output_dir / "blind_runtime_selection.json"
+    blind_path = output_dir / BLIND_SELECTION_FILENAME
     _write_immutable_bytes(
         blind_path,
         _pretty_json_bytes(blind.model_dump(mode="json")),
     )
-    blind_sha256 = file_sha256(blind_path)
-    outcome = RuntimeOutcomeSelection(
-        selection_id=selection_id,
-        blind_selection_sha256=blind_sha256,
-        cases=[outcome for _case, outcome in selected],
-    )
-    outcome_path = output_dir / "runtime_outcome_selection.json"
-    _write_immutable_bytes(
-        outcome_path,
-        _pretty_json_bytes(outcome.model_dump(mode="json")),
-    )
     _verify_no_forbidden_prediction_keys(read_json(blind_path))
-    return QualityRuntimeSelectionResult(
-        blind_selection=blind,
-        blind_selection_path=blind_path,
-        outcome_selection=outcome,
-        outcome_selection_path=outcome_path,
-    )
+    return blind, blind_path, selected_prepared
 
 
 def load_blind_runtime_selection(
@@ -298,8 +368,18 @@ def _validate_blind_runtime_selection_payload(
     }
     scope = scope_by_policy.get(selection.selection_policy)
     splits = {case.split for case in selection.cases}
-    if scope is None or not splits.issubset({"CALIBRATION", "HOLDOUT"}) or len(splits) != 1:
+    if (
+        scope is None
+        or not splits.issubset({"CALIBRATION", "HOLDOUT", "POST_CUTOFF"})
+        or len(splits) != 1
+    ):
         raise ValueError("blind runtime selection policy identity is invalid")
+    if any(
+        case.split == "POST_CUTOFF"
+        and case.trade_date < POST_CUTOFF_MIN_TRADE_DATE
+        for case in selection.cases
+    ):
+        raise ValueError("post-cutoff quality cases must be dated after 2026-06-23")
     expected_selection_id = stable_id(
         "QSEL",
         canonical_json(
@@ -476,7 +556,8 @@ def _prepare_source_case(
     root: Path,
     *,
     row: dict[str, Any],
-    split: Literal["CALIBRATION", "HOLDOUT"],
+    split: Literal["CALIBRATION", "HOLDOUT", "POST_CUTOFF"],
+    require_outcome_reference: bool,
 ) -> _PreparedQualityCase:
     episode_id = row.get("episode_id")
     trade_date = row.get("trade_date")
@@ -484,7 +565,11 @@ def _prepare_source_case(
         raise ValueError("quality runtime source case has no episode ID")
     normalized_index = _reference(row.get("normalized_index"))
     source_ledger = _reference(row.get("source_ledger"))
-    outcome_ledger = _reference(row.get("outcome_ledger"))
+    outcome_ledger = (
+        _reference(row.get("outcome_ledger"))
+        if require_outcome_reference
+        else None
+    )
     normalized_path = _resolve_reference(root, normalized_index)
     source_path = _resolve_reference(root, source_ledger)
     index = _read_verified_json_reference(normalized_index, normalized_path)
@@ -495,6 +580,10 @@ def _prepare_source_case(
         raise ValueError("quality runtime normalized index identity mismatch")
     cutoff_value = index.get("cutoff_at")
     parsed_trade_date = date.fromisoformat(str(trade_date))
+    if split == "POST_CUTOFF" and parsed_trade_date < POST_CUTOFF_MIN_TRADE_DATE:
+        raise ValueError(
+            "post-cutoff quality cases must be dated after 2026-06-23"
+        )
     if isinstance(cutoff_value, str) and cutoff_value.strip():
         cutoff_at = as_kst(parse_datetime(cutoff_value))
         cutoff_derivation: Literal[

@@ -67,6 +67,62 @@ def test_offline_build_requires_pinned_production_llm_identity(tmp_path: Path) -
     cli_module._require_offline_production_llm_identity(settings)
 
 
+@pytest.mark.parametrize("command", ["build-offline", "update-offline"])
+def test_offline_build_cli_accepts_shared_checkpoint_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+) -> None:
+    checkpoint_dir = tmp_path / "original-worktree" / "runs" / "checkpoints" / "llm"
+    checkpoint_dir.mkdir(parents=True)
+    captured_dirs: list[Path | None] = []
+    settings = Settings(
+        project_root=tmp_path / "new-worktree",
+        llm_provider="codex-oauth",
+        llm=LLMModelSettings(
+            provider="codex-oauth",
+            model="gpt-5.6-sol",
+            reasoning_effort="xhigh",
+        ),
+    )
+
+    class BuildResult:
+        package_manifest = SimpleNamespace(model_dump=lambda **_: {"fixture": True})
+        package_dir = tmp_path / "package"
+        package_manifest_path = package_dir / "brain_package_manifest.json"
+
+    class CapturingCompiler:
+        def __init__(
+            self,
+            compiler_settings: Settings,
+            *,
+            checkpoint_dir: Path | None = None,
+        ) -> None:
+            assert compiler_settings is settings
+            captured_dirs.append(checkpoint_dir)
+
+        async def build(self, **_: Any) -> BuildResult:
+            return BuildResult()
+
+    monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
+    monkeypatch.setattr(cli_module, "OfflineSemanticBrainCompiler", CapturingCompiler)
+
+    args = [
+        "brain",
+        command,
+        "--source-project",
+        str(tmp_path / "source"),
+        "--checkpoint-dir",
+        str(checkpoint_dir),
+    ]
+    if command == "update-offline":
+        args.extend(["--previous-package", str(tmp_path / "previous-package")])
+    result = CliRunner().invoke(app, args)
+
+    assert result.exit_code == 0, result.output
+    assert captured_dirs == [checkpoint_dir]
+
+
 def _cli_brain_record(record_id: str = "BRAIN-CLI") -> BrainRecordEnvelope:
     available_from = datetime(2030, 1, 11, 0, 0, 0, tzinfo=KST)
     payload = {

@@ -9,6 +9,23 @@
       "title": "Chunked Representative Record Count",
       "type": "integer"
     },
+    "close_return_status_accounted_record_count": {
+      "default": 0,
+      "title": "Close Return Status Accounted Record Count",
+      "type": "integer"
+    },
+    "close_return_status_distribution_root": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Close Return Status Distribution Root"
+    },
     "distinct_primary_assigned_record_count": {
       "title": "Distinct Primary Assigned Record Count",
       "type": "integer"

@@ -71,6 +71,35 @@ compiler version으로 content-addressed checkpoint를 만든다. 프로세스�
 중단돼도 이미 `ok`로 봉인된 node는 동일 입력에서 다시 호출하지 않는다.
 오류나 미완료 checkpoint를 성공 결과로 취급하지 않는다.
 
+기본 checkpoint 폴더는 현재 project root의 `runs/checkpoints/llm`이다.
+다른 worktree에서 동일 build를 재개할 때는 `build-offline` 또는
+`update-offline`에 `--checkpoint-dir <existing-v5-checkpoint-directory>`를
+지정한다. 저장 위치는 checkpoint ID에 들어가지 않으며, 기존 v5 checkpoint는
+입력 hash, purpose, model metadata가 일치하고 status가 `ok`일 때만 재사용한다.
+공유 폴더를 지정하지 않은 채 worktree 기본 경로에서 재개하면 이전 성공 작업을
+놓쳐 중복 호출할 수 있으므로, 호출 전에 대상 디렉터리와 v5 checkpoint 수를 확인한다.
+명시 경로가 없거나 directory가 아니면 build를 시작하기 전에 실패한다. 새 build는
+`--checkpoint-dir`을 생략해 project 기본 폴더를 사용한다.
+
+현재 중단된 V5 build는 OAuth retry time 이후, build 프로세스가 없고 checkpoint
+폴더를 다시 확인한 다음 다음처럼 재개한다. 이 repository의 `news_bot_next` 설정은
+provider 기본값이 `mock`이고 `.env`가 없으므로, model identity 세 값은 실행 환경에
+고정한다. 인증정보는 공식 Codex CLI OAuth session을 사용하며 파일에서 읽거나 복사하지 않는다.
+이 PC의 editable install은 기본적으로 `news_bot\src`를 가리킨다. 아래 명령은
+`PYTHONPATH`를 현재 PR worktree의 `src`로 먼저 고정하고 import 위치를 출력해 확인한다.
+
+```powershell
+$env:PYTHONPATH = 'C:\Users\eorb9\projects\news_bot_next\src'
+python -c "import news_scalping_lab.cli as c; print(c.__file__)"
+$env:NSLAB_LLM_PROVIDER = 'codex-oauth'
+$env:NSLAB_CODEX_MODEL = 'gpt-5.6-sol'
+$env:NSLAB_CODEX_REASONING_EFFORT = 'xhigh'
+python -m news_scalping_lab.cli brain build-offline `
+  --source-project 'C:\Users\eorb9\projects\news_bot\production\staging\P9IMPORT-3D770A7DD72457C97098\project' `
+  --expected-manifest-sha256 '6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576' `
+  --checkpoint-dir 'C:\Users\eorb9\projects\news_bot\runs\checkpoints\llm'
+```
+
 incremental update는 이전 package의 `semantic_unit_id + member_record_root`가
 같은 capsule과 동일 content-addressed reduce node를 재사용한다. 새 연구로
 영향받은 unit과 그 조상만 다시 합성한다.
@@ -133,8 +162,8 @@ chunked representative records           203
 full payload chunks                      341
 long-payload map calls                    90
 leaf calls                              7,423
-reduce/review calls                       158
-total logical calls                     7,671
+proxy reduce/review estimate               158
+proxy total-call estimate                7,671
 max concurrency                              4
 truncated representative payloads            0
 wall clock                          1,060.07초
@@ -166,11 +195,13 @@ mean call         54.39초
 p90 call          87.13초
 ```
 
-7,671 logical calls와 동시성 4가 이상적으로 유지될 때 단순 예측은 중앙
-25.4시간, 평균 29.0시간, p90 46.4시간이다. rate limit, schema repair,
-OAuth 경쟁에 따라 더 길어질 수 있다. 완료된 content-addressed checkpoint는
-재실행하지 않으므로 중단 뒤 처음부터 다시 시작하지 않는다. 다만 시작 시
-전수 local geometry 약 16분은 현재 구현에서 재계산한다.
+7,671은 proxy topology에 따른 계획치이지 보장된 호출 하한이 아니다.
+동시성 4가 이상적으로 유지될 때의 시나리오 예측은 중앙 25.4시간, 평균
+29.0시간, p90 46.4시간이다. 실제 topology는 더 적거나 많을 수 있고 rate
+limit, schema repair, OAuth 경쟁에 따라 더 길어질 수 있다. 완료된
+content-addressed checkpoint는 재실행하지 않으므로 중단 뒤 처음부터 다시
+시작하지 않는다. 다만 시작 시 전수 local geometry 약 16분은 현재 구현에서
+재계산한다.
 
 ## 외부 리뷰 질문
 
@@ -211,10 +242,17 @@ PRODUCTION_ACTIVATED                  false
 다음 재시도 가능 시각을 `Oct 4th, 2026 3:31 AM`으로 안내한다.
 
 현재 build plan에 속한 성공 작업은 90 long-payload maps, 7,423 leaf maps,
-383 reductions, 6 category reviews로 **7,902개**다. 확정된 topology의 최소
-호출 하한은 8,018개라 최소 116개가 남았고, 180,000-byte prompt 분할로 더
-늘 수 있다. 예전 계획·진단 호출이 함께 있는 공유 checkpoint 디렉터리의
-전체 파일 수를 build 호출 수로 오인하지 않는다.
+383 reductions, 6 category reviews로 **7,902개**다. 이전 문서의 8,018 및
+116-call remaining은 semantic-unit hash proxy topology를 runtime topology의
+하한으로 잘못 취급한 값이므로 철회한다. Runtime은 model-derived capsule ID로
+leaf bucket을 만들며, 해당 proxy는 실제보다 크거나 작을 수 있다. 안전하게
+보장되는 전체-build floor는 90 + 7,423 + 9개 category review + 1개 world root
+= **7,523 logical calls**로 이미 성공 수보다 낮아 remaining-call ETA에는 쓸 수
+없다. 현재 최소 다섯 logical node는 아직 성공하지 않았다: quota 오류 reduce
+재시도 1개, 남은 category review 3개, world root 1개. 추가 reduce 수는 실제
+capsule/reduce output에 달려 있어 정확한 remaining count는 아직 미확정이다.
+공유 checkpoint 디렉터리에는 예전 계획·진단 호출도 있으므로 전체 파일 수를
+build 호출 수로 오인하지 않는다.
 
 합성 프로세스는 현재 실행 중이 아니다. 마지막 `progress.json`의 record
 100%는 local representative/distribution preparation과 52,644 semantic unit
