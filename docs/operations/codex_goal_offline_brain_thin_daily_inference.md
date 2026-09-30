@@ -1921,3 +1921,11 @@ PID `1216` remains active. Two successful reductions completed since 15:28; late
 The BUILD-only source attestation v2 change is committed and pushed as `bcc9e80` on `codex/quality-full-pr126` (28 commits ahead of main). Ruff, mypy (139 files), and full pytest (1,902 tests) pass. No PR is open: staged PR-A/B/C/D topology still needs dependency resolution. The real BUILD-only package is unvalidated, A/B/C scoring has not started, and production remains inactive.
 
 At 15:44, the build used 2.98 GiB working set / 6.30 GiB private memory; Python processes used 3.51 GiB working set, host available RAM was 16.37 GiB, and C: had 170.19 GiB free. No memory trim or process control was performed.
+
+## 2026-10-01 Bounded Leaf Worker Review
+
+The existing memory-reduction changes in the canonical worktree were reviewed without changing the production-pinned compiler. In the feature worktree, `_compile_leaf_capsules` had materialized all leaf batches into an unbounded queue and did not cancel sibling workers after an LLM failure. It now streams batches lazily, caps worker count at `min(max_concurrency, changed_row_count)`, and cancels/gathers sibling tasks before propagating failures. `_pack_leaf_rows` accepts the iterable input used by this streaming path. The existing member-count/root memory reduction remains intact.
+
+Focused tests for full-build closure, incremental-update parity, and the full-population outlier pass. Ruff and Mypy pass for the touched compiler/test files. This feature-worktree change does not alter V5 prompts, schemas, model/provider configuration, or the pinned compile/checkpoint identity. Read-only inspection confirmed pinned commit `7198b6b` already uses the same bounded lazy-worker pattern, so the active resume path was not modified. No full suite, production build, OAuth/model request, checkpoint write, or planner run occurred.
+
+At 2026-10-01 01:10 KST, no production build process was present; available RAM was 17.63 GiB, instantaneous CPU use 7.5%, and C: free space 407.57 GiB. OAuth quota reset remains 2026-10-04 03:31 KST. Production stays inactive; the goal remains active.

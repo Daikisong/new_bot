@@ -140,7 +140,7 @@ class _UnitBuild:
     category: str
     primary_cell_id: str
     evidence_polarity: str
-    member_record_ids: tuple[str, ...]
+    member_record_count: int
     outlier_record_ids: tuple[str, ...]
     member_record_root: str
     provenance_root: str
@@ -241,14 +241,16 @@ class OfflineSemanticBrainCompiler:
                 source=source,
                 progress_path=work_root / "progress.json",
             )
+            semantic_unit_count = len(unit_builds)
             _write_offline_progress(
                 work_root / "progress.json",
                 phase="representative_and_distribution_planning",
                 processed_record_count=source.record_count,
                 total_record_count=source.record_count,
-                semantic_unit_count=len(unit_builds),
+                semantic_unit_count=semantic_unit_count,
             )
             unit_rows = _load_unit_prompt_rows(connection, unit_builds=unit_builds)
+            del unit_builds
             payload_plan = _plan_long_payloads(unit_rows)
             payload_exposure_rows = _representative_payload_exposure_rows(payload_plan)
             leaf_batches = [
@@ -291,7 +293,7 @@ class OfflineSemanticBrainCompiler:
             "embedding_reused": True,
             "import_reused": True,
             "full_population_embedding_geometry": True,
-            "semantic_unit_count": len(unit_builds),
+            "semantic_unit_count": semantic_unit_count,
             "split_p90_cosine_distance": SPLIT_P90_DISTANCE,
             "split_max_cosine_distance": SPLIT_MAX_DISTANCE,
             "category_semantic_unit_counts": dict(sorted(category_unit_counts.items())),
@@ -380,14 +382,16 @@ class OfflineSemanticBrainCompiler:
                 source=source,
                 progress_path=work_root / "progress.json",
             )
+            semantic_unit_count = len(unit_builds)
             _write_offline_progress(
                 work_root / "progress.json",
                 phase="representative_and_distribution_build",
                 processed_record_count=source.record_count,
                 total_record_count=source.record_count,
-                semantic_unit_count=len(unit_builds),
+                semantic_unit_count=semantic_unit_count,
             )
             unit_rows = _load_unit_prompt_rows(connection, unit_builds=unit_builds)
+            del unit_builds
             package_payload_plan = _plan_long_payloads(unit_rows)
             self._representative_payload_char_count = (
                 package_payload_plan.representative_payload_char_count
@@ -403,6 +407,8 @@ class OfflineSemanticBrainCompiler:
                 package_payload_plan
             )
             capsules, leaf_nodes = await self._compile_leaf_capsules(unit_rows)
+            # These plans own full representative documents and long-chunk text.
+            del unit_rows, package_payload_plan
             _write_capsules_to_database(connection, capsules)
             category_roots: dict[str, SemanticReduceNode] = {}
             reduce_nodes: list[SemanticReduceNode] = []
@@ -449,7 +455,7 @@ class OfflineSemanticBrainCompiler:
             influence = _build_influence_manifest(
                 connection,
                 brain_version="PENDING",
-                unit_builds=unit_builds,
+                semantic_unit_count=semantic_unit_count,
                 capsules=capsules,
                 world_root=world_root,
                 representative_payload_char_count=self._representative_payload_char_count,
@@ -542,7 +548,7 @@ class OfflineSemanticBrainCompiler:
             full_population_embedding_geometry=True,
             split_p90_cosine_distance=SPLIT_P90_DISTANCE,
             split_max_cosine_distance=SPLIT_MAX_DISTANCE,
-            semantic_unit_count=len(unit_builds),
+            semantic_unit_count=semantic_unit_count,
             leaf_node_count=len(leaf_nodes),
             reduce_node_count=len(reduce_nodes),
             category_root_count=len(category_roots),
@@ -586,7 +592,7 @@ class OfflineSemanticBrainCompiler:
             created_at=compile_manifest.completed_at,
             build_cutoff=source.build_cutoff,
             record_count=source.record_count,
-            semantic_unit_count=len(unit_builds),
+            semantic_unit_count=semantic_unit_count,
             semantic_capsule_count=len(capsules),
             synthesized_mechanism_claim_count=len(claims),
             population_contribution_record_count=influence.population_contribution_record_count,
@@ -678,11 +684,18 @@ class OfflineSemanticBrainCompiler:
                 changed_rows.append(row)
         changed_payload_plan = _plan_long_payloads(changed_rows)
         changed_rows = await self._compile_long_payload_digests(changed_payload_plan)
-        work: list[tuple[str, list[dict[str, Any]]]] = []
-        for category in sorted({str(row["category"]) for row in changed_rows}):
-            rows = [row for row in changed_rows if row["category"] == category]
-            for batch in _pack_leaf_rows(rows):
-                work.append((category, batch))
+        del changed_payload_plan
+        categories = sorted({str(row["category"]) for row in changed_rows})
+
+        def batches() -> Iterable[tuple[str, list[dict[str, Any]]]]:
+            for category in categories:
+                category_rows = (
+                    row for row in changed_rows if row["category"] == category
+                )
+                for batch in _pack_leaf_rows(category_rows):
+                    yield category, batch
+
+        batch_iterator = iter(batches())
 
         async def compile_batch(
             category: str,
@@ -709,30 +722,32 @@ class OfflineSemanticBrainCompiler:
                 for row in batch
             ]
 
-        queue: asyncio.Queue[tuple[str, list[dict[str, Any]]]] = asyncio.Queue()
-        for item in work:
-            queue.put_nowait(item)
-        compiled_batches: list[list[SemanticMemoryCapsule]] = []
+        worker_count = min(
+            max(1, self.settings.limits.max_concurrency),
+            len(changed_rows),
+        )
 
         async def worker() -> None:
             while True:
                 try:
-                    category, batch = queue.get_nowait()
-                except asyncio.QueueEmpty:
+                    category, batch = next(batch_iterator)
+                except StopIteration:
                     return
-                compiled_batches.append(await compile_batch(category, batch))
-                queue.task_done()
+                compiled = await compile_batch(category, batch)
+                for capsule in compiled:
+                    capsules_by_unit[capsule.semantic_unit_id] = capsule
+                self._recompiled_capsule_count += len(compiled)
+                del batch, compiled
 
-        await asyncio.gather(
-            *(
-                worker()
-                for _ in range(min(max(1, self.settings.limits.max_concurrency), len(work)))
-            )
-        )
-        for compiled in compiled_batches:
-            for capsule in compiled:
-                capsules_by_unit[capsule.semantic_unit_id] = capsule
-                self._recompiled_capsule_count += 1
+        if worker_count:
+            workers = [asyncio.create_task(worker()) for _ in range(worker_count)]
+            try:
+                await asyncio.gather(*workers)
+            except BaseException:
+                for task in workers:
+                    task.cancel()
+                await asyncio.gather(*workers, return_exceptions=True)
+                raise
         expected_units = {str(row["semantic_unit_id"]) for row in unit_rows}
         if set(capsules_by_unit) != expected_units:
             raise ValueError("offline semantic capsule compile omitted units")
@@ -1577,7 +1592,7 @@ def _split_semantic_stratum(
                 category=category,
                 primary_cell_id=primary_cell_id,
                 evidence_polarity=evidence_polarity,
-                member_record_ids=member_ids,
+                member_record_count=len(member_ids),
                 outlier_record_ids=outlier_ids,
                 member_record_root=sha256_text(canonical_json(member_ids)),
                 provenance_root=sha256_text(canonical_json(source_pairs)),
@@ -1698,7 +1713,7 @@ def _load_unit_prompt_rows(
                 "category": build.category,
                 "primary_cell_id": build.primary_cell_id,
                 "evidence_polarity": build.evidence_polarity,
-                "member_record_count": len(build.member_record_ids),
+                "member_record_count": build.member_record_count,
                 "member_independent_unit_count": stats["independent_unit_count"],
                 "member_record_root": build.member_record_root,
                 "provenance_root": build.provenance_root,
@@ -1994,7 +2009,7 @@ def _unit_distributions(
     return dict(output)
 
 
-def _pack_leaf_rows(rows: list[dict[str, Any]]) -> Iterable[list[dict[str, Any]]]:
+def _pack_leaf_rows(rows: Iterable[dict[str, Any]]) -> Iterable[list[dict[str, Any]]]:
     current: list[dict[str, Any]] = []
     current_bytes = 0
     for row in rows:
@@ -2449,7 +2464,7 @@ def _build_influence_manifest(
     connection: duckdb.DuckDBPyConnection,
     *,
     brain_version: str,
-    unit_builds: list[_UnitBuild],
+    semantic_unit_count: int,
     capsules: list[SemanticMemoryCapsule],
     world_root: SemanticReduceNode,
     representative_payload_char_count: int,
@@ -2497,7 +2512,7 @@ def _build_influence_manifest(
         distinct_primary_assigned_record_count=int(distinct_count),
         unassigned_record_count=0,
         duplicate_primary_assignment_count=duplicate_count,
-        semantic_unit_count=len(unit_builds),
+        semantic_unit_count=semantic_unit_count,
         rare_outlier_unit_count=len(outlier_unit_ids),
         rare_outlier_represented_unit_count=len(outlier_unit_ids.intersection(capsule_units)),
         unrepresented_reasoning_unit_count=len(reasoning_units - capsule_units),

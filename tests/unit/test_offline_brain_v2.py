@@ -32,7 +32,7 @@ from news_scalping_lab.contracts.offline_brain import (
 )
 from news_scalping_lab.inference.thin_daily import _validate_brain_context_as_of
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
-from news_scalping_lab.utils import KST, file_sha256, read_json, write_json
+from news_scalping_lab.utils import KST, canonical_json, file_sha256, read_json, sha256_text, write_json
 
 
 class Embedding384:
@@ -395,6 +395,12 @@ def test_full_population_outlier_beyond_old_sample_boundary_gets_own_unit() -> N
     assert len(builds) == 2
     assert len(assignments) == 4097
     assert assignments[-1][5] is True
+    for build in builds:
+        member_ids = sorted(
+            str(row[0]) for row in assignments if row[1] == build.semantic_unit_id
+        )
+        assert build.member_record_count == len(member_ids)
+        assert build.member_record_root == sha256_text(canonical_json(member_ids))
 
 
 def test_utf8_long_payload_chunking_is_lossless() -> None:
