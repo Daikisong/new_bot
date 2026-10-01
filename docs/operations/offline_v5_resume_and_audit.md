@@ -139,6 +139,41 @@ bypassed. The package directory and `offline_compile_manifest.json` are absent:
 there is no sealed V5 package yet. Successful checkpoints remain in place for a
 future exact resume. Production stays inactive.
 
+## 2026-10-01T04:28Z resume with receipt preserved
+
+The user explicitly requested resuming synthesis without cleanup. The previous
+receipt-removal rejection applies to that removal operation; it is not evidence
+that the independently authorized compiler command is prohibited. The existing
+launcher still refuses on receipt existence, so it cannot implement this request.
+
+`scripts/resume_offline_v5_preserving_receipt.ps1` runs the goal's pinned compiler
+command while leaving the old receipt untouched. It verifies the clean compiler
+pin, source snapshot/hash, shared checkpoint sentinel, and absence of any live
+offline compiler. A named mutex prevents concurrent instances of this launcher.
+It imports only the existing identity/resource helpers through the PowerShell AST;
+no receipt creation, deletion, reconciliation, or lifecycle helper is imported.
+The compiler retains the CLI's exact OAuth/model/reasoning identity check.
+
+Launcher PID `57784` started compiler PID `62256` at 04:28:07 UTC. The first live
+progress sample at 04:28:46 UTC showed `semantic_assignments`, 22,729/823,279
+records, 2,947 semantic units, affinity `0xF`, 4.55 GiB tree private memory, and
+14.19 GiB available RAM. This is local preparation progress, not overall synthesis
+completion or proof of a new successful LLM call. Successful shared checkpoints
+will be reused when local preparation reaches synthesis.
+
+The old receipt SHA remains
+`78cc1419f48f024d005767299138d6be688a78f03e3674320476cfb3e20eda4b`.
+New run observations, compiler stdout/stderr, and 10-second resource samples are
+under `news_bot/runs/resource_logs/v5_preserved_20261001T042807Z.*`.
+Root/descendant affinity uses the existing identity checks and Bithumb exclusion.
+Sustained available RAM below 6 GiB for 60 seconds stops only the verified build
+tree while preserving its files. Nothing is cleaned up at normal exit.
+
+This supersedes the earlier operational statement that synthesis must wait for
+receipt deletion. Package sealing/audit, the separate BUILD-only C package,
+deployable A/B/C evaluation, and external artifact review remain outstanding.
+Production is inactive.
+
 ## Planner estimate semantics
 
 The zero-LLM planner builds deterministic coverage-only leaf proxies and runs

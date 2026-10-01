@@ -2799,3 +2799,18 @@ RAM은 18.87 GiB, C: free는 364.27 GiB였다. 그러나 stale active-build rece
 성공했다. 현재 관측된 재개 장애는 quota가 아니라 stale receipt다. Goal은 active, production activation은
 HOLD다. receipt 복구 후 동일 compiler/source/manifest/checkpoint로 V5를 재개하고, package seal/audit,
 BUILD-only C package, 동일 `analyze-daily` A/B/C evaluation, 외부 검토를 계속해야 한다.
+
+## 2026-10-01 13:28 KST 정리 없이 실제 V5 재개
+
+사용자의 명시적 지시대로 기존 receipt와 작업물을 보존한 채 pinned V5 명령을 재개했다.
+`scripts/resume_offline_v5_preserving_receipt.ps1`은 기존 receipt lifecycle을 호출하지 않고
+고정 compiler/source/hash 및 실행 중인 compiler 부재를 확인하며 mutex와 기존 자원 감시 함수를
+사용한다. launcher PID `57784`, compiler PID `62256`이다. 13:28:46 KST에 실제 progress가
+`semantic_assignments`, 22,729/823,279 records, 2,947 units로 갱신됐고 affinity는 `0xF`였다.
+이 수치는 로컬 준비 단계이며 전체 합성 완료율이 아니다. receipt SHA는 시작 전후 동일한
+`78cc1419f48f024d005767299138d6be688a78f03e3674320476cfb3e20eda4b`다.
+공유 성공 checkpoint는 재사용하고 import/record embedding은 다시 실행하지 않는다.
+run 및 자원 기록은 `news_bot/runs/resource_logs/v5_preserved_20261001T042807Z.*`에 있다.
+앞선 “receipt 삭제 전에는 build 불가” 운영 판단은 이 재개 방식으로 대체한다.
+package seal/audit, 별도 BUILD-only C package, A/B/C 평가, 외부 artifact review는 미완료다.
+production activation은 HOLD다.
