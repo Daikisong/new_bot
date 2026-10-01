@@ -165,21 +165,51 @@ function Set-VerifiedAffinity {
     }
     if ([string]::IsNullOrWhiteSpace([string]$currentInfo.ExecutablePath) -or
         [string]::IsNullOrWhiteSpace([string]$currentInfo.CommandLine)) {
-        throw "PID $($ProcessInfo.ProcessId) is ambiguous; refusing to set its affinity."
+        # Child process metadata can be briefly unavailable during process startup or exit.
+        # Callers keep the compiler root fail-closed and may skip only an unverified child.
+        return $null
     }
     if ((Get-ProcessCreationTime $currentInfo) -ne (Get-ProcessCreationTime $ProcessInfo) -or
         [string]$currentInfo.ExecutablePath -ne [string]$ProcessInfo.ExecutablePath -or
         [string]$currentInfo.CommandLine -ne [string]$ProcessInfo.CommandLine) {
-        throw "PID $($ProcessInfo.ProcessId) identity changed; refusing to set affinity."
+        return $null
     }
 
-    $process = Get-Process -Id ([int]$ProcessInfo.ProcessId) -ErrorAction Stop
-    $process.ProcessorAffinity = [IntPtr]$AffinityMaskValue
-    $actualMask = [long]$process.ProcessorAffinity.ToInt64()
-    if ($actualMask -ne $AffinityMaskValue) {
-        throw "PID $($ProcessInfo.ProcessId) affinity readback was 0x$('{0:X}' -f $actualMask), expected 0xF."
+    try {
+        $process = Get-Process -Id ([int]$ProcessInfo.ProcessId) -ErrorAction Stop
+        $process.ProcessorAffinity = [IntPtr]$AffinityMaskValue
+        $actualMask = [long]$process.ProcessorAffinity.ToInt64()
+        if ($actualMask -ne $AffinityMaskValue) {
+            throw "PID $($ProcessInfo.ProcessId) affinity readback was 0x$('{0:X}' -f $actualMask), expected 0xF."
+        }
+        return $actualMask
     }
-    return $actualMask
+    catch {
+        try {
+            $latestInfo = Get-ProcessInfo ([int]$ProcessInfo.ProcessId)
+        }
+        catch {
+            return $null
+        }
+        if ($null -eq $latestInfo -or
+            [string]::IsNullOrWhiteSpace([string]$latestInfo.ExecutablePath) -or
+            [string]::IsNullOrWhiteSpace([string]$latestInfo.CommandLine) -or
+            [string]::IsNullOrWhiteSpace([string]$latestInfo.CreationDate)) {
+            return $null
+        }
+        try {
+            $sameIdentity = (Get-ProcessCreationTime $latestInfo) -eq (Get-ProcessCreationTime $ProcessInfo) -and
+                [string]$latestInfo.ExecutablePath -eq [string]$ProcessInfo.ExecutablePath -and
+                [string]$latestInfo.CommandLine -eq [string]$ProcessInfo.CommandLine
+        }
+        catch {
+            return $null
+        }
+        if (-not $sameIdentity) {
+            return $null
+        }
+        throw
+    }
 }
 
 function Get-HostResourceSnapshot {
@@ -764,7 +794,7 @@ try {
     New-ActiveBuildReceipt -Receipt $receipt
     $rootAffinity = Set-VerifiedAffinity $rootInfo
     if ($null -eq $rootAffinity) {
-        throw "Compiler exited before affinity could be applied."
+        throw "Compiler root identity could not be verified to apply the required 4-core affinity."
     }
 }
 catch {
@@ -787,6 +817,7 @@ $previousPhase = $null
 $privateGrowthSamples = 0
 $growthWarningWritten = $false
 $highPrivateWarningWritten = $false
+$reportedAffinitySkips = [System.Collections.Generic.HashSet[int]]::new()
 $nextSample = [DateTimeOffset]::UtcNow
 $stoppedForGuard = $false
 
@@ -815,11 +846,19 @@ try {
             if ($build.HasExited) {
                 break
             }
-            throw "Compiler exited before the resource guard could refresh its affinity."
+            throw "Compiler root identity could not be re-verified for the required 4-core affinity."
         }
         $tree = Get-VerifiedBuildTree -RootProcessId $build.Id -RootCreationTime $rootCreationTime
         foreach ($child in $tree.Descendants) {
-            [void](Set-VerifiedAffinity $child)
+            $childAffinity = Set-VerifiedAffinity $child
+            if ($null -eq $childAffinity) {
+                if ($reportedAffinitySkips.Add([int]$child.ProcessId)) {
+                    Write-Warning ("Descendant PID {0} exited or changed identity during affinity verification; skipping it." -f $child.ProcessId)
+                }
+            }
+            else {
+                [void]$reportedAffinitySkips.Remove([int]$child.ProcessId)
+            }
         }
         if ($tree.AmbiguousProcessIds.Count -gt 0) {
             Write-Warning ("Descendants without resolvable executable/command line left untouched: {0}" -f ($tree.AmbiguousProcessIds -join ", "))

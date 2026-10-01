@@ -2747,3 +2747,28 @@ host available RAM은 약 18.42 GiB, C: free는 약 369.61 GiB였다. Progress f
 deployment와 같은 경로의 CALIBRATION/HOLDOUT/POST_CUTOFF 평가 및 A/B/C 비교, external audit이다.
 모두 통과하기 전 production activation은 HOLD이며, 이 build의 `records=823,279/823,279`만으로
 brain synthesis 완료라고 판단하지 않는다.
+
+## 2026-10-01 02:13 UTC V5 재개 중 affinity 감시기 경합
+
+고정 quota 날짜 차단 제거 후 동일한 pinned V5 compiler와 공유 checkpoint를 재사용해 재개했다.
+2026-10-01 01:12:02~02:13:22 UTC 사이 `offline_semantic_reduce` checkpoint 12개가 추가로
+`ok`가 됐다. 특히 `LLMCKPT-1d6d8295e6996522`는 과거 quota 오류에서 성공으로 바뀌었다. 이는
+quota-date hardcode가 실제 provider 요청을 막고 있었고, 제거 뒤 요청이 처리된다는 직접 증거다.
+
+빌드는 PID `53340` root 및 그 자식들을 감시하는 동안 PID `49596`의 process metadata가 순간적으로
+불완전해진 affinity 확인 경합으로 monitor가 중단시켰다. quota 응답, RAM 임계치, 디스크 부족이
+원인은 아니다. root 종료 후 남은 정확한 자식 6개는 PID/creation time/실행경로/명령행과 부모 관계를
+재검증했고 Bithumb 보호 경로 소속이 아님을 확인한 뒤 leaf-first로 종료했다. compiler process tree는
+모두 사라졌고 checkpoint 및 compile scratch는 보존했다.
+
+후속 보정은 affinity 확인 및 최종 read/write 도중 자식이 사라지거나 identity가 바뀐 경우 그 자식만
+건너뛰고 경고한다. 같은 identity가 계속 존재하는데 affinity 자체가 실패하면 오류를 그대로 전파한다.
+compiler root의 identity 검증 및 4-core affinity는 계속 필수(fail-closed)이며 다른 불명확한 프로세스는
+제어하지 않는다. 이 보정은 `codex/nslab-affinity-race-resume` 브랜치에서 parser/동작 검증 및 CI를
+진행한다.
+
+현재 active-build receipt `C:\Users\eorb9\projects\news_bot_trash\20260930_nslab_resource_guard\resource_logs\active_offline_v5_build.json`은
+남아 있고 다음 launcher 실행을 막는다. receipt 제거 요청은 실행 도구에서 `rejected: blocked by
+policy`로 거부되어 receipt를 수정하거나 우회하지 않았다. 허용된 receipt 정합성 복구 경로가 생기기
+전에는 새 build를 시작하지 않는다. 성공 checkpoint는 content-addressed cache로 남아 재사용 가능하나,
+V5 package/synthesis는 미완료이고 production 활성화는 계속 HOLD다.
