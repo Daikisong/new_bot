@@ -2772,3 +2772,30 @@ compiler root의 identity 검증 및 4-core affinity는 계속 필수(fail-close
 policy`로 거부되어 receipt를 수정하거나 우회하지 않았다. 허용된 receipt 정합성 복구 경로가 생기기
 전에는 새 build를 시작하지 않는다. 성공 checkpoint는 content-addressed cache로 남아 재사용 가능하나,
 V5 package/synthesis는 미완료이고 production 활성화는 계속 HOLD다.
+
+## 2026-10-01 02:58 UTC 재개 가능성 재감사 및 PR #147 병합
+
+고정 quota 날짜 gate 제거는 PR #146으로 main에 병합됐고, 자식 프로세스의 affinity 확인과 최종
+read/write 사이 종료·PID 재사용 경합 보정은 PR #147로 병합됐다. 최신 main은
+`0590100fecf50bff439464d86202dce3d977a41e`이며, PR #147의 Ruff, Mypy, schema parity, production
+targeted regression, full pytest, generated drift/whitespace가 모두 통과했다. launcher에서
+`QuotaResetUtc` 및 이전 고정 시각 문자열이 없는 것도 확인했다.
+
+공유 checkpoint 12개를 다시 읽어 모두 pinned compiler v5 / `CodexOAuthProvider` /
+`gpt-5.6-sol` / `xhigh` / `status=ok`임을 확인했다. 특히 기존 usage-limit 오류 checkpoint도 `ok`다.
+이는 해당 시점 provider 요청의 성공 증거일 뿐, 전체 합성이나 향후 요청의 무제한 사용을 보장하지
+않는다. import, embedding, planner, 성공 checkpoint를 다시 만들지 않는다.
+
+02:56 UTC read-only process audit에서 receipt가 가리키는 root PID `53340`은 없고 그 시작 시각 이후
+descendant도 0개였으며 Python `brain build-offline` process도 0개였다. 같은 단일 표본에서 available
+RAM은 18.87 GiB, C: free는 364.27 GiB였다. 그러나 stale active-build receipt가 남아 guarded launcher의
+중복 실행 gate를 막고 있다. 이전 receipt 제거 요청은 실행 도구에서 `rejected: blocked by policy`로
+거부되어 다시 시도하거나 우회하지 않았다. 새 package 디렉터리와 `offline_compile_manifest.json`도
+없으므로 production V5 synthesis는 여전히 미완료다. 허용된 receipt 정합성 복구 경로 전까지 build를
+시작하지 않는다.
+
+따라서 2026-10-01 09:16 KST의 “quota retry 시각 전이라 blocked” 기록은 당시 상태에 대한 역사적
+스냅샷이며 현재 원인 설명으로 사용하지 않는다. quota-date hardcode 제거 뒤 실제 12개 provider 호출이
+성공했다. 현재 관측된 재개 장애는 quota가 아니라 stale receipt다. Goal은 active, production activation은
+HOLD다. receipt 복구 후 동일 compiler/source/manifest/checkpoint로 V5를 재개하고, package seal/audit,
+BUILD-only C package, 동일 `analyze-daily` A/B/C evaluation, 외부 검토를 계속해야 한다.
