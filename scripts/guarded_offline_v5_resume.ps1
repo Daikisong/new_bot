@@ -17,7 +17,6 @@ $CheckpointSentinel = "LLMCKPT-1d6d8295e6996522.json"
 $ProtectedRoot = "C:\Users\eorb9\projects\bithumb-quant-trader"
 $LogDirectory = "C:\Users\eorb9\projects\news_bot_trash\20260930_nslab_resource_guard\resource_logs"
 $BuildReceiptPath = Join-Path $LogDirectory "active_offline_v5_build.json"
-$QuotaResetUtc = [DateTimeOffset]::Parse("2026-10-03T18:31:00Z")
 $AffinityMaskValue = [long]0xF
 $SampleIntervalSeconds = 10
 $TreeRefreshSeconds = 2
@@ -558,7 +557,7 @@ function Get-Preflight {
     }
     $sentinelPath = Join-Path $CheckpointDirectory $CheckpointSentinel
     if (-not (Test-Path -LiteralPath $sentinelPath -PathType Leaf)) {
-        throw "Expected quota sentinel is missing: $sentinelPath"
+        throw "Expected checkpoint sentinel is missing: $sentinelPath"
     }
     $checkpointFiles = @(Get-ChildItem -LiteralPath $CheckpointDirectory -File -Filter "*.json")
     if ($checkpointFiles.Count -lt 7000) {
@@ -697,18 +696,15 @@ Write-Host ("Compiler: {0} @ {1}" -f $preflight.CompilerCommit, $preflight.Compi
 Write-Host ("Python: {0} ({1}); CLI: {2}" -f $preflight.Python, $preflight.PythonVersion, $preflight.Cli)
 Write-Host ("Identity: {0}/{1}/{2}; max_concurrency={3}; Codex command={4}" -f $preflight.Provider, $preflight.Model, $preflight.ReasoningEffort, $preflight.MaxConcurrency, $preflight.CodexCommand)
 Write-Host ("Source: {0}; manifest SHA-256={1}; pointer's legacy SHA-256={2}" -f $preflight.SourceSnapshotId, $preflight.ManifestSha256, $preflight.PointerManifestSha256)
-Write-Host ("Checkpoints: {0} JSON files, {1:N0} bytes; quota sentinel present" -f $preflight.CheckpointCount, $preflight.CheckpointBytes)
+Write-Host ("Checkpoints: {0} JSON files, {1:N0} bytes; expected checkpoint sentinel present" -f $preflight.CheckpointCount, $preflight.CheckpointBytes)
 Write-Host ("Host: {0} logical processors; available RAM {1:N2} GiB; pagefile use {2:N0} MiB; C: free {3:N2} GiB" -f $preflight.LogicalProcessors, ($preflight.HostResources.AvailableBytes / 1GB), $preflight.HostResources.PagefileCurrentMiB, ($preflight.HostResources.DriveCFreeBytes / 1GB))
-Write-Host ("OAuth reset: {0} KST ({1} UTC)" -f $QuotaResetUtc.ToOffset([TimeSpan]::FromHours(9)).ToString("yyyy-MM-dd HH:mm:ss"), $QuotaResetUtc.ToString("yyyy-MM-dd HH:mm:ss"))
+Write-Host "Quota/account handling: configured Codex CLI/provider is authoritative; no local reset-time gate."
 
 if (-not $StartBuild) {
     Write-Host "Preflight-only mode. No build process was started. Pass -StartBuild to request the guarded resume."
     return
 }
 
-if ([DateTimeOffset]::UtcNow -lt $QuotaResetUtc) {
-    throw "Quota reset has not passed; build was not started."
-}
 if ([long]$preflight.HostResources.AvailableBytes -lt $MinimumAvailableBytes) {
     throw "Available RAM is below 6 GiB; build was not started."
 }
