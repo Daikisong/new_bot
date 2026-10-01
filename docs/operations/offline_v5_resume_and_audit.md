@@ -68,6 +68,48 @@ A second launcher invocation currently exits because the active-build receipt
 already exists. This is duplicate-process protection, not a quota check; do
 not remove the receipt or start another compiler while PID `53340` is active.
 
+## 2026-10-01T02:13Z latest resume interruption
+
+The 00:39 resource sample above is historical. The resumed build started at
+`2026-10-01T00:34:07Z` under root PID `53340`, using the pinned V5 identity and
+the shared checkpoint directory. Twelve `offline_semantic_reduce` checkpoints
+completed successfully through `2026-10-01T02:13:22Z`:
+
+| UTC | Checkpoint | Result |
+| --- | --- | --- |
+| 01:12:02 | `LLMCKPT-1d6d8295e6996522` | Prior quota error replaced by `ok` |
+| 01:20:26 | `LLMCKPT-16d89321be617337` | `ok` |
+| 01:20:59 | `LLMCKPT-dcca5af150560830` | `ok` |
+| 01:26:43 | `LLMCKPT-f9eb115cb3f1f4c3` | `ok` |
+| 01:34:49 | `LLMCKPT-484083a463d97c02` | `ok` |
+| 01:35:26 | `LLMCKPT-e969447ff262f16d` | `ok` |
+| 01:47:46 | `LLMCKPT-0836fd9c229e39df` | `ok` |
+| 01:49:26 | `LLMCKPT-9bfc76f498b1432d` | `ok` |
+| 01:49:53 | `LLMCKPT-038f047f11f9ffe8` | `ok` |
+| 02:03:03 | `LLMCKPT-1a1684fac2e659d0` | `ok` |
+| 02:13:12 | `LLMCKPT-9fba79a209592f3c` | `ok` |
+| 02:13:22 | `LLMCKPT-8623ef330658d3b2` | `ok` |
+
+The run stopped because PID `49596` briefly had incomplete process identity
+metadata during descendant-affinity refresh; the monitor treated that child
+race as fatal and stopped the compiler. This was not a quota response, memory
+threshold, or disk threshold. After the root exited, six exact descendants
+were checked by PID, creation time, executable, command line, and parent
+relationship; none belonged to the protected Bithumb tree. They were stopped
+leaf-first. The compiler tree is absent, and shared checkpoints and compile
+scratch were preserved.
+
+The runner correction skips affinity only for a child that exits or changes
+identity during verification, with a warning. Compiler-root identity and its
+required 4-core affinity remain fail-closed; unverified processes remain
+untouched. The active-build receipt at
+`C:\Users\eorb9\projects\news_bot_trash\20260930_nslab_resource_guard\resource_logs\active_offline_v5_build.json`
+still blocks another launch despite the verified-absent process tree. Receipt
+removal was rejected by the execution tool (`rejected: blocked by policy`) and
+was not bypassed or altered. Do not restart until an allowed receipt
+reconciliation path is available. The V5 package remains incomplete and
+production remains inactive.
+
 ## Planner estimate semantics
 
 The zero-LLM planner builds deterministic coverage-only leaf proxies and runs
