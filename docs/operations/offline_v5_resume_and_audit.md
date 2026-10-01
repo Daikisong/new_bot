@@ -70,6 +70,10 @@ not remove the receipt or start another compiler while PID `53340` is active.
 
 ## 2026-10-01T02:13Z latest resume interruption
 
+The launcher/receipt sentence immediately above describes only the 00:39
+sample, when PID `53340` was still active. It is not the current process state;
+the later stop and current stale-receipt condition are recorded below.
+
 The 00:39 resource sample above is historical. The resumed build started at
 `2026-10-01T00:34:07Z` under root PID `53340`, using the pinned V5 identity and
 the shared checkpoint directory. Twelve `offline_semantic_reduce` checkpoints
@@ -110,6 +114,30 @@ removal was rejected by the execution tool (`rejected: blocked by policy`) and
 was not bypassed or altered. Do not restart until an allowed receipt
 reconciliation path is available. The V5 package remains incomplete and
 production remains inactive.
+
+## 2026-10-01T02:58Z current post-merge audit
+
+The quota-date refusal was removed in PR #146 and the affinity lifecycle race
+fix was merged in PR #147, merge commit `0590100fecf50bff439464d86202dce3d977a41e`.
+The required `quality-gate` passed on the final PR head. The launcher contains
+neither the old `QuotaResetUtc` variable nor the fixed reset timestamp.
+
+Read-only verification reconfirmed the 12 successful V5 reduce checkpoints
+listed above; each has compiler `nslab.offline_semantic_brain.compiler.v5`,
+provider `CodexOAuthProvider`, model `gpt-5.6-sol`, reasoning `xhigh`, and
+`status=ok`. The previous quota-error checkpoint is now `ok`. This proves those
+provider requests succeeded; it does not prove that the complete synthesis or
+the full quota window is available.
+
+At this snapshot, the receipt still names root PID `53340`, but that PID and
+receipt-identified descendants are absent; no Python `brain build-offline`
+process exists. Available RAM was 18.87 GiB and C: free was 364.27 GiB in this
+single sample. The exact active-build receipt remains present, so the guarded
+launcher still refuses a new build. Its removal was previously rejected by the
+execution tool (`rejected: blocked by policy`) and has not been retried or
+bypassed. The package directory and `offline_compile_manifest.json` are absent:
+there is no sealed V5 package yet. Successful checkpoints remain in place for a
+future exact resume. Production stays inactive.
 
 ## Planner estimate semantics
 
