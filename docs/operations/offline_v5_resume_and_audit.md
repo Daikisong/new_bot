@@ -100,9 +100,10 @@ leaf-first. The compiler tree is absent, and shared checkpoints and compile
 scratch were preserved.
 
 The runner correction skips affinity only for a child that exits or changes
-identity during verification, with a warning. Compiler-root identity and its
-required 4-core affinity remain fail-closed; unverified processes remain
-untouched. The active-build receipt at
+identity during verification or the final affinity read/write, with a warning.
+If an affinity operation fails while the same child identity is still present,
+the error remains fatal. Compiler-root identity and its required 4-core affinity
+remain fail-closed; unverified processes remain untouched. The active-build receipt at
 `C:\Users\eorb9\projects\news_bot_trash\20260930_nslab_resource_guard\resource_logs\active_offline_v5_build.json`
 still blocks another launch despite the verified-absent process tree. Receipt
 removal was rejected by the execution tool (`rejected: blocked by policy`) and

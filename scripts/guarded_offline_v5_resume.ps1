@@ -175,13 +175,41 @@ function Set-VerifiedAffinity {
         return $null
     }
 
-    $process = Get-Process -Id ([int]$ProcessInfo.ProcessId) -ErrorAction Stop
-    $process.ProcessorAffinity = [IntPtr]$AffinityMaskValue
-    $actualMask = [long]$process.ProcessorAffinity.ToInt64()
-    if ($actualMask -ne $AffinityMaskValue) {
-        throw "PID $($ProcessInfo.ProcessId) affinity readback was 0x$('{0:X}' -f $actualMask), expected 0xF."
+    try {
+        $process = Get-Process -Id ([int]$ProcessInfo.ProcessId) -ErrorAction Stop
+        $process.ProcessorAffinity = [IntPtr]$AffinityMaskValue
+        $actualMask = [long]$process.ProcessorAffinity.ToInt64()
+        if ($actualMask -ne $AffinityMaskValue) {
+            throw "PID $($ProcessInfo.ProcessId) affinity readback was 0x$('{0:X}' -f $actualMask), expected 0xF."
+        }
+        return $actualMask
     }
-    return $actualMask
+    catch {
+        try {
+            $latestInfo = Get-ProcessInfo ([int]$ProcessInfo.ProcessId)
+        }
+        catch {
+            return $null
+        }
+        if ($null -eq $latestInfo -or
+            [string]::IsNullOrWhiteSpace([string]$latestInfo.ExecutablePath) -or
+            [string]::IsNullOrWhiteSpace([string]$latestInfo.CommandLine) -or
+            [string]::IsNullOrWhiteSpace([string]$latestInfo.CreationDate)) {
+            return $null
+        }
+        try {
+            $sameIdentity = (Get-ProcessCreationTime $latestInfo) -eq (Get-ProcessCreationTime $ProcessInfo) -and
+                [string]$latestInfo.ExecutablePath -eq [string]$ProcessInfo.ExecutablePath -and
+                [string]$latestInfo.CommandLine -eq [string]$ProcessInfo.CommandLine
+        }
+        catch {
+            return $null
+        }
+        if (-not $sameIdentity) {
+            return $null
+        }
+        throw
+    }
 }
 
 function Get-HostResourceSnapshot {
@@ -825,7 +853,7 @@ try {
             $childAffinity = Set-VerifiedAffinity $child
             if ($null -eq $childAffinity) {
                 if ($reportedAffinitySkips.Add([int]$child.ProcessId)) {
-                    Write-Warning ("Descendant PID {0} exited or changed identity during affinity verification; no affinity change was made." -f $child.ProcessId)
+                    Write-Warning ("Descendant PID {0} exited or changed identity during affinity verification; skipping it." -f $child.ProcessId)
                 }
             }
             else {

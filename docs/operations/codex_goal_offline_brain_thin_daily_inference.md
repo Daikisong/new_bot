@@ -2761,7 +2761,8 @@ quota-date hardcode가 실제 provider 요청을 막고 있었고, 제거 뒤 �
 재검증했고 Bithumb 보호 경로 소속이 아님을 확인한 뒤 leaf-first로 종료했다. compiler process tree는
 모두 사라졌고 checkpoint 및 compile scratch는 보존했다.
 
-후속 보정은 일시적으로 사라지거나 identity가 바뀐 자식만 affinity 적용에서 건너뛰고 경고하도록 한다.
+후속 보정은 affinity 확인 및 최종 read/write 도중 자식이 사라지거나 identity가 바뀐 경우 그 자식만
+건너뛰고 경고한다. 같은 identity가 계속 존재하는데 affinity 자체가 실패하면 오류를 그대로 전파한다.
 compiler root의 identity 검증 및 4-core affinity는 계속 필수(fail-closed)이며 다른 불명확한 프로세스는
 제어하지 않는다. 이 보정은 `codex/nslab-affinity-race-resume` 브랜치에서 parser/동작 검증 및 CI를
 진행한다.
