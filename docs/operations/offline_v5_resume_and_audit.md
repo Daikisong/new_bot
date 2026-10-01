@@ -3,7 +3,7 @@
 This runbook records the safe continuation boundary for the one-time production
 brain build. It is intentionally separate from the daily inference path.
 
-## Authoritative stopped snapshot
+## Historical stopped snapshot (2026-09-29)
 
 Snapshot date: 2026-09-29 20:09 KST
 
@@ -36,6 +36,37 @@ reduce calls depend on completed capsule and reduce outputs, so an exact
 remaining call count is not currently established. The `progress.json` value
 `record_progress_ratio=1.0` means only that local record geometry finished; it
 does not mean semantic synthesis finished.
+
+## Current resume status (2026-10-01)
+
+The fixed OAuth reset timestamp was removed from the guarded launcher. It no
+longer refuses to start based on a locally hard-coded quota date. The launcher
+uses the configured Codex CLI/provider session and leaves account selection or
+rotation to that toolchain; it does not inspect credential files or implement
+local account switching. The provider response is authoritative. If the
+provider ultimately returns a usage-limit error, preserve its failed checkpoint
+and stop rather than retrying the same request indefinitely.
+
+The launcher still validates the pinned compiler, source manifest, shared
+checkpoint inventory, and build identity, and retains the 4-core affinity and
+host-memory safeguards. Those checks protect reproducibility and machine
+stability; they are not quota gates. A checkpoint sentinel is an expected
+content-addressed checkpoint used to confirm the cache, not a quota lock.
+
+The resumed build uses the pinned V5 identity and shared checkpoint directory.
+At `2026-10-01T00:39:51Z`, PID `53340` was in `semantic_assignments` at
+`346,661 / 823,279` records and 18,690 semantic units, with 4.96 GiB private
+memory, 15.13 GiB host RAM available, and 372.70 GiB free on C:. The external
+resource log is
+`C:\Users\eorb9\projects\news_bot_trash\20260930_nslab_resource_guard\resource_logs\offline_v5_20261001T003407Z.jsonl`.
+No model call had yet been observed in that sample. Live status must be read
+from that log and the active launcher session; local record geometry alone
+does not establish synthesis completion. Successful content-addressed
+checkpoints remain reusable on a later resume.
+
+A second launcher invocation currently exits because the active-build receipt
+already exists. This is duplicate-process protection, not a quota check; do
+not remove the receipt or start another compiler while PID `53340` is active.
 
 ## Planner estimate semantics
 
@@ -124,8 +155,11 @@ PID is gone, treat any remaining `.work` files as scratch, not completed state.
 
 ## Resume protocol
 
-1. Confirm the OAuth retry window has passed and confirm that no process with
-   this compile ID is already running.
+1. Use the currently configured Codex CLI session and confirm that no process
+   with this compile ID is already running. The launcher must not infer quota
+   availability from a hard-coded reset timestamp; the configured CLI/provider
+   response is authoritative. If it returns a usage-limit error, preserve the
+   failed checkpoint and stop the run.
 2. Use an isolated clean worktree at tested compiler commit
    `7198b6b74bbd10f1cf2451ca399c0b63f14706a9` (merged to `main` as
    `afd8e8f951d3b0c097ae49054d85f0b5c90ce60f`). Do not use the existing
@@ -290,8 +324,10 @@ The source manifest pointer still carries its legacy SHA
 `fc0d847d4eb0db688cf19570a3519d357a93558463797e26321a106d60040804`; the actual
 manifest remained the externally attested `6c05...4576`, supplied explicitly
 to the planner. Import, embeddings, source pointer, package output, and
-production activation were not modified. OAuth quota still prevents the V5
-synthesis resume until `2026-10-04 03:31 KST`; production remains HOLD.
+production activation were not modified. The quota-reset statement above was
+the assessment at the time of this historical planner audit; the fixed-date
+launcher gate has since been removed as recorded in Current resume status.
+Production remains HOLD until the build package and required evaluations pass.
 
 ## 2026-09-30 Production V5 CPU and memory guard
 
@@ -314,16 +350,16 @@ immutable project, hashes the actual manifest against the attested SHA, checks
 the shared checkpoint sentinel/count, imports the CLI from the pinned worktree,
 and confirms the effective provider/model/reasoning/concurrency. It does not
 read credential files or make an OAuth/model call. `-StartBuild` is required to
-launch anything and fails closed before `2026-10-04 03:31 KST`.
+launch anything; quota availability is not inferred from a fixed reset time.
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\guarded_offline_v5_resume.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\guarded_offline_v5_resume.ps1 -StartBuild
 ```
 
-At launch it rechecks the quota time and available RAM, starts the exact V5
-command with the original source, actual manifest SHA, and shared checkpoint
-directory, then verifies the process command line before applying affinity
+At launch it rechecks available RAM, starts the exact V5 command with the
+original source, actual manifest SHA, and shared checkpoint directory, then
+verifies the process command line before applying affinity
 mask `0xF`. It reapplies the mask to descendants only after resolving their
 absolute executable/command line and excluding the protected Bithumb tree.
 Every 10 seconds it writes a JSONL sample outside the repository under
@@ -335,19 +371,21 @@ to inspect, not by themselves proof of a leak. If available RAM stays below 6
 GiB for 60 seconds, it stops only the re-verified compiler descendants and
 root, preserving the shared checkpoints. No other process is managed.
 
-The launcher was added while the OAuth quota window is unavailable. Until the
-reset, run only its preflight and early-start refusal checks; do not substitute
-a mock or alternate identity to bypass the boundary. The production build
-remains unstarted.
+Historical note: the launcher was initially added while the OAuth quota window
+was believed unavailable. The early-start refusal described in the original
+validation below was tied to the now-removed hard-coded reset timestamp; it is
+not current launcher behavior. Do not substitute a mock identity for the
+configured production provider.
 
 On 2026-09-30, the launcher passed PowerShell parser validation and its
 preflight without starting a build or making an OAuth/model call. It verified
 the exact compiler/source/manifest/checkpoint identity above, effective
 `codex-oauth/gpt-5.6-sol/xhigh`, concurrency `4`, and Python `3.14.2` from the
 pinned worktree. The observed checkpoint inventory was 7,965 JSON files / 300,054,677
-bytes. Invoking `-StartBuild` before the reset was separately verified to stop
-at the quota guard before process creation. The build remains unstarted; this
-check does not advance semantic synthesis or change its checkpoint state.
+bytes. At that time, invoking `-StartBuild` before the configured reset was
+verified to stop at the then-present quota guard before process creation. That
+historical check did not advance semantic synthesis or change checkpoint state;
+its start refusal was removed on 2026-10-01.
 
 ### Shared checkpoint integrity audit
 
@@ -369,8 +407,8 @@ version, provider, model, reasoning effort, and exact request metadata, so the
 V4 and mock files do not collide with V5 requests. The failed quota checkpoint
 has `status=error` and is not a reusable success. This confirms existing cache
 integrity, not the number of uncached future nodes or an ETA. No checkpoint was
-modified, removed, copied, or reissued; the production build remains pending
-the quota reset.
+modified, removed, copied, or reissued during that audit. The subsequent resume
+state is recorded in Current resume status above.
 
 ## Progress and resource guard behavior
 
@@ -390,4 +428,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\guarded_offlin
 
 At launch, the runner writes an external `active_offline_v5_build.json` receipt binding a random run ID, pinned compiler root/commit, source/manifest/checkpoint identity, Python executable, exact command line, root PID and creation time, and parent PID. `-StopBuild` reads only this receipt; it never discovers a process by shared CLI arguments. It rechecks the pinned checkout commit and every recorded root identity before stopping the process tree. A missing, malformed, stale, or mismatched receipt fails closed without process control. Ambiguous descendants are left untouched; a process under the protected Bithumb project is never controlled. The receipt is removed only after the recorded root and all resolvable descendants are gone. If verification is incomplete, the receipt remains and blocks another build until the process tree is inspected. Shared checkpoints are preserved; forced stop may leave compiler scratch for inspection. Use the default no-build preflight to check readiness; neither preflight nor stop mode makes an OAuth call.
 
-Before the OAuth reset, validation may cover PowerShell parsing, read-only preflight, an early `-StartBuild` refusal, and `-StopBuild` failing closed when no launcher receipt exists, even if a separate process happens to use similar arguments. Do not launch a mock/alternate compiler to exercise the runtime guard, and do not start production synthesis until the quota reset and the existing preflight conditions pass.
+The pre-resume validation boundary above was historical and included the now-removed reset-time refusal. Current validation should cover PowerShell parsing, read-only preflight, process-identity checks, and `-StopBuild` failing closed when no valid launcher receipt exists. Do not launch a mock/alternate compiler to exercise the runtime guard.
