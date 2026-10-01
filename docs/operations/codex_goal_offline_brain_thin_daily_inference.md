@@ -2683,7 +2683,7 @@ content-addressed identity로 재사용한다. 이번 감사는 uncached 미래 
 않는다. checkpoint 파일을 변경/삭제하지 않았고 OAuth call은 0회다. Production V5 synthesis는
 quota reset `2026-10-04 03:31 KST` 전까지 미시작 상태로 유지한다.
 
-## 2026-10-01 재개 전 자원·문서 점검
+## 2026-10-01 00:02 KST 재개 전 자원·문서 점검 (historical)
 
 PR #144는 squash merge됐고 `origin/main`은 `697638e730b24ef969f9c6c0cc7c23e73a9e2578`이다.
 2026-10-01 00:02 KST에 production compiler 실행 여부와 host 상태를 한 번 확인했다. 정확한
@@ -2711,6 +2711,39 @@ CreatorTemp의 pytest 임시 폴더 3개(`pytest-6122`~`pytest-6124`, 각각 619
 기록된 `news_bot_next` 경로는 현재 없어 당시의 다섯 임시 폴더는 다시 확인하거나 이동하지 않았다.
 다른 Python/MCP/Posting 프로세스는 제어하지 않았다.
 
-다음 단계는 quota reset 이후 exact pinned V5 재개뿐이다. import, embeddings, planner 및 성공
-checkpoint 재생성은 하지 않는다. synthesis, package audit, BUILD-only C package, 동일 배포 경로의
-평가, 외부 audit, production activation은 미완료이며 production은 HOLD다.
+위 내용은 2026-10-01 00:05 KST 점검 당시의 상태다. 그 뒤 quota reset 시각을 하드코딩한
+launcher guard를 제거하고 V5 build를 재개했으므로, 이후의 현황과 다음 행동은 바로 아래 최신
+재개 기록을 따른다.
+
+## 2026-10-01 고정 quota-date guard 제거 및 V5 재개
+
+사용자 지시에 따라 `scripts/guarded_offline_v5_resume.ps1`에서 `2026-10-03T18:31:00Z`와
+비교해 build 시작을 거부하던 고정 quota reset 시각 검사를 제거했다. quota/account 판단은 현재
+설정된 Codex CLI/provider session에 맡기며, launcher는 credential 파일을 읽거나 계정을 직접
+전환하지 않는다. provider가 실제 usage-limit 응답을 반환하면 해당 실패 checkpoint를 보존하고
+무한 재시도하지 않는다. compiler/source/manifest/checkpoint identity, 중복 실행 방지, 4-core
+affinity, RAM·디스크 감시는 그대로 유지된다.
+
+수정은 한국어 commit `b8f316ed41c0755f4aa2c15efc9c1176014935d8`로 push되었고 PR #146에서
+quality-gate의 Ruff, Mypy, schema parity, production targeted regression, full pytest 및 generated
+drift/whitespace 검사가 통과했다. 최초 자동 review가 runbook과 이 goal snapshot의 시점 불일치를
+지적해 두 문서를 함께 갱신했다. Main 병합은 현재 branch ruleset의 review-thread resolution
+요구를 완료한 뒤 진행한다.
+
+동일 V5 compile ID, pinned compiler `7198b6b74bbd10f1cf2451ca399c0b63f14706a9`, immutable
+source/manifest SHA 및 shared checkpoint directory로 build를 재개했다. 2026-10-01 01:20:59 UTC
+기준 PID `53340`은 계속 실행 중이다. 최근 resource sample의 private memory tree는 약 4.37 GiB,
+host available RAM은 약 18.42 GiB, C: free는 약 369.61 GiB였다. Progress file의 coarse phase는
+`representative_and_distribution_build`, records `823,279/823,279`, semantic units `52,644`다;
+이 phase 수치가 stale이어도 compiler와 provider child가 살아 있고 checkpoint가 기록되므로 build
+상태는 process/resource log와 checkpoint를 함께 판단한다.
+
+01:12:02, 01:20:26, 01:20:59 UTC에 기존 실패 checkpoint를 포함한 3개 `offline_semantic_reduce`
+요청이 `status=ok`로 완료됐다. 특히 `LLMCKPT-1d6d8295e6996522.json`은 이전 quota 오류에서 성공으로
+갱신되어 재사용 가능해졌다. 이는 고정 날짜 gate 없이 provider가 요청을 처리했다는 직접 증거다.
+빌드는 아직 진행 중이며, 성공한 content-addressed checkpoint는 다음 resume에서도 재사용한다.
+
+현재 남은 일은 V5 synthesis/package 완료, package audit, 별도 BUILD-only C package, intended daily
+deployment와 같은 경로의 CALIBRATION/HOLDOUT/POST_CUTOFF 평가 및 A/B/C 비교, external audit이다.
+모두 통과하기 전 production activation은 HOLD이며, 이 build의 `records=823,279/823,279`만으로
+brain synthesis 완료라고 판단하지 않는다.
