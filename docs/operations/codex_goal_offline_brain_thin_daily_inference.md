@@ -2025,3 +2025,9 @@ At 05:41 KST, the build tree used about 4.37 GiB private memory / 0.88 GiB worki
 The same pinned compile remains active as PID `10592`. A complete trace recount from 05:41 through 06:45 found eight additional successful `offline_semantic_reduce` calls and zero failures, bringing post-resume successful reductions to 184. Latest success is `REDUCE-e9c6068ad6183f78c6a2` at 06:29:53 KST. Input accounting remains 823,279 records / 52,644 semantic units and is not a completion percentage; the phase pointer remains stale.
 
 At 06:43 KST, the build tree used about 4.36 GiB private memory / 0.88 GiB working set, host available RAM was about 20.26 GiB, and C: free space was about 288.5 GiB. No files were moved or deleted and no process was stopped. The V5 package remains unsealed; package audit, separate BUILD-only C packaging, deployable-path A/B/C evaluation, and external artifact review remain pending. Production remains HOLD.
+
+## 2026-10-04 07:46 KST V5 Resume Poll
+
+The same pinned compile remains active as PID `10592`. Trace recount since 06:45 found seven additional successful `offline_semantic_reduce` calls and zero failures, bringing the cumulative post-resume reduce count to 191. Latest success is `REDUCE-0c8f43d2f914e85930d7` at 07:42:37 KST. Input accounting remains 823,279 records / 52,644 semantic units, not a completion percentage; phase metadata remains stale.
+
+At 07:45 KST, the build tree used about 4.36 GiB private memory / 0.82 GiB working set, host available RAM was about 19.13 GiB, and C: free space was about 288.3 GiB. No files were moved or deleted and no process was stopped. Package sealing, deep/read-only package audit, separate BUILD-only C packaging, deployable-path A/B/C evaluation, and external artifact review remain pending. Production remains HOLD.
