@@ -1258,9 +1258,17 @@ async def test_reduce_rejects_claims_outside_available_source_ids(tmp_path: Path
             True,
             "allowed_capsule_id_plus_exact_arabic_word_suffix",
         ),
+        (
+            "\u2019",
+            None,
+            True,
+            "allowed_capsule_id_plus_exact_right_single_quote_suffix",
+        ),
         ("\u00ad\u2014", "CAP-not-in-child-tree", False, None),
         ("\u0639\u0646\u062f", "CAP-not-in-child-tree", False, None),
+        ("\u2019", "CAP-not-in-child-tree", False, None),
         ("\u00ad\u2013", None, False, None),
+        ("\u2018", None, False, None),
     ],
 )
 async def test_reduce_normalizes_only_explicit_suffixes_on_allowed_capsule_ids(
@@ -1277,13 +1285,18 @@ async def test_reduce_normalizes_only_explicit_suffixes_on_allowed_capsule_ids(
     allowed_id = "CAP-a"
 
     if not normalizes:
-        with pytest.raises(ValueError, match="cited an unavailable capsule"):
+        with pytest.raises(ValueError, match="cited an unavailable capsule") as exc_info:
             await compiler._reduce_node(
                 category="fixture",
                 level=0,
                 children=_fixture_reduce_children(),
                 review=False,
             )
+        message = str(exc_info.value)
+        citation_base = capsule_id or allowed_id
+        assert "claim_index=0" in message
+        assert "field=supporting_capsule_ids" in message
+        assert f"citation={ascii(citation_base + suffix)}" in message
         return
 
     result = await compiler._reduce_node(

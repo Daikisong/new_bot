@@ -3928,6 +3928,24 @@ def _normalize_reduce_claim_citations(
                             )
                         )
                         continue
+                # Repair only the exact punctuation suffix confirmed in the failing trace.
+                exact_right_single_quote_suffix = "\u2019"
+                if original_value.endswith(exact_right_single_quote_suffix):
+                    prefix = original_value[: -len(exact_right_single_quote_suffix)]
+                    if prefix in allowed_capsule_ids:
+                        normalized_ids.append(prefix)
+                        normalizations.append(
+                            SemanticReduceCitationNormalization(
+                                claim_index=claim_index,
+                                field=field_name,
+                                original_value=original_value,
+                                normalized_capsule_id=prefix,
+                                rule=(
+                                    "allowed_capsule_id_plus_exact_right_single_quote_suffix"
+                                ),
+                            )
+                        )
+                        continue
                 prefix, separator, suffix = original_value.partition(" ")
                 if not (
                     separator
@@ -3936,7 +3954,11 @@ def _normalize_reduce_claim_citations(
                     and not suffix.isascii()
                     and suffix.isalpha()
                 ):
-                    raise ValueError(error_message)
+                    raise ValueError(
+                        f"{error_message}: claim_index={claim_index} "
+                        f"field={field_name} citation={original_value!a} "
+                        f"allowed_capsule_count={len(allowed_capsule_ids)}"
+                    )
                 normalized_ids.append(prefix)
                 normalizations.append(
                     SemanticReduceCitationNormalization(
