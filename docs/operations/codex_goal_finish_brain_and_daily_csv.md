@@ -1,7 +1,7 @@
 # Goal: 일회성 두뇌 컴파일 완료 및 장전 CSV 판단 흐름 검증
 
-문서 갱신: 2026-10-05 08:05 KST
-상태 스냅샷: 같은 시각의 프로세스·progress 파일 확인과 앞서 수행된 종료 후 read-only DB 감사를 반영했다. 실행을 다시 시작할 때는 상태를 처음부터 재확인한다.
+문서 갱신: 2026-10-05 08:41 KST
+상태 스냅샷: 08:41 KST에 compiler session/process와 progress를 재확인했다. 동일 build가 살아 있으므로 target DuckDB는 열지 않았고, terminal 이후 read-only 재감사를 한다.
 
 ## 최종 목표
 
@@ -54,15 +54,16 @@
 
 ## 현재 검증된 상태
 
-2026-10-05 08:05 KST 기준:
+2026-10-05 08:41 KST 기준:
 
-- build executor session은 exit code 1로 종료되었다. 이전 compiler Python PID 60848도 종료된 상태다.
-- compile ID/worktree/source를 대상으로 새로 실행 중인 compiler process는 확인되지 않았다. 무관한 다른 프로젝트 프로세스에는 손대지 않는다.
-- target DuckDB WAL 파일은 보이지 않는다.
-- progress.json의 마지막 기록은 2026-10-05T07:41:37.437728+09:00이며, phase는 offline_reduce, persisted closure는 391/1,868, 남은 수는 1,477, current node 표시는 REDUCE-3823718c73c20aed453b다. 즉 DAG closure는 20.93%다. 이 비율은 연구 record coverage, LLM payload 노출률, 예상 완료 시간과 같지 않다.
-- 종료 후 read-only DB 감사에서 reduce_nodes 391행과 같은 compile/source/plan identity가 확인되었다. 앞선 감사 시 mechanism_claims와 mechanism_claim_capsules는 아직 0행이었다. 패키지가 완성됐다는 뜻이 아니다.
-- 직전 오류 문구는 semantic reduce claim cited an unavailable capsule이다. 앞선 시도에서 허용 ID가 정확히 일치하는 경우에만 특정 Arabic suffix를 정규화하는 좁은 수정이 들어갔고, compiler branch commit 8578372에서 Ruff, Mypy(139 files), pytest(1,934 passed)가 통과했다. 그 뒤 같은 오류가 다시 났다.
-- 이번 오류의 실제 잘못된 citation 문자열, 해당 응답 trace/checkpoint, 허용 capsule 집합과의 차이는 아직 특정하지 못했다. 오류 메시지 자체는 citation 값을 노출하지 않는다. 이 값을 모른 채 정규화를 넓히거나 같은 빌드를 바로 재시작하지 않는다.
+- 동일 compile ID build session 41212와 Python PID 29156이 08:31:29 KST부터 살아 있다. 중복 writer는 시작하지 않는다.
+- progress.json은 08:40:30.042481+09:00에 갱신됐으며 phase는 offline_reduce, closure는 402/1,868, remaining은 1,466, 현재 node 표시는 REDUCE-4ba6be6a3744820d38e3이다. DAG closure는 21.52%다. 이는 record coverage, LLM 노출률, ETA가 아니다.
+- live writer 동안 target DuckDB/WAL을 열거나 hash/parity 검사하지 않는다. 종료 후에만 read-only로 재감사한다.
+- 직전 오류 trace는 TRACE-c4e74376ecbc, checkpoint는 LLMCKPT-1ec9f0633e3c15f0이다. 목적은 REDUCE-0703331bc02f14ce3512, input SHA-256은 4dc293455d62a60a7bed27a064252a57ba3f3a4f1d63af7b0e21285d16acf543, output SHA-256은 75c9beb1f435019cd6d09a62ba38c6bd770c4d7e0e5586cb60a19fd9a895dd98이다. trace와 checkpoint hash가 일치하고 모델 identity는 gpt-6.1-sol/high다.
+- 실패 citation은 CAP-4a7e8b51c6643343aeec 뒤에 U+2019 RIGHT SINGLE QUOTATION MARK가 붙은 값이었다. 컴파일러의 실제 leaf builder로 허용 evidence 집합 8개를 재구성했고, suffix를 뺀 정확한 ID가 집합에 있음을 확인했다. 잘못된 ID는 허용하지 않는다.
+- 좁은 U+2019 suffix normalization, 별도 감사 rule, 실패 진단의 claim index/field/escaped citation, 허용되지 않은 ID 및 유사 구두점 거부 테스트를 추가했다. compiler branch commit fa81f2c가 push됐고 Ruff PASS, Mypy 139 files PASS, pytest 1,937 passed다.
+- 동일 compile을 session 41212로 재개했다. 실패했던 reducer는 이제 기존 checkpoint의 checkpoint_hit으로 닫혔고, 재개 초기에 관측된 leaf-map trace도 checkpoint_hit이었다. 이들은 새 provider 합성이 아니라 기존 응답 재사용이다. 새 reducer의 model identity는 gpt-6.1-sol/high다.
+- Python private memory는 08:35~08:41 관측에서 약 4.2 GB로 대체로 안정적이었다. 짧은 표본만으로 누수 여부를 단정하지 않고 추이를 계속 본다.
 - 기존 root branch codex/quality-full-pr126의 release-binding 변경은 별도 commit 3fff4c4이며 당시 Ruff, Mypy(139 files), pytest(1,906 passed)가 통과했다. 이후 변경이 있으면 해당 worktree에서도 최종 gate를 다시 실행한다.
 - 완성된 full-corpus V2 package, 실제 package로 실행한 장전 daily smoke, 같은 architecture의 정식 blind 평가, 최종 release binding은 아직 입증되지 않았다. Production 활성화는 HOLD다.
 
@@ -75,7 +76,7 @@
 - repair 완료 research의 production import 및 record accounting
 - 실임베딩 생성과 semantic index의 기존 기반 데이터
 - record assignment 및 기존 map stage/receipt
-- 고정 plan의 앞선 391개 durable reducer closure와 검증된 정확 일치 checkpoint
+- 고정 plan의 앞선 402개 progress closure와 검증된 정확 일치 checkpoint. 실행 중 DB row 수는 terminal 후 read-only로 대조한다.
 
 새 input identity가 실제로 달라졌다는 증거와 별도 승인이 없는 한 import, embedding, map, planner, compile ID를 다시 만들지 않는다. 실패 시 이미 저장된 closure와 checkpoint를 보존한다.
 
@@ -91,7 +92,7 @@
 
 ### 2. 반복 citation 오류를 정확히 진단하고 좁게 고친다
 
-실패한 node REDUCE-3823718c73c20aed453b에 대해:
+이미 진단·수정한 실패 node REDUCE-0703331bc02f14ce3512의 trace/checkpoint를 기준으로 하고, 이후 실패가 생기면 같은 절차로 새 node를 진단한다:
 
 - 해당 reducer의 purpose, input SHA, child lineage, trace와 checkpoint ID를 고정 plan 및 마지막 실패 시각과 연결한다.
 - 응답이 checkpoint에 있으면 input SHA, model, prompt/schema/compiler identity가 정확히 맞는 경우만 읽는다. 어떤 output이 실패를 냈는지 확인할 수 없으면 코드/trace에서 실패 값을 보존하는 진단을 추가한 후 재현한다.
