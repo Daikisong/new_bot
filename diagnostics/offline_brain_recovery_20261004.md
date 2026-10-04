@@ -868,3 +868,12 @@ also replied to a poll. The progress ledger updated at 07:22:20 KST and reported
 closed nodes than the previous 07:07 checkpoint (`317 / 1,868`). Record accounting remains 823,279/823,279 and is
 not a semantic completion metric. Private memory was about 4.11 GB at the same observation. The build remained
 active; its live DuckDB/WAL was not opened. No duplicate compile or concurrent checkpoint writer was started.
+
+### 07:31 KST: 20% fixed-DAG checkpoint
+
+The same Python build PID `60848` remained active under PowerShell PID `77968`; the live WAL metadata advanced
+with the build and was not opened. The 07:31:37 KST progress ledger reports `376 / 1,868` closed nodes (20.13%),
+`1,492` remaining, phase `offline_reduce`, current node `REDUCE-8a7c9e16f7a66feacb0f`. This is 20 more closed
+nodes than the 07:22 checkpoint. It does not mean 20% of records were newly read or that 20% of semantic quality
+is achieved. Record accounting remains 823,279/823,279. Python private memory at the same sample was about
+4.11 GB, consistent with recent samples; the build remains active and no other build was started.

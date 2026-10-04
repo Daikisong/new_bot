@@ -1,6 +1,6 @@
 # Goal: One-Time Brain, Daily Pre-Open CSV Decision
 
-문서 갱신: 2026-10-05 KST. 최신 process 확인 07:22 KST, 최신 progress ledger 07:22:20 KST.
+문서 갱신: 2026-10-05 KST. 최신 process 확인 07:31 KST, 최신 progress ledger 07:31:37 KST.
 
 이 문서는 현재 저장소 상태를 이어받아 사용자가 원하는 운영 결과까지 완결하기 위한 실행 지시서다. 실행할 때마다 이 문서의 진행 숫자를 사실로 간주하지 말고 실제 프로세스, progress ledger, trace, receipt, manifest, DB를 먼저 확인한다. 이미 끝난 단계는 반복하지 않는다.
 
@@ -64,11 +64,11 @@
 - Main repo의 V2 release binding과 package-pointer 검증 변경은 보존한다. generated release 및 V6 semantic JSON schemas를 exporter로 갱신했고 schema parity가 통과했다. Compiler V6가 추가한 `close_return_status_distribution`과 influence manifest commitment 필드를 main reader가 허용·회계하도록 backport했고, daily population statistics 반영 및 회귀 테스트를 추가했다. Signed release identity binding과 rollback helper 검증을 위해 임시 fixture에서 release A -> B -> rollback A를 검사하는 `test_rollback_reactivates_a_verified_previous_release`를 추가했다. 최신 코드 상태에서 Ruff PASS, Mypy 139 files PASS, 전체 pytest 1,906 passed/1,208 warnings/300.72 sec로 모두 통과했다. 이후 compiler integration이나 다른 코드 변경이 있으면 commit 전에 세 gate를 다시 실행한다. dirty diff와 기존 사용자 변경을 보존한다.
 - 실제 full-corpus V2 package, 그 package를 사용하는 CSV smoke, 동일 architecture formal blind 평가, 실제 package root을 사용한 end-to-end signed-release inspection은 아직 완료 증거가 없다. 등록 품질 gate와 승인 전 production activation은 HOLD다.
 
-## 현재 재개 상태 (2026-10-05 07:22 KST)
+## 현재 재개 상태 (2026-10-05 07:31 KST)
 
-- Full-corpus synthesis는 compiler worktree `C:\Users\eorb9\projects\news_bot_resume_clean_7198b6b`에서 기존 compile ID `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`로 재개되어 있다. 07:22 KST 확인 시 PowerShell PID `77968`(06:42:14 시작) 아래 Python PID `60848`(06:42:15 시작)이 동일 source, target DB, checkpoint directory로 `build-offline --continue-after-map-plan`을 실행 중이었다. 절대로 중복 시작하지 않는다.
-- 고정 DAG는 총 1,868 nodes(reducer 1,858, category review 9, world root 1)다. 최신 progress ledger는 07:22:20 KST 기준 `356/1,868` closed, `1,512` remaining, 현재 node `REDUCE-58c3feaf2494aa9cadcc`를 기록한다(고정 DAG closure `19.06%`). 재개 직전 검증 closure 267에서 ledger상 89개 node closure가 늘었다. 이는 node closure 비율이지 corpus 의미 이해율, 품질 점수, fresh LLM 호출 수 또는 남은 시간 비율이 아니다. fresh/checkpoint/local carry 세부는 trace와 종료 후 ledger audit로 확인한다.
-- Python private memory는 07:22 KST 표본에서 약 4.11 GB였다. 직전 관측 구간과 큰 변화가 없었다. 이를 전체 실행 내내 누수가 없다는 증명으로 확대하지 않고 계속 표본 확인한다.
+- Full-corpus synthesis는 compiler worktree `C:\Users\eorb9\projects\news_bot_resume_clean_7198b6b`에서 기존 compile ID `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`로 재개되어 있다. 07:31 KST 확인 시 PowerShell PID `77968`(06:42:14 시작) 아래 Python PID `60848`(06:42:15 시작)이 동일 source, target DB, checkpoint directory로 `build-offline --continue-after-map-plan`을 실행 중이었다. 절대로 중복 시작하지 않는다.
+- 고정 DAG는 총 1,868 nodes(reducer 1,858, category review 9, world root 1)다. 최신 progress ledger는 07:31:37 KST 기준 `376/1,868` closed, `1,492` remaining, 현재 node `REDUCE-8a7c9e16f7a66feacb0f`를 기록한다(고정 DAG closure `20.13%`). 재개 직전 검증 closure 267에서 ledger상 109개 node closure가 늘었다. 이는 node closure 비율이지 corpus 의미 이해율, 품질 점수, fresh LLM 호출 수 또는 남은 시간 비율이 아니다. fresh/checkpoint/local carry 세부는 trace와 종료 후 ledger audit로 확인한다.
+- Python private memory는 07:31 KST 표본에서 약 4.11 GB였다. 직전 관측 구간과 큰 변화가 없었다. 이를 전체 실행 내내 누수가 없다는 증명으로 확대하지 않고 계속 표본 확인한다.
 - Record ratio `1.0`은 record accounting 완료만 뜻하며 synthesis 진행률이 아니다. 빌드가 live인 동안 target DuckDB/WAL을 별도 연결로 열거나 hash/count 검사하지 않고, 같은 대상에 writer를 추가하지 않는다. 재개 시점에 target WAL이 존재했다.
 - 직전 실패는 `semantic reduce claim cited an unavailable capsule`였다. read-only 감사에서 trace `TRACE-718730099afa`와 checkpoint `LLMCKPT-4a6a1cbded76a0fb`의 input/output hash는 일치했다. 허용된 capsule ID 하나에 Arabic word suffix `عند`가 붙은 citation만 일치하지 않았다. compiler 수정은 해당 prefix가 node의 exact allowed set에 있을 때 정확한 suffix 형식만 정규화하고, 원문/규칙을 `SemanticReduceCitationNormalization` 감사 row에 남긴다. 임의 ID나 suffix는 여전히 거부한다.
 - 위 제한 수정과 회귀 테스트는 compiler branch의 한국어 commit `8578372`로 push됐다. compiler branch gate는 Ruff PASS, Mypy 139 files PASS, pytest 1,934 passed(1,325 warnings). main branch의 V2 release binding/rollback 수정은 한국어 commit `3fff4c4`로 push됐고, 그 branch gate는 Ruff PASS, Mypy 139 files PASS, pytest 1,906 passed(1,208 warnings). 두 변경은 별도 worktree/branch에 있으며 private brain/data는 push하지 않았다.
