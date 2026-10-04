@@ -859,3 +859,12 @@ PID `60848` remained live, and the ledger at 07:07:39 reported `317 / 1,868` clo
 memory; earlier samples showed four Codex children, matching the configured concurrency cap of four. These are
 point-in-time resource observations, not proof of zero memory growth over the entire build. No ETA is inferred
 from this short progress interval.
+
+### 07:22 KST: same-compile progress checkpoint
+
+The live Python process PID `60848` was rechecked under parent PowerShell PID `77968`; the existing executor session
+also replied to a poll. The progress ledger updated at 07:22:20 KST and reported `356 / 1,868` closed model nodes
+(19.06%), `1,512` remaining, phase `offline_reduce`, current node `REDUCE-58c3feaf2494aa9cadcc`. This is 39 more
+closed nodes than the previous 07:07 checkpoint (`317 / 1,868`). Record accounting remains 823,279/823,279 and is
+not a semantic completion metric. Private memory was about 4.11 GB at the same observation. The build remained
+active; its live DuckDB/WAL was not opened. No duplicate compile or concurrent checkpoint writer was started.
