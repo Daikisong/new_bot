@@ -33,6 +33,8 @@ from news_scalping_lab.brain.audit import audit_brain
 from news_scalping_lab.brain.compiler import BrainCompiler
 from news_scalping_lab.brain.diff import build_brain_diff, write_brain_diff_markdown
 from news_scalping_lab.brain.offline_v2 import (
+    OfflineBrainBuildResult,
+    OfflineBrainPlanResult,
     OfflineSemanticBrainCompiler,
     select_brain_package,
 )
@@ -1305,28 +1307,86 @@ def brain_build_offline(
     source_project: Annotated[Path, typer.Option("--source-project")],
     output_root: Annotated[Path | None, typer.Option("--output-root")] = None,
     checkpoint_dir: Annotated[Path | None, typer.Option("--checkpoint-dir")] = None,
+    compatible_checkpoint_model: Annotated[
+        list[str] | None,
+        typer.Option("--compatible-checkpoint-model"),
+    ] = None,
     expected_manifest_sha256: Annotated[
         str | None,
         typer.Option("--expected-manifest-sha256"),
     ] = None,
+    resume_work_database: Annotated[
+        Path | None,
+        typer.Option("--resume-work-database"),
+    ] = None,
+    expected_resume_work_database_sha256: Annotated[
+        str | None,
+        typer.Option("--expected-resume-work-database-sha256"),
+    ] = None,
+    expected_resume_work_database_wal_sha256: Annotated[
+        str | None,
+        typer.Option("--expected-resume-work-database-wal-sha256"),
+    ] = None,
+    continue_after_map_plan: Annotated[
+        bool,
+        typer.Option(
+            "--continue-after-map-plan",
+            help="Continue reducer synthesis only from a matching sealed map-only plan.",
+        ),
+    ] = False,
 ) -> None:
     """Build an evaluation-only Semantic Brain V2 from an existing memory snapshot."""
 
     settings = load_settings()
     try:
         _require_offline_production_llm_identity(settings)
+        compatible_models: list[dict[str, str]] = []
+        for identity in compatible_checkpoint_model or []:
+            model, separator, effort = identity.partition("/")
+            if not separator or not model or not effort:
+                raise ValueError(
+                    "compatible checkpoint model must use MODEL/REASONING_EFFORT"
+                )
+            compatible_models.append(
+                {
+                    "provider": settings.llm_provider,
+                    "model": model,
+                    "reasoning_effort": effort,
+                }
+            )
         result = asyncio.run(
             OfflineSemanticBrainCompiler(
                 settings,
                 checkpoint_dir=checkpoint_dir,
+                compatible_checkpoint_model_configs=compatible_models,
             ).build(
                 source_project=source_project,
                 output_root=output_root,
                 expected_manifest_sha256=expected_manifest_sha256,
+                resume_work_database=resume_work_database,
+                expected_resume_work_database_sha256=(
+                    expected_resume_work_database_sha256
+                ),
+                expected_resume_work_database_wal_sha256=(
+                    expected_resume_work_database_wal_sha256
+                ),
+                stop_after_reduce_plan=not continue_after_map_plan,
+                require_map_plan_receipt=True,
             )
         )
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
         _exit_with_error(exc)
+    if isinstance(result, OfflineBrainPlanResult):
+        _echo(
+            {
+                **result.receipt,
+                "work_database": result.work_database_path.as_posix(),
+                "reduce_dag_plan": result.reduce_dag_plan_path.as_posix(),
+                "plan_receipt": result.plan_receipt_path.as_posix(),
+                "production_activated": False,
+            }
+        )
+        return
     _echo(
         {
             **result.package_manifest.model_dump(mode="json"),
@@ -1376,16 +1436,19 @@ def brain_update_offline(
     settings = load_settings()
     try:
         _require_offline_production_llm_identity(settings)
-        result = asyncio.run(
-            OfflineSemanticBrainCompiler(
-                settings,
-                checkpoint_dir=checkpoint_dir,
-            ).build(
-                source_project=source_project,
-                output_root=output_root,
-                previous_package=previous_package,
-                expected_manifest_sha256=expected_manifest_sha256,
-            )
+        result = cast(
+            OfflineBrainBuildResult,
+            asyncio.run(
+                OfflineSemanticBrainCompiler(
+                    settings,
+                    checkpoint_dir=checkpoint_dir,
+                ).build(
+                    source_project=source_project,
+                    output_root=output_root,
+                    previous_package=previous_package,
+                    expected_manifest_sha256=expected_manifest_sha256,
+                )
+            ),
         )
     except (FileNotFoundError, RuntimeError, ValueError) as exc:
         _exit_with_error(exc)

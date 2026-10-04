@@ -228,6 +228,113 @@ async def test_tracing_llm_provider_resumes_successful_structured_checkpoint(tmp
 
 
 @pytest.mark.asyncio
+async def test_tracing_llm_provider_reuses_compatible_cross_model_checkpoint(
+    tmp_path,
+) -> None:
+    old_config = {
+        "provider": "codex-oauth",
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "xhigh",
+        "compiler_version": "nslab.offline_semantic_brain.compiler.v5",
+    }
+    new_config = {
+        "provider": "codex-oauth",
+        "model": "gpt-6.1-sol",
+        "reasoning_effort": "high",
+        "compiler_version": "nslab.offline_semantic_brain.compiler.v6",
+    }
+    checkpoint_dir = tmp_path / "checkpoints"
+    old_provider = TracingLLMProvider(
+        CountingProvider(),
+        trace_dir=tmp_path / "old-traces",
+        checkpoint_dir=checkpoint_dir,
+        model_config=old_config,
+        default_metadata={"compiler_version": "nslab.offline_semantic_brain.compiler.v5"},
+    )
+    expected = await old_provider.generate_structured(
+        prompt="same V5 prompt",
+        response_model=SemanticResearchDraft,
+        purpose="offline_semantic_leaf.test-node",
+    )
+
+    new_provider_impl = CountingProvider()
+    new_provider = TracingLLMProvider(
+        new_provider_impl,
+        trace_dir=tmp_path / "new-traces",
+        checkpoint_dir=checkpoint_dir,
+        model_config=new_config,
+        default_metadata={"compiler_version": "nslab.offline_semantic_brain.compiler.v6"},
+        compatible_checkpoint_model_configs=[old_config],
+    )
+    actual = await new_provider.generate_structured(
+        prompt="same V5 prompt",
+        response_model=SemanticResearchDraft,
+        purpose="offline_semantic_leaf.test-node",
+    )
+
+    assert actual.model_dump(mode="json") == expected.model_dump(mode="json")
+    assert new_provider_impl.structured_calls == 0
+    assert len(new_provider.checkpoint_usage_rows) == 1
+    assert new_provider.checkpoint_usage_rows[0]["model_config"] == old_config
+    assert new_provider.checkpoint_usage_rows[0]["cache_hit"] is True
+    trace = read_json(next((tmp_path / "new-traces").glob("TRACE-*.json")))
+    assert trace["model_config"] == new_config
+    assert trace["checkpoint_model_config"] == old_config
+
+
+@pytest.mark.asyncio
+async def test_tracing_llm_provider_does_not_reuse_cross_compiler_reduce_checkpoint(
+    tmp_path,
+) -> None:
+    old_config = {
+        "provider": "codex-oauth",
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "xhigh",
+        "compiler_version": "nslab.offline_semantic_brain.compiler.v5",
+    }
+    new_config = {
+        "provider": "codex-oauth",
+        "model": "gpt-6.1-sol",
+        "reasoning_effort": "high",
+        "compiler_version": "nslab.offline_semantic_brain.compiler.v6",
+    }
+    checkpoint_dir = tmp_path / "checkpoints"
+    old_provider = TracingLLMProvider(
+        CountingProvider(),
+        trace_dir=tmp_path / "old-traces",
+        checkpoint_dir=checkpoint_dir,
+        model_config=old_config,
+        default_metadata={"compiler_version": "nslab.offline_semantic_brain.compiler.v5"},
+    )
+    await old_provider.generate_structured(
+        prompt="same reduce prompt",
+        response_model=SemanticResearchDraft,
+        purpose="offline_semantic_reduce.test-node",
+    )
+
+    new_provider_impl = CountingProvider()
+    new_provider = TracingLLMProvider(
+        new_provider_impl,
+        trace_dir=tmp_path / "new-traces",
+        checkpoint_dir=checkpoint_dir,
+        model_config=new_config,
+        default_metadata={"compiler_version": "nslab.offline_semantic_brain.compiler.v6"},
+        compatible_checkpoint_model_configs=[old_config],
+    )
+    await new_provider.generate_structured(
+        prompt="same reduce prompt",
+        response_model=SemanticResearchDraft,
+        purpose="offline_semantic_reduce.test-node",
+    )
+
+    assert new_provider_impl.structured_calls == 1
+    assert len(new_provider.checkpoint_usage_rows) == 1
+    assert new_provider.checkpoint_usage_rows[0]["model_config"] == new_config
+    assert new_provider.checkpoint_usage_rows[0]["cache_hit"] is False
+    assert len(list(checkpoint_dir.glob("*.json"))) == 2
+
+
+@pytest.mark.asyncio
 async def test_tracing_llm_provider_writes_error_checkpoint(tmp_path) -> None:
     provider = TracingLLMProvider(
         FailingProvider(),

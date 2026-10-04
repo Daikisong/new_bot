@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import math
+import os
 import shutil
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -14,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from time import monotonic
 from typing import Any, TypeVar, cast
+from uuid import uuid4
 
 import duckdb
 import numpy as np
@@ -33,10 +35,15 @@ from news_scalping_lab.contracts.offline_brain import (
     LongPayloadChunkDigest,
     LongPayloadChunkDigestDraft,
     LongPayloadDigestBatch,
+    MechanismClaimDraft,
     OfflineCompileManifest,
     SemanticCapsuleDraftBatch,
     SemanticInfluenceManifest,
     SemanticMemoryCapsule,
+    SemanticReduceChildIdentityNormalization,
+    SemanticReduceCitationNormalization,
+    SemanticReduceClaimDraft,
+    SemanticReduceDraft,
     SemanticReduceNode,
     SynthesizedMechanismClaim,
 )
@@ -57,21 +64,25 @@ from news_scalping_lab.utils import (
     write_json,
 )
 
-OFFLINE_COMPILER_VERSION = "nslab.offline_semantic_brain.compiler.v5"
+OFFLINE_COMPILER_VERSION = "nslab.offline_semantic_brain.compiler.v6"
+LEGACY_MAP_CHECKPOINT_COMPILER_VERSION = "nslab.offline_semantic_brain.compiler.v5"
 SEMANTIC_SPLITTER_VERSION = "recursive_full_population_cosine_radius.v3"
 LONG_PAYLOAD_PROMPT_VERSION = "offline_long_payload_chunk_map.v2"
 LEAF_PROMPT_VERSION = "offline_semantic_unit_leaf_map.v2"
-REDUCE_PROMPT_VERSION = "offline_semantic_reduce.v1"
-CATEGORY_REVIEW_PROMPT_VERSION = "offline_semantic_category_review.v1"
-WORLD_REDUCE_PROMPT_VERSION = "offline_semantic_world_reduce.v1"
+REDUCE_PROMPT_VERSION = "offline_semantic_reduce.v2"
+CATEGORY_REVIEW_PROMPT_VERSION = "offline_semantic_category_review.v2"
+WORLD_REDUCE_PROMPT_VERSION = "offline_semantic_world_reduce.v2"
 MAX_LEAF_PROMPT_BYTES = 180_000
 MAX_LEAF_OUTPUT_UNITS = 16
 MAX_LONG_PAYLOAD_CHUNK_BYTES = 72_000
 MAX_LONG_PAYLOAD_BATCH_BYTES = 170_000
 MAX_LONG_PAYLOAD_DIGEST_BUDGET_BYTES = 8_000
 MAX_REDUCE_PROMPT_BYTES = 180_000
-MAX_REDUCE_CHILDREN = 16
-OFFLINE_DUCKDB_MEMORY_LIMIT = "8GB"
+MAX_REDUCE_CHILDREN = 10
+MAX_REDUCE_NODE_OUTPUT_BYTES = 12_000
+MAX_REDUCE_NODE_PAYLOAD_RESERVE_BYTES = 1_024
+MAX_REDUCE_LEAF_BYTES = 60_000
+OFFLINE_DUCKDB_MEMORY_LIMIT = "4GB"
 SPLIT_P90_DISTANCE = 0.28
 SPLIT_MAX_DISTANCE = 0.55
 SPLIT_DEPTH_MARGIN = 16
@@ -125,6 +136,14 @@ class OfflineBrainBuildResult:
     package_manifest_path: Path
     compile_manifest: OfflineCompileManifest
     influence_manifest: SemanticInfluenceManifest
+
+
+@dataclass(frozen=True)
+class OfflineBrainPlanResult:
+    work_database_path: Path
+    reduce_dag_plan_path: Path
+    plan_receipt_path: Path
+    receipt: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -194,6 +213,7 @@ class OfflineSemanticBrainCompiler:
         *,
         llm: LLMProvider | None = None,
         checkpoint_dir: Path | None = None,
+        compatible_checkpoint_model_configs: Sequence[dict[str, Any]] | None = None,
     ) -> None:
         self.settings = settings
         self.root = settings.project_root
@@ -215,6 +235,7 @@ class OfflineSemanticBrainCompiler:
             base_llm,
             self.model_config,
             checkpoint_dir=resolved_checkpoint_dir,
+            compatible_checkpoint_model_configs=compatible_checkpoint_model_configs,
         )
         self._logical_llm_call_count = 0
         self._prompt_token_count = 0
@@ -229,6 +250,11 @@ class OfflineSemanticBrainCompiler:
         self._long_payload_chunk_map_call_count = 0
         self._payload_exposure_rows: list[dict[str, Any]] = []
         self._previous = _PreviousPackageState({}, {})
+        self._work_connection: duckdb.DuckDBPyConnection | None = None
+        self._work_progress_path: Path | None = None
+        self._work_record_count = 0
+        self._work_semantic_unit_count = 0
+        self._work_reduce_total_count = 0
         self._llm_semaphore = asyncio.Semaphore(max(1, settings.limits.max_concurrency))
 
     def plan(
@@ -253,11 +279,9 @@ class OfflineSemanticBrainCompiler:
             source.manifest_sha256,
             length=20,
         )
-        work_root = self.root / "brain" / ".work" / plan_id
-        work_root.mkdir(parents=True, exist_ok=True)
+        work_root = self.root / "brain" / ".work" / f"{plan_id}-{uuid4().hex[:8]}"
+        work_root.mkdir(parents=True, exist_ok=False)
         database_path = work_root / "semantic_plan.duckdb"
-        if database_path.exists():
-            database_path.unlink()
         connection = duckdb.connect(str(database_path))
         _configure_offline_duckdb(connection, temp_directory=work_root / "duckdb_tmp")
         try:
@@ -397,13 +421,27 @@ class OfflineSemanticBrainCompiler:
         output_root: Path | None = None,
         previous_package: Path | None = None,
         expected_manifest_sha256: str | None = None,
-    ) -> OfflineBrainBuildResult:
+        resume_work_database: Path | None = None,
+        expected_resume_work_database_sha256: str | None = None,
+        expected_resume_work_database_wal_sha256: str | None = None,
+        stop_after_reduce_plan: bool = False,
+        require_map_plan_receipt: bool = False,
+    ) -> OfflineBrainBuildResult | OfflineBrainPlanResult:
         started_at = now_kst()
         started = monotonic()
         source = resolve_source_memory_snapshot(
             source_project,
             expected_manifest_sha256=expected_manifest_sha256,
         )
+        if resume_work_database is not None and previous_package is not None:
+            raise ValueError("choose either a prior package or a resume work database, not both")
+        if expected_resume_work_database_sha256 is not None and resume_work_database is None:
+            raise ValueError("an expected resume work database SHA requires a resume database path")
+        if (
+            expected_resume_work_database_wal_sha256 is not None
+            and resume_work_database is None
+        ):
+            raise ValueError("an expected resume work database WAL SHA requires a resume database path")
         self._previous = _load_previous_package_state(previous_package)
         compile_id = stable_id(
             "OFFLINE-COMPILE",
@@ -421,22 +459,235 @@ class OfflineSemanticBrainCompiler:
             output_root = self.root / "brain" / "packages"
         work_root.mkdir(parents=True, exist_ok=True)
         database_path = work_root / "semantic_capsule_index.duckdb"
-        if database_path.exists():
-            database_path.unlink()
+        plan_receipt_path = work_root / "offline_map_plan_receipt.json"
+        if (
+            require_map_plan_receipt
+            and not stop_after_reduce_plan
+            and not plan_receipt_path.is_file()
+        ):
+            raise ValueError(
+                "no sealed map-only reduce plan exists; run build-offline without "
+                "--continue-after-map-plan first"
+            )
+        resume_database_path = resume_work_database.resolve() if resume_work_database else None
+        resume_database_sha256: str | None = None
+        resume_database_wal_sha256: str | None = None
+        if resume_database_path is not None:
+            if not resume_database_path.is_file():
+                raise FileNotFoundError(f"resume work database is missing: {resume_database_path}")
+            if resume_database_path == database_path.resolve():
+                raise ValueError("resume work database cannot be the active target database")
+            resume_database_sha256 = file_sha256(resume_database_path)
+            if (
+                expected_resume_work_database_sha256 is not None
+                and resume_database_sha256.lower()
+                != expected_resume_work_database_sha256.strip().lower()
+            ):
+                raise ValueError("resume work database SHA-256 does not match the attested value")
+            resume_database_wal_path = Path(f"{resume_database_path}.wal")
+            if resume_database_wal_path.is_file():
+                resume_database_wal_sha256 = file_sha256(resume_database_wal_path)
+                if expected_resume_work_database_wal_sha256 is None:
+                    raise ValueError(
+                        "resume work database WAL exists; its expected SHA-256 is required"
+                    )
+                if resume_database_wal_sha256.lower() != (
+                    expected_resume_work_database_wal_sha256.strip().lower()
+                ):
+                    raise ValueError(
+                        "resume work database WAL SHA-256 does not match the attested value"
+                    )
+            elif expected_resume_work_database_wal_sha256 is not None:
+                raise ValueError("expected resume work database WAL is missing")
 
-        connection = duckdb.connect(str(database_path))
+        target_database_existed = database_path.exists()
+        resumed_legacy_database = False
+        resumed_capsule_signatures: dict[str, tuple[str, str, str]] = {}
+        if resume_database_path is not None:
+            validation_path = work_root / f"resume-validation-{uuid4().hex[:8]}"
+            validation_path.mkdir(parents=True, exist_ok=False)
+            legacy_connection = duckdb.connect(
+                str(resume_database_path),
+                read_only=True,
+                config={
+                    "threads": 1,
+                    "memory_limit": OFFLINE_DUCKDB_MEMORY_LIMIT,
+                    "temp_directory": str(validation_path / "duckdb_tmp"),
+                },
+            )
+            try:
+                _configure_offline_duckdb(
+                    legacy_connection,
+                    temp_directory=validation_path / "duckdb_tmp",
+                )
+                _attach_source_memory(legacy_connection, source=source)
+                _validate_reusable_assignment_database(
+                    legacy_connection,
+                    source=source,
+                    require_complete_capsules=True,
+                )
+                legacy_counts = legacy_connection.execute(
+                    "SELECT (SELECT count(*) FROM reduce_nodes), "
+                    "(SELECT count(*) FROM mechanism_claims)"
+                ).fetchone()
+                if legacy_counts != (0, 0):
+                    raise ValueError(
+                        "legacy work database contains reducer/claim outputs that require a separate audit"
+                    )
+            finally:
+                legacy_connection.close()
+                shutil.rmtree(validation_path, ignore_errors=True)
+            if resume_database_sha256 is None:
+                raise ValueError("resume work database hash was not captured")
+            if target_database_existed:
+                resumed_legacy_database = _adopt_matching_resume_work_database(
+                    resume_database_path,
+                    database_path,
+                    expected_sha256=resume_database_sha256,
+                    expected_wal_sha256=resume_database_wal_sha256,
+                )
+            else:
+                _copy_resume_work_database(
+                    resume_database_path,
+                    database_path,
+                    expected_sha256=resume_database_sha256,
+                    expected_wal_sha256=resume_database_wal_sha256,
+                )
+                resumed_legacy_database = True
+
+        connection = duckdb.connect(
+            str(database_path),
+            read_only=False,
+            config={
+                "threads": 1,
+                "memory_limit": OFFLINE_DUCKDB_MEMORY_LIMIT,
+                "temp_directory": str(work_root / "duckdb_tmp"),
+            },
+        )
         _configure_offline_duckdb(connection, temp_directory=work_root / "duckdb_tmp")
         try:
-            _initialize_package_database(connection, source=source)
-            unit_builds = _build_semantic_assignments(
-                connection,
-                source=source,
-                progress_path=work_root / "progress.json",
+            _drop_package_database_indexes(connection)
+            if not target_database_existed and not resumed_legacy_database:
+                _initialize_package_database(connection, source=source)
+                unit_builds = _build_semantic_assignments(
+                    connection,
+                    source=source,
+                    progress_path=work_root / "progress.json",
+                )
+            else:
+                _attach_source_memory(connection, source=source)
+                metadata = _read_compile_metadata(connection)
+                if target_database_existed and not metadata and not resumed_legacy_database:
+                    raise ValueError(
+                        "existing work database has no compiler identity metadata; "
+                        "refusing an implicit resume"
+                    )
+                if metadata:
+                    expected_metadata = {
+                        "compiler_version": OFFLINE_COMPILER_VERSION,
+                        "compile_id": compile_id,
+                        "source_memory_manifest_sha256": source.manifest_sha256,
+                        "record_corpus_root": source.record_corpus_root,
+                        "record_count": str(source.record_count),
+                        "semantic_splitter_version": SEMANTIC_SPLITTER_VERSION,
+                    }
+                    if any(metadata.get(key) != value for key, value in expected_metadata.items()):
+                        raise ValueError("existing work database belongs to another source or compiler identity")
+                    if (
+                        resume_database_sha256 is not None
+                        and metadata.get("resume_source_database_sha256")
+                        != resume_database_sha256
+                    ):
+                        raise ValueError("existing work database came from a different resume source")
+                    if (
+                        resume_database_path is not None
+                        and metadata.get("resume_source_database_wal_sha256", "")
+                        != (resume_database_wal_sha256 or "")
+                    ):
+                        raise ValueError(
+                            "existing work database came from a different resume WAL"
+                        )
+                unit_builds = _validate_reusable_assignment_database(
+                    connection,
+                    source=source,
+                    require_complete_capsules=resumed_legacy_database,
+                )
+                if resumed_legacy_database and metadata:
+                    raise ValueError("legacy resume database unexpectedly contains v6 build metadata")
+                self._previous = _PreviousPackageState(
+                    self._previous.capsules_by_unit,
+                    _load_reduce_nodes_from_database(connection),
+                )
+
+            if resumed_legacy_database or target_database_existed:
+                resumed_capsule_signatures = _capsule_database_signatures(connection)
+
+            semantic_unit_count = len(unit_builds)
+            metadata = _read_compile_metadata(connection)
+            metadata.update(
+                {
+                    "compiler_version": OFFLINE_COMPILER_VERSION,
+                    "compile_id": compile_id,
+                    "source_memory_manifest_sha256": source.manifest_sha256,
+                    "record_corpus_root": source.record_corpus_root,
+                    "record_count": str(source.record_count),
+                    "semantic_splitter_version": SEMANTIC_SPLITTER_VERSION,
+                    "embedding_identity": source.embedding_identity,
+                    "semantic_unit_count": str(semantic_unit_count),
+                    "resume_source_database_sha256": (
+                        resume_database_sha256
+                        or metadata.get("resume_source_database_sha256", "")
+                    ),
+                    "resume_source_database_wal_sha256": (
+                        resume_database_wal_sha256
+                        or metadata.get("resume_source_database_wal_sha256", "")
+                    ),
+                    "resume_source_database_path": (
+                        resume_database_path.as_posix()
+                        if resume_database_path
+                        else metadata.get("resume_source_database_path", "")
+                    ),
+                }
             )
+            _write_compile_metadata(connection, values=metadata)
+            existing_plan_receipt = (
+                read_json(plan_receipt_path) if plan_receipt_path.is_file() else None
+            )
+            if require_map_plan_receipt and not stop_after_reduce_plan:
+                if existing_plan_receipt is None:
+                    raise ValueError("sealed map-only plan receipt is unreadable")
+                expected_receipt_identity = {
+                    "compile_id": compile_id,
+                    "source_memory_manifest_sha256": source.manifest_sha256,
+                    "record_corpus_root": source.record_corpus_root,
+                    "record_count": source.record_count,
+                    "semantic_unit_count": semantic_unit_count,
+                    "resume_source_database_sha256": (
+                        metadata.get("resume_source_database_sha256") or None
+                    ),
+                    "resume_source_database_wal_sha256": (
+                        metadata.get("resume_source_database_wal_sha256") or None
+                    ),
+                }
+                if any(
+                    existing_plan_receipt.get(key) != value
+                    for key, value in expected_receipt_identity.items()
+                ):
+                    raise ValueError(
+                        "sealed map-only plan belongs to another source or resume database"
+                    )
+            self._work_connection = connection
+            self._work_progress_path = work_root / "progress.json"
+            self._work_record_count = source.record_count
+            self._work_semantic_unit_count = semantic_unit_count
             semantic_unit_count = len(unit_builds)
             _write_offline_progress(
                 work_root / "progress.json",
-                phase="representative_and_distribution_build",
+                phase=(
+                    "representative_and_distribution_resume"
+                    if resumed_legacy_database or target_database_existed
+                    else "representative_and_distribution_build"
+                ),
                 processed_record_count=source.record_count,
                 total_record_count=source.record_count,
                 semantic_unit_count=semantic_unit_count,
@@ -461,13 +712,185 @@ class OfflineSemanticBrainCompiler:
             # Its metrics and exposure ledger are captured, so release those copies
             # before leaf compilation builds the changed-row plan it actually uses.
             del package_payload_plan
-            capsules, leaf_nodes = await self._compile_leaf_capsules(unit_rows)
+            capsules = await self._compile_leaf_capsules(unit_rows)
             # Keep outcome labels out of content-addressed LLM prompts while binding
             # their full-population distribution into the resulting capsules.
             capsules = _attach_close_return_status_distributions(connection, capsules)
+            current_capsule_signatures = {
+                row.semantic_unit_id: (
+                    row.capsule_id,
+                    sha256_text(canonical_json(row.model_dump(mode="json"))),
+                    row.member_record_root,
+                )
+                for row in capsules
+            }
+            resumed_capsule_exact_match_count = sum(
+                resumed_capsule_signatures.get(unit_id) == signature
+                for unit_id, signature in current_capsule_signatures.items()
+            )
             # Reduce operates on capsules and verified child IDs, not raw news payloads.
             del unit_rows
             _write_capsules_to_database(connection, capsules)
+            leaf_nodes, reduce_dag_plan = _plan_reduce_graph(capsules)
+            plan_artifact = {
+                "schema_version": "nslab.offline_reduce_dag_artifact.v1",
+                "compile_id": compile_id,
+                "source_memory_manifest_sha256": source.manifest_sha256,
+                "record_corpus_root": source.record_corpus_root,
+                "capsule_population_root": _model_population_root(
+                    capsules, key="capsule_id"
+                ),
+                "plan": reduce_dag_plan,
+            }
+            plan_artifact_sha256 = sha256_text(canonical_json(plan_artifact))
+            plan_path = work_root / "reduce_dag_plan.json"
+            existing_plan = read_json(plan_path) if plan_path.is_file() else None
+            metadata = _read_compile_metadata(connection)
+            stored_plan_sha256 = metadata.get("reduce_dag_plan_sha256")
+            stored_topology_sha256 = metadata.get("reduce_dag_topology_sha256")
+            persisted_nodes = _load_reduce_nodes_from_database(connection)
+            if (
+                existing_plan_receipt is not None
+                and existing_plan_receipt.get("reduce_dag_plan_sha256")
+                != plan_artifact_sha256
+                and not stop_after_reduce_plan
+            ):
+                raise ValueError(
+                    "capsule population changed after map-only plan was sealed; "
+                    "stop and reseal the plan before reducer calls"
+                )
+            if existing_plan is not None and (
+                existing_plan.get("plan_sha256") != plan_artifact_sha256
+            ) and persisted_nodes:
+                raise ValueError(
+                    "reduce DAG changed after persisted nodes exist; refusing unsafe resume"
+                )
+            if stored_plan_sha256 and stored_plan_sha256 != plan_artifact_sha256 and persisted_nodes:
+                raise ValueError(
+                    "work database reduce DAG identity differs from current capsules"
+                )
+            if (
+                stored_topology_sha256
+                and stored_topology_sha256 != reduce_dag_plan["topology_sha256"]
+                and persisted_nodes
+            ):
+                raise ValueError("work database reduce topology differs from current capsules")
+            planned_tasks = {
+                str(row["node_id"]): tuple(str(value) for value in row["child_node_ids"])
+                for row in reduce_dag_plan["tasks"]
+            }
+            unexpected_persisted_nodes = set(persisted_nodes) - set(planned_tasks)
+            if unexpected_persisted_nodes:
+                raise ValueError(
+                    "work database contains reduce nodes outside the fixed DAG: "
+                    f"{len(unexpected_persisted_nodes)}"
+                )
+            plan_artifact["plan_sha256"] = plan_artifact_sha256
+            write_json(plan_path, plan_artifact)
+            metadata.update(
+                {
+                    "reduce_dag_plan_sha256": plan_artifact_sha256,
+                    "reduce_dag_topology_sha256": reduce_dag_plan["topology_sha256"],
+                    "reduce_dag_model_task_count": str(
+                        reduce_dag_plan["total_model_tasks"]
+                    ),
+                }
+            )
+            _write_compile_metadata(connection, values=metadata)
+            self._work_reduce_total_count = int(
+                reduce_dag_plan["total_model_tasks"]
+            )
+            self._previous = _PreviousPackageState(
+                self._previous.capsules_by_unit,
+                {
+                    **self._previous.reduce_nodes_by_id,
+                    **persisted_nodes,
+                },
+            )
+            _write_offline_progress(
+                work_root / "progress.json",
+                phase="offline_reduce_planned",
+                processed_record_count=source.record_count,
+                total_record_count=source.record_count,
+                semantic_unit_count=semantic_unit_count,
+                completed_model_node_count=0,
+                total_model_node_count=self._work_reduce_total_count,
+            )
+            if stop_after_reduce_plan:
+                checkpoint_usage_rows = (
+                    self.llm.checkpoint_usage_rows
+                    if isinstance(self.llm, TracingLLMProvider)
+                    else []
+                )
+                map_usage_rows, map_usage_summary = _summarize_map_checkpoint_usage(
+                    checkpoint_usage_rows
+                )
+                map_usage_path = work_root / "map_stage_checkpoint_usage.jsonl"
+                _write_jsonl(map_usage_path, map_usage_rows)
+                map_plan_receipt = {
+                    "schema_version": "nslab.offline_map_plan_receipt.v1",
+                    "status": "MAP_AND_PLAN_READY_REDUCERS_NOT_STARTED",
+                    "compile_id": compile_id,
+                    "requested_model_config": {
+                        **self.model_config,
+                        "compiler_version": OFFLINE_COMPILER_VERSION,
+                    },
+                    "source_memory_manifest_sha256": source.manifest_sha256,
+                    "record_corpus_root": source.record_corpus_root,
+                    "record_count": source.record_count,
+                    "semantic_unit_count": semantic_unit_count,
+                    "semantic_capsule_count": len(capsules),
+                    "capsule_population_root": plan_artifact[
+                        "capsule_population_root"
+                    ],
+                    "resume_source_database_path": metadata.get(
+                        "resume_source_database_path"
+                    )
+                    or None,
+                    "resume_source_database_sha256": metadata.get(
+                        "resume_source_database_sha256"
+                    )
+                    or None,
+                    "resume_source_database_wal_sha256": metadata.get(
+                        "resume_source_database_wal_sha256"
+                    )
+                    or None,
+                    "resume_source_capsule_count": len(resumed_capsule_signatures),
+                    "resume_source_capsule_exact_match_count": (
+                        resumed_capsule_exact_match_count
+                    ),
+                    "resume_source_capsule_changed_or_new_count": (
+                        len(capsules) - resumed_capsule_exact_match_count
+                    ),
+                    "reduce_dag_plan_file": plan_path.name,
+                    "reduce_dag_plan_sha256": plan_artifact_sha256,
+                    "reduce_dag_topology_sha256": reduce_dag_plan[
+                        "topology_sha256"
+                    ],
+                    "reduce_leaf_count": reduce_dag_plan["reduce_leaf_count"],
+                    "reduce_model_task_count": self._work_reduce_total_count,
+                    "category_counts": reduce_dag_plan["category_counts"],
+                    "map_checkpoint_usage_file": map_usage_path.name,
+                    "map_checkpoint_usage_sha256": file_sha256(map_usage_path),
+                    **map_usage_summary,
+                    "created_at": now_kst().isoformat(),
+                }
+                write_json(plan_receipt_path, map_plan_receipt)
+                _write_offline_progress(
+                    work_root / "progress.json",
+                    phase="offline_reduce_plan_sealed",
+                    processed_record_count=source.record_count,
+                    total_record_count=source.record_count,
+                    semantic_unit_count=semantic_unit_count,
+                    completed_model_node_count=0,
+                    total_model_node_count=self._work_reduce_total_count,
+                )
+                return OfflineBrainPlanResult(
+                    work_database_path=database_path,
+                    reduce_dag_plan_path=plan_path,
+                    plan_receipt_path=plan_receipt_path,
+                    receipt=map_plan_receipt,
+                )
             category_roots: dict[str, SemanticReduceNode] = {}
             reduce_nodes: list[SemanticReduceNode] = []
             claims: list[SynthesizedMechanismClaim] = []
@@ -484,9 +907,17 @@ class OfflineSemanticBrainCompiler:
                 )
                 return category, root, nodes, category_capsules
 
-            category_results = await asyncio.gather(
-                *(reduce_category(category) for category in sorted({row.category for row in capsules}))
-            )
+            category_tasks = [
+                asyncio.create_task(reduce_category(category))
+                for category in sorted({row.category for row in capsules})
+            ]
+            try:
+                category_results = await asyncio.gather(*category_tasks)
+            except BaseException:
+                for task in category_tasks:
+                    task.cancel()
+                await asyncio.gather(*category_tasks, return_exceptions=True)
+                raise
             for category, root, nodes, category_capsules in category_results:
                 category_roots[category] = root
                 reduce_nodes.extend(nodes)
@@ -498,7 +929,18 @@ class OfflineSemanticBrainCompiler:
                     )
                 )
             world_root = await self._reduce_world(category_roots)
+            if set(world_root.covered_capsule_ids) != {
+                row.capsule_id for row in capsules
+            }:
+                raise ValueError("world reduce tree does not cover the capsule population")
             reduce_nodes.append(world_root)
+            actual_tasks = {
+                row.node_id: tuple(row.child_node_ids) for row in reduce_nodes
+            }
+            if actual_tasks != planned_tasks:
+                raise ValueError(
+                    "runtime reduce graph does not match the durable pre-call DAG plan"
+                )
             claims.extend(
                 _claims_from_reduce_node(
                     world_root,
@@ -530,6 +972,8 @@ class OfflineSemanticBrainCompiler:
             )
         finally:
             connection.close()
+            self._work_connection = None
+            self._work_progress_path = None
 
         capsule_root = _model_population_root(capsules, key="capsule_id")
         claim_root = _model_population_root(claims, key="claim_id")
@@ -548,17 +992,42 @@ class OfflineSemanticBrainCompiler:
         package_dir = output_root.resolve() / brain_version
         if package_dir.exists():
             existing_manifest = package_dir / "brain_package_manifest.json"
-            if not existing_manifest.is_file():
-                raise FileExistsError(f"incomplete package directory already exists: {package_dir}")
-            shutil.rmtree(work_root)
-            return load_offline_brain_build_result(package_dir)
+            existing_receipt = package_dir / "build_receipt.json"
+            if existing_manifest.is_file() and existing_receipt.is_file():
+                result = load_offline_brain_build_result(package_dir)
+                shutil.rmtree(work_root, ignore_errors=True)
+                return result
+            incomplete_dir = package_dir.with_name(
+                f".{package_dir.name}.incomplete-{uuid4().hex[:8]}"
+            )
+            os.replace(package_dir, incomplete_dir)
         package_dir.parent.mkdir(parents=True, exist_ok=True)
         package_dir.mkdir()
-        shutil.move(str(database_path), package_dir / database_path.name)
+        packaged_database = package_dir / database_path.name
+        database_linked = False
+        try:
+            os.link(database_path, packaged_database)
+        except OSError:
+            pass
+        else:
+            database_linked = True
+        if not database_linked:
+            try:
+                shutil.copy2(database_path, packaged_database)
+                if file_sha256(packaged_database) != file_sha256(database_path):
+                    packaged_database.unlink()
+                    raise ValueError(
+                        "copied package database does not match the resumable work database"
+                    )
+            except BaseException:
+                if packaged_database.is_file():
+                    packaged_database.unlink()
+                raise
 
         influence = influence.model_copy(update={"brain_version": brain_version})
         _write_jsonl(package_dir / "semantic_capsules.jsonl", capsules)
         _write_jsonl(package_dir / "synthesized_mechanism_claims.jsonl", claims)
+        _write_reduce_leaf_coverage(package_dir, leaf_nodes)
         _write_jsonl(
             package_dir / "representative_payload_exposure.jsonl",
             self._payload_exposure_rows,
@@ -643,6 +1112,95 @@ class OfflineSemanticBrainCompiler:
         write_json(
             package_dir / "semantic_influence_manifest.json",
             influence.model_dump(mode="json"),
+        )
+        checkpoint_usage_rows = (
+            self.llm.checkpoint_usage_rows
+            if isinstance(self.llm, TracingLLMProvider)
+            else []
+        )
+        map_usage_rows, map_usage_summary = _summarize_map_checkpoint_usage(
+            checkpoint_usage_rows
+        )
+        write_json(
+            package_dir / "offline_resume_reuse_manifest.json",
+            {
+                "schema_version": "nslab.offline_resume_reuse_manifest.v1",
+                "compile_id": compile_id,
+                "source_memory_manifest_sha256": source.manifest_sha256,
+                "record_corpus_root": source.record_corpus_root,
+                "record_count": source.record_count,
+                "semantic_unit_count": semantic_unit_count,
+                "semantic_capsule_count": len(capsules),
+                "resume_source_database_path": (
+                    resume_database_path.as_posix()
+                    if resume_database_path is not None
+                    else None
+                ),
+                "resume_source_database_sha256": resume_database_sha256,
+                "resume_source_database_wal_sha256": resume_database_wal_sha256,
+                "resume_source_capsule_count": len(resumed_capsule_signatures),
+                "resume_source_capsule_exact_match_count": (
+                    resumed_capsule_exact_match_count
+                ),
+                "resume_source_capsule_changed_or_new_count": (
+                    len(capsules) - resumed_capsule_exact_match_count
+                ),
+                "reduce_dag_topology_sha256": reduce_dag_plan["topology_sha256"],
+                "reduce_dag_plan_sha256": plan_artifact_sha256,
+                "reduce_model_task_count": self._work_reduce_total_count,
+                "map_plan_receipt_sha256": (
+                    file_sha256(plan_receipt_path)
+                    if plan_receipt_path.is_file()
+                    else None
+                ),
+                **map_usage_summary,
+            },
+        )
+        write_json(package_dir / "reduce_dag_plan.json", plan_artifact)
+        if plan_receipt_path.is_file():
+            write_json(
+                package_dir / "offline_map_plan_receipt.json",
+                read_json(plan_receipt_path),
+            )
+            map_usage_path = work_root / "map_stage_checkpoint_usage.jsonl"
+            if map_usage_path.is_file():
+                shutil.copy2(
+                    map_usage_path,
+                    package_dir / "map_stage_checkpoint_usage.jsonl",
+                )
+        progress_path = work_root / "progress.json"
+        if progress_path.is_file():
+            write_json(
+                package_dir / "offline_compile_progress.json",
+                read_json(progress_path),
+            )
+        usage_path = package_dir / "synthesis_checkpoint_usage.jsonl"
+        _write_jsonl(usage_path, checkpoint_usage_rows)
+        model_usage: dict[str, dict[str, Any]] = {}
+        for row in checkpoint_usage_rows:
+            model_config = dict(row["model_config"])
+            identity = canonical_json(model_config)
+            aggregate = model_usage.setdefault(
+                identity,
+                {"model_config": model_config, "output_count": 0, "cache_hit_count": 0},
+            )
+            aggregate["output_count"] += 1
+            aggregate["cache_hit_count"] += int(bool(row["cache_hit"]))
+        write_json(
+            package_dir / "synthesis_model_provenance.json",
+            {
+                "schema_version": "nslab.offline_synthesis_model_provenance.v1",
+                "requested_model_config": {
+                    **self.model_config,
+                    "compiler_version": OFFLINE_COMPILER_VERSION,
+                },
+                "output_count": len(checkpoint_usage_rows),
+                "checkpoint_usage_sha256": file_sha256(usage_path),
+                "model_output_counts": [
+                    model_usage[key]
+                    for key in sorted(model_usage)
+                ],
+            },
         )
         package_root = _artifact_root(package_dir)
         manifest = BrainPackageManifest(
@@ -729,7 +1287,7 @@ class OfflineSemanticBrainCompiler:
     async def _compile_leaf_capsules(
         self,
         unit_rows: list[dict[str, Any]],
-    ) -> tuple[list[SemanticMemoryCapsule], list[_LeafNode]]:
+    ) -> list[SemanticMemoryCapsule]:
         capsules_by_unit: dict[str, SemanticMemoryCapsule] = {}
         changed_rows: list[dict[str, Any]] = []
         for row in unit_rows:
@@ -810,7 +1368,7 @@ class OfflineSemanticBrainCompiler:
         if set(capsules_by_unit) != expected_units:
             raise ValueError("offline semantic capsule compile omitted units")
         capsules = [capsules_by_unit[key] for key in sorted(capsules_by_unit)]
-        return capsules, _capsule_leaf_nodes(capsules)
+        return capsules
 
     async def _compile_long_payload_digests(
         self,
@@ -905,6 +1463,9 @@ class OfflineSemanticBrainCompiler:
                 node_id=row.node_id,
                 child_node_ids=[],
                 covered_capsule_ids=list(row.capsule_ids),
+                covered_capsule_count=len(row.capsule_ids),
+                coverage_root=_leaf_coverage_root(row.node_id, row.capsule_ids),
+                evidence_capsule_ids=_leaf_reduce_evidence_ids(row.capsule_ids),
                 synthesis=row.synthesis,
             )
             for row in leaves
@@ -912,8 +1473,20 @@ class OfflineSemanticBrainCompiler:
         created: list[SemanticReduceNode] = []
         level = 0
         while len(current) > 1:
+            groups = list(_pack_reduce_nodes(current))
+            # Successful rewrites of singleton groups do not converge to a root.
+            # Detect that condition before spending any calls on this level.
+            if len(groups) >= len(current):
+                raise ValueError(
+                    "offline reduce cannot converge: "
+                    f"category={category} level={level} nodes={len(current)} "
+                    f"groups={len(groups)} byte_limit={MAX_REDUCE_PROMPT_BYTES}"
+                )
             next_level: list[SemanticReduceNode] = []
-            for group in _pack_reduce_nodes(current):
+            for group in groups:
+                if len(group) == 1:
+                    next_level.append(group[0])
+                    continue
                 node = await self._reduce_node(
                     category=category,
                     level=level,
@@ -946,13 +1519,11 @@ class OfflineSemanticBrainCompiler:
         review: bool,
     ) -> SemanticReduceNode:
         child_ids = [row.node_id for row in children]
-        covered = _unique(capsule_id for row in children for capsule_id in row.covered_capsule_ids)
         node_id = stable_id(
             "CATEGORY-REVIEW" if review else "REDUCE",
             category,
             level,
             child_ids,
-            covered,
             length=20,
         )
         prompt = _reduce_prompt(
@@ -961,23 +1532,97 @@ class OfflineSemanticBrainCompiler:
             children=children,
             review=review,
         )
+        prompt_sha256 = sha256_text(prompt)
         previous = self._previous.reduce_nodes_by_id.get(node_id)
-        if previous is not None:
+        covered = _unique(
+            capsule_id for row in children for capsule_id in row.covered_capsule_ids
+        )
+        covered_count = sum(row.covered_capsule_count for row in children)
+        if len(covered) != covered_count:
+            raise ValueError("reduce child coverage contains duplicate capsule IDs")
+        coverage_root = _reduce_coverage_root(node_id, children)
+        if (
+            previous is not None
+            and previous.prompt_sha256 == prompt_sha256
+            and previous.covered_capsule_count == covered_count
+            and previous.coverage_root == coverage_root
+        ):
             result = previous
             self._reused_reduce_node_count += 1
         else:
-            result = await self._call_structured(
+            draft = await self._call_structured(
                 prompt=prompt,
-                response_model=SemanticReduceNode,
+                response_model=SemanticReduceDraft,
                 purpose=(f"offline_category_review.{category}" if review else f"offline_semantic_reduce.{node_id}"),
             )
             self._recompiled_reduce_node_count += 1
-        if (
-            result.node_id != node_id
-            or result.child_node_ids != child_ids
-        ):
+            if draft.node_id != node_id:
+                raise ValueError("semantic reduce output omitted or added children")
+            child_identity_normalization = _normalize_reduce_child_identity(
+                draft_child_node_ids=draft.child_node_ids,
+                expected_child_node_ids=child_ids,
+            )
+            allowed_capsule_ids = {
+                capsule_id
+                for child in children
+                for capsule_id in child.evidence_capsule_ids
+            }
+            claims, citation_normalizations = _normalize_reduce_claim_citations(
+                draft.claims,
+                allowed_capsule_ids=allowed_capsule_ids,
+            )
+            evidence_capsule_ids = _unique(
+                capsule_id
+                for claim in claims
+                for capsule_id in (
+                    *claim.supporting_capsule_ids,
+                    *claim.contradicting_capsule_ids,
+                )
+            )
+            result = SemanticReduceNode(
+                node_id=node_id,
+                child_node_ids=child_ids,
+                covered_capsule_count=covered_count,
+                coverage_root=coverage_root,
+                prompt_sha256=prompt_sha256,
+                covered_capsule_ids=covered,
+                evidence_capsule_ids=evidence_capsule_ids,
+                synthesis=draft.synthesis,
+                mechanisms=draft.mechanisms,
+                conditions=draft.conditions,
+                boundary_conditions=draft.boundary_conditions,
+                failure_modes=draft.failure_modes,
+                contradictions=draft.contradictions,
+                claims=claims,
+                citation_normalizations=citation_normalizations,
+                child_identity_normalization=child_identity_normalization,
+            )
+        if result.node_id != node_id or result.child_node_ids != child_ids:
             raise ValueError("semantic reduce output omitted or added children")
-        return _canonicalize_reduce_coverage(result, covered)
+        result = result.model_copy(
+            update={
+                "covered_capsule_ids": covered,
+                "covered_capsule_count": covered_count,
+                "coverage_root": coverage_root,
+                "prompt_sha256": prompt_sha256,
+            }
+        )
+        if self._work_connection is not None:
+            _persist_reduce_node(self._work_connection, result)
+        if self._work_progress_path is not None:
+            _write_offline_progress(
+                self._work_progress_path,
+                phase="offline_reduce",
+                processed_record_count=self._work_record_count,
+                total_record_count=self._work_record_count,
+                semantic_unit_count=self._work_semantic_unit_count,
+                completed_model_node_count=(
+                    self._reused_reduce_node_count + self._recompiled_reduce_node_count
+                ),
+                total_model_node_count=self._work_reduce_total_count,
+                current_model_node_id=node_id,
+            )
+        return result
 
     async def _reduce_world(
         self,
@@ -994,23 +1639,103 @@ class OfflineSemanticBrainCompiler:
             category="world_model",
             children=children,
             review=True,
+            world=True,
         )
+        prompt_sha256 = sha256_text(prompt)
         previous = self._previous.reduce_nodes_by_id.get(node_id)
-        if previous is not None:
+        covered = _unique(
+            capsule_id for row in children for capsule_id in row.covered_capsule_ids
+        )
+        covered_count = sum(row.covered_capsule_count for row in children)
+        if len(covered) != covered_count:
+            raise ValueError("world reduce child coverage contains duplicate capsule IDs")
+        coverage_root = _reduce_coverage_root(node_id, children)
+        if (
+            previous is not None
+            and previous.prompt_sha256 == prompt_sha256
+            and previous.covered_capsule_count == covered_count
+            and previous.coverage_root == coverage_root
+        ):
             result = previous
             self._reused_reduce_node_count += 1
         else:
-            result = await self._call_structured(
+            draft = await self._call_structured(
                 prompt=prompt,
-                response_model=SemanticReduceNode,
+                response_model=SemanticReduceDraft,
                 purpose="offline_world_model",
             )
             self._recompiled_reduce_node_count += 1
+            expected_children = [row.node_id for row in children]
+            if draft.node_id != node_id:
+                raise ValueError("world reduce output omitted category children")
+            child_identity_normalization = _normalize_reduce_child_identity(
+                draft_child_node_ids=draft.child_node_ids,
+                expected_child_node_ids=expected_children,
+                error_message="world reduce output omitted category children",
+            )
+            allowed_capsule_ids = {
+                capsule_id
+                for child in children
+                for capsule_id in child.evidence_capsule_ids
+            }
+            claims, citation_normalizations = _normalize_reduce_claim_citations(
+                draft.claims,
+                allowed_capsule_ids=allowed_capsule_ids,
+                error_message="world reduce claim cited an unavailable capsule",
+            )
+            evidence_capsule_ids = _unique(
+                capsule_id
+                for claim in claims
+                for capsule_id in (
+                    *claim.supporting_capsule_ids,
+                    *claim.contradicting_capsule_ids,
+                )
+            )
+            result = SemanticReduceNode(
+                node_id=node_id,
+                child_node_ids=expected_children,
+                covered_capsule_count=covered_count,
+                coverage_root=coverage_root,
+                prompt_sha256=prompt_sha256,
+                covered_capsule_ids=covered,
+                evidence_capsule_ids=evidence_capsule_ids,
+                synthesis=draft.synthesis,
+                mechanisms=draft.mechanisms,
+                conditions=draft.conditions,
+                boundary_conditions=draft.boundary_conditions,
+                failure_modes=draft.failure_modes,
+                contradictions=draft.contradictions,
+                claims=claims,
+                citation_normalizations=citation_normalizations,
+                child_identity_normalization=child_identity_normalization,
+            )
         expected_children = [row.node_id for row in children]
-        expected_capsules = _unique(capsule_id for row in children for capsule_id in row.covered_capsule_ids)
         if result.node_id != node_id or result.child_node_ids != expected_children:
             raise ValueError("world reduce output omitted category children")
-        return _canonicalize_reduce_coverage(result, expected_capsules)
+        result = result.model_copy(
+            update={
+                "covered_capsule_ids": covered,
+                "covered_capsule_count": covered_count,
+                "coverage_root": coverage_root,
+                "prompt_sha256": prompt_sha256,
+            }
+        )
+        if self._work_connection is not None:
+            _persist_reduce_node(self._work_connection, result)
+        if self._work_progress_path is not None:
+            _write_offline_progress(
+                self._work_progress_path,
+                phase="offline_reduce",
+                processed_record_count=self._work_record_count,
+                total_record_count=self._work_record_count,
+                semantic_unit_count=self._work_semantic_unit_count,
+                completed_model_node_count=(
+                    self._reused_reduce_node_count + self._recompiled_reduce_node_count
+                ),
+                total_model_node_count=self._work_reduce_total_count,
+                current_model_node_id=node_id,
+            )
+        return result
 
     async def _call_structured(
         self,
@@ -1027,30 +1752,6 @@ class OfflineSemanticBrainCompiler:
                 response_model=response_model,
                 purpose=purpose,
             )
-
-
-def _canonicalize_reduce_coverage(
-    result: SemanticReduceNode,
-    expected_capsule_ids: Sequence[str],
-) -> SemanticReduceNode:
-    """Use the verified child tree, not a model-echoed ID list, as coverage truth."""
-    canonical_ids = _unique(expected_capsule_ids)
-    canonical_set = set(canonical_ids)
-    reported_set = set(result.covered_capsule_ids)
-    duplicate_count = len(result.covered_capsule_ids) - len(reported_set)
-    if canonical_set != reported_set or duplicate_count:
-        _LOGGER.warning(
-            "offline reduce node %s returned noncanonical capsule coverage; "
-            "rebuilt from verified children (expected=%d reported=%d missing=%d "
-            "unexpected=%d duplicate=%d)",
-            result.node_id,
-            len(canonical_ids),
-            len(result.covered_capsule_ids),
-            len(canonical_set - reported_set),
-            len(reported_set - canonical_set),
-            duplicate_count,
-        )
-    return result.model_copy(update={"covered_capsule_ids": canonical_ids})
 
 
 class BrainPackageDailyContextProvider:
@@ -1421,13 +2122,47 @@ def _load_previous_package_state(
     return _PreviousPackageState(capsules, reduce_nodes)
 
 
+def _load_reduce_nodes_from_database(
+    connection: duckdb.DuckDBPyConnection,
+) -> dict[str, SemanticReduceNode]:
+    rows = connection.execute(
+        "SELECT node_id, payload_json FROM reduce_nodes ORDER BY node_id"
+    ).fetchall()
+    output: dict[str, SemanticReduceNode] = {}
+    for node_id_value, payload_value in rows:
+        node_id = str(node_id_value)
+        node = SemanticReduceNode.model_validate_json(str(payload_value))
+        if node.node_id != node_id or node_id in output:
+            raise ValueError("work database contains a duplicate or mismatched reduce node")
+        output[node_id] = node
+    return output
+
+
+def _persist_reduce_node(
+    connection: duckdb.DuckDBPyConnection,
+    node: SemanticReduceNode,
+) -> None:
+    # Coverage IDs are reconstructed from the child graph on resume; storing each
+    # ancestor's full ID union would make the work database grow superlinearly.
+    connection.execute(
+        "INSERT OR REPLACE INTO reduce_nodes VALUES (?, ?)",
+        [
+            node.node_id,
+            canonical_json(
+                node.model_copy(update={"covered_capsule_ids": []}).model_dump(
+                    mode="json"
+                )
+            ),
+        ],
+    )
+
+
 def _initialize_package_database(
     connection: duckdb.DuckDBPyConnection,
     *,
     source: SourceMemorySnapshot,
 ) -> None:
-    source_path = str(source.database_path).replace("'", "''")
-    connection.execute(f"ATTACH '{source_path}' AS source_memory (READ_ONLY)")
+    _attach_source_memory(connection, source=source)
     connection.execute(
         """
         CREATE TABLE semantic_unit_assignments (
@@ -1471,8 +2206,384 @@ def _initialize_package_database(
             node_id VARCHAR PRIMARY KEY,
             payload_json VARCHAR NOT NULL
         );
+        CREATE TABLE offline_compile_metadata (
+            meta_key VARCHAR PRIMARY KEY,
+            meta_value VARCHAR NOT NULL
+        );
         """
     )
+
+
+def _attach_source_memory(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    source: SourceMemorySnapshot,
+) -> None:
+    source_path = str(source.database_path).replace("'", "''")
+    connection.execute(f"ATTACH '{source_path}' AS source_memory (READ_ONLY)")
+
+
+def _write_compile_metadata(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    values: Mapping[str, str],
+) -> None:
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS offline_compile_metadata (
+            meta_key VARCHAR PRIMARY KEY,
+            meta_value VARCHAR NOT NULL
+        )
+        """
+    )
+    connection.execute("DELETE FROM offline_compile_metadata")
+    connection.executemany(
+        "INSERT INTO offline_compile_metadata VALUES (?, ?)",
+        sorted((str(key), str(value)) for key, value in values.items()),
+    )
+
+
+def _copy_resume_work_database(
+    source_path: Path,
+    target_path: Path,
+    *,
+    expected_sha256: str,
+    expected_wal_sha256: str | None,
+) -> None:
+    source_wal_path = Path(f"{source_path}.wal")
+    target_wal_path = Path(f"{target_path}.wal")
+    if target_path.exists() or target_wal_path.exists():
+        raise FileExistsError(f"refusing to overwrite an existing work database: {target_path}")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_copy = target_path.with_name(f".{target_path.name}.{uuid4().hex}.copying")
+    temporary_wal_copy = Path(f"{temporary_copy}.wal")
+    source_wal_sha256 = (
+        file_sha256(source_wal_path) if source_wal_path.is_file() else None
+    )
+    if source_wal_sha256 != expected_wal_sha256:
+        raise ValueError("resume work database WAL SHA-256 does not match the attested value")
+    wal_installed = False
+    database_installed = False
+    try:
+        shutil.copy2(source_path, temporary_copy)
+        if file_sha256(temporary_copy) != expected_sha256:
+            raise ValueError("resume work database changed while it was copied")
+        if source_wal_sha256 is not None:
+            shutil.copy2(source_wal_path, temporary_wal_copy)
+            if file_sha256(temporary_wal_copy) != source_wal_sha256:
+                raise ValueError("resume work database WAL changed while it was copied")
+        if file_sha256(source_path) != expected_sha256:
+            raise ValueError("resume work database changed while it was copied")
+        current_source_wal_sha256 = (
+            file_sha256(source_wal_path) if source_wal_path.is_file() else None
+        )
+        if current_source_wal_sha256 != source_wal_sha256:
+            raise ValueError("resume work database WAL changed while it was copied")
+        if target_path.exists() or target_wal_path.exists():
+            raise FileExistsError(
+                f"refusing to overwrite an existing work database: {target_path}"
+            )
+        if source_wal_sha256 is not None:
+            os.replace(temporary_wal_copy, target_wal_path)
+            wal_installed = True
+        os.replace(temporary_copy, target_path)
+        database_installed = True
+    except BaseException:
+        if temporary_copy.is_file():
+            temporary_copy.unlink()
+        if temporary_wal_copy.is_file():
+            temporary_wal_copy.unlink()
+        if wal_installed and not database_installed and target_wal_path.is_file():
+            target_wal_path.unlink()
+        raise
+
+
+def _adopt_matching_resume_work_database(
+    source_path: Path,
+    target_path: Path,
+    *,
+    expected_sha256: str,
+    expected_wal_sha256: str | None,
+) -> bool:
+    """Restore a missing WAL only when the existing target is the exact source base copy."""
+    target_wal_path = Path(f"{target_path}.wal")
+    source_wal_path = Path(f"{source_path}.wal")
+    if not target_path.is_file() or file_sha256(target_path) != expected_sha256:
+        return False
+
+    source_wal_sha256 = (
+        file_sha256(source_wal_path) if source_wal_path.is_file() else None
+    )
+    if source_wal_sha256 != expected_wal_sha256:
+        raise ValueError("resume work database WAL SHA-256 changed before adoption")
+    if source_wal_sha256 is None:
+        return not target_wal_path.exists()
+    if target_wal_path.is_file():
+        return file_sha256(target_wal_path) == source_wal_sha256
+    if target_wal_path.exists():
+        return False
+
+    temporary_wal_copy = target_path.with_name(
+        f".{target_path.name}.{uuid4().hex}.wal.copying"
+    )
+    try:
+        shutil.copy2(source_wal_path, temporary_wal_copy)
+        if file_sha256(temporary_wal_copy) != source_wal_sha256:
+            raise ValueError("resume work database WAL changed while it was copied")
+        if (
+            file_sha256(source_path) != expected_sha256
+            or file_sha256(source_wal_path) != source_wal_sha256
+            or file_sha256(target_path) != expected_sha256
+            or target_wal_path.exists()
+        ):
+            raise ValueError("resume work database changed while its WAL was restored")
+        os.replace(temporary_wal_copy, target_wal_path)
+    except BaseException:
+        if temporary_wal_copy.is_file():
+            temporary_wal_copy.unlink()
+        raise
+    return True
+
+
+def _capsule_database_signatures(
+    connection: duckdb.DuckDBPyConnection,
+) -> dict[str, tuple[str, str, str]]:
+    output: dict[str, tuple[str, str, str]] = {}
+    cursor = connection.execute(
+        "SELECT semantic_unit_id, capsule_id, payload_json FROM semantic_capsules ORDER BY semantic_unit_id"
+    )
+    while True:
+        rows = cursor.fetchmany(1024)
+        if not rows:
+            break
+        for semantic_unit_id, capsule_id, payload_json in rows:
+            unit_id = str(semantic_unit_id)
+            payload = json.loads(str(payload_json))
+            if unit_id in output:
+                raise ValueError(f"resume work database contains duplicate capsule unit: {unit_id}")
+            output[unit_id] = (
+                str(capsule_id),
+                sha256_text(canonical_json(payload)),
+                str(payload.get("member_record_root", "")),
+            )
+    return output
+
+
+def _read_compile_metadata(
+    connection: duckdb.DuckDBPyConnection,
+) -> dict[str, str]:
+    tables = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main'"
+        ).fetchall()
+    }
+    if "offline_compile_metadata" not in tables:
+        return {}
+    return {
+        str(key): str(value)
+        for key, value in connection.execute(
+            "SELECT meta_key, meta_value FROM offline_compile_metadata"
+        ).fetchall()
+    }
+
+
+def _load_unit_builds_from_database(
+    connection: duckdb.DuckDBPyConnection,
+) -> list[_UnitBuild]:
+    cursor = connection.execute(
+        """
+        WITH assignment_stats AS (
+            SELECT primary_semantic_unit_id AS semantic_unit_id,
+                   count(*) AS member_record_count,
+                   list(record_id ORDER BY record_id) FILTER (WHERE outlier) AS outlier_record_ids
+            FROM semantic_unit_assignments
+            GROUP BY primary_semantic_unit_id
+        )
+        SELECT centroid.semantic_unit_id, centroid.category, centroid.primary_cell_id,
+               centroid.evidence_polarity, stats.member_record_count,
+               coalesce(stats.outlier_record_ids, []::VARCHAR[]),
+               centroid.member_record_root, centroid.provenance_root, centroid.centroid
+        FROM semantic_unit_centroids centroid
+        JOIN assignment_stats stats USING (semantic_unit_id)
+        ORDER BY centroid.category, centroid.semantic_unit_id
+        """
+    )
+    builds: list[_UnitBuild] = []
+    while True:
+        rows = cursor.fetchmany(1024)
+        if not rows:
+            break
+        for row in rows:
+            centroid = tuple(float(value) for value in row[8])
+            if len(centroid) != 384 or not all(math.isfinite(value) for value in centroid):
+                raise ValueError(f"semantic centroid is invalid: {row[0]}")
+            builds.append(
+                _UnitBuild(
+                    semantic_unit_id=str(row[0]),
+                    category=str(row[1]),
+                    primary_cell_id=str(row[2]),
+                    evidence_polarity=str(row[3]),
+                    member_record_count=int(row[4]),
+                    outlier_record_ids=tuple(str(value) for value in row[5]),
+                    member_record_root=str(row[6]),
+                    provenance_root=str(row[7]),
+                    centroid=centroid,
+                )
+            )
+    return builds
+
+
+def _validate_reusable_assignment_database(
+    connection: duckdb.DuckDBPyConnection,
+    *,
+    source: SourceMemorySnapshot,
+    require_complete_capsules: bool,
+) -> list[_UnitBuild]:
+    counts = connection.execute(
+        """
+        SELECT
+            (SELECT count(*) FROM semantic_unit_assignments),
+            (SELECT count(DISTINCT record_id) FROM semantic_unit_assignments),
+            (SELECT count(*) FROM source_memory.records),
+            (SELECT count(*) FROM semantic_unit_centroids),
+            (SELECT count(*) FROM semantic_capsules),
+            (SELECT count(DISTINCT semantic_unit_id) FROM semantic_capsules)
+        """
+    ).fetchone()
+    if counts is None:
+        raise ValueError("resume work database count query returned no row")
+    assignment_count, distinct_record_count, source_count, unit_count, capsule_count, capsule_units = (
+        int(value) for value in counts
+    )
+    if source_count != source.record_count or assignment_count != source.record_count:
+        raise ValueError(
+            "resume work database does not contain the full source assignment population: "
+            f"source={source_count}, assignments={assignment_count}, expected={source.record_count}"
+        )
+    if distinct_record_count != assignment_count:
+        raise ValueError("resume work database contains duplicate primary assignments")
+    if capsule_count > unit_count or capsule_units != capsule_count:
+        raise ValueError("resume work database capsule rows are duplicated or exceed the unit set")
+    if require_complete_capsules and capsule_count != unit_count:
+        raise ValueError(
+            "legacy resume database must contain one capsule per semantic unit: "
+            f"capsules={capsule_count}, units={unit_count}"
+        )
+    checks = {
+        "unassigned_source_records": """
+            SELECT count(*) FROM source_memory.records record
+            LEFT JOIN semantic_unit_assignments assignment USING (record_id)
+            WHERE assignment.record_id IS NULL
+        """,
+        "assignment_without_source_record": """
+            SELECT count(*) FROM semantic_unit_assignments assignment
+            LEFT JOIN source_memory.records record USING (record_id)
+            WHERE record.record_id IS NULL
+        """,
+        "assignment_without_centroid": """
+            SELECT count(*) FROM semantic_unit_assignments assignment
+            LEFT JOIN semantic_unit_centroids centroid
+              ON centroid.semantic_unit_id = assignment.primary_semantic_unit_id
+            WHERE centroid.semantic_unit_id IS NULL
+        """,
+        "source_stratum_mismatch": f"""
+            SELECT count(*) FROM semantic_unit_assignments assignment
+            JOIN source_memory.records record USING (record_id)
+            JOIN semantic_unit_centroids centroid
+              ON centroid.semantic_unit_id = assignment.primary_semantic_unit_id
+            WHERE centroid.category <> ({_category_case_sql()})
+               OR centroid.primary_cell_id <> record.primary_cell_id
+               OR centroid.evidence_polarity <> coalesce(record.evidence_polarity, 'UNKNOWN')
+        """,
+        "capsule_identity_or_membership_mismatch": """
+            SELECT count(*) FROM semantic_capsules capsule
+            LEFT JOIN semantic_unit_centroids centroid USING (semantic_unit_id)
+            WHERE centroid.semantic_unit_id IS NULL
+               OR capsule.category <> centroid.category
+               OR json_extract_string(capsule.payload_json, '$.capsule_id') <> capsule.capsule_id
+               OR json_extract_string(capsule.payload_json, '$.semantic_unit_id') <> capsule.semantic_unit_id
+               OR json_extract_string(capsule.payload_json, '$.member_record_root') <> centroid.member_record_root
+               OR json_extract_string(capsule.payload_json, '$.provenance_root') <> centroid.provenance_root
+        """,
+        "capsule_member_count_mismatch": """
+            WITH counts AS (
+                SELECT primary_semantic_unit_id AS semantic_unit_id, count(*) AS member_count
+                FROM semantic_unit_assignments GROUP BY 1
+            )
+            SELECT count(*) FROM semantic_capsules capsule
+            JOIN counts USING (semantic_unit_id)
+            WHERE try_cast(json_extract_string(capsule.payload_json, '$.member_record_count') AS BIGINT)
+                  <> counts.member_count
+        """,
+    }
+    for name, sql in checks.items():
+        mismatch_row = connection.execute(sql).fetchone()
+        if mismatch_row is None:
+            raise ValueError(f"resume work database check returned no result: {name}")
+        mismatch_count = int(mismatch_row[0])
+        if mismatch_count:
+            raise ValueError(f"resume work database failed {name}: {mismatch_count}")
+
+    builds = _load_unit_builds_from_database(connection)
+    if len(builds) != unit_count:
+        raise ValueError("resume work database semantic unit/centroid counts differ")
+    expected_roots = {
+        row.semantic_unit_id: (
+            row.member_record_count,
+            row.member_record_root,
+            row.provenance_root,
+        )
+        for row in builds
+    }
+    cursor = connection.execute(
+        """
+        SELECT assignment.primary_semantic_unit_id, assignment.record_id, record.source_sha256
+        FROM semantic_unit_assignments assignment
+        JOIN source_memory.records record USING (record_id)
+        ORDER BY assignment.primary_semantic_unit_id, assignment.record_id
+        """
+    )
+    current_unit: str | None = None
+    member_ids: list[str] = []
+    provenance_pairs: list[tuple[str, str]] = []
+    verified_units = 0
+
+    def verify_unit(unit_id: str) -> None:
+        expected = expected_roots.get(unit_id)
+        if expected is None:
+            raise ValueError(f"resume assignment references an unknown unit: {unit_id}")
+        count, member_root, provenance_root = expected
+        if len(member_ids) != count:
+            raise ValueError(f"resume assignment member count drifted: {unit_id}")
+        if sha256_text(canonical_json(member_ids)) != member_root:
+            raise ValueError(f"resume assignment member root drifted: {unit_id}")
+        if sha256_text(canonical_json(provenance_pairs)) != provenance_root:
+            raise ValueError(f"resume assignment provenance root drifted: {unit_id}")
+
+    while True:
+        rows = cursor.fetchmany(4096)
+        if not rows:
+            break
+        for unit_id_value, record_id_value, source_sha_value in rows:
+            unit_id = str(unit_id_value)
+            record_id = str(record_id_value)
+            if current_unit is not None and unit_id != current_unit:
+                verify_unit(current_unit)
+                verified_units += 1
+                member_ids.clear()
+                provenance_pairs.clear()
+            current_unit = unit_id
+            member_ids.append(record_id)
+            provenance_pairs.append((record_id, str(source_sha_value)))
+    if current_unit is not None:
+        verify_unit(current_unit)
+        verified_units += 1
+    if verified_units != unit_count:
+        raise ValueError(
+            f"resume source roots cover {verified_units} units, expected {unit_count}"
+        )
+    return builds
 
 
 def _build_semantic_assignments(
@@ -2202,22 +3313,216 @@ def _capsule_leaf_nodes(
     nodes: list[_LeafNode] = []
     for (category, bucket), rows in sorted(buckets.items()):
         ordered = sorted(rows, key=lambda row: row.capsule_id)
-        capsule_ids = tuple(row.capsule_id for row in ordered)
-        nodes.append(
-            _LeafNode(
-                node_id=stable_id(
-                    "LEAF-BUCKET",
-                    category,
-                    bucket,
-                    capsule_ids,
-                    length=20,
-                ),
-                category=category,
-                capsule_ids=capsule_ids,
-                synthesis=" | ".join(row.event_or_mechanism_summary for row in ordered),
+        groups: list[list[SemanticMemoryCapsule]] = []
+        current: list[SemanticMemoryCapsule] = []
+        current_bytes = 0
+        for capsule in ordered:
+            capsule_bytes = len(
+                canonical_json(_capsule_reduce_content(capsule)).encode("utf-8")
             )
-        )
+            if capsule_bytes > MAX_REDUCE_LEAF_BYTES:
+                raise ValueError(
+                    f"semantic capsule {capsule.capsule_id} exceeds the reduce leaf budget"
+                )
+            candidate_bytes = current_bytes + capsule_bytes + int(bool(current))
+            if current and candidate_bytes > MAX_REDUCE_LEAF_BYTES:
+                groups.append(current)
+                current = [capsule]
+                current_bytes = capsule_bytes
+            else:
+                current.append(capsule)
+                current_bytes = candidate_bytes
+        if current:
+            groups.append(current)
+        for group in groups:
+            capsule_ids = tuple(row.capsule_id for row in group)
+            nodes.append(
+                _LeafNode(
+                    node_id=stable_id(
+                        "LEAF-BUCKET",
+                        category,
+                        bucket,
+                        capsule_ids,
+                        length=20,
+                    ),
+                    category=category,
+                    capsule_ids=capsule_ids,
+                    synthesis="\n".join(
+                        canonical_json(_capsule_reduce_content(row)) for row in group
+                    ),
+                )
+            )
     return nodes
+
+
+def _capsule_reduce_content(capsule: SemanticMemoryCapsule) -> dict[str, Any]:
+    return {
+        "capsule_id": capsule.capsule_id,
+        "summary": capsule.event_or_mechanism_summary,
+        "economic_transmission": capsule.economic_transmission,
+        "market_narrative": capsule.market_narrative,
+        "applicable_conditions": capsule.applicable_conditions,
+        "failure_conditions": capsule.failure_conditions,
+        "boundary_conditions": capsule.boundary_conditions,
+        "novelty_modality_distinctions": capsule.novelty_modality_distinctions,
+        "leader_selection_implications": capsule.leader_selection_implications,
+        "beneficiary_implications": capsule.beneficiary_implications,
+        "continuation_implications": capsule.continuation_implications,
+    }
+
+
+def _plan_reduce_graph(
+    capsules: list[SemanticMemoryCapsule],
+) -> tuple[list[_LeafNode], dict[str, Any]]:
+    leaves = _capsule_leaf_nodes(capsules)
+    categories = sorted({row.category for row in capsules})
+    if not categories:
+        raise ValueError("offline reducer cannot plan an empty capsule population")
+    tasks: list[dict[str, Any]] = []
+    category_roots: dict[str, str] = {}
+    category_counts: dict[str, dict[str, int]] = {}
+    for category in categories:
+        category_leaves = [row for row in leaves if row.category == category]
+        current = [
+            SemanticReduceNode(
+                node_id=row.node_id,
+                child_node_ids=[],
+                covered_capsule_ids=list(row.capsule_ids),
+                covered_capsule_count=len(row.capsule_ids),
+                coverage_root=_leaf_coverage_root(row.node_id, row.capsule_ids),
+                evidence_capsule_ids=_leaf_reduce_evidence_ids(row.capsule_ids),
+                synthesis=row.synthesis,
+            )
+            for row in category_leaves
+        ]
+        if not current:
+            raise ValueError(f"offline reducer category is empty: {category}")
+        internal_count = 0
+        level = 0
+        while len(current) > 1:
+            groups = list(_pack_reduce_nodes(current))
+            if len(groups) >= len(current):
+                raise ValueError(
+                    "offline reduce cannot converge in planned DAG: "
+                    f"category={category} level={level} nodes={len(current)} groups={len(groups)}"
+                )
+            next_level: list[SemanticReduceNode] = []
+            for group in groups:
+                if len(group) == 1:
+                    next_level.append(group[0])
+                    continue
+                child_ids = [row.node_id for row in group]
+                node_id = stable_id("REDUCE", category, level, child_ids, length=20)
+                tasks.append(
+                    {
+                        "node_id": node_id,
+                        "kind": "category_reduce",
+                        "category": category,
+                        "level": level,
+                        "child_node_ids": child_ids,
+                    }
+                )
+                internal_count += 1
+                next_level.append(
+                    SemanticReduceNode(
+                        node_id=node_id,
+                        child_node_ids=child_ids,
+                        covered_capsule_ids=[],
+                        covered_capsule_count=sum(
+                            row.covered_capsule_count for row in group
+                        ),
+                        coverage_root="planned",
+                        evidence_capsule_ids=[],
+                        synthesis="planned bounded output",
+                    )
+                )
+            current = next_level
+            level += 1
+        review_children = [row.node_id for row in current]
+        review_id = stable_id(
+            "CATEGORY-REVIEW", category, level, review_children, length=20
+        )
+        tasks.append(
+            {
+                "node_id": review_id,
+                "kind": "category_review",
+                "category": category,
+                "level": level,
+                "child_node_ids": review_children,
+            }
+        )
+        category_roots[category] = review_id
+        category_counts[category] = {
+            "capsules": sum(row.category == category for row in capsules),
+            "leaf_nodes": len(category_leaves),
+            "internal_reduce_nodes": internal_count,
+            "review_nodes": 1,
+        }
+    world_children = [category_roots[key] for key in sorted(category_roots)]
+    world_id = stable_id("WORLD", world_children, length=20)
+    tasks.append(
+        {
+            "node_id": world_id,
+            "kind": "world_root",
+            "category": "world_model",
+            "level": 0,
+            "child_node_ids": world_children,
+        }
+    )
+    node_ids = [str(row["node_id"]) for row in tasks]
+    if len(node_ids) != len(set(node_ids)):
+        raise ValueError("offline reducer DAG contains duplicate node identities")
+    plan_body = {
+        "schema_version": "nslab.offline_reduce_dag_plan.v1",
+        "compiler_version": OFFLINE_COMPILER_VERSION,
+        "capsule_count": len(capsules),
+        "category_count": len(categories),
+        "category_counts": category_counts,
+        "reduce_leaf_count": len(leaves),
+        "category_internal_reduce_count": sum(
+            row["kind"] == "category_reduce" for row in tasks
+        ),
+        "category_review_count": len(categories),
+        "world_root_count": 1,
+        "total_model_tasks": len(tasks),
+        "tasks": tasks,
+    }
+    plan = {
+        **plan_body,
+        "topology_sha256": sha256_text(canonical_json(plan_body)),
+    }
+    return leaves, plan
+
+
+def _summarize_map_checkpoint_usage(
+    checkpoint_usage_rows: Sequence[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    map_rows = [
+        row
+        for row in checkpoint_usage_rows
+        if str(row["purpose"]).startswith(
+            ("offline_semantic_leaf.", "offline_long_payload_map.")
+        )
+    ]
+    by_model: dict[str, dict[str, Any]] = {}
+    for row in map_rows:
+        key = canonical_json(row["model_config"])
+        aggregate = by_model.setdefault(
+            key,
+            {"model_config": dict(row["model_config"]), "total": 0, "cache_hits": 0},
+        )
+        aggregate["total"] += 1
+        aggregate["cache_hits"] += int(bool(row["cache_hit"]))
+    return map_rows, {
+        "map_checkpoint_request_count": len(map_rows),
+        "map_checkpoint_hit_count": sum(
+            int(bool(row["cache_hit"])) for row in map_rows
+        ),
+        "map_fresh_output_count": sum(
+            int(not bool(row["cache_hit"])) for row in map_rows
+        ),
+        "map_output_counts_by_model": [by_model[key] for key in sorted(by_model)],
+    }
 
 
 def _planned_reduce_leaf_nodes(
@@ -2337,10 +3642,8 @@ def _planned_reduce_node(
         node_id=node_id,
         child_node_ids=child_node_ids,
         covered_capsule_ids=covered,
-        payload_bytes=_planned_reduce_payload_bytes(
-            node_id=node_id,
-            child_node_ids=child_node_ids,
-            covered_capsule_ids=covered,
+        payload_bytes=(
+            MAX_REDUCE_NODE_OUTPUT_BYTES + MAX_REDUCE_NODE_PAYLOAD_RESERVE_BYTES
         ),
     )
 
@@ -2350,8 +3653,10 @@ def _planned_reduce_node_from_model(node: SemanticReduceNode) -> _PlannedReduceN
         node_id=node.node_id,
         child_node_ids=tuple(node.child_node_ids),
         covered_capsule_ids=tuple(node.covered_capsule_ids),
-        payload_bytes=len(
-            canonical_json(node.model_dump(mode="json")).encode("utf-8")
+        payload_bytes=(
+            MAX_REDUCE_NODE_OUTPUT_BYTES + MAX_REDUCE_NODE_PAYLOAD_RESERVE_BYTES
+            if node.child_node_ids
+            else len(canonical_json(_reduce_child_payload(node)).encode("utf-8"))
         ),
     )
 
@@ -2362,22 +3667,23 @@ def _planned_reduce_payload_bytes(
     child_node_ids: Sequence[str],
     covered_capsule_ids: Sequence[str],
 ) -> int:
-    """Serialize the same empty-prose SemanticReduceNode shape once."""
+    """Serialize the compact reduce child payload used by the runtime packer."""
 
     return len(
         canonical_json(
             {
-                "boundary_conditions": [],
-                "child_node_ids": list(child_node_ids),
-                "claims": [],
-                "contradictions": [],
-                "covered_capsule_ids": list(covered_capsule_ids),
-                "failure_modes": [],
-                "mechanisms": [],
                 "node_id": node_id,
-                "schema_version": "nslab.semantic_reduce_node.v1",
+                "child_node_ids": list(child_node_ids),
+                "covered_capsule_count": len(covered_capsule_ids),
+                "coverage_root": sha256_text(canonical_json(sorted(covered_capsule_ids))),
+                "evidence_capsule_ids": _leaf_reduce_evidence_ids(covered_capsule_ids),
                 "synthesis": "",
+                "mechanisms": [],
                 "conditions": [],
+                "boundary_conditions": [],
+                "failure_modes": [],
+                "contradictions": [],
+                "claims": [],
             }
         ).encode("utf-8")
     )
@@ -2394,7 +3700,7 @@ def _pack_planned_reduce_nodes(
         candidate_bytes = current_bytes + node.payload_bytes + (1 if current else 0)
         if current and (
             len(current) + 1 > MAX_REDUCE_CHILDREN
-            or candidate_bytes > MAX_REDUCE_PROMPT_BYTES
+            or candidate_bytes > MAX_REDUCE_PROMPT_BYTES - 8_192
         ):
             yield current
             current = [node]
@@ -2412,13 +3718,15 @@ def _pack_reduce_nodes(
     current: list[SemanticReduceNode] = []
     current_bytes = 2  # `[]` in canonical JSON
     for node in nodes:
-        node_bytes = len(
-            canonical_json(node.model_dump(mode="json")).encode("utf-8")
+        node_bytes = (
+            MAX_REDUCE_NODE_OUTPUT_BYTES + MAX_REDUCE_NODE_PAYLOAD_RESERVE_BYTES
+            if node.child_node_ids
+            else len(canonical_json(_reduce_child_payload(node)).encode("utf-8"))
         )
         candidate_bytes = current_bytes + node_bytes + (1 if current else 0)
         if current and (
             len(current) + 1 > MAX_REDUCE_CHILDREN
-            or candidate_bytes > MAX_REDUCE_PROMPT_BYTES
+            or candidate_bytes > MAX_REDUCE_PROMPT_BYTES - 8_192
         ):
             yield current
             current = [node]
@@ -2508,21 +3816,183 @@ def _reduce_prompt(
     category: str,
     children: list[SemanticReduceNode],
     review: bool,
+    world: bool = False,
 ) -> str:
+    allowed_capsule_ids = _unique(
+        capsule_id for row in children for capsule_id in row.evidence_capsule_ids
+    )
     payload = {
-        "schema": CATEGORY_REVIEW_PROMPT_VERSION if review else REDUCE_PROMPT_VERSION,
+        "schema": (
+            WORLD_REDUCE_PROMPT_VERSION
+            if world
+            else CATEGORY_REVIEW_PROMPT_VERSION
+            if review
+            else REDUCE_PROMPT_VERSION
+        ),
         "node_id": node_id,
         "category": category,
         "review": review,
         "required_child_node_ids": [row.node_id for row in children],
-        "required_capsule_ids": _unique(capsule_id for row in children for capsule_id in row.covered_capsule_ids),
-        "children": [row.model_dump(mode="json") for row in children],
+        "available_evidence_capsule_ids": allowed_capsule_ids,
+        "children": [_reduce_child_payload(row) for row in children],
     }
-    return (
-        "Reduce every child without omission. Synthesize mechanisms, applicable conditions, "
-        "failure boundaries, contradictions, and concise mechanism claims. Claims must cite "
-        "only provided capsule IDs. Return child_node_ids in the required order and cover "
-        "every required capsule ID.\n---OFFLINE_SEMANTIC_REDUCE---\n" + canonical_json(payload)
+    prompt = (
+        "Synthesize every supplied child summary without dropping positive, negative, "
+        "near-miss, failure, or boundary evidence. The local compiler owns the complete "
+        "capsule membership ledger; do not reproduce capsule ID lists or infer unseen "
+        "mechanisms from coverage counts or hashes. Claims may cite only IDs in "
+        "available_evidence_capsule_ids. Return the supplied node_id and every required "
+        "child_node_id in order. Keep the response concise and within its schema limits."
+        "\n---OFFLINE_SEMANTIC_REDUCE---\n" + canonical_json(payload)
+    )
+    prompt_bytes = len(prompt.encode("utf-8"))
+    if prompt_bytes > MAX_REDUCE_PROMPT_BYTES:
+        raise ValueError(
+            f"offline reduce prompt exceeds byte contract: {prompt_bytes} "
+            f"> {MAX_REDUCE_PROMPT_BYTES}"
+        )
+    return prompt
+
+
+def _reduce_child_payload(node: SemanticReduceNode) -> dict[str, Any]:
+    return {
+        "node_id": node.node_id,
+        "child_node_ids": node.child_node_ids,
+        "covered_capsule_count": node.covered_capsule_count,
+        "coverage_root": node.coverage_root,
+        "evidence_capsule_ids": node.evidence_capsule_ids,
+        "synthesis": node.synthesis,
+        "mechanisms": node.mechanisms,
+        "conditions": node.conditions,
+        "boundary_conditions": node.boundary_conditions,
+        "failure_modes": node.failure_modes,
+        "contradictions": node.contradictions,
+        "claims": [claim.model_dump(mode="json") for claim in node.claims],
+    }
+
+
+def _leaf_reduce_evidence_ids(capsule_ids: Sequence[str]) -> list[str]:
+    ordered = sorted(set(capsule_ids))
+    if len(ordered) <= 4:
+        return ordered
+    indices = (0, len(ordered) // 3, (2 * len(ordered)) // 3, len(ordered) - 1)
+    return _unique(ordered[index] for index in indices)
+
+
+def _normalize_reduce_claim_citations(
+    claims: Sequence[SemanticReduceClaimDraft],
+    *,
+    allowed_capsule_ids: set[str],
+    error_message: str = "semantic reduce claim cited an unavailable capsule",
+) -> tuple[list[MechanismClaimDraft], list[SemanticReduceCitationNormalization]]:
+    normalized_claims: list[MechanismClaimDraft] = []
+    normalizations: list[SemanticReduceCitationNormalization] = []
+    citation_fields = ("supporting_capsule_ids", "contradicting_capsule_ids")
+    for claim_index, claim in enumerate(claims):
+        payload = claim.model_dump(mode="python")
+        for field_name in citation_fields:
+            normalized_ids: list[str] = []
+            for original_value in payload[field_name]:
+                if original_value in allowed_capsule_ids:
+                    normalized_ids.append(original_value)
+                    continue
+                # Accept only the observed soft-hyphen/em-dash artifact after an allowed ID.
+                exact_formatting_suffix = "\u00ad\u2014"
+                if original_value.endswith(exact_formatting_suffix):
+                    prefix = original_value[: -len(exact_formatting_suffix)]
+                    if prefix in allowed_capsule_ids:
+                        normalized_ids.append(prefix)
+                        normalizations.append(
+                            SemanticReduceCitationNormalization(
+                                claim_index=claim_index,
+                                field=field_name,
+                                original_value=original_value,
+                                normalized_capsule_id=prefix,
+                                rule="allowed_capsule_id_plus_soft_hyphen_em_dash_suffix",
+                            )
+                        )
+                        continue
+                # Repair only the exact multilingual suffix confirmed in this checkpoint.
+                exact_arabic_suffix = "\u0639\u0646\u062f"
+                if original_value.endswith(exact_arabic_suffix):
+                    prefix = original_value[: -len(exact_arabic_suffix)]
+                    if prefix in allowed_capsule_ids:
+                        normalized_ids.append(prefix)
+                        normalizations.append(
+                            SemanticReduceCitationNormalization(
+                                claim_index=claim_index,
+                                field=field_name,
+                                original_value=original_value,
+                                normalized_capsule_id=prefix,
+                                rule="allowed_capsule_id_plus_exact_arabic_word_suffix",
+                            )
+                        )
+                        continue
+                prefix, separator, suffix = original_value.partition(" ")
+                if not (
+                    separator
+                    and prefix in allowed_capsule_ids
+                    and len(suffix) == 1
+                    and not suffix.isascii()
+                    and suffix.isalpha()
+                ):
+                    raise ValueError(error_message)
+                normalized_ids.append(prefix)
+                normalizations.append(
+                    SemanticReduceCitationNormalization(
+                        claim_index=claim_index,
+                        field=field_name,
+                        original_value=original_value,
+                        normalized_capsule_id=prefix,
+                    )
+                )
+            payload[field_name] = normalized_ids
+        normalized_claims.append(MechanismClaimDraft(**payload))
+    return normalized_claims, normalizations
+
+
+def _normalize_reduce_child_identity(
+    *,
+    draft_child_node_ids: Sequence[str],
+    expected_child_node_ids: Sequence[str],
+    error_message: str = "semantic reduce output omitted or added children",
+) -> SemanticReduceChildIdentityNormalization | None:
+    expected = list(expected_child_node_ids)
+    observed = list(draft_child_node_ids)
+    if observed == expected:
+        return None
+    if not observed and expected:
+        return SemanticReduceChildIdentityNormalization(
+            original_child_node_ids=observed,
+            restored_child_node_ids=expected,
+        )
+    raise ValueError(error_message)
+
+
+def _leaf_coverage_root(node_id: str, capsule_ids: Sequence[str]) -> str:
+    return sha256_text(
+        canonical_json({"node_id": node_id, "capsule_ids": sorted(set(capsule_ids))})
+    )
+
+
+def _reduce_coverage_root(
+    node_id: str,
+    children: Sequence[SemanticReduceNode],
+) -> str:
+    return sha256_text(
+        canonical_json(
+            {
+                "node_id": node_id,
+                "children": [
+                    {
+                        "node_id": child.node_id,
+                        "covered_capsule_count": child.covered_capsule_count,
+                        "coverage_root": child.coverage_root,
+                    }
+                    for child in children
+                ],
+            }
+        )
     )
 
 
@@ -2617,8 +4087,6 @@ def _claims_from_reduce_node(
     for draft in node.claims:
         supporting_ids = [value for value in draft.supporting_capsule_ids if value in by_id]
         contradicting_ids = [value for value in draft.contradicting_capsule_ids if value in by_id]
-        if not supporting_ids and node.covered_capsule_ids:
-            supporting_ids = [value for value in node.covered_capsule_ids if value in by_id][:1]
         referenced = [by_id[value] for value in [*supporting_ids, *contradicting_ids]]
         if not referenced:
             continue
@@ -2685,20 +4153,51 @@ def _write_capsules_to_database(
     connection: duckdb.DuckDBPyConnection,
     capsules: list[SemanticMemoryCapsule],
 ) -> None:
-    connection.executemany(
-        "INSERT INTO semantic_capsules VALUES (?, ?, ?, ?, ?, ?)",
-        [
-            (
-                row.capsule_id,
-                row.category,
-                row.semantic_unit_id,
-                row.available_from.isoformat(),
-                row.embedding,
-                canonical_json(row.model_dump(mode="json")),
+    if not capsules:
+        return
+    semantic_unit_ids = [row.semantic_unit_id for row in capsules]
+    if len(set(semantic_unit_ids)) != len(semantic_unit_ids):
+        raise ValueError("offline capsule output contains duplicate semantic unit IDs")
+    rows = [
+        (
+            row.capsule_id,
+            row.category,
+            row.semantic_unit_id,
+            row.available_from.isoformat(),
+            row.embedding,
+            canonical_json(row.model_dump(mode="json")),
+        )
+        for row in capsules
+    ]
+    connection.execute("BEGIN TRANSACTION")
+    try:
+        connection.execute(
+            "DELETE FROM semantic_capsules "
+            "WHERE semantic_unit_id IN (SELECT UNNEST(?))",
+            [semantic_unit_ids],
+        )
+        connection.executemany(
+            "INSERT INTO semantic_capsules VALUES (?, ?, ?, ?, ?, ?)", rows
+        )
+        persisted_counts = connection.execute(
+            """
+            SELECT count(*), count(DISTINCT semantic_unit_id)
+            FROM semantic_capsules
+            WHERE semantic_unit_id IN (SELECT UNNEST(?))
+            """,
+            [semantic_unit_ids],
+        ).fetchone()
+        if persisted_counts is None:
+            raise ValueError("offline capsule persistence count query returned no row")
+        written_count, written_units = persisted_counts
+        if int(written_count) != len(capsules) or int(written_units) != len(capsules):
+            raise ValueError(
+                "offline capsule persistence did not produce one row per semantic unit"
             )
-            for row in capsules
-        ],
-    )
+        connection.execute("COMMIT")
+    except BaseException:
+        connection.execute("ROLLBACK")
+        raise
 
 
 def _write_claims_to_database(
@@ -2707,19 +4206,6 @@ def _write_claims_to_database(
 ) -> None:
     if not claims:
         raise ValueError("offline brain produced no synthesized mechanism claims")
-    connection.executemany(
-        "INSERT INTO mechanism_claims VALUES (?, ?, ?, ?, ?)",
-        [
-            (
-                row.claim_id,
-                row.category,
-                row.available_from.isoformat(),
-                row.embedding,
-                canonical_json(row.model_dump(mode="json")),
-            )
-            for row in claims
-        ],
-    )
     relationships = [
         (row.claim_id, capsule_id, role)
         for row in claims
@@ -2731,10 +4217,31 @@ def _write_claims_to_database(
     ]
     if not relationships:
         raise ValueError("offline brain claims have no capsule provenance")
-    connection.executemany(
-        "INSERT INTO mechanism_claim_capsules VALUES (?, ?, ?)",
-        relationships,
-    )
+    connection.execute("BEGIN TRANSACTION")
+    try:
+        connection.execute("DELETE FROM mechanism_claim_capsules")
+        connection.execute("DELETE FROM mechanism_claims")
+        connection.executemany(
+            "INSERT INTO mechanism_claims VALUES (?, ?, ?, ?, ?)",
+            [
+                (
+                    row.claim_id,
+                    row.category,
+                    row.available_from.isoformat(),
+                    row.embedding,
+                    canonical_json(row.model_dump(mode="json")),
+                )
+                for row in claims
+            ],
+        )
+        connection.executemany(
+            "INSERT INTO mechanism_claim_capsules VALUES (?, ?, ?)",
+            relationships,
+        )
+        connection.execute("COMMIT")
+    except BaseException:
+        connection.execute("ROLLBACK")
+        raise
 
 
 def _write_reduce_nodes_to_database(
@@ -2743,11 +4250,72 @@ def _write_reduce_nodes_to_database(
 ) -> None:
     connection.executemany(
         "INSERT OR REPLACE INTO reduce_nodes VALUES (?, ?)",
-        [(row.node_id, canonical_json(row.model_dump(mode="json"))) for row in nodes],
+        [
+            (
+                row.node_id,
+                canonical_json(
+                    row.model_copy(update={"covered_capsule_ids": []}).model_dump(
+                        mode="json"
+                    )
+                ),
+            )
+            for row in nodes
+        ],
     )
 
 
+def _write_reduce_leaf_coverage(
+    package_dir: Path,
+    leaves: Sequence[_LeafNode],
+) -> None:
+    rows = [
+        {
+            "node_id": row.node_id,
+            "category": row.category,
+            "capsule_ids": list(row.capsule_ids),
+            "covered_capsule_count": len(row.capsule_ids),
+            "coverage_root": _leaf_coverage_root(row.node_id, row.capsule_ids),
+        }
+        for row in sorted(leaves, key=lambda item: item.node_id)
+    ]
+    path = package_dir / "semantic_reduce_leaf_coverage.jsonl"
+    _write_jsonl(path, rows)
+    write_json(
+        package_dir / "semantic_reduce_coverage_manifest.json",
+        {
+            "schema_version": "nslab.semantic_reduce_coverage_manifest.v1",
+            "leaf_node_count": len(rows),
+            "capsule_count": sum(row["covered_capsule_count"] for row in rows),
+            "leaf_coverage_sha256": file_sha256(path),
+        },
+    )
+
+
+def _drop_package_database_indexes(connection: duckdb.DuckDBPyConnection) -> None:
+    expected_indexes = {
+        "semantic_capsule_category_idx",
+        "semantic_capsule_available_idx",
+        "mechanism_claim_category_idx",
+        "mechanism_claim_capsule_idx",
+        "semantic_capsules_hnsw_idx",
+        "mechanism_claims_hnsw_idx",
+    }
+    existing_indexes = {
+        str(row[0])
+        for row in connection.execute("SELECT index_name FROM duckdb_indexes()").fetchall()
+    }
+    if {"semantic_capsules_hnsw_idx", "mechanism_claims_hnsw_idx"} & existing_indexes:
+        try:
+            connection.execute("LOAD vss")
+        except duckdb.Error:
+            connection.execute("INSTALL vss")
+            connection.execute("LOAD vss")
+    for index_name in sorted(expected_indexes & existing_indexes):
+        connection.execute(f"DROP INDEX {index_name}")
+
+
 def _finalize_package_database(connection: duckdb.DuckDBPyConnection) -> None:
+    _drop_package_database_indexes(connection)
     connection.execute("CREATE INDEX semantic_capsule_category_idx ON semantic_capsules(category)")
     connection.execute("CREATE INDEX semantic_capsule_available_idx ON semantic_capsules(available_from)")
     connection.execute("CREATE INDEX mechanism_claim_category_idx ON mechanism_claims(category)")
@@ -2862,8 +4430,8 @@ def _build_influence_manifest(
         rare_outlier_represented_unit_count=len(outlier_unit_ids.intersection(capsule_units)),
         unrepresented_reasoning_unit_count=len(reasoning_units - capsule_units),
         leaf_covered_semantic_unit_count=len(capsule_units),
-        reduce_covered_capsule_count=len(world_root.covered_capsule_ids),
-        final_covered_capsule_count=len(world_root.covered_capsule_ids),
+        reduce_covered_capsule_count=world_root.covered_capsule_count,
+        final_covered_capsule_count=world_root.covered_capsule_count,
         population_contribution_record_count=int(record_count),
         representative_payload_exposed_record_count=representative_record_count,
         representative_payload_not_exposed_record_count=(
@@ -2881,7 +4449,7 @@ def _build_influence_manifest(
         representative_record_root=sha256_text(canonical_json(representative_pairs)),
         representative_payload_read_root=representative_payload_read_root,
         leaf_coverage_root=sha256_text(canonical_json(sorted(capsule_units))),
-        reduce_tree_root=sha256_text(canonical_json(sorted(world_root.covered_capsule_ids))),
+        reduce_tree_root=world_root.coverage_root,
         close_return_status_accounted_record_count=(
             close_return_status_accounted_record_count
         ),
@@ -3309,6 +4877,9 @@ def _write_offline_progress(
     total_record_count: int,
     semantic_unit_count: int,
     stratum_count: int | None = None,
+    completed_model_node_count: int | None = None,
+    total_model_node_count: int | None = None,
+    current_model_node_id: str | None = None,
 ) -> None:
     write_json(
         path,
@@ -3322,6 +4893,9 @@ def _write_offline_progress(
             ),
             "semantic_unit_count": semantic_unit_count,
             "stratum_count": stratum_count,
+            "completed_model_node_count": completed_model_node_count,
+            "total_model_node_count": total_model_node_count,
+            "current_model_node_id": current_model_node_id,
             "updated_at": now_kst().isoformat(),
         },
     )
@@ -3333,16 +4907,39 @@ def _trace_offline_llm(
     model_config: dict[str, Any],
     *,
     checkpoint_dir: Path | None = None,
+    compatible_checkpoint_model_configs: Sequence[dict[str, Any]] | None = None,
 ) -> LLMProvider:
+    current_model_config = {
+        **model_config,
+        "compiler_version": OFFLINE_COMPILER_VERSION,
+    }
+    compatible_configs: list[dict[str, Any]] = []
+    for candidate in compatible_checkpoint_model_configs or []:
+        config = {**candidate, "compiler_version": OFFLINE_COMPILER_VERSION}
+        compatible_configs.append(config)
+    for candidate in [current_model_config, *compatible_configs]:
+        if candidate["compiler_version"] == OFFLINE_COMPILER_VERSION:
+            compatible_configs.append(
+                {
+                    **candidate,
+                    "compiler_version": LEGACY_MAP_CHECKPOINT_COMPILER_VERSION,
+                }
+            )
     if isinstance(provider, TracingLLMProvider):
         if checkpoint_dir is not None and provider.checkpoint_dir.resolve() != checkpoint_dir.resolve():
             raise ValueError("wrapped LLM provider uses a different checkpoint directory")
+        provider.configure_checkpoint_identity(
+            model_config=current_model_config,
+            default_metadata={"compiler_version": OFFLINE_COMPILER_VERSION},
+            compatible_checkpoint_model_configs=compatible_configs,
+        )
         return provider
     return TracingLLMProvider(
         provider,
         trace_dir=settings.path(settings.output_dirs.traces),
         checkpoint_dir=checkpoint_dir,
-        model_config={**model_config, "compiler_version": OFFLINE_COMPILER_VERSION},
+        model_config=current_model_config,
+        compatible_checkpoint_model_configs=compatible_configs,
         default_metadata={"compiler_version": OFFLINE_COMPILER_VERSION},
         max_retries=settings.llm.max_retries,
     )

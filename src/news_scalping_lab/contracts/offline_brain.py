@@ -10,6 +10,8 @@ from pydantic import Field, field_validator, model_validator
 from news_scalping_lab.contracts.models import BlindPrediction, StrictModel
 
 CompactDigestText = Annotated[str, Field(min_length=1, max_length=120)]
+ReduceFactText = Annotated[str, Field(min_length=1, max_length=192)]
+ReduceClaimText = Annotated[str, Field(min_length=1, max_length=384)]
 
 
 class ExactWitness(StrictModel):
@@ -195,13 +197,44 @@ class MechanismClaimDraft(StrictModel):
     status: str
 
 
+class SemanticReduceCitationNormalization(StrictModel):
+    claim_index: int = Field(ge=0, le=3)
+    field: Literal["supporting_capsule_ids", "contradicting_capsule_ids"]
+    original_value: Annotated[str, Field(min_length=1, max_length=128)]
+    normalized_capsule_id: Annotated[str, Field(min_length=1, max_length=64)]
+    rule: Literal[
+        "allowed_capsule_id_plus_single_unicode_letter_suffix",
+        "allowed_capsule_id_plus_soft_hyphen_em_dash_suffix",
+        "allowed_capsule_id_plus_exact_arabic_word_suffix",
+    ] = (
+        "allowed_capsule_id_plus_single_unicode_letter_suffix"
+    )
+
+
+class SemanticReduceChildIdentityNormalization(StrictModel):
+    original_child_node_ids: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(
+        max_length=10
+    )
+    restored_child_node_ids: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(
+        min_length=1,
+        max_length=10,
+    )
+    rule: Literal["empty_child_ids_restored_from_local_fixed_graph"] = (
+        "empty_child_ids_restored_from_local_fixed_graph"
+    )
+
+
 class SemanticReduceNode(StrictModel):
     schema_version: Literal["nslab.semantic_reduce_node.v1"] = (
         "nslab.semantic_reduce_node.v1"
     )
     node_id: str
     child_node_ids: list[str]
-    covered_capsule_ids: list[str]
+    covered_capsule_ids: list[str] = Field(default_factory=list)
+    covered_capsule_count: int = Field(default=0, ge=0)
+    coverage_root: str = ""
+    prompt_sha256: str = ""
+    evidence_capsule_ids: list[str] = Field(default_factory=list, max_length=24)
     synthesis: str
     mechanisms: list[str] = Field(default_factory=list)
     conditions: list[str] = Field(default_factory=list)
@@ -209,6 +242,47 @@ class SemanticReduceNode(StrictModel):
     failure_modes: list[str] = Field(default_factory=list)
     contradictions: list[str] = Field(default_factory=list)
     claims: list[MechanismClaimDraft] = Field(default_factory=list)
+    citation_normalizations: list[SemanticReduceCitationNormalization] = Field(
+        default_factory=list
+    )
+    child_identity_normalization: SemanticReduceChildIdentityNormalization | None = None
+
+
+class SemanticReduceClaimDraft(StrictModel):
+    statement: ReduceClaimText
+    mechanism: ReduceClaimText
+    conditions: list[ReduceFactText] = Field(default_factory=list, max_length=4)
+    boundary_conditions: list[ReduceFactText] = Field(default_factory=list, max_length=4)
+    failure_modes: list[ReduceFactText] = Field(default_factory=list, max_length=4)
+    supporting_capsule_ids: list[str] = Field(default_factory=list, max_length=3)
+    contradicting_capsule_ids: list[str] = Field(default_factory=list, max_length=3)
+    confidence: Annotated[str, Field(min_length=1, max_length=32)]
+    status: Annotated[str, Field(min_length=1, max_length=32)]
+
+
+class SemanticReduceDraft(StrictModel):
+    """Bounded LLM output; source coverage is attached from the local child graph."""
+
+    schema_version: Literal["nslab.semantic_reduce_draft.v1"] = (
+        "nslab.semantic_reduce_draft.v1"
+    )
+    node_id: Annotated[str, Field(min_length=1, max_length=64)]
+    child_node_ids: list[Annotated[str, Field(min_length=1, max_length=64)]] = Field(
+        max_length=10
+    )
+    synthesis: Annotated[str, Field(min_length=1, max_length=3_000)]
+    mechanisms: list[ReduceFactText] = Field(default_factory=list, max_length=6)
+    conditions: list[ReduceFactText] = Field(default_factory=list, max_length=6)
+    boundary_conditions: list[ReduceFactText] = Field(default_factory=list, max_length=6)
+    failure_modes: list[ReduceFactText] = Field(default_factory=list, max_length=6)
+    contradictions: list[ReduceFactText] = Field(default_factory=list, max_length=6)
+    claims: list[SemanticReduceClaimDraft] = Field(default_factory=list, max_length=4)
+
+    @model_validator(mode="after")
+    def validate_bounded_serialized_size(self) -> Self:
+        if len(self.model_dump_json().encode("utf-8")) > 12_000:
+            raise ValueError("semantic reduce output exceeds 12000-byte contract")
+        return self
 
 
 class OfflineCompileManifest(StrictModel):

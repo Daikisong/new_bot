@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.models import BrainManifest
+from news_scalping_lab.contracts.offline_brain import LongPayloadDigestBatch
 from news_scalping_lab.diagnostics import build_doctor_report
 from news_scalping_lab.llm.codex_oauth_provider import (
     CodexOAuthError,
@@ -155,6 +156,28 @@ def test_codex_oauth_noninteractive_login_reports_required() -> None:
         match="CODEX_OAUTH_INTERACTIVE_LOGIN_REQUIRED",
     ):
         run_interactive_codex_login("codex", interactive=False)
+
+
+def test_codex_oauth_model_validator_error_survives_repair_and_final_failure() -> None:
+    runner = _FakeCodexRunner(
+        structured_payload=json.dumps(
+            {"node_id": "MAP-fixture", "chunk_ids": ["CHUNK-missing"], "digests": []}
+        )
+    )
+    provider = CodexOAuthProvider(runner=runner, structured_repair_retries=1)
+    with pytest.raises(CodexOAuthError, match="long payload digest batch omitted or added chunks"):
+        asyncio.run(
+            provider.generate_structured(
+                prompt="Digest each supplied chunk.",
+                response_model=LongPayloadDigestBatch,
+                purpose="offline_long_payload_map.fixture",
+            )
+        )
+    executions = [kwargs for args, kwargs in zip(runner.calls, runner.call_kwargs, strict=True)
+                  if "--output-last-message" in args]
+    assert len(executions) == 2
+    assert "long payload digest batch omitted or added chunks" in executions[-1]["input"]
+    assert provider.structured_validation_status == "FAILED"
 
 
 def test_doctor_requires_codex_oauth_health_for_selected_provider(

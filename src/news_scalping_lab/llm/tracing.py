@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from news_scalping_lab.llm.base import LLMProvider, count_provider_tokens
 from news_scalping_lab.utils import (
@@ -26,6 +26,10 @@ _PRE_RETRIEVAL_VARIANT_INVARIANT_PURPOSES = (
     "open_world_first_analysis",
     "news_novelty_review",
 )
+_CROSS_COMPILER_MAP_PURPOSES = (
+    "offline_semantic_leaf",
+    "offline_long_payload_map",
+)
 
 
 class TracingLLMProvider:
@@ -40,6 +44,7 @@ class TracingLLMProvider:
         model_config: dict[str, Any] | None = None,
         default_metadata: dict[str, Any] | None = None,
         purpose_metadata: dict[str, dict[str, Any]] | None = None,
+        compatible_checkpoint_model_configs: Sequence[dict[str, Any]] | None = None,
         resume_from_checkpoints: bool = True,
         max_retries: int = 0,
     ) -> None:
@@ -49,6 +54,10 @@ class TracingLLMProvider:
         self.model_config = model_config or {"provider": type(provider).__name__}
         self.default_metadata = default_metadata or {}
         self.purpose_metadata = purpose_metadata or {}
+        self.compatible_checkpoint_model_configs = _unique_model_configs(
+            [self.model_config, *(compatible_checkpoint_model_configs or [])]
+        )
+        self.checkpoint_usage_rows: list[dict[str, Any]] = []
         self.resume_from_checkpoints = resume_from_checkpoints
         self.max_retries = max(0, max_retries)
         self.trace_dir.mkdir(parents=True, exist_ok=True)
@@ -56,6 +65,27 @@ class TracingLLMProvider:
 
     def count_tokens(self, text: str) -> int:
         return count_provider_tokens(self.provider, text)
+
+    def configure_checkpoint_identity(
+        self,
+        *,
+        model_config: dict[str, Any],
+        default_metadata: dict[str, Any],
+        compatible_checkpoint_model_configs: Sequence[dict[str, Any]],
+    ) -> None:
+        provider_model = getattr(self.provider, "model", None)
+        provider_effort = getattr(self.provider, "reasoning_effort", None)
+        if provider_model is not None and provider_model != model_config.get("model"):
+            raise ValueError("wrapped LLM provider model differs from requested model")
+        if provider_effort is not None and provider_effort != model_config.get(
+            "reasoning_effort"
+        ):
+            raise ValueError("wrapped LLM provider reasoning effort differs from request")
+        self.model_config = dict(model_config)
+        self.default_metadata = dict(default_metadata)
+        self.compatible_checkpoint_model_configs = _unique_model_configs(
+            [self.model_config, *compatible_checkpoint_model_configs]
+        )
 
     async def generate_text(self, *, prompt: str, purpose: str) -> str:
         started_at = now_kst()
@@ -156,6 +186,7 @@ class TracingLLMProvider:
             operation="generate_structured",
             purpose=purpose,
             input_payload=input_payload,
+            response_model=response_model,
         )
         if checkpoint is not None:
             output = checkpoint.get("output")
@@ -173,8 +204,22 @@ class TracingLLMProvider:
                         "completion_tokens_estimate": _estimate_tokens(canonical_json(output)),
                     },
                     checkpoint_id=str(checkpoint["checkpoint_id"]),
+                    checkpoint_model_config=_checkpoint_model_config(
+                        checkpoint,
+                        self.model_config,
+                    ),
                     retries=_checkpoint_retries(checkpoint),
                     retry_errors=_checkpoint_retry_errors(checkpoint),
+                )
+                self._record_checkpoint_usage(
+                    operation="generate_structured",
+                    purpose=purpose,
+                    checkpoint_id=str(checkpoint["checkpoint_id"]),
+                    model_config=_checkpoint_model_config(
+                        checkpoint,
+                        self.model_config,
+                    ),
+                    cache_hit=True,
                 )
                 return restored
         try:
@@ -223,6 +268,13 @@ class TracingLLMProvider:
             retries=retries,
             retry_errors=retry_errors,
         )
+        self._record_checkpoint_usage(
+            operation="generate_structured",
+            purpose=purpose,
+            checkpoint_id=checkpoint_id,
+            model_config=self.model_config,
+            cache_hit=False,
+        )
         self._write_trace(
             operation="generate_structured",
             purpose=purpose,
@@ -235,6 +287,7 @@ class TracingLLMProvider:
                 "completion_tokens_estimate": _estimate_tokens(canonical_json(json_output)),
             },
             checkpoint_id=checkpoint_id,
+            checkpoint_model_config=self.model_config,
             retries=retries,
             retry_errors=retry_errors,
         )
@@ -342,6 +395,7 @@ class TracingLLMProvider:
         token_usage: dict[str, int] | None = None,
         error: Exception | None = None,
         checkpoint_id: str | None = None,
+        checkpoint_model_config: dict[str, Any] | None = None,
         retries: int = 0,
         retry_errors: list[dict[str, str]] | None = None,
     ) -> None:
@@ -370,6 +424,7 @@ class TracingLLMProvider:
             "output": output,
             "output_sha256": sha256_text(canonical_json(output)) if output is not None else None,
             "checkpoint_id": checkpoint_id,
+            "checkpoint_model_config": checkpoint_model_config or self.model_config,
             "tool_calls": [],
             "retries": retries,
             "retry_errors": retry_errors or [],
@@ -388,9 +443,10 @@ class TracingLLMProvider:
         operation: str,
         purpose: str,
         input_payload: dict[str, Any],
+        model_config: dict[str, Any] | None = None,
     ) -> str:
-        metadata = self._metadata_for(purpose)
-        checkpoint_model_config = dict(self.model_config)
+        checkpoint_model_config = dict(model_config or self.model_config)
+        metadata = self._metadata_for_model_config(purpose, checkpoint_model_config)
         if _purpose_matches_any(
             purpose,
             _PRE_RETRIEVAL_VARIANT_INVARIANT_PURPOSES,
@@ -416,12 +472,14 @@ class TracingLLMProvider:
         operation: str,
         purpose: str,
         input_payload: dict[str, Any],
+        model_config: dict[str, Any] | None = None,
     ) -> Path:
         return self.checkpoint_dir / (
             self._checkpoint_id(
                 operation=operation,
                 purpose=purpose,
                 input_payload=input_payload,
+                model_config=model_config,
             )
             + ".json"
         )
@@ -432,20 +490,56 @@ class TracingLLMProvider:
         operation: str,
         purpose: str,
         input_payload: dict[str, Any],
+        response_model: type[BaseModel] | None = None,
     ) -> dict[str, Any] | None:
         if not self.resume_from_checkpoints:
             return None
-        path = self._checkpoint_path(
-            operation=operation,
-            purpose=purpose,
-            input_payload=input_payload,
-        )
-        if not path.exists():
-            return None
-        payload = read_json(path)
-        if not isinstance(payload, dict) or payload.get("status") != "ok":
-            return None
-        return payload
+        expected_input_sha256 = sha256_text(canonical_json(input_payload))
+        current_compiler = self.model_config.get("compiler_version")
+        for model_config in self.compatible_checkpoint_model_configs:
+            candidate_compiler = model_config.get("compiler_version")
+            if candidate_compiler != current_compiler and not _purpose_prefix_matches_any(
+                purpose,
+                _CROSS_COMPILER_MAP_PURPOSES,
+            ):
+                continue
+            expected_metadata = self._metadata_for_model_config(purpose, model_config)
+            path = self._checkpoint_path(
+                operation=operation,
+                purpose=purpose,
+                input_payload=input_payload,
+                model_config=model_config,
+            )
+            if not path.is_file():
+                continue
+            try:
+                payload = read_json(path)
+            except (OSError, ValueError, TypeError):
+                continue
+            if (
+                not isinstance(payload, dict)
+                or payload.get("status") != "ok"
+                or payload.get("checkpoint_id") != path.stem
+                or payload.get("operation") != operation
+                or payload.get("purpose") != purpose
+                or payload.get("input") != input_payload
+                or payload.get("input_sha256") != expected_input_sha256
+                or payload.get("model_config") != model_config
+                or payload.get("metadata") != expected_metadata
+            ):
+                continue
+            output = payload.get("output")
+            if output is None or payload.get("output_sha256") != sha256_text(
+                canonical_json(output)
+            ):
+                continue
+            if response_model is not None:
+                try:
+                    response_model.model_validate(output)
+                except ValidationError:
+                    continue
+            return payload
+        return None
 
     def _write_checkpoint(
         self,
@@ -460,12 +554,14 @@ class TracingLLMProvider:
         retries: int = 0,
         retry_errors: list[dict[str, str]] | None = None,
     ) -> str:
+        checkpoint_model_config = dict(self.model_config)
         checkpoint_id = self._checkpoint_id(
             operation=operation,
             purpose=purpose,
             input_payload=input_payload,
+            model_config=checkpoint_model_config,
         )
-        metadata = self._metadata_for(purpose)
+        metadata = self._metadata_for_model_config(purpose, checkpoint_model_config)
         payload: dict[str, Any] = {
             "checkpoint_id": checkpoint_id,
             "schema_version": "nslab.llm_checkpoint.v1",
@@ -473,7 +569,7 @@ class TracingLLMProvider:
             "purpose": purpose,
             "status": status,
             "provider": type(self.provider).__name__,
-            "model_config": self.model_config,
+            "model_config": checkpoint_model_config,
             "metadata": metadata,
             "input": input_payload,
             "input_sha256": sha256_text(canonical_json(input_payload)),
@@ -495,9 +591,64 @@ class TracingLLMProvider:
             purpose_metadata = self.purpose_metadata.get(purpose.split(".batch_", 1)[0])
         return {**self.default_metadata, **(purpose_metadata or {})}
 
+    def _metadata_for_model_config(
+        self,
+        purpose: str,
+        model_config: dict[str, Any],
+    ) -> dict[str, Any]:
+        metadata = self._metadata_for(purpose)
+        compiler_version = model_config.get("compiler_version")
+        if isinstance(compiler_version, str) and "compiler_version" in metadata:
+            metadata["compiler_version"] = compiler_version
+        return metadata
+
+    def _record_checkpoint_usage(
+        self,
+        *,
+        operation: str,
+        purpose: str,
+        checkpoint_id: str,
+        model_config: dict[str, Any],
+        cache_hit: bool,
+    ) -> None:
+        self.checkpoint_usage_rows.append(
+            {
+                "operation": operation,
+                "purpose": purpose,
+                "checkpoint_id": checkpoint_id,
+                "model_config": dict(model_config),
+                "cache_hit": cache_hit,
+            }
+        )
+
+
+def _unique_model_configs(
+    configs: Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    unique: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for config in configs:
+        key = canonical_json(config)
+        if key not in seen:
+            unique.append(dict(config))
+            seen.add(key)
+    return unique
+
+
+def _checkpoint_model_config(
+    checkpoint: dict[str, Any],
+    fallback: dict[str, Any],
+) -> dict[str, Any]:
+    value = checkpoint.get("model_config")
+    return dict(value) if isinstance(value, dict) else dict(fallback)
+
 
 def _purpose_matches_any(purpose: str, prefixes: tuple[str, ...]) -> bool:
     return any(purpose == prefix or purpose.startswith(prefix + ".batch_") for prefix in prefixes)
+
+
+def _purpose_prefix_matches_any(purpose: str, prefixes: tuple[str, ...]) -> bool:
+    return any(purpose == prefix or purpose.startswith(prefix + ".") for prefix in prefixes)
 
 
 def _estimate_tokens(text: str) -> int:

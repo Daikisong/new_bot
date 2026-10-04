@@ -41,10 +41,10 @@ from news_scalping_lab.contracts.offline_brain import (
     BrainInformedDecision,
     LongPayloadChunkDigestDraft,
     LongPayloadDigestBatch,
-    MechanismClaimDraft,
     SemanticCapsuleDraft,
     SemanticCapsuleDraftBatch,
-    SemanticReduceNode,
+    SemanticReduceClaimDraft,
+    SemanticReduceDraft,
 )
 from news_scalping_lab.contracts.quality_evaluation import (
     SharedOpenWorldReduceOutput,
@@ -82,7 +82,7 @@ class DeterministicMockLLMProvider:
         if response_model is SemanticCapsuleDraftBatch:
             capsule_batch = self._semantic_capsule_draft_batch(prompt)
             return capsule_batch  # type: ignore[return-value]
-        if response_model is SemanticReduceNode:
+        if response_model is SemanticReduceDraft:
             reduce_node = self._semantic_reduce_node(prompt)
             return reduce_node  # type: ignore[return-value]
         if response_model is BrainInformedDecision:
@@ -189,17 +189,17 @@ class DeterministicMockLLMProvider:
             digests=digests,
         )
 
-    def _semantic_reduce_node(self, prompt: str) -> SemanticReduceNode:
+    def _semantic_reduce_node(self, prompt: str) -> SemanticReduceDraft:
         payload = self._marked_payload(prompt, "---OFFLINE_SEMANTIC_REDUCE---")
         node_id = str(payload.get("node_id") or "REDUCE-mock")
         category = str(payload.get("category") or "world_model")
         raw_child_ids = payload.get("required_child_node_ids")
         child_ids = [str(value) for value in raw_child_ids] if isinstance(raw_child_ids, list) else []
-        raw_capsule_ids = payload.get("required_capsule_ids")
+        raw_capsule_ids = payload.get("available_evidence_capsule_ids")
         capsule_ids = [str(value) for value in raw_capsule_ids] if isinstance(raw_capsule_ids, list) else []
         claims = (
             [
-                MechanismClaimDraft(
+                SemanticReduceClaimDraft(
                     statement=f"{category} evidence requires condition and boundary checks.",
                     mechanism="current catalyst -> economic exposure -> ranked market response",
                     conditions=["cutoff-safe evidence"],
@@ -214,10 +214,9 @@ class DeterministicMockLLMProvider:
             if capsule_ids
             else []
         )
-        return SemanticReduceNode(
+        return SemanticReduceDraft(
             node_id=node_id,
             child_node_ids=child_ids,
-            covered_capsule_ids=capsule_ids,
             synthesis=f"Mock complete reduction for {category}.",
             mechanisms=["event -> exposure -> response"],
             conditions=["cutoff-safe evidence"],

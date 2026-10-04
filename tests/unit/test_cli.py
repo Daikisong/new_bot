@@ -79,15 +79,25 @@ def test_offline_build_requires_gpt_6_1_sol_high_identity(tmp_path: Path) -> Non
     cli_module._require_offline_production_llm_identity(settings)
 
 
-@pytest.mark.parametrize("command", ["build-offline", "update-offline"])
+@pytest.mark.parametrize(
+    ("command", "continue_after_map_plan"),
+    [
+        ("build-offline", False),
+        ("build-offline", True),
+        ("update-offline", False),
+    ],
+)
 def test_offline_build_cli_accepts_shared_checkpoint_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     command: str,
+    continue_after_map_plan: bool,
 ) -> None:
     checkpoint_dir = tmp_path / "original-worktree" / "runs" / "checkpoints" / "llm"
     checkpoint_dir.mkdir(parents=True)
     captured_dirs: list[Path | None] = []
+    captured_compatible_models: list[list[dict[str, Any]]] = []
+    captured_build_kwargs: list[dict[str, Any]] = []
     settings = Settings(
         project_root=tmp_path / "new-worktree",
         llm_provider="codex-oauth",
@@ -109,11 +119,16 @@ def test_offline_build_cli_accepts_shared_checkpoint_directory(
             compiler_settings: Settings,
             *,
             checkpoint_dir: Path | None = None,
+            compatible_checkpoint_model_configs: list[dict[str, Any]] | None = None,
         ) -> None:
             assert compiler_settings is settings
             captured_dirs.append(checkpoint_dir)
+            captured_compatible_models.append(
+                compatible_checkpoint_model_configs or []
+            )
 
-        async def build(self, **_: Any) -> BuildResult:
+        async def build(self, **kwargs: Any) -> BuildResult:
+            captured_build_kwargs.append(kwargs)
             return BuildResult()
 
     monkeypatch.setattr(cli_module, "load_settings", lambda: settings)
@@ -127,12 +142,45 @@ def test_offline_build_cli_accepts_shared_checkpoint_directory(
         "--checkpoint-dir",
         str(checkpoint_dir),
     ]
+    if command == "build-offline":
+        resume_database = tmp_path / "resume" / "semantic_capsule_index.duckdb"
+        args.extend(
+            [
+                "--compatible-checkpoint-model",
+                "gpt-5.6-sol/xhigh",
+                "--resume-work-database",
+                str(resume_database),
+                "--expected-resume-work-database-sha256",
+                "a" * 64,
+            ]
+        )
+        if continue_after_map_plan:
+            args.append("--continue-after-map-plan")
     if command == "update-offline":
         args.extend(["--previous-package", str(tmp_path / "previous-package")])
     result = CliRunner().invoke(app, args)
 
     assert result.exit_code == 0, result.output
     assert captured_dirs == [checkpoint_dir]
+    expected_compatible_models = (
+        [
+            {
+                "provider": "codex-oauth",
+                "model": "gpt-5.6-sol",
+                "reasoning_effort": "xhigh",
+            }
+        ]
+        if command == "build-offline"
+        else []
+    )
+    assert captured_compatible_models == [expected_compatible_models]
+    if command == "build-offline":
+        assert captured_build_kwargs[0]["resume_work_database"] == resume_database
+        assert captured_build_kwargs[0]["expected_resume_work_database_sha256"] == "a" * 64
+        assert captured_build_kwargs[0]["stop_after_reduce_plan"] is (
+            not continue_after_map_plan
+        )
+        assert captured_build_kwargs[0]["require_map_plan_receipt"] is True
 
 
 def _cli_brain_record(record_id: str = "BRAIN-CLI") -> BrainRecordEnvelope:

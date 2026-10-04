@@ -344,7 +344,8 @@ def _repair_prompt(*, original_prompt: str, validation_error: Exception) -> str:
 def _validation_error_detail(error: Exception, *, max_chars: int = 4000) -> str:
     if isinstance(error, ValidationError):
         detail = json.dumps(
-            error.errors(include_url=False, include_input=False),
+            # Validator context can contain the original non-JSON ValueError.
+            error.errors(include_url=False, include_input=False, include_context=False),
             ensure_ascii=True,
             sort_keys=True,
             separators=(",", ":"),
