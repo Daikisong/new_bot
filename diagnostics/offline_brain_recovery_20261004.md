@@ -811,3 +811,51 @@ The tested CLI rollback syntax, if a production owner later authorizes a rollbac
 `python -m news_scalping_lab.cli production rollback --release-id <verified-previous-release-id>`. The promotion
 HMAC key must come through the existing settings/environment path and must never be passed as an argument or
 committed. The CLI was not executed against production.
+
+### 06:25–07:07 KST: failed reducer citation, bounded repair, same-compile resume
+
+The first resumed full-corpus attempt stopped with exit code 1 near 06:25 KST. Its exact error was
+`semantic reduce claim cited an unavailable capsule`. After the Python build process had exited, a read-only audit
+found 52,644 persisted semantic capsules and 267 persisted reduce nodes. The audited checkpoint and trace were:
+
+```text
+trace:        TRACE-718730099afa
+purpose:      offline_semantic_reduce.REDUCE-0555ca45c1a45fd5d237
+checkpoint:   LLMCKPT-4a6a1cbded76a0fb
+input SHA256: 702c2f18a9e9d2d8e4ede58f82e1adc99b04013b0ddaafe27a42d04cd2fd2251
+output SHA256: 202c3703a8bf841718bd30ac224068889d8a4465450ee8db387fc762a89dfbd7
+```
+
+The trace and checkpoint input/output hashes matched. Reconstructing the exact allowed capsule evidence from the
+four `theme_formation` leaf children isolated one malformed citation: allowed ID prefix
+`CAP-f9617dd6843d2f1b6f23` followed by the Arabic token `عند` (U+0639 U+0646 U+062F). The prefix was in the
+node's allowed set; only the appended suffix caused exact membership validation to fail. This was not a missing
+source record, child mismatch, or a reason to relax citation membership generally.
+
+Compiler commit `8578372` adds `_normalize_reduce_claim_citations` with one narrow rule,
+`allowed_capsule_id_plus_exact_arabic_word_suffix`: normalize only this exact ID-plus-token form and only when
+the ID prefix belongs to that node's reconstructed allowed set. It persists a `SemanticReduceCitationNormalization`
+audit row containing the original value and rule. Unknown IDs and arbitrary suffixes remain rejected. Focused
+regression coverage verifies both the allowed exact suffix and rejection of a suffix on an unallowed ID. The
+compiler worktree then passed:
+
+```text
+python -m ruff check .                 PASS
+python -m mypy src/news_scalping_lab  PASS, 139 source files
+python -m pytest                       PASS, 1,934 passed, 1,325 warnings
+```
+
+The fix was committed in Korean and pushed to `origin/codex/v5-gpt61-high-offline`. The compile resumed without
+changing its source manifest, record root, compile ID, target database, fixed plan/topology, or checkpoint
+directory. It did not repeat import, embedding, or map. The previous target had no WAL after the failed process
+exited; once the resumed build became live, its DuckDB/WAL were not opened by an independent reader or writer.
+
+At 06:42:15 KST the resumed Python process PID `60848` started under PowerShell PID `77968` for the same
+`OFFLINE-COMPILE-0dd9198ac9ef79215ab1` identity. The current process/ledger were rechecked at 07:07 KST: Python
+PID `60848` remained live, and the ledger at 07:07:39 reported `317 / 1,868` closed model nodes (16.97%),
+`1,551` remaining, phase `offline_reduce`, current node `REDUCE-7aa05be27e83a8327af3`. Record accounting remains
+823,279/823,279 and is not semantic synthesis completion. The 1,868-node denominator remains 1,858 reducers,
+9 category reviews, and one world root. At the same sample the compiler process used about 4.11 GB private
+memory; earlier samples showed four Codex children, matching the configured concurrency cap of four. These are
+point-in-time resource observations, not proof of zero memory growth over the entire build. No ETA is inferred
+from this short progress interval.
