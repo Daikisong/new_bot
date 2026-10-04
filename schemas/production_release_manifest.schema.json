@@ -31,6 +31,69 @@
       ],
       "title": "ArtifactReference",
       "type": "object"
+    },
+    "ProductionBrainPackageBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "brain_version": {
+          "title": "Brain Version",
+          "type": "string"
+        },
+        "manifest_path": {
+          "title": "Manifest Path",
+          "type": "string"
+        },
+        "manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Manifest Sha256",
+          "type": "string"
+        },
+        "package_path": {
+          "title": "Package Path",
+          "type": "string"
+        },
+        "package_root_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Package Root Sha256",
+          "type": "string"
+        },
+        "pointer_path": {
+          "title": "Pointer Path",
+          "type": "string"
+        },
+        "pointer_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Pointer Sha256",
+          "type": "string"
+        },
+        "production_activated": {
+          "title": "Production Activated",
+          "type": "boolean"
+        },
+        "production_eligible": {
+          "title": "Production Eligible",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "const": "nslab.production_brain_package_binding.v1",
+          "default": "nslab.production_brain_package_binding.v1",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pointer_path",
+        "pointer_sha256",
+        "package_path",
+        "manifest_path",
+        "manifest_sha256",
+        "brain_version",
+        "package_root_sha256",
+        "production_activated",
+        "production_eligible"
+      ],
+      "title": "ProductionBrainPackageBinding",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -44,6 +107,17 @@
     },
     "brain_manifest": {
       "$ref": "#/$defs/ArtifactReference"
+    },
+    "brain_package_binding": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProductionBrainPackageBinding"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "brain_version": {
       "title": "Brain Version",
@@ -200,8 +274,11 @@
       "title": "Oauth Health Check Status"
     },
     "policy_version": {
-      "const": "production_release_policy.v1",
       "default": "production_release_policy.v1",
+      "enum": [
+        "production_release_policy.v1",
+        "production_release_policy.v2"
+      ],
       "title": "Policy Version",
       "type": "string"
     },

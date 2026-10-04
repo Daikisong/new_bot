@@ -23,6 +23,7 @@ from news_scalping_lab.contracts.production import (
     PRODUCTION_RELEASE_POLICY_VERSION,
     ProductionActivationAttestation,
     ProductionBatchImportReceipt,
+    ProductionBrainPackageBinding,
     ProductionCurrentPointer,
     ProductionReleaseArtifactManifest,
     ProductionReleaseConfigurationManifest,
@@ -163,6 +164,7 @@ def finalize_production_release(
     if release_dir.exists():
         raise FileExistsError(f"production release already exists: {release_id}")
     transaction = ProductionReleaseTransaction(
+        policy_version=PRODUCTION_RELEASE_POLICY_VERSION,
         release_id=release_id,
         import_id=receipt.import_id,
         inventory_id=receipt.inventory_id,
@@ -298,6 +300,9 @@ def _complete_release_transaction(
         shadow_evaluation_path,
         write_doctor_report=True,
         dotenv_root=root,
+        require_offline_brain_package=(
+            transaction.policy_version == PRODUCTION_RELEASE_POLICY_VERSION
+        ),
     )
     projection = _projection_with_release_configuration(
         release_project_root,
@@ -318,7 +323,11 @@ def _complete_release_transaction(
             "production release blockers after relocation: "
             + ", ".join(findings)
         )
-    release_identity = _release_identity(receipt=receipt, projection=projection)
+    release_identity = _release_identity(
+        receipt=receipt,
+        projection=projection,
+        policy_version=transaction.policy_version,
+    )
     identity_sha256 = sha256_text(canonical_json(release_identity))
     if transaction.release_identity_sha256 != identity_sha256:
         raise ValueError("production release transaction identity mismatch")
@@ -361,6 +370,7 @@ def _complete_release_transaction(
     manifest = ProductionReleaseManifest(
         release_id=transaction.release_id,
         created_at=transaction.created_at,
+        policy_version=transaction.policy_version,
         release_project_path=relative_to_root(release_project_root, root),
         release_transaction=_reference(root, transaction_path, item_count=1),
         release_configuration=_reference(
@@ -403,6 +413,7 @@ def _complete_release_transaction(
             item_count=1,
         ),
         doctor_report=_reference(root, artifacts["doctor_report"], item_count=1),
+        brain_package_binding=projection["brain_package_binding"],
         brain_version=str(projection["brain_version"]),
         memory_snapshot_id=str(projection["memory_snapshot_id"]),
         shadow_evaluation_id=str(projection["shadow_evaluation_id"]),
@@ -508,6 +519,8 @@ def inspect_production_release(
         else:
             if transaction_path != release_dir / PRODUCTION_RELEASE_TRANSACTION_FILE:
                 errors.append("production_release_transaction_path_mismatch")
+            if transaction.policy_version != manifest.policy_version:
+                errors.append("production_release_transaction_policy_mismatch")
             if transaction.release_id != manifest.release_id:
                 errors.append("production_release_transaction_release_id_mismatch")
             if transaction.created_at != manifest.created_at:
@@ -571,6 +584,9 @@ def inspect_production_release(
             shadow_path,
             write_doctor_report=False,
             dotenv_root=resolved_root,
+            require_offline_brain_package=(
+                manifest.policy_version == PRODUCTION_RELEASE_POLICY_VERSION
+            ),
         )
         projection = _projection_with_release_configuration(
             project_root,
@@ -582,6 +598,7 @@ def inspect_production_release(
         )
         expected_fields = {
             "brain_version": projection["brain_version"],
+            "brain_package_binding": projection["brain_package_binding"],
             "memory_snapshot_id": projection["memory_snapshot_id"],
             "shadow_evaluation_id": projection["shadow_evaluation_id"],
             "llm_provider": projection["llm_provider"],
@@ -623,7 +640,11 @@ def inspect_production_release(
             if actual.get(field) != expected:
                 errors.append(f"production_release_{field}_mismatch")
     if receipt is not None and projection is not None:
-        release_identity = _release_identity(receipt=receipt, projection=projection)
+        release_identity = _release_identity(
+            receipt=receipt,
+            projection=projection,
+            policy_version=manifest.policy_version,
+        )
         identity_sha256 = sha256_text(canonical_json(release_identity))
         expected_id = "P9REL-" + identity_sha256[:20].upper()
         if manifest.release_id != expected_id:
@@ -1056,6 +1077,7 @@ def _release_projection(
     *,
     write_doctor_report: bool,
     dotenv_root: Path,
+    require_offline_brain_package: bool = True,
 ) -> dict[str, Any]:
     findings: list[str] = []
     settings = load_settings(
@@ -1107,6 +1129,29 @@ def _release_projection(
     brain_inspection = audit_brain(project_root, deep=True)
     if brain_inspection.get("passed") is not True:
         findings.append("brain_deep_audit_failed")
+    brain_package_binding: ProductionBrainPackageBinding | None = None
+    brain_package_ready = False
+    if require_offline_brain_package:
+        try:
+            brain_package_binding, ann_ready = _selected_brain_package_binding(
+                project_root
+            )
+        except (OSError, ValueError) as exc:
+            findings.append(
+                f"offline_brain_package_binding_invalid:{type(exc).__name__}:{exc}"
+            )
+        else:
+            if not brain_package_binding.production_activated:
+                findings.append("offline_brain_package_not_production_activated")
+            if not brain_package_binding.production_eligible:
+                findings.append("offline_brain_package_not_production_eligible")
+            if not ann_ready:
+                findings.append("offline_brain_package_ann_not_ready")
+            brain_package_ready = (
+                brain_package_binding.production_activated
+                and brain_package_binding.production_eligible
+                and ann_ready
+            )
     memory_inspection = inspect_current_memory_index(project_root)
     memory_payload = memory_inspection.get("manifest")
     if not isinstance(memory_payload, dict):
@@ -1200,8 +1245,15 @@ def _release_projection(
         "doctor_production": readiness.get("passed") is True,
         "provenance": provenance.get("passed") is True,
     }
+    if require_offline_brain_package:
+        audit_results["offline_brain_package"] = brain_package_ready
     return {
         "brain_version": brain.brain_version,
+        "brain_package_binding": (
+            brain_package_binding.model_dump(mode="json")
+            if brain_package_binding is not None
+            else None
+        ),
         "memory_snapshot_id": memory.snapshot_id,
         "shadow_evaluation_id": shadow.evaluation_id,
         "llm_provider": settings.llm_provider,
@@ -1244,13 +1296,42 @@ def _release_projection(
     }
 
 
+def _selected_brain_package_binding(
+    project_root: Path,
+) -> tuple[ProductionBrainPackageBinding, bool]:
+    from news_scalping_lab.brain.offline_v2 import load_selected_brain_package
+
+    root = project_root.resolve()
+    pointer, package_dir, manifest = load_selected_brain_package(root)
+    pointer_path = root / "brain" / "current" / "brain_package_pointer.json"
+    manifest_path = package_dir / "brain_package_manifest.json"
+    binding = ProductionBrainPackageBinding(
+        pointer_path=relative_to_root(pointer_path, root),
+        pointer_sha256=file_sha256(pointer_path),
+        package_path=relative_to_root(package_dir, root),
+        manifest_path=relative_to_root(manifest_path, root),
+        manifest_sha256=file_sha256(manifest_path),
+        brain_version=manifest.brain_version,
+        package_root_sha256=manifest.package_root,
+        production_activated=pointer.production_activated,
+        production_eligible=manifest.production_eligible,
+    )
+    ann_ready = (
+        manifest.semantic_capsule_hnsw_index_ready
+        and manifest.mechanism_claim_hnsw_index_ready
+        and manifest.daily_ann_query_plan_verified
+    )
+    return binding, ann_ready
+
+
 def _release_identity(
     *,
     receipt: ProductionBatchImportReceipt,
     projection: dict[str, Any],
+    policy_version: str = PRODUCTION_RELEASE_POLICY_VERSION,
 ) -> dict[str, Any]:
-    return {
-        "policy_version": PRODUCTION_RELEASE_POLICY_VERSION,
+    identity = {
+        "policy_version": policy_version,
         "import_id": receipt.import_id,
         "inventory_id": receipt.inventory_id,
         "record_store_generation_sha256": receipt.record_store_generation_sha256,
@@ -1297,6 +1378,9 @@ def _release_identity(
             "release_configuration_root_sha256"
         ],
     }
+    if projection.get("brain_package_binding") is not None:
+        identity["brain_package_binding"] = projection["brain_package_binding"]
+    return identity
 
 
 def _sealed_doctor_report_findings(report: object) -> list[str]:

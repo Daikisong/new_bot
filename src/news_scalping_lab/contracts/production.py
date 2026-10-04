@@ -17,7 +17,8 @@ from news_scalping_lab.contracts.memory_context import (
 
 PRODUCTION_IMPORT_INVENTORY_VERSION = "production_import_inventory.v1"
 PRODUCTION_BATCH_IMPORT_VERSION = "production_batch_import.v1"
-PRODUCTION_RELEASE_POLICY_VERSION = "production_release_policy.v1"
+LEGACY_PRODUCTION_RELEASE_POLICY_VERSION = "production_release_policy.v1"
+PRODUCTION_RELEASE_POLICY_VERSION = "production_release_policy.v2"
 
 
 def _canonical_relative_path(value: str) -> str:
@@ -313,6 +314,9 @@ class ProductionReleaseTransaction(StrictMemoryContextModel):
     schema_version: Literal["nslab.production_release_transaction.v1"] = (
         "nslab.production_release_transaction.v1"
     )
+    policy_version: Literal[
+        "production_release_policy.v1", "production_release_policy.v2"
+    ] = "production_release_policy.v1"
     release_id: str = Field(pattern=r"^P9REL-[0-9A-F]{20}$")
     import_id: str = Field(pattern=r"^P9IMPORT-[0-9A-F]{20}$")
     inventory_id: str = Field(pattern=r"^P9INV-[0-9A-F]{20}$")
@@ -360,15 +364,47 @@ class ProductionReleaseConfigurationManifest(StrictMemoryContextModel):
         return self
 
 
+class ProductionBrainPackageBinding(StrictMemoryContextModel):
+    schema_version: Literal["nslab.production_brain_package_binding.v1"] = (
+        "nslab.production_brain_package_binding.v1"
+    )
+    pointer_path: str
+    pointer_sha256: Sha256
+    package_path: str
+    manifest_path: str
+    manifest_sha256: Sha256
+    brain_version: str
+    package_root_sha256: Sha256
+    production_activated: bool
+    production_eligible: bool
+
+    @field_validator("pointer_path", "package_path", "manifest_path")
+    @classmethod
+    def validate_artifact_paths(cls, value: str) -> str:
+        return _canonical_relative_path(value)
+
+    @model_validator(mode="after")
+    def validate_binding(self) -> Self:
+        if self.pointer_path != "brain/current/brain_package_pointer.json":
+            raise ValueError("BrainPackage pointer path is not canonical")
+        if not self.package_path.startswith("brain/"):
+            raise ValueError("BrainPackage package path must remain under brain/")
+        if self.manifest_path != f"{self.package_path}/brain_package_manifest.json":
+            raise ValueError("BrainPackage manifest path does not match package path")
+        if not self.brain_version.strip():
+            raise ValueError("BrainPackage brain version cannot be empty")
+        return self
+
+
 class ProductionReleaseManifest(StrictMemoryContextModel):
     schema_version: Literal["nslab.production_release_manifest.v1"] = (
         "nslab.production_release_manifest.v1"
     )
     release_id: str = Field(pattern=r"^P9REL-[0-9A-F]{20}$")
     created_at: AwareDatetime
-    policy_version: Literal["production_release_policy.v1"] = (
-        "production_release_policy.v1"
-    )
+    policy_version: Literal[
+        "production_release_policy.v1", "production_release_policy.v2"
+    ] = "production_release_policy.v1"
     release_project_path: str
     release_transaction: ArtifactReference
     release_configuration: ArtifactReference
@@ -385,6 +421,7 @@ class ProductionReleaseManifest(StrictMemoryContextModel):
     memory_snapshot_manifest: ArtifactReference
     shadow_evaluation_manifest: ArtifactReference
     doctor_report: ArtifactReference
+    brain_package_binding: ProductionBrainPackageBinding | None = None
     brain_version: str
     memory_snapshot_id: str
     shadow_evaluation_id: str
@@ -425,6 +462,16 @@ class ProductionReleaseManifest(StrictMemoryContextModel):
         )
         if self.production_ready is not expected_ready:
             raise ValueError("production_ready conflicts with release audits")
+        if self.policy_version == PRODUCTION_RELEASE_POLICY_VERSION and self.production_ready:
+            binding = self.brain_package_binding
+            if (
+                binding is None
+                or not binding.production_activated
+                or not binding.production_eligible
+            ):
+                raise ValueError(
+                    "production-ready v2 release requires an activated, eligible BrainPackage"
+                )
         provider_values = (
             self.llm_provider,
             self.llm_model,

@@ -12,8 +12,13 @@ import pytest
 from news_scalping_lab.config import Settings, load_settings, write_default_config_files
 from news_scalping_lab.contracts.memory_context import ArtifactReference
 from news_scalping_lab.contracts.models import Candidate, PathType
+from news_scalping_lab.contracts.offline_brain import (
+    BrainPackageManifest,
+    BrainPackagePointer,
+)
 from news_scalping_lab.contracts.production import (
     ProductionBatchImportReceipt,
+    ProductionBrainPackageBinding,
     ProductionReleaseManifest,
 )
 from news_scalping_lab.memory.company import CompanyMemoryStore
@@ -32,6 +37,7 @@ from news_scalping_lab.production.release import (
     finalize_production_release,
     inspect_current_production_release,
     inspect_production_release,
+    rollback_production_release,
 )
 from news_scalping_lab.records.models import BrainRecordEnvelope
 from news_scalping_lab.records.store import BrainRecordStore
@@ -356,7 +362,91 @@ def _prepare_staged_release_fixture(root: Path) -> tuple[Path, Path]:
             "manifest_sha256": file_sha256(memory_path),
         },
     )
+    _write_brain_package_fixture(project_root)
     return receipt_path, shadow_path
+
+
+def _write_brain_package_fixture(
+    project_root: Path,
+    *,
+    production_activated: bool = True,
+    production_eligible: bool = True,
+) -> ProductionBrainPackageBinding:
+    from news_scalping_lab.brain.offline_v2 import _artifact_root
+
+    package_dir = project_root / "brain" / "packages" / "brain-fixture"
+    (package_dir / "category_brain").mkdir(parents=True, exist_ok=True)
+    (package_dir / "world_model.md").write_text(
+        "fixture world model\n", encoding="utf-8"
+    )
+    (package_dir / "category_brain" / "market_memory.md").write_text(
+        "fixture category\n", encoding="utf-8"
+    )
+    package_root = _artifact_root(package_dir)
+    created_at = datetime(2026, 1, 2, tzinfo=ZoneInfo("Asia/Seoul"))
+    manifest = BrainPackageManifest(
+        brain_version="brain-fixture",
+        created_at=created_at,
+        build_cutoff=created_at,
+        record_count=1,
+        semantic_unit_count=1,
+        semantic_capsule_count=1,
+        synthesized_mechanism_claim_count=0,
+        population_contribution_record_count=1,
+        representative_payload_exposed_record_count=1,
+        representative_payload_not_exposed_record_count=0,
+        representative_payload_exposure_ratio=1.0,
+        representative_payload_read_root="a" * 64,
+        representative_payload_char_count=16,
+        representative_payload_full_read_count=1,
+        representative_payload_truncated_count=0,
+        chunked_representative_record_count=0,
+        long_payload_chunk_count=0,
+        record_corpus_root="b" * 64,
+        memory_snapshot_root="c" * 64,
+        warehouse_root="d" * 64,
+        embedding_identity="fixture:real-embedding",
+        compiler_version="nslab.offline_semantic_brain.compiler.v6",
+        provider="codex-oauth",
+        model="gpt-6.1-sol",
+        reasoning_effort="high",
+        capsule_root="e" * 64,
+        mechanism_claim_root="f" * 64,
+        category_brain_root="a" * 64,
+        package_root=package_root,
+        assignment_coverage_ratio=1.0,
+        unassigned_record_count=0,
+        duplicate_primary_assignment_count=0,
+        rare_outlier_unit_coverage_ratio=1.0,
+        unrepresented_reasoning_unit_count=0,
+        child_omission_count=0,
+        semantic_capsule_hnsw_index_ready=True,
+        mechanism_claim_hnsw_index_ready=True,
+        daily_ann_query_plan_verified=True,
+        production_eligible=production_eligible,
+    )
+    manifest_path = package_dir / "brain_package_manifest.json"
+    write_json(manifest_path, manifest.model_dump(mode="json"))
+    pointer_path = project_root / "brain" / "current" / "brain_package_pointer.json"
+    pointer = BrainPackagePointer(
+        brain_version=manifest.brain_version,
+        package_path=package_dir.relative_to(project_root).as_posix(),
+        manifest_sha256=file_sha256(manifest_path),
+        package_root=package_root,
+        production_activated=production_activated,
+    )
+    write_json(pointer_path, pointer.model_dump(mode="json"))
+    return ProductionBrainPackageBinding(
+        pointer_path=pointer_path.relative_to(project_root).as_posix(),
+        pointer_sha256=file_sha256(pointer_path),
+        package_path=package_dir.relative_to(project_root).as_posix(),
+        manifest_path=manifest_path.relative_to(project_root).as_posix(),
+        manifest_sha256=file_sha256(manifest_path),
+        brain_version=manifest.brain_version,
+        package_root_sha256=manifest.package_root,
+        production_activated=pointer.production_activated,
+        production_eligible=manifest.production_eligible,
+    )
 
 
 def _fixture_release_projection(
@@ -365,8 +455,9 @@ def _fixture_release_projection(
     *,
     write_doctor_report: bool,
     dotenv_root: Path,
+    require_offline_brain_package: bool = True,
 ) -> dict[str, Any]:
-    del write_doctor_report, dotenv_root
+    del write_doctor_report, dotenv_root, require_offline_brain_package
     from news_scalping_lab.production.release import _release_artifact_projection
 
     release_artifacts = _release_artifact_projection(
@@ -374,8 +465,16 @@ def _fixture_release_projection(
         shadow_evaluation_path=active_shadow_path,
         use_cache=False,
     )
+    assert "brain/current/brain_package_pointer.json" in release_artifacts.artifacts
+    assert "brain/packages/brain-fixture/world_model.md" in release_artifacts.artifacts
+    from news_scalping_lab.production.release import _selected_brain_package_binding
+
+    brain_package_binding, ann_ready = _selected_brain_package_binding(
+        active_project_root
+    )
     return {
         "brain_version": "brain-fixture",
+        "brain_package_binding": brain_package_binding.model_dump(mode="json"),
         "memory_snapshot_id": "MEMIDX-fixture",
         "shadow_evaluation_id": "SHADOW-fixture",
         "llm_provider": "openai",
@@ -396,7 +495,7 @@ def _fixture_release_projection(
         "embedding_fallback_policy": "fail-closed",
         "web_provider": "disabled",
         "price_provider": "stock-web",
-        "audit_results": {"all": True},
+        "audit_results": {"all": True, "offline_brain_package": ann_ready},
         "findings": [],
         "brain_manifest_sha256": file_sha256(
             active_project_root / "brain" / "current" / "brain_manifest.json"
@@ -471,12 +570,44 @@ def test_release_identity_binds_record_and_runtime_artifact_roots(
     assert baseline != changed_runtime_root
     assert baseline != changed_projection_version
     assert baseline != changed_doctor_report
+    changed_brain_package = _release_identity(
+        receipt=receipt,
+        projection={
+            **projection,
+            "brain_package_binding": {
+                **projection["brain_package_binding"],
+                "package_root_sha256": "9" * 64,
+            },
+        },
+    )
+    assert baseline != changed_brain_package
     assert sha256_text(canonical_json(baseline)) != sha256_text(
         canonical_json(changed_record_root)
     )
     assert sha256_text(canonical_json(baseline)) != sha256_text(
         canonical_json(changed_runtime_root)
     )
+    assert sha256_text(canonical_json(baseline)) != sha256_text(
+        canonical_json(changed_brain_package)
+    )
+
+
+def test_release_binding_verifies_selected_brain_package_root(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    expected_binding = _write_brain_package_fixture(project_root)
+    from news_scalping_lab.production.release import _selected_brain_package_binding
+
+    observed_binding, ann_ready = _selected_brain_package_binding(project_root)
+    assert observed_binding == expected_binding
+    assert ann_ready is True
+
+    pointer_path = project_root / "brain" / "current" / "brain_package_pointer.json"
+    pointer = read_json(pointer_path)
+    pointer["package_root"] = "0" * 64
+    write_json(pointer_path, pointer)
+    with pytest.raises(ValueError, match="root does not match"):
+        _selected_brain_package_binding(project_root)
 
 
 def test_sealed_doctor_report_accepts_ready_snapshot_despite_runtime_counts() -> None:
@@ -995,6 +1126,23 @@ def test_production_activation_is_one_signed_pointer_switch(
         findings=[],
         production_ready=True,
     )
+    with pytest.raises(ValueError, match="activated, eligible BrainPackage"):
+        ProductionReleaseManifest.model_validate(
+            {**manifest.model_dump(mode="json"), "policy_version": "production_release_policy.v2"}
+        )
+    ineligible_binding = _write_brain_package_fixture(
+        project_root,
+        production_activated=False,
+        production_eligible=False,
+    )
+    with pytest.raises(ValueError, match="activated, eligible BrainPackage"):
+        ProductionReleaseManifest.model_validate(
+            {
+                **manifest.model_dump(mode="json"),
+                "policy_version": "production_release_policy.v2",
+                "brain_package_binding": ineligible_binding.model_dump(mode="json"),
+            }
+        )
     manifest_path = release_dir / "production_release_manifest.json"
     write_json(manifest_path, manifest.model_dump(mode="json"))
     monkeypatch.setattr(
@@ -1055,6 +1203,95 @@ def test_production_activation_is_one_signed_pointer_switch(
     assert rejected["passed"] is False
     with pytest.raises(ValueError, match="active production release is invalid"):
         load_settings(tmp_path)
+
+
+def test_rollback_reactivates_a_verified_previous_release(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    release_ids = ("P9REL-" + "A" * 20, "P9REL-" + "B" * 20)
+    manifests: dict[str, Path] = {}
+    for release_id in release_ids:
+        release_dir = tmp_path / "production" / "releases" / release_id
+        project_root = release_dir / "project"
+        project_root.mkdir(parents=True)
+        artifact = release_dir / "artifact.json"
+        write_json(artifact, {"release_id": release_id})
+        reference = ArtifactReference(
+            artifact_path=artifact.relative_to(tmp_path).as_posix(),
+            sha256=file_sha256(artifact),
+            item_count=1,
+        )
+        manifest = ProductionReleaseManifest(
+            release_id=release_id,
+            created_at=datetime.now(tz=ZoneInfo("Asia/Seoul")),
+            release_project_path=project_root.relative_to(tmp_path).as_posix(),
+            release_transaction=reference,
+            release_configuration=reference,
+            release_configuration_root_sha256="a" * 64,
+            release_artifacts=reference,
+            release_artifact_projection_version="production_release_artifacts.v1",
+            release_artifact_root_sha256="b" * 64,
+            record_artifact_root_sha256="c" * 64,
+            inventory_manifest=reference,
+            import_receipt=reference,
+            brain_manifest=reference,
+            memory_snapshot_manifest=reference,
+            shadow_evaluation_manifest=reference,
+            doctor_report=reference,
+            brain_version="brain-fixture",
+            memory_snapshot_id="MEMIDX-fixture",
+            shadow_evaluation_id="SHADOW-fixture",
+            llm_provider="openai",
+            llm_model="gpt-5",
+            embedding_model="real_embedding:openai:text-embedding-3-small",
+            web_provider="brave",
+            price_provider="stock-web",
+            audit_results={"all": True},
+            finding_count=0,
+            findings=[],
+            production_ready=True,
+        )
+        manifest_path = release_dir / "production_release_manifest.json"
+        write_json(manifest_path, manifest.model_dump(mode="json"))
+        manifests[release_id] = manifest_path
+
+    monkeypatch.setattr(
+        "news_scalping_lab.production.release.inspect_production_release",
+        lambda *_args, **_kwargs: {"passed": True, "errors": []},
+    )
+    monkeypatch.setattr(
+        "news_scalping_lab.production.release._fast_active_release_errors",
+        lambda *_args, **_kwargs: [],
+    )
+
+    original_id, replacement_id = release_ids
+    activate_production_release(
+        tmp_path,
+        manifests[original_id],
+        promotion_key=_INVENTORY_KEY,
+    )
+    replacement_pointer, _ = activate_production_release(
+        tmp_path,
+        manifests[replacement_id],
+        promotion_key=_INVENTORY_KEY,
+    )
+    assert replacement_pointer.previous_release_id == original_id
+
+    rollback_pointer, current_path = rollback_production_release(
+        tmp_path,
+        original_id,
+        promotion_key=_INVENTORY_KEY,
+    )
+
+    assert current_path == tmp_path / "production" / "current.json"
+    assert rollback_pointer.release_id == original_id
+    assert rollback_pointer.previous_release_id == replacement_id
+    assert inspect_current_production_release(
+        tmp_path,
+        promotion_key=_INVENTORY_KEY,
+        deep=False,
+    )["passed"] is True
 
 
 def test_phase9_readiness_uses_the_active_release_project_root(
@@ -1198,6 +1435,7 @@ def test_finalize_release_moves_verified_stage_without_activation(
             "manifest_sha256": file_sha256(memory_path),
         },
     )
+    _write_brain_package_fixture(project_root)
 
     def projection(
         active_project_root: Path,
@@ -1205,12 +1443,14 @@ def test_finalize_release_moves_verified_stage_without_activation(
         *,
         write_doctor_report: bool,
         dotenv_root: Path,
+        require_offline_brain_package: bool = True,
     ) -> dict[str, Any]:
         return _fixture_release_projection(
             active_project_root,
             active_shadow_path,
             write_doctor_report=write_doctor_report,
             dotenv_root=dotenv_root,
+            require_offline_brain_package=require_offline_brain_package,
         )
 
     monkeypatch.setattr(
@@ -1462,6 +1702,7 @@ def test_finalize_release_recovers_after_interruption_following_stage_move(
         *,
         write_doctor_report: bool,
         dotenv_root: Path,
+        require_offline_brain_package: bool = True,
     ) -> dict[str, Any]:
         nonlocal projection_calls
         projection_calls += 1
@@ -1472,6 +1713,7 @@ def test_finalize_release_recovers_after_interruption_following_stage_move(
             active_shadow_path,
             write_doctor_report=write_doctor_report,
             dotenv_root=dotenv_root,
+            require_offline_brain_package=require_offline_brain_package,
         )
 
     monkeypatch.setattr(
@@ -1534,6 +1776,7 @@ def test_finalize_release_uses_outer_dotenv_without_copying_secrets(
         *,
         write_doctor_report: bool,
         dotenv_root: Path,
+        require_offline_brain_package: bool = True,
     ) -> dict[str, Any]:
         settings = load_settings(
             active_project_root,
@@ -1550,6 +1793,7 @@ def test_finalize_release_uses_outer_dotenv_without_copying_secrets(
             active_shadow_path,
             write_doctor_report=write_doctor_report,
             dotenv_root=dotenv_root,
+            require_offline_brain_package=require_offline_brain_package,
         )
 
     monkeypatch.setattr(

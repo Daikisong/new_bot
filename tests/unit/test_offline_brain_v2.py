@@ -29,6 +29,7 @@ from news_scalping_lab.contracts.offline_brain import (
     LongPayloadDigestBatch,
     MechanismClaimDraft,
     SemanticCapsuleDraftBatch,
+    SemanticInfluenceManifest,
     SemanticMemoryCapsule,
     SemanticReduceNode,
 )
@@ -175,6 +176,74 @@ def test_reduce_claim_availability_includes_uncited_input_capsules() -> None:
     assert len(claims) == 1
     assert claims[0].supporting_capsule_ids == ["CAP-old"]
     assert claims[0].available_from == later_available
+
+
+def test_v6_close_return_metadata_is_accepted_and_accounted() -> None:
+    capsule = SemanticMemoryCapsule(
+        capsule_id="CAP-close-return",
+        category="market_memory",
+        semantic_unit_id="UNIT-close-return",
+        member_record_count=2,
+        member_independent_unit_count=2,
+        member_record_root="record-root",
+        close_return_status_distribution={"POSITIVE": 1, "__NULL__": 1},
+        event_or_mechanism_summary="complete outcome-status summary",
+        available_from=datetime(2025, 1, 2, tzinfo=KST),
+        provenance_root="provenance-root",
+    )
+    assert capsule.close_return_status_distribution == {
+        "POSITIVE": 1,
+        "__NULL__": 1,
+    }
+    with pytest.raises(ValueError, match="close-return status distribution"):
+        SemanticMemoryCapsule(
+            capsule_id="CAP-incomplete-close-return",
+            category="market_memory",
+            semantic_unit_id="UNIT-incomplete-close-return",
+            member_record_count=2,
+            member_independent_unit_count=2,
+            member_record_root="record-root",
+            close_return_status_distribution={"POSITIVE": 1},
+            event_or_mechanism_summary="incomplete outcome-status summary",
+            available_from=datetime(2025, 1, 2, tzinfo=KST),
+            provenance_root="provenance-root",
+        )
+
+    influence_payload = {
+        "schema_version": "nslab.semantic_influence_manifest.v2",
+        "brain_version": "brain-fixture",
+        "record_count": 2,
+        "primary_assignment_count": 2,
+        "distinct_primary_assigned_record_count": 2,
+        "unassigned_record_count": 0,
+        "duplicate_primary_assignment_count": 0,
+        "semantic_unit_count": 1,
+        "rare_outlier_unit_count": 0,
+        "rare_outlier_represented_unit_count": 0,
+        "unrepresented_reasoning_unit_count": 0,
+        "leaf_covered_semantic_unit_count": 1,
+        "reduce_covered_capsule_count": 1,
+        "final_covered_capsule_count": 1,
+        "population_contribution_record_count": 2,
+        "representative_payload_exposed_record_count": 2,
+        "representative_payload_not_exposed_record_count": 0,
+        "representative_payload_exposure_ratio": 1.0,
+        "representative_payload_char_count": 10,
+        "representative_payload_full_read_count": 2,
+        "representative_payload_truncated_count": 0,
+        "chunked_representative_record_count": 0,
+        "long_payload_chunk_count": 0,
+        "record_membership_root": "a" * 64,
+        "representative_record_root": "b" * 64,
+        "representative_payload_read_root": "c" * 64,
+        "leaf_coverage_root": "d" * 64,
+        "reduce_tree_root": "e" * 64,
+        "close_return_status_accounted_record_count": 2,
+        "close_return_status_distribution_root": "f" * 64,
+    }
+    influence = SemanticInfluenceManifest.model_validate(influence_payload)
+    assert influence.close_return_status_accounted_record_count == 2
+    assert influence.close_return_status_distribution_root == "f" * 64
 
 
 def _source_project(root: Path, *, oversized_document: bool = False) -> Path:

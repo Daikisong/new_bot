@@ -16,6 +16,15 @@
       "title": "Inventory Id",
       "type": "string"
     },
+    "policy_version": {
+      "default": "production_release_policy.v1",
+      "enum": [
+        "production_release_policy.v1",
+        "production_release_policy.v2"
+      ],
+      "title": "Policy Version",
+      "type": "string"
+    },
     "release_id": {
       "pattern": "^P9REL-[0-9A-F]{20}$",
       "title": "Release Id",

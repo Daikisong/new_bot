@@ -1010,12 +1010,19 @@ class BrainPackageDailyContextProvider:
     def ensure_ready(self) -> None:
         if self._manifest is not None and self.package_dir is not None:
             return
-        package_dir = self.package_dir or _package_dir_from_pointer(self.root)
+        selected_from_pointer = self.package_dir is None
+        if selected_from_pointer:
+            _, package_dir, manifest = load_selected_brain_package(self.root)
+        else:
+            assert self.package_dir is not None
+            package_dir = self.package_dir
+            manifest = BrainPackageManifest.model_validate(
+                read_json(package_dir / "brain_package_manifest.json")
+            )
         manifest_path = package_dir / "brain_package_manifest.json"
         if not manifest_path.is_file():
             raise FileNotFoundError("selected Offline Semantic Brain V2 manifest is missing")
-        manifest = BrainPackageManifest.model_validate(read_json(manifest_path))
-        if _artifact_root(package_dir) != manifest.package_root:
+        if not selected_from_pointer and _artifact_root(package_dir) != manifest.package_root:
             raise ValueError("Offline Semantic Brain V2 package root drifted")
         database = package_dir / "semantic_capsule_index.duckdb"
         if not database.is_file():
@@ -1144,6 +1151,7 @@ class BrainPackageDailyContextProvider:
                 "label_quality_distribution": row.label_quality_distribution,
                 "time_distribution": row.time_distribution,
                 "regime_distribution": row.regime_distribution,
+                "close_return_status_distribution": row.close_return_status_distribution,
             }
             for row in selected_capsules
         ]
@@ -2847,17 +2855,45 @@ def _projection_rows(
 
 
 def _package_dir_from_pointer(project_root: Path) -> Path:
-    pointer_path = project_root / "brain" / "current" / "brain_package_pointer.json"
+    _, package, _ = load_selected_brain_package(project_root)
+    return package
+
+
+def load_selected_brain_package(
+    project_root: Path,
+) -> tuple[BrainPackagePointer, Path, BrainPackageManifest]:
+    """Resolve and verify the project-selected package and its immutable root."""
+
+    root = project_root.resolve()
+    pointer_path = root / "brain" / "current" / "brain_package_pointer.json"
+    if pointer_path.is_symlink() or pointer_path.resolve() != pointer_path:
+        raise ValueError("BrainPackage pointer cannot be a symlink")
     pointer = BrainPackagePointer.model_validate(read_json(pointer_path))
-    package = (project_root / pointer.package_path).resolve()
+    package_candidate = root / pointer.package_path
+    package = package_candidate.resolve()
     try:
-        package.relative_to(project_root.resolve())
+        relative_package = package.relative_to(root).as_posix()
     except ValueError as exc:
         raise ValueError("BrainPackage pointer escapes project root") from exc
+    if relative_package != pointer.package_path:
+        raise ValueError("BrainPackage pointer package path is not canonical")
+    if package_candidate.is_symlink():
+        raise ValueError("BrainPackage directory cannot be a symlink")
     manifest_path = package / "brain_package_manifest.json"
+    if not manifest_path.is_file() or manifest_path.is_symlink():
+        raise FileNotFoundError("selected BrainPackage manifest is missing or invalid")
     if file_sha256(manifest_path) != pointer.manifest_sha256:
         raise ValueError("BrainPackage pointer manifest hash drifted")
-    return package
+    manifest = BrainPackageManifest.model_validate(read_json(manifest_path))
+    if pointer.brain_version != manifest.brain_version:
+        raise ValueError("BrainPackage pointer version does not match its manifest")
+    if pointer.package_root != manifest.package_root:
+        raise ValueError("BrainPackage pointer root does not match its manifest")
+    if any(path.is_symlink() for path in package.rglob("*")):
+        raise ValueError("BrainPackage cannot contain symlinks")
+    if _artifact_root(package) != manifest.package_root:
+        raise ValueError("BrainPackage artifact root drifted")
+    return pointer, package, manifest
 
 
 def _category_case_sql() -> str:
