@@ -1290,13 +1290,13 @@ def _require_offline_production_llm_identity(settings: Settings) -> None:
         str(settings.llm.model or "").strip(),
         str(settings.llm.reasoning_effort or "").strip(),
     )
-    expected = ("codex-oauth", "gpt-5.6-sol", "xhigh")
+    expected = ("codex-oauth", "gpt-6.1-sol", "high")
     if actual != expected:
         raise ValueError(
             "offline brain build requires provider/model/reasoning "
             f"{expected!r}; configured {actual!r}. Set "
-            "NSLAB_LLM_PROVIDER=codex-oauth, NSLAB_CODEX_MODEL=gpt-5.6-sol, "
-            "and NSLAB_CODEX_REASONING_EFFORT=xhigh before resuming."
+            "NSLAB_LLM_PROVIDER=codex-oauth, NSLAB_CODEX_MODEL=gpt-6.1-sol, "
+            "and NSLAB_CODEX_REASONING_EFFORT=high before resuming."
         )
 
 

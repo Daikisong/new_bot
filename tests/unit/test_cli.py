@@ -50,18 +50,30 @@ class _TrainingExportResult:
         self.row_count = 0
 
 
-def test_offline_build_requires_pinned_production_llm_identity(tmp_path: Path) -> None:
+def test_offline_build_requires_gpt_6_1_sol_high_identity(tmp_path: Path) -> None:
     settings = Settings(project_root=tmp_path)
     with pytest.raises(ValueError, match="offline brain build requires"):
         cli_module._require_offline_production_llm_identity(settings)
 
-    settings = Settings(
+    previous_identity = Settings(
         project_root=tmp_path,
         llm_provider="codex-oauth",
         llm=LLMModelSettings(
             provider="codex-oauth",
             model="gpt-5.6-sol",
             reasoning_effort="xhigh",
+        ),
+    )
+    with pytest.raises(ValueError, match="offline brain build requires"):
+        cli_module._require_offline_production_llm_identity(previous_identity)
+
+    settings = Settings(
+        project_root=tmp_path,
+        llm_provider="codex-oauth",
+        llm=LLMModelSettings(
+            provider="codex-oauth",
+            model="gpt-6.1-sol",
+            reasoning_effort="high",
         ),
     )
     cli_module._require_offline_production_llm_identity(settings)
@@ -81,8 +93,8 @@ def test_offline_build_cli_accepts_shared_checkpoint_directory(
         llm_provider="codex-oauth",
         llm=LLMModelSettings(
             provider="codex-oauth",
-            model="gpt-5.6-sol",
-            reasoning_effort="xhigh",
+            model="gpt-6.1-sol",
+            reasoning_effort="high",
         ),
     )
 
