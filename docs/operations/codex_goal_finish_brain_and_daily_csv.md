@@ -1,6 +1,6 @@
 # Goal: One-Time Brain, Daily Pre-Open CSV Decision
 
-기준 갱신: 2026-10-05 06:22 KST
+문서 갱신: 2026-10-05 KST. 최신 process 확인 06:48 KST, 최신 progress ledger 06:48:16 KST.
 
 이 문서는 현재 저장소 상태를 이어받아 사용자가 원하는 운영 결과까지 완결하기 위한 실행 지시서다. 실행할 때마다 이 문서의 진행 숫자를 사실로 간주하지 말고 실제 프로세스, progress ledger, trace, receipt, manifest, DB를 먼저 확인한다. 이미 끝난 단계는 반복하지 않는다.
 
@@ -41,9 +41,9 @@
 - 823,279개와 날짜 범위만으로 10개년의 모든 거래일/연구자료가 빠짐없이 존재한다고 말할 수 없다. package 감사에서 연도별 실제 coverage와 gap을 보고한다.
 - repaired corpus의 구조적 accounting 완료는 모든 payload가 LLM에 노출되었거나 각 record가 final brain에 의미 영향을 줬다는 증거가 아니다. 구조, 실제 LLM payload exposure, 근거가 있는 claims, daily runtime retrieval을 별도 수치로 보고한다.
 
-## 최신 실행 상태
+## 이전 상태 스냅샷: 2026-10-05 06:21 KST (이후 오류로 중단됨)
 
-아래 상태는 2026-10-05 06:21:40 KST에 process와 progress ledger를 다시 확인한 관측 스냅샷이다. ledger 수치는 06:21:36 KST 갱신분이며, trace는 06:21:40 KST까지 확인했다. goal을 이어갈 때 모든 상태를 다시 검증한다. 이 문서의 PID, session, 수치 어느 것도 현재 상태를 대신하지 않는다.
+아래는 당시 관측 기록이다. 이후 reducer 오류로 process가 종료됐으므로, 이 section의 PID/progress/current node는 현재 상태가 아니다. 최신 정보는 바로 다음 `현재 재개 상태`를 기준으로 하고, goal을 이어갈 때도 실제 process와 ledger를 다시 확인한다.
 
 - Full-corpus synthesis는 compiler worktree `C:\Users\eorb9\projects\news_bot_resume_clean_7198b6b`에서 동일 compile `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`을 실행 중이다. Python PID `12492`(시작 `04:57:55 KST`)는 06:21:40 KST에 살아 있었고 executor session `38263`은 06:22 KST poll에 응답했다.
 - 현재 단계는 `offline_reduce`다. 중단 전의 source, plan, map receipt, checkpoint directory, compile ID는 바꾸지 않았다.
@@ -60,9 +60,18 @@
 - 별도 BUILD-only v6 plan-offline은 완료됐고 현재 프로세스는 종료됐다. 결과: C:\Users\eorb9\projects\nslab_semantic_upgrade_v7_eval_v2\project\diagnostics\offline_brain_v2_build_only_v6_plan_20261005.json; SHA-256 EA58A3DC9FCF269465BE405F4949973ECA3F0B8D44AD716212FB36E15DFCF52D; plan ID OFFLINE-PLAN-a2b58918e1a1020137fe. 입력 snapshot MEMIDX-4409624afdffd1d01018, record root은 full corpus root와 같고, record count 759,308, semantic unit 49,385다.
 - 이 v6 계획은 provider Codex OAuth / gpt-6.1-sol / high, concurrency 4, planning LLM call 0, import/embedding reuse true, silent truncation 0, payload truncation 0이다. 대표 payload full-read는 170,333 records(계획 모집단의 약 22.43%)다. 예상 logical LLM call 7,257은 projection이며, actual call 수나 ETA가 아니다. 기존 memory current pointer의 SHA 105d64c6ea2a2b53f317fd0d543c94324c23767fd90d854f2ef1abe59747cdf0은 실제 snapshot manifest SHA와 다르다. plan은 실제 SHA f47cac17eb3f97bf856e358c078eca023e12d6cefce6a044878dcd87ab4e4f41을 override로 명시하고 attested=true로 기록했으며 pointer를 수정하지 않았다.
 - BUILD-only package build는 full-corpus build와 서로 다른 target이어도 공용 checkpoint 디렉터리를 쓸 수 있다. 현 LLM checkpoint writer는 JSON을 직접 기록하므로 동일 cache를 쓰는 두 build를 겹치지 않는다. 현재 full-corpus build 종료 및 정합성 검증 뒤 evaluation build를 시작한다.
-- Full-corpus compiler worktree의 전체 gate는 citation suffix 수정 후 Ruff PASS, Mypy 139 files PASS, pytest 1,932 passed(1,307 warnings)다.
+- Full-corpus compiler worktree의 최신 compiler gate는 제한된 citation suffix 수정 후 Ruff PASS, Mypy 139 files PASS, pytest 1,934 passed(1,325 warnings)다.
 - Main repo의 V2 release binding과 package-pointer 검증 변경은 보존한다. generated release 및 V6 semantic JSON schemas를 exporter로 갱신했고 schema parity가 통과했다. Compiler V6가 추가한 `close_return_status_distribution`과 influence manifest commitment 필드를 main reader가 허용·회계하도록 backport했고, daily population statistics 반영 및 회귀 테스트를 추가했다. Signed release identity binding과 rollback helper 검증을 위해 임시 fixture에서 release A -> B -> rollback A를 검사하는 `test_rollback_reactivates_a_verified_previous_release`를 추가했다. 최신 코드 상태에서 Ruff PASS, Mypy 139 files PASS, 전체 pytest 1,906 passed/1,208 warnings/300.72 sec로 모두 통과했다. 이후 compiler integration이나 다른 코드 변경이 있으면 commit 전에 세 gate를 다시 실행한다. dirty diff와 기존 사용자 변경을 보존한다.
 - 실제 full-corpus V2 package, 그 package를 사용하는 CSV smoke, 동일 architecture formal blind 평가, 실제 package root을 사용한 end-to-end signed-release inspection은 아직 완료 증거가 없다. 등록 품질 gate와 승인 전 production activation은 HOLD다.
+
+## 현재 재개 상태 (2026-10-05 06:48 KST)
+
+- Full-corpus synthesis는 compiler worktree `C:\Users\eorb9\projects\news_bot_resume_clean_7198b6b`에서 기존 compile ID `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`로 재개되어 있다. 06:48 KST 확인 시 PowerShell PID `77968`(06:42:14 시작) 아래 Python PID `60848`(06:42:15 시작)이 동일 source, target DB, checkpoint directory로 `build-offline --continue-after-map-plan`을 실행 중이었다. 절대로 중복 시작하지 않는다.
+- 고정 DAG는 총 1,868 nodes(reducer 1,858, category review 9, world root 1)다. 최신 progress ledger는 06:48:16 KST 기준 `272/1,868` closed, `1,596` remaining, 현재 node `REDUCE-9bf5d3f621859efb8415`를 기록한다(고정 DAG closure `14.56%`). 재개 직전 검증 closure 267에서 ledger상 5개 node closure가 늘었다. 이는 node closure 비율이지 corpus 의미 이해율, 품질 점수, fresh LLM 호출 수 또는 남은 시간 비율이 아니다. fresh/checkpoint/local carry 세부는 trace와 종료 후 ledger audit로 확인한다.
+- Record ratio `1.0`은 record accounting 완료만 뜻하며 synthesis 진행률이 아니다. 빌드가 live인 동안 target DuckDB/WAL을 별도 연결로 열거나 hash/count 검사하지 않고, 같은 대상에 writer를 추가하지 않는다. 재개 시점에 target WAL이 존재했다.
+- 직전 실패는 `semantic reduce claim cited an unavailable capsule`였다. read-only 감사에서 trace `TRACE-718730099afa`와 checkpoint `LLMCKPT-4a6a1cbded76a0fb`의 input/output hash는 일치했다. 허용된 capsule ID 하나에 Arabic word suffix `عند`가 붙은 citation만 일치하지 않았다. compiler 수정은 해당 prefix가 node의 exact allowed set에 있을 때 정확한 suffix 형식만 정규화하고, 원문/규칙을 `SemanticReduceCitationNormalization` 감사 row에 남긴다. 임의 ID나 suffix는 여전히 거부한다.
+- 위 제한 수정과 회귀 테스트는 compiler branch의 한국어 commit `8578372`로 push됐다. compiler branch gate는 Ruff PASS, Mypy 139 files PASS, pytest 1,934 passed(1,325 warnings). main branch의 V2 release binding/rollback 수정은 한국어 commit `3fff4c4`로 push됐고, 그 branch gate는 Ruff PASS, Mypy 139 files PASS, pytest 1,906 passed(1,208 warnings). 두 변경은 별도 worktree/branch에 있으며 private brain/data는 push하지 않았다.
+- source manifest SHA-256 `6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576`, record root `2d25581cdc98d89cb0f1d2fa00bec917442171ee279c001edfc764e2941f6d75`, 823,279 records, 52,644 semantic units는 기존 검증 identity다. import, embedding, map과 이미 유효한 DAG node를 재생성하지 않고 이 identity 및 checkpoint를 재사용한다.
 
 ## 반복 금지와 빌드 규칙
 
@@ -92,6 +101,7 @@
 ### 1. 기존 full-corpus 합성 마무리
 
 - compile ID `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`의 현재 process tree와 command line을 찾아 같은 작업인지 확인한다. 살아 있으면 동일 명령을 재실행하지 말고 해당 실행을 관찰한다. 종료된 경우에만 exit code 및 target DB/WAL/receipt를 검증한다.
+- progress ledger의 DAG 카운터가 null이거나 낡았으면 진행률을 추측하지 않는다. 마지막으로 검증된 closure와 관측 시각을 분리해 보고하고, 현재 수치는 새 ledger/trace에서 입증될 때만 갱신한다.
 - 같은 fixed plan의 모든 model-task node가 유효 결과 또는 검증된 exact checkpoint로 closure되었는지 확인한다. 누락 citation, 예상 외 source identity, 실패 node, child mismatch가 있으면 PASS 처리하지 않는다.
 - plan/receipt/topology/source/target/WAL/usage trace와 checkpoint identity를 대조한다. 실제 모델별 fresh/reused 결과, prompt/completion token, 오류를 증거에서 집계한다.
 - record assignments, semantic capsule/unit coverage, actual payload exposure, 생성 claims/citations를 별도 감사한다.
@@ -168,4 +178,4 @@
 
 사용자가 다음에 그대로 보낼 수 있는 요청:
 
-> C:\Users\eorb9\Downloads\codex_goal_nslab_finish_brain_and_daily_csv.md 최신본을 실행해. 저장소 AGENTS.md와 참조 문서를 먼저 읽고, 문서의 PID·progress는 관측 스냅샷으로 취급해 현재 process tree, session, ledger, trace를 다시 확인해. 같은 full-corpus compile이 살아 있으면 절대로 중복 실행하지 말고 그 handle을 이어서 관찰해. terminal이면 source/plan/receipt/checkpoint identity와 저장된 closure를 읽기 전용으로 검증한 뒤 같은 compile을 재개해. 이미 완료된 import, embedding, map과 유효 node는 재생성하지 말고 checkpoint hit와 fresh provider output을 분리해 집계해. citation/lineage 오류는 입력과 허용 ID를 확인해 좁게 수정하고 원본 trace/checkpoint를 보존해. 전체 DAG/package가 검증되면 built package CSV smoke, BUILD-only 동일 architecture blind 평가, V2 release binding, schema parity와 전체 Ruff/Mypy/pytest, 한국어 commit/push까지 수행해. 각 단계가 daily CSV에 제공하는 기능과 고정 분모 기준의 남은 closure를 보고해. 직접 LLM 노출과 record coverage를 혼동하지 말고, 미등록 품질 기준을 만들거나 production을 임의 활성화하지 마.
+> C:\Users\eorb9\Downloads\codex_goal_nslab_finish_brain_and_daily_csv.md 최신본을 실행해. 저장소 AGENTS.md와 참조 문서를 먼저 읽고, 문서의 PID·progress는 관측 스냅샷으로 취급해 현재 process tree, session, ledger, trace를 다시 확인해. 같은 full-corpus compile이 살아 있으면 절대로 중복 실행하지 말고 그 handle을 이어서 관찰해. ledger DAG 카운터가 null이면 현재 퍼센트를 추측하지 말고 마지막 검증 closure와 미확인 상태를 구분해. terminal이면 source/plan/receipt/checkpoint identity와 저장된 closure를 읽기 전용으로 검증한 뒤 같은 compile을 재개해. 이미 완료된 import, embedding, map과 유효 node는 재생성하지 말고 checkpoint hit와 fresh provider output을 분리해 집계해. citation/lineage 오류는 입력과 허용 ID를 확인해 좁게 수정하고 원본 trace/checkpoint를 보존해. 전체 DAG/package가 검증되면 built package CSV smoke, BUILD-only 동일 architecture blind 평가, V2 release binding, schema parity와 전체 Ruff/Mypy/pytest, 한국어 commit/push까지 수행해. 각 단계가 daily CSV에 제공하는 기능과 고정 분모 기준의 남은 closure를 보고해. 직접 LLM 노출과 record coverage를 혼동하지 말고, 미등록 품질 기준을 만들거나 production을 임의 활성화하지 마.
