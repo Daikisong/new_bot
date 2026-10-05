@@ -3962,6 +3962,22 @@ def _normalize_reduce_claim_citations(
                             )
                         )
                         continue
+                # Repair only the exact trailing fragment verified in a checkpoint.
+                exact_ellipsis_a_suffix = " ... a"
+                if original_value.endswith(exact_ellipsis_a_suffix):
+                    prefix = original_value[: -len(exact_ellipsis_a_suffix)]
+                    if prefix in allowed_capsule_ids:
+                        normalized_ids.append(prefix)
+                        normalizations.append(
+                            SemanticReduceCitationNormalization(
+                                claim_index=claim_index,
+                                field=field_name,
+                                original_value=original_value,
+                                normalized_capsule_id=prefix,
+                                rule="allowed_capsule_id_plus_exact_ellipsis_a_suffix",
+                            )
+                        )
+                        continue
                 prefix, separator, suffix = original_value.partition(" ")
                 if not (
                     separator
