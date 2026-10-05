@@ -1,6 +1,8 @@
 # Goal: 일회성 두뇌 컴파일 완료 및 장전 CSV 판단 검증
 
-문서 갱신: 2026-10-06 01:44 KST
+문서 갱신: 2026-10-06 02:30 KST
+
+현재 handoff 요약: 고정 compile writer는 02:30 KST 확인에서 실행 중이지 않았고 target WAL도 없었다. Safe ledger와 마지막 terminal read-only DB 대조는 `1,406/1,868`이며, DB 대조 시각은 02:22 KST다. Compile은 아직 끝나지 않았으므로 같은 identity로 재개해야 한다. 재개 fix는 compiler worktree의 깨끗한 `codex/v5-gpt61-high-offline` 브랜치 `8b1a2f9`이고 upstream과 동기화되어 있다. 다음 실행에서도 시작 직전에 process/ledger/WAL을 다시 확인한다.
 
 ## 목표
 
@@ -17,9 +19,9 @@
 | 고정 model-task DAG | 1,868 | 이번 compile plan에 이미 정해진 유한 작업 노드 수. reducer 1,858, category review 9, world root 1 |
 | 마지막 terminal read-only DB 대조 | 1,406 / 1,868 (75.27%) | `reduce_nodes=1,406`; `semantic_capsules=52,644`; `semantic_unit_assignments=823,279`. 고정 DAG 노드 저장 수이며 의미 노출률이나 예측 성능은 아님 |
 | 현재 ledger | 1,406 / 1,868 (75.27%), 462 잔여 | `2026-10-06T01:27:05.245732+09:00`; phase `offline_reduce`. 오류 종료 후 ledger와 DB를 read-only 대조했으며 failed node는 미저장 |
-| 최신 compile 상태 | terminal failure, 재개 대기 | 2026-10-06 01:44 KST process 재확인에서 해당 writer 없음, compile WAL 파일 없음. 최신 실패 원인은 아래 handoff 참조 |
+| 최신 compile 상태 | 오류 복구 fix pushed, 동일 compile 재개 대기 | 2026-10-06 02:30 KST process 재확인에서 writer와 target WAL 없음. 마지막 terminal DB 대조(02:22 KST)와 safe ledger는 `1,406/1,868`, 462 잔여. CLI 실행은 반드시 compiler worktree의 `src`를 `PYTHONPATH`로 지정 |
 
-`823,279` 또는 `52,644`를 완료율 분모로 바꾸거나, 이를 보고 “10년치 의미를 모두 GPT가 읽었다”고 말하지 않는다. 입력 record coverage, 날짜·연도·거래일 coverage, LLM payload exposure, claim citation coverage, DAG closure는 각각 별도 지표로 검증하고 보고한다. 현재 기록된 원료 날짜 범위 `2018-01-03`~`2026-06-19`는 약 8년 반의 달력 범위다. 10년 전체 또는 모든 거래일을 채웠다는 주장은 audit 증거 없이 하지 않는다.
+`823,279` 또는 `52,644`를 완료율 분모로 바꾸거나, 이를 보고 “10년치 의미를 모두 GPT가 읽었다”고 말하지 않는다. `52,644`는 연도 수나 52,644건의 개별 원문 요약이 아니라 이번 compiler의 semantic capsule/unit 수다. 이것만으로 연도별 연구 공백, 각 원문의 LLM 직접 노출 여부, 예측 유용성을 추론할 수 없다. 입력 record coverage, 날짜·연도·거래일 coverage, LLM payload exposure, claim citation coverage, DAG closure는 각각 별도 지표로 검증하고 보고한다. 현재 기록된 원료 날짜 범위 `2018-01-03`~`2026-06-19`는 약 8년 반의 달력 범위다. 10년 전체 또는 모든 거래일을 채웠다는 주장은 audit 증거 없이 하지 않는다.
 
 진행률은 항상 `closed / 1,868`, 남은 노드 수, provider-fresh 성공, 정확한 checkpoint 재사용, local carry/validation, failed, in-flight를 나눠 보고한다. record 처리 수는 DAG 완료 수가 아니다. 처리량 측정이 없거나 작업 비용이 크게 다르면 ETA를 만들지 않는다. 작업 시간을 완료율로 환산하거나 기준을 바꾸지 않는다.
 
@@ -42,14 +44,15 @@ Build cutoff inherited from the current memory snapshot is `2026-08-21T18:52:07.
 
 ## 현재 handoff 상태
 
-상태 스냅샷은 `2026-10-06 01:44 KST`다. 같은 고정 compile `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`의 writer는 exit code 1로 종료했다. 01:27:05 KST progress ledger는 `1,406/1,868`을 기록했고, writer 종료 및 WAL 부재 확인 뒤 수행한 read-only DuckDB 대조에서 `reduce_nodes=1,406`, `semantic_capsules=52,644`, `semantic_unit_assignments=823,279`, centroids `52,644`가 확인됐다. 따라서 462 model-task node가 남았다. ledger pointer `REDUCE-688a8b76cd3abd5f2a44`는 저장된 노드이며 실패 노드가 아니다. 01:44 KST process 검색에서 해당 compile writer는 발견되지 않았고 target WAL 파일도 없었다. 다음 실행은 새 중복 빌드가 아니라 기존 작업의 오류 원인을 좁게 고친 뒤 같은 compile identity를 재개하는 것이다.
+상태 스냅샷은 `2026-10-06 02:30 KST`다. 같은 고정 compile `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`은 01:28 KST reducer 출력 계약 오류로 exit code 1 종료했다. 01:27:05 KST ledger와 02:22 KST terminal read-only DuckDB 대조는 `1,406/1,868` reducer nodes, `52,644` capsules, `823,279` unit assignments를 확인했다. 462 DAG node가 남았으며 ledger pointer `REDUCE-688a8b76cd3abd5f2a44`는 저장된 노드이고 실패 노드는 아니다. 02:30 KST process 재확인에서 writer와 target WAL이 없었다. Compiler worktree는 깨끗한 `codex/v5-gpt61-high-offline` branch, HEAD `8b1a2f9`, upstream `origin/codex/v5-gpt61-high-offline` 상태다. 이번 오류를 좁게 복구하는 code fix는 같은 compiler branch에 push했고 로컬 quality gate가 모두 통과했다. 다음 단계는 같은 compile identity를 재개하는 것이다.
 
-- 최신 실패 노드: `REDUCE-fb92a7fe3de830942ca1`; checkpoint `LLMCKPT-162b4798faed7835.json`; trace `TRACE-c5afa4477fb8.json` (`C:\Users\eorb9\projects\news_bot_resume_clean_7198b6b\runs\traces`). Trace의 purpose는 해당 reducer이고 provider/model identity는 Codex OAuth `gpt-6.1-sol/high`다. 호출은 약 8분 21초 수행된 뒤 실패했으며 trace에 원시 invalid output은 저장되지 않았다. 원시 응답이 보존됐다고 가정하거나 이를 분석했다고 주장하지 않는다.
-- 정확한 validation failure: `semantic reduce output exceeds 12000-byte contract`. `SemanticReduceDraft.validate_bounded_serialized_size()`의 12,000 UTF-8-byte 제한을 초과했다. Prompt SHA-256은 `5556eddc7b5df086533efa8a2aed9b9302da17ee6bd3bc86860d50a179207e85`; prompt는 97,742 bytes였다. Failure checkpoint/trace 파일은 수정·삭제하지 않고, 다음 실행에서 먼저 경로와 SHA-256을 기록해 보존한다.
-- 필요한 code recovery는 compile topology나 schema/limit 완화가 아니다. Compiler worktree `C:\Users\eorb9\projects\news_bot_resume_clean_7198b6b`, branch `codex/v5-gpt61-high-offline`, starting HEAD `9ff03ff`를 실행 시 재확인한다. 해당 코드의 `offline_v2.py` `_reduce_node` 및 `_reduce_world`에서 **정확히 이 output-size validation error만** 최대 한 번 별도 content-addressed size-recovery request로 처리한다. 변경 전/후 child IDs와 허용 citation 집합을 유지하고, 원본 full prompt의 immutable child evidence에서 compact replacement를 생성하도록 한다. 제안 목표는 serialized output 10,000 UTF-8 bytes 이하이며, response가 다시 초과하거나 schema/citation/child identity 검증에 실패하면 fail closed한다. 12,000-byte contract를 올리거나 없애지 않고, 일반 validation을 느슨하게 하거나 rejected raw output에 접근 가능하다고 가정하지 않는다.
-- Size-recovery 요청은 원래 prompt/checkpoint를 덮어쓰지 않는 고유 purpose를 사용하고 정확히 한 번만 시도한다. 기존 citation correction은 별도 오류에만 적용되므로 재사용하되 호출 예산/종료 조건은 유한하게 테스트한다. Base `_reduce_prompt`, schemas, plan/topology, checkpoint identity는 바꾸지 않는다. 회귀 테스트는 size 초과 시 1회 retry, 요청 purpose와 원본 payload, 최대 크기 내 정상 응답, 두 번째 초과 시 종료, 일반 schema 오류에는 size retry 없음, child/citation validation 유지 및 fail-closed를 확인한다.
-- `9ff03ff`는 앞선 unavailable-citation 실패를 좁게 복구한 이미 push된 수정이며 이 수정은 별개의 새 실패다. 과거 fix를 다시 적용하지 않는다. 새 code change 뒤 compiler worktree에서 Ruff, Mypy, full pytest를 다시 통과시키고, 한국어 commit/push를 확인한 다음에만 같은 compile을 재개한다.
-- 고정 입력/산출 identity는 그대로다: source manifest SHA-256 `6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576`, record root `2d25581cdc98d89cb0f1d2fa00bec917442171ee279c001edfc764e2941f6d75`, memory snapshot `MEMIDX-1e64a1b6e6ba7b07b799`, 1,868-node DAG, target DB 경로, checkpoint lineage, Codex OAuth `gpt-6.1-sol/high`, concurrency 4, repository-supported `--continue-after-map-plan`을 유지한다.
+- 최신 실패 노드: `REDUCE-fb92a7fe3de830942ca1`, category `market_memory`, level 2, 고정 plan상 child 10개. Checkpoint `LLMCKPT-162b4798faed7835.json`; trace `TRACE-c5afa4477fb8.json` in `C:\Users\eorb9\projects\news_bot_resume_clean_7198b6b\runs\traces`. Provider/model은 Codex OAuth `gpt-6.1-sol/high`; 01:19:47~01:28:08 KST 호출 trace는 `retries=1`을 기록한다. Trace에 원시 invalid output은 없다. 오류만 검증 근거로 삼고 보이지 않는 응답을 분석했다고 주장하지 않는다.
+- 정확한 validation failure는 `semantic reduce output exceeds 12000-byte contract`. Prompt SHA-256 `5556eddc7b5df086533efa8a2aed9b9302da17ee6bd3bc86860d50a179207e85`, UTF-8 97,742 bytes. 원본 checkpoint SHA-256 `30471E4095FFF3D6ADB35EA9B697400F097887149726ADE95996937D9D755AB6`; trace SHA-256 `0B9E304BDE54F20A71A7E105BD291FBBF15D5AA43DB78C1E0BD7B3BFC304E10A`. 두 파일은 원본 그대로 보존하고 수정·삭제하지 않는다.
+- Size-error recovery는 code commit `8b1a2f9` (`origin/codex/v5-gpt61-high-offline`)에 구현되어 push됐다. Contract 한도를 contract module의 단일 `12,000` UTF-8-byte 상수로 두고, `_reduce_node`/`_reduce_world`가 **정확히 해당 validation error만** bounded size-repair purpose로 최대 한 번 재시도한다. Output을 10,000 bytes 이하로 compact하게 작성하되 strict 12,000-byte validator를 그대로 적용한다. Child identity/order와 citation allowlist 검증은 그대로며, raw rejected output이 없으므로 원본 full prompt/payload에서 완전한 replacement를 만든다.
+- Resume 시 trace helper는 prompt SHA/size, response model, purpose, model config, metadata가 모두 맞는 기존 `status=error` checkpoint만 읽는다. 이전 original-purpose checkpoint가 정확한 size-error면 실패한 원본 호출을 반복하지 않고 `.size_repair.v1.<node_id>` purpose로 바로 넘어간다. 해당 recovery purpose의 matching error checkpoint가 이미 있으면 재호출 없이 fail closed한다. 다른 validation error는 기존 동작으로 전달된다. Base `_reduce_prompt`, schema, 1,868-node plan/topology, source identity는 변경하지 않았다.
+- Compiler worktree quality gates: Ruff `PASS`; Mypy `PASS` (139 source files); full pytest `PASS` (`1,969 passed`, 1,631 warnings, 336.45 seconds). 회귀 테스트 5개가 category reducer, world reducer, exact prompt identity 재사용, 재개 시 recovery 중복 금지, 비-size 오류 no-retry를 확인했다. Code commit `8b1a2f9`가 remote branch와 일치함을 확인했다.
+- 실행 경로 주의: PowerShell에서 compiler worktree cwd만으로 `python -m news_scalping_lab.cli`를 실행하면 현재 machine의 editable install이 root repo package를 선택할 수 있다. `--continue-after-map-plan`이 있는 pushed compiler CLI를 확실히 사용하도록 invocation 전에 `PYTHONPATH`를 compiler worktree의 `src`로 지정한다. Pytest는 `pyproject.toml`의 `pythonpath=src`를 사용하므로 위 전체 gate는 compiler worktree 코드로 실행됐다.
+- 고정 입력/산출 identity는 그대로다: source manifest SHA-256 `6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576`, record root `2d25581cdc98d89cb0f1d2fa00bec917442171ee279c001edfc764e2941f6d75`, memory snapshot `MEMIDX-1e64a1b6e6ba7b07b799`, 1,868-node DAG, target DB 경로, checkpoint lineage, Codex OAuth `gpt-6.1-sol/high`, concurrency 4를 유지한다. Exact resume command는 다음 실행 지시에 있으며, compiler worktree `src`를 반드시 `PYTHONPATH`로 지정한다.
 - Import, repair, real embedding, planning, map, compatible checkpoints는 재실행하지 않는다. Map usage ledger SHA-256 `36a92c903b7315e78ce4c36f676a6d98a69ba9ac31a06fc8e53af6b5b6282f3b`의 7,513 rows (7,498 compatible checkpoint hit, 15 fresh `gpt-6.1-sol/high`)는 완료 근거다. Fresh provider output, exact checkpoint hit, local carry/validation, 실패 호출은 trace와 usage ledger를 대조해 별도 집계한다.
 - 기존 untracked 산출물 `diagnostics/offline_reduce_dag_preflight_existing_capsules_20261004.json`, `runs/offline_v5_gpt61_high_20261004/`, `runs/resource_logs/`와 모든 source/DB/WAL/checkpoint/run output은 보존한다. 정리·이동·삭제·무관한 commit을 하지 않는다.
 
@@ -124,13 +127,32 @@ Do not collapse these into one “done” label. The bounded engineering work en
 
 ## 다음 실행 시 전달할 요청
 
-아래 요청으로 이 문서의 목표를 실행한다. 문서 안의 시각과 progress는 handoff 증거이지 다음 실행 시점의 live 상태가 아니므로, process/ledger/WAL을 다시 확인한다.
+아래 요청으로 이 문서의 목표를 실행한다. 현재 기록상 compile은 실행 중이 아니지만 문서의 시각과 progress는 handoff 증거이지 다음 실행 시점의 live 상태가 아니므로, process/ledger/WAL을 다시 확인한다.
 
-> 저장소 `AGENTS.md`, `.agents/skills/news-scalping-lab/SKILL.md`, 이 goal, recovery report와 daily 제품 계약을 읽고 이 문서의 목표를 끝까지 이어서 수행해. 제품 목표는 새 GPT 가중치 학습이 아니라, 이미 모은 연구를 한 번 offline compile한 cutoff-safe brain package와 장전 CSV를 첫 GPT 판단 요청에 함께 넣어 섹터·종목 후보 및 근거를 내는 daily 흐름을 완성·검증하는 것이다. daily BLIND는 `CSV_MEMORY_ONLY_STRICT`, 한 번의 logical `final_market_decision`(+구조화 복구 최대 1회), no web/D-day/outcome/post-cutoff, raw corpus/record/cluster/lane 비례 LLM fan-out 금지다.
+> 저장소 `AGENTS.md`, `.agents/skills/news-scalping-lab/SKILL.md`, 이 goal, recovery report와 daily 제품 계약을 읽고 이 문서의 목표를 끝까지 이어서 수행해. 제품 목표는 새 GPT 가중치 학습이 아니라, 이미 모은 연구를 한 번 offline compile한 cutoff-safe brain package와 장전 CSV를 첫 GPT 판단 요청에 함께 넣어 섹터·종목 후보 및 근거를 내는 daily 흐름을 완성·검증하는 것이다. `52,644` semantic capsule/unit을 연도 수, 개별 원문 요약 수, 또는 GPT의 직접 노출 수로 부르지 말고 서로 다른 coverage 및 lineage 지표로 감사해. daily BLIND는 `CSV_MEMORY_ONLY_STRICT`, 한 번의 logical `final_market_decision`(+구조화 복구 최대 1회), no web/D-day/outcome/post-cutoff, raw corpus/record/cluster/lane 비례 LLM fan-out 금지다.
 >
-> 먼저 compile ID `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`의 live ancestry, safe ledger, WAL을 확인한다. 최신 기록은 `1,406/1,868` persisted node, 462 remaining이다. 기존 writer는 `REDUCE-fb92a7fe3de830942ca1`에서 `semantic reduce output exceeds 12000-byte contract`로 exit 1 종료했고, 당시 output-size validator의 원시 응답은 보존되지 않았다. source manifest SHA, record root, fixed 1,868-node plan, target DB, checkpoint lineage, Codex OAuth `gpt-6.1-sol/high`, concurrency 4와 `--continue-after-map-plan`을 바꾸지 않는다. 살아 있는 writer가 있으면 그것 하나만 관찰하고 duplicate build를 시작하지 않는다. writer/WAL live 동안 DB/WAL을 열거나 hash/audit하지 않는다.
+> 먼저 compile ID `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`의 live ancestry, safe ledger, WAL을 다시 확인한다. 문서 갱신 시점에는 terminal DB가 `1,406/1,868` persisted node, 462 remaining이었고 writer/WAL은 없었으나 실행 직전 값을 다시 확인해. Code recovery `8b1a2f9`는 이미 pushed됐고 compiler worktree는 `origin/codex/v5-gpt61-high-offline`과 동기화되어 있으며 Ruff/Mypy/full pytest (`1,969 passed`)가 통과했다. `REDUCE-fb92a7fe3de830942ca1`의 matching size-error checkpoint가 있으므로 실패한 original prompt 호출을 반복하지 말고 구현된 `.size_repair.v1.<node_id>` 경로로 이동한다. Size fix를 다시 구현하지 않는다. source manifest, record root, fixed plan/target/checkpoint identity, Codex OAuth `gpt-6.1-sol/high`, concurrency 4는 바꾸지 않는다. 살아 있는 writer가 있으면 그것 하나만 관찰하고 duplicate build를 시작하지 않는다. writer/WAL live 동안 DB/WAL을 열거나 hash/audit하지 않는다.
 >
-> 미완료 DAG를 재개하기 전에 compiler worktree/branch/HEAD를 재확인하고 이 exact-size 오류에 대한 좁고 한 번뿐인 recovery를 구현해. 12,000-byte contract, schema, base prompts, topology, child/evidence coverage와 strict citation allowlist를 완화하지 않는다. 원본 failed checkpoint/trace를 hash해 보존한다. `_reduce_node` 및 `_reduce_world`에서 이 exact error일 때만 별도 content-addressed purpose로 원본 full prompt를 이용한 compact replacement를 최대 한 번 생성하고 10,000 UTF-8-byte 이하를 목표로 한다. 두 번째 초과, 다른 validation error, invalid child/citation이면 fail closed한다. Size/non-size 경로와 요청 목적, 최대 1회 호출, 정상 통과 및 fail-closed를 검증하는 회귀 테스트를 추가하고, 컴파일 worktree에서 Ruff/Mypy/full pytest 통과 후 한국어 commit/push를 확인한다. 그 후에만 기존 compile을 재개한다. Import/repair/embedding/planner/map/compatible checkpoints를 재실행하지 않는다. 진행률은 persisted closure, fresh provider result, exact cache hit, local carry, failure를 구분해 보고하고 근거 없는 ETA를 만들지 않는다.
+> 재개 전 compiler worktree `C:\Users\eorb9\projects\news_bot_resume_clean_7198b6b`의 branch/HEAD/upstream을 검증하고 `PYTHONPATH`가 해당 worktree의 `src`인지 확인한다. Machine editable install은 cwd만으로 다른 root repo package를 선택할 수 있다. Codex OAuth status를 확인하고 `NSLAB_LLM_PROVIDER=codex-oauth`, `NSLAB_LLM_MODEL=NSLAB_CODEX_MODEL=gpt-6.1-sol`, `NSLAB_CODEX_REASONING_EFFORT=high`, `NSLAB_MAX_CONCURRENCY=4`로 repository-supported command를 실행한다. Source/manifest, record root, compile ID, 1,868-node plan/topology, target DB, checkpoint directory와 compatible `gpt-5.6-sol/xhigh` identity를 유지한다.
+>
+> ```powershell
+> Set-Location 'C:\Users\eorb9\projects\news_bot_resume_clean_7198b6b'
+> $env:PYTHONPATH = (Resolve-Path '.\src').Path
+> python -c "import news_scalping_lab.cli as cli; print(cli.__file__)"
+> $env:NSLAB_LLM_PROVIDER = 'codex-oauth'
+> $env:NSLAB_LLM_MODEL = 'gpt-6.1-sol'
+> $env:NSLAB_CODEX_MODEL = 'gpt-6.1-sol'
+> $env:NSLAB_CODEX_REASONING_EFFORT = 'high'
+> $env:NSLAB_MAX_CONCURRENCY = '4'
+> python -m news_scalping_lab.cli brain build-offline `
+>   --source-project 'C:\Users\eorb9\projects\news_bot\production\staging\P9IMPORT-3D770A7DD72457C97098\project' `
+>   --checkpoint-dir 'C:\Users\eorb9\projects\news_bot\runs\checkpoints\llm' `
+>   --compatible-checkpoint-model 'gpt-5.6-sol/xhigh' `
+>   --expected-manifest-sha256 '6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576' `
+>   --continue-after-map-plan
+> ```
+>
+> Import, repair, embedding, planner, map-only/fresh map, and valid reducer outputs are already done. The continuation can reconstruct local geometry and reuse exact checkpoint hits, but must not invoke new import, embedding, planner, or map-only work. Report persisted DAG closure, provider-fresh outputs, checkpoint hits/local carry/failures separately and do not invent an ETA. If original source or plan identity differs, stop before any build.
 >
 > 같은 DAG가 terminal `1,868/1,868`이 되면 persisted rows와 source/plan/checkpoint/citation lineage를 대조한 뒤 supported immutable Offline Semantic Brain V2 package를 생성·standalone/deep 검증한다. Real embedding/HNSW, provenance, coverage, payload exposure, citations, 연도·거래일 공백을 각각 감사한다. `823,279` records, `52,644` semantic units/capsules, `1,868` DAG nodes는 서로 다른 수치다. record scan 완료나 DAG closure를 10년치 의미 노출/예측 성능/backtest/fine-tuning 성공이라고 부르지 않는다. 완료된 import·repair·embedding·map·고정 topology는 증거 있는 결함이 없는 한 반복하지 않는다.
 >
