@@ -1550,26 +1550,36 @@ class OfflineSemanticBrainCompiler:
             result = previous
             self._reused_reduce_node_count += 1
         else:
+            purpose = (
+                f"offline_category_review.{category}"
+                if review
+                else f"offline_semantic_reduce.{node_id}"
+            )
             draft = await self._call_structured(
                 prompt=prompt,
                 response_model=SemanticReduceDraft,
-                purpose=(f"offline_category_review.{category}" if review else f"offline_semantic_reduce.{node_id}"),
+                purpose=purpose,
             )
             self._recompiled_reduce_node_count += 1
-            if draft.node_id != node_id:
-                raise ValueError("semantic reduce output omitted or added children")
-            child_identity_normalization = _normalize_reduce_child_identity(
-                draft_child_node_ids=draft.child_node_ids,
-                expected_child_node_ids=child_ids,
-            )
             allowed_capsule_ids = {
                 capsule_id
                 for child in children
                 for capsule_id in child.evidence_capsule_ids
             }
-            claims, citation_normalizations = _normalize_reduce_claim_citations(
-                draft.claims,
+            (
+                draft,
+                child_identity_normalization,
+                claims,
+                citation_normalizations,
+            ) = await self._validate_reduce_draft_citations(
+                draft=draft,
+                prompt=prompt,
+                purpose=purpose,
+                node_id=node_id,
+                expected_child_node_ids=child_ids,
                 allowed_capsule_ids=allowed_capsule_ids,
+                citation_error_message="semantic reduce claim cited an unavailable capsule",
+                child_error_message="semantic reduce output omitted or added children",
             )
             evidence_capsule_ids = _unique(
                 capsule_id
@@ -1666,22 +1676,25 @@ class OfflineSemanticBrainCompiler:
             )
             self._recompiled_reduce_node_count += 1
             expected_children = [row.node_id for row in children]
-            if draft.node_id != node_id:
-                raise ValueError("world reduce output omitted category children")
-            child_identity_normalization = _normalize_reduce_child_identity(
-                draft_child_node_ids=draft.child_node_ids,
-                expected_child_node_ids=expected_children,
-                error_message="world reduce output omitted category children",
-            )
             allowed_capsule_ids = {
                 capsule_id
                 for child in children
                 for capsule_id in child.evidence_capsule_ids
             }
-            claims, citation_normalizations = _normalize_reduce_claim_citations(
-                draft.claims,
+            (
+                draft,
+                child_identity_normalization,
+                claims,
+                citation_normalizations,
+            ) = await self._validate_reduce_draft_citations(
+                draft=draft,
+                prompt=prompt,
+                purpose="offline_world_model",
+                node_id=node_id,
+                expected_child_node_ids=expected_children,
                 allowed_capsule_ids=allowed_capsule_ids,
-                error_message="world reduce claim cited an unavailable capsule",
+                citation_error_message="world reduce claim cited an unavailable capsule",
+                child_error_message="world reduce output omitted category children",
             )
             evidence_capsule_ids = _unique(
                 capsule_id
@@ -1736,6 +1749,77 @@ class OfflineSemanticBrainCompiler:
                 current_model_node_id=node_id,
             )
         return result
+
+    async def _validate_reduce_draft_citations(
+        self,
+        *,
+        draft: SemanticReduceDraft,
+        prompt: str,
+        purpose: str,
+        node_id: str,
+        expected_child_node_ids: list[str],
+        allowed_capsule_ids: set[str],
+        citation_error_message: str,
+        child_error_message: str,
+    ) -> tuple[
+        SemanticReduceDraft,
+        SemanticReduceChildIdentityNormalization | None,
+        list[MechanismClaimDraft],
+        list[SemanticReduceCitationNormalization],
+    ]:
+        if draft.node_id != node_id:
+            raise ValueError(child_error_message)
+        child_identity_normalization = _normalize_reduce_child_identity(
+            draft_child_node_ids=draft.child_node_ids,
+            expected_child_node_ids=expected_child_node_ids,
+            error_message=child_error_message,
+        )
+        try:
+            claims, citation_normalizations = _normalize_reduce_claim_citations(
+                draft.claims,
+                allowed_capsule_ids=allowed_capsule_ids,
+                error_message=citation_error_message,
+            )
+            return (
+                draft,
+                child_identity_normalization,
+                claims,
+                citation_normalizations,
+            )
+        except ValueError as exc:
+            if not str(exc).startswith(f"{citation_error_message}: claim_index="):
+                raise
+            validation_error = str(exc)
+
+        repair_prompt = _reduce_citation_repair_prompt(
+            prompt=prompt,
+            rejected_draft=draft,
+            validation_error=validation_error,
+        )
+        repaired = await self._call_structured(
+            prompt=repair_prompt,
+            response_model=SemanticReduceDraft,
+            purpose=f"{purpose}.citation_repair.v1.{node_id}",
+        )
+        _assert_reduce_citation_only_repair(draft, repaired)
+        if repaired.node_id != node_id:
+            raise ValueError(child_error_message)
+        child_identity_normalization = _normalize_reduce_child_identity(
+            draft_child_node_ids=repaired.child_node_ids,
+            expected_child_node_ids=expected_child_node_ids,
+            error_message=child_error_message,
+        )
+        claims, citation_normalizations = _normalize_reduce_claim_citations(
+            repaired.claims,
+            allowed_capsule_ids=allowed_capsule_ids,
+            error_message=citation_error_message,
+        )
+        return (
+            repaired,
+            child_identity_normalization,
+            claims,
+            citation_normalizations,
+        )
 
     async def _call_structured(
         self,
@@ -3877,6 +3961,70 @@ def _leaf_reduce_evidence_ids(capsule_ids: Sequence[str]) -> list[str]:
         return ordered
     indices = (0, len(ordered) // 3, (2 * len(ordered)) // 3, len(ordered) - 1)
     return _unique(ordered[index] for index in indices)
+
+
+def _reduce_citation_repair_prompt(
+    *,
+    prompt: str,
+    rejected_draft: SemanticReduceDraft,
+    validation_error: str,
+) -> str:
+    marker = "\n---OFFLINE_SEMANTIC_REDUCE---\n"
+    try:
+        header, payload = prompt.split(marker, 1)
+    except ValueError as exc:
+        raise ValueError("semantic reduce citation repair prompt marker is missing") from exc
+    repair_context = canonical_json(
+        {
+            "validation_error": validation_error,
+            "rejected_draft": rejected_draft.model_dump(mode="json"),
+        }
+    )
+    repair_prompt = (
+        header
+        + "\n---OFFLINE_SEMANTIC_CITATION_REPAIR---\n"
+        + "The draft below was rejected by strict local citation validation. Return a "
+        "complete replacement SemanticReduceDraft, changing only capsule ID strings "
+        "inside supporting_capsule_ids and contradicting_capsule_ids. Preserve the "
+        "node ID, child IDs, claim count/order, every non-citation field, and each "
+        "citation list's length. Copy every replacement ID character-for-character "
+        "from available_evidence_capsule_ids in the source payload. Do not infer, "
+        "reconstruct, abbreviate, or invent IDs. If no exact listed ID supports a "
+        "citation, leave its rejected value unchanged so validation fails closed.\n"
+        + repair_context
+        + marker
+        + payload
+    )
+    if len(repair_prompt.encode("utf-8")) > MAX_REDUCE_PROMPT_BYTES:
+        raise ValueError("semantic reduce citation repair prompt exceeds byte contract")
+    return repair_prompt
+
+
+def _assert_reduce_citation_only_repair(
+    rejected: SemanticReduceDraft,
+    repaired: SemanticReduceDraft,
+) -> None:
+    rejected_payload = rejected.model_dump(mode="json")
+    repaired_payload = repaired.model_dump(mode="json")
+    rejected_claims = rejected_payload["claims"]
+    repaired_claims = repaired_payload["claims"]
+    if len(rejected_claims) != len(repaired_claims):
+        raise ValueError("semantic reduce citation repair changed claim count")
+    for index, (old_claim, new_claim) in enumerate(
+        zip(rejected_claims, repaired_claims, strict=True)
+    ):
+        for field in ("supporting_capsule_ids", "contradicting_capsule_ids"):
+            if len(old_claim[field]) != len(new_claim[field]):
+                raise ValueError(
+                    "semantic reduce citation repair changed citation count: "
+                    f"claim_index={index} field={field}"
+                )
+        old_claim["supporting_capsule_ids"] = []
+        old_claim["contradicting_capsule_ids"] = []
+        new_claim["supporting_capsule_ids"] = []
+        new_claim["contradicting_capsule_ids"] = []
+    if canonical_json(rejected_payload) != canonical_json(repaired_payload):
+        raise ValueError("semantic reduce citation repair changed non-citation content")
 
 
 def _normalize_reduce_claim_citations(

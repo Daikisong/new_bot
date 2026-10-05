@@ -159,6 +159,51 @@ class ReduceCitationSuffixLLM(DeterministicMockLLMProvider):
         )
 
 
+class ReduceCitationRepairLLM(DeterministicMockLLMProvider):
+    def __init__(self, *, repair_valid: bool = True) -> None:
+        super().__init__()
+        self.repair_valid = repair_valid
+        self.prompts: list[str] = []
+        self.purposes: list[str] = []
+
+    async def generate_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[Any],
+        purpose: str,
+    ) -> Any:
+        if response_model is not SemanticReduceDraft:
+            return await super().generate_structured(
+                prompt=prompt,
+                response_model=response_model,
+                purpose=purpose,
+            )
+        self.prompts.append(prompt)
+        self.purposes.append(purpose)
+        payload = json.loads(prompt.split("---OFFLINE_SEMANTIC_REDUCE---\n", 1)[1])
+        is_repair = "---OFFLINE_SEMANTIC_CITATION_REPAIR---" in prompt
+        capsule_id = (
+            payload["available_evidence_capsule_ids"][0]
+            if is_repair and self.repair_valid
+            else "CAP-not-in-child-tree"
+        )
+        return SemanticReduceDraft(
+            node_id=payload["node_id"],
+            child_node_ids=payload["required_child_node_ids"],
+            synthesis="fixture reduce with a corrected citation",
+            claims=[
+                SemanticReduceClaimDraft(
+                    statement="evidence supports the fixture mechanism",
+                    mechanism="fixture",
+                    supporting_capsule_ids=[capsule_id],
+                    confidence="low",
+                    status="supported",
+                )
+            ],
+        )
+
+
 class ReduceEmptyChildIDsLLM(DeterministicMockLLMProvider):
     async def generate_structured(
         self,
@@ -1233,6 +1278,112 @@ async def test_reduce_rejects_claims_outside_available_source_ids(tmp_path: Path
             children=children,
             review=False,
         )
+    assert compiler._logical_llm_call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_reduce_retries_invalid_citation_once_without_changing_claim_content(
+    tmp_path: Path,
+) -> None:
+    provider = ReduceCitationRepairLLM()
+    compiler = OfflineSemanticBrainCompiler(
+        Settings(project_root=tmp_path / "compiler"),
+        llm=provider,
+    )
+
+    result = await compiler._reduce_node(
+        category="fixture",
+        level=0,
+        children=_fixture_reduce_children(),
+        review=False,
+    )
+
+    assert result.claims[0].supporting_capsule_ids == ["CAP-a"]
+    assert compiler._logical_llm_call_count == 2
+    assert len(provider.prompts) == 2
+    assert provider.purposes[1].endswith(
+        f".citation_repair.v1.{result.node_id}"
+    )
+    marker = "---OFFLINE_SEMANTIC_REDUCE---\n"
+    assert provider.prompts[0].split(marker, 1)[1] == provider.prompts[1].split(marker, 1)[1]
+    assert "CAP-not-in-child-tree" in provider.prompts[1]
+
+
+@pytest.mark.asyncio
+async def test_reduce_citation_repair_still_fails_closed_after_one_retry(
+    tmp_path: Path,
+) -> None:
+    provider = ReduceCitationRepairLLM(repair_valid=False)
+    compiler = OfflineSemanticBrainCompiler(
+        Settings(project_root=tmp_path / "compiler"),
+        llm=provider,
+    )
+
+    with pytest.raises(ValueError, match="cited an unavailable capsule"):
+        await compiler._reduce_node(
+            category="fixture",
+            level=0,
+            children=_fixture_reduce_children(),
+            review=False,
+        )
+
+    assert compiler._logical_llm_call_count == 2
+    assert len(provider.prompts) == 2
+
+
+@pytest.mark.asyncio
+async def test_world_reduce_retries_invalid_citation_once(tmp_path: Path) -> None:
+    provider = ReduceCitationRepairLLM()
+    compiler = OfflineSemanticBrainCompiler(
+        Settings(project_root=tmp_path / "compiler"),
+        llm=provider,
+    )
+
+    result = await compiler._reduce_world(
+        {"fixture": _fixture_reduce_children()[0]},
+    )
+
+    assert result.claims[0].supporting_capsule_ids == ["CAP-a"]
+    assert compiler._logical_llm_call_count == 2
+    assert len(provider.prompts) == 2
+    assert provider.purposes[1].endswith(
+        f".citation_repair.v1.{result.node_id}"
+    )
+
+
+def test_reduce_citation_only_repair_rejects_claim_text_changes() -> None:
+    rejected = SemanticReduceDraft(
+        node_id="REDUCE-fixture",
+        child_node_ids=["LEAF-fixture"],
+        synthesis="unchanged synthesis",
+        claims=[
+            SemanticReduceClaimDraft(
+                statement="unchanged claim",
+                mechanism="unchanged mechanism",
+                supporting_capsule_ids=["CAP-typo"],
+                confidence="low",
+                status="supported",
+            )
+        ],
+    )
+    claim = rejected.claims[0]
+    corrected = rejected.model_copy(
+        update={
+            "claims": [
+                claim.model_copy(
+                    update={"supporting_capsule_ids": ["CAP-valid"]}
+                )
+            ]
+        }
+    )
+    offline_v2._assert_reduce_citation_only_repair(rejected, corrected)
+
+    changed_claim = corrected.claims[0].model_copy(
+        update={"statement": "rewritten claim"}
+    )
+    changed = corrected.model_copy(update={"claims": [changed_claim]})
+    with pytest.raises(ValueError, match="changed non-citation content"):
+        offline_v2._assert_reduce_citation_only_repair(rejected, changed)
 
 
 @pytest.mark.asyncio
