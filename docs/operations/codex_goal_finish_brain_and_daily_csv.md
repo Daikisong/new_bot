@@ -1,7 +1,7 @@
 # Goal: 일회성 두뇌 컴파일 완료 및 장전 CSV 판단 흐름 검증
 
-문서 갱신: 2026-10-05 09:34 KST
-상태 스냅샷: 같은 compile ID/session 14734가 09:23 KST부터 재개되어 현재 offline_reduce 진행 중이다. 09:33:32 KST 기준 426/1,868, 현재 node REDUCE-d0577d1d8e9bb3b7fbb1, 남은 1,442다. 새 build를 띄우지 않으며 live writer 동안 target DuckDB를 열지 않는다.
+문서 갱신: 2026-10-05 09:45 KST
+상태 스냅샷: 동일 compile ID/session 14734가 offline_reduce 진행 중이다. 09:44:18 KST 기준 453/1,868, 현재 node REDUCE-418d22a10f0a08465a7f, 남은 1,415다. 새 build를 띄우지 않으며 live writer 동안 target DuckDB를 열지 않는다.
 
 ## 최종 목표
 
@@ -63,7 +63,13 @@
 
 ## 현재 검증된 상태
 
-2026-10-05 09:39 KST 기준:
+2026-10-05 09:44 KST 기준:
+
+- Current snapshot: session 14734 / Python PID 60928, offline_reduce, 453/1,868, remaining 1,415, current node REDUCE-418d22a10f0a08465a7f at 2026-10-05T09:44:18.745938+09:00. This is about 24.3% of the fixed DAG only.
+- Since resume, 41 new GPT-6.1-sol/high checkpoint files have status ok; estimated totals are 5,885,006 prompt tokens and 79,175 completion tokens. Progress advanced 411 to 453 (+42): 41 fresh outputs and one exact reducer checkpoint hit are accounted for.
+- Observed throughput over 09:23:40–09:44:18 was 42 closed nodes in 20m38s, about 2.04 nodes/min. Straight-line arithmetic for 1,415 remaining is about 11h35m if this aggregate rate and similar node costs continue. This is a low-confidence projection, not a completion promise; reducer prompt sizes and later review/root nodes vary.
+- Latest resource sample: Python private memory about 3.8 GB, available RAM about 19.6 GB, C: free about 233 GB.
+- The 09:39 bullets below preserve the earlier snapshot and are historical.
 
 - 현재 권위 있는 상태는 session 14734 / Python PID 60928이다. 2026-10-05T09:38:54.290550+09:00 업데이트에서 phase offline_reduce, closure 439/1,868, remaining 1,429, current node REDUCE-118b768511a5e95ecd1e다. 23.5%는 DAG ledger 진행률이지 record coverage나 의미 이해도가 아니다.
 - resume 이후 새 checkpoint 파일 27개가 생겼고 전부 status ok, gpt-6.1-sol/high identity다. prompt token estimate 합계 3,854,307, completion token estimate 합계 53,157이다. ledger는 411에서 439로 28개 증가했다. provider output status와 node validation closure를 동일시하지 말고 terminal 때 정확히 대조한다.
