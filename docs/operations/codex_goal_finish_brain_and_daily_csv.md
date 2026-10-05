@@ -1,7 +1,7 @@
 # Goal: 일회성 두뇌 컴파일 완료 및 장전 CSV 판단 흐름 검증
 
-문서 갱신: 2026-10-05 09:45 KST
-상태 스냅샷: 동일 compile ID/session 14734가 offline_reduce 진행 중이다. 09:44:18 KST 기준 453/1,868, 현재 node REDUCE-418d22a10f0a08465a7f, 남은 1,415다. 새 build를 띄우지 않으며 live writer 동안 target DuckDB를 열지 않는다.
+문서 갱신: 2026-10-05 09:54 KST
+상태 스냅샷: 동일 compile ID/session 14734가 offline_reduce 진행 중이다. 09:53:46 KST 기준 475/1,868, 현재 node REDUCE-10fb03cf3a896c1c7adc, 남은 1,393다. 새 build를 띄우지 않으며 live writer 동안 target DuckDB를 열지 않는다.
 
 ## 최종 목표
 
@@ -63,7 +63,13 @@
 
 ## 현재 검증된 상태
 
-2026-10-05 09:44 KST 기준:
+2026-10-05 09:54 KST 기준:
+
+- Latest: session 14734 / Python PID 60928, offline_reduce, 475/1,868, remaining 1,393, current node REDUCE-10fb03cf3a896c1c7adc at 2026-10-05T09:53:46.616898+09:00. This is 25.4% of the fixed DAG.
+- Since resume, 63 new checkpoint files have status ok with gpt-6.1-sol/high identity. Prompt-token estimates total 8,894,491 and completion-token estimates total 121,922. Progress moved from 411 to 475 (+64), comprising the 63 new outputs and one verified reducer checkpoint hit.
+- Observed rate from 09:23:40 to 09:53:46 is 64 closures / 30m06s, about 2.13 nodes/min. A straight-line projection for 1,393 remaining is about 10h55m only if the aggregate rate and average node cost persist. This is low confidence, not a promised finish time.
+- Resource sample: Python private memory about 3.8 GB, free RAM about 20 GB, C: free about 233 GB.
+- The 09:44 bullets below are an earlier snapshot, retained as history.
 
 - Current snapshot: session 14734 / Python PID 60928, offline_reduce, 453/1,868, remaining 1,415, current node REDUCE-418d22a10f0a08465a7f at 2026-10-05T09:44:18.745938+09:00. This is about 24.3% of the fixed DAG only.
 - Since resume, 41 new GPT-6.1-sol/high checkpoint files have status ok; estimated totals are 5,885,006 prompt tokens and 79,175 completion tokens. Progress advanced 411 to 453 (+42): 41 fresh outputs and one exact reducer checkpoint hit are accounted for.
