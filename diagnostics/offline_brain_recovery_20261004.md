@@ -932,3 +932,52 @@ At 10:35:06 KST, session `1524` / Python PID `58140` / parent PowerShell PID `58
 closed (26.8%), `1,367` remaining, phase `offline_reduce`, pointer `REDUCE-cca8b11e69dd22324c7c`. This passes
 the formerly failed node, but exact fresh-output versus checkpoint-hit totals await terminal reconciliation. A
 10:35 sample showed about 3.9 GB private memory and 19.6 GB available RAM. Do not inspect the live DB/WAL.
+
+## 2026-10-05 14:15-14:34 KST: second citation validation failure and current handoff
+
+The same compile stopped with exit code 1 after its progress ledger had reached `725 / 1,868` closed nodes.
+This is 38.8% of the fixed DAG and leaves 1,143 nodes. The terminal ledger timestamp is
+`2026-10-05T14:15:31.945188+09:00`; phase `offline_reduce`; pointer `REDUCE-f69f72315fb80fb57cbe`.
+It is not a record-coverage or semantic-understanding percentage.
+
+The rejected reducer was `REDUCE-f35170f769e30e97e97f` (`failure_modes`, level 0), trace
+`TRACE-a42a9b881ff6`, checkpoint `LLMCKPT-b09cc03fd85f6707`, using Codex OAuth
+`gpt-6.1-sol/high`, compiler v6. Its first claim cited the exact string
+`CAP-52003d02125a69790db1, CAP-bd063275ed97a110cfdb`. Both IDs are independently members of the
+node's allowed evidence set reconstructed from child leaves
+`LEAF-BUCKET-5449c672da840993b9bd`, `LEAF-BUCKET-cfeb3a1f307c7feb4a8b`, and
+`LEAF-BUCKET-fbf2a625fe8003805826` (12 allowed evidence IDs total). The validator treated the
+entire two-ID string as one capsule ID and rejected it.
+
+Read-only reconstruction with production `_capsule_leaf_nodes`, `_leaf_reduce_evidence_ids`,
+`_leaf_coverage_root`, and `_reduce_prompt` matched the trace/checkpoint exactly:
+
+```text
+prompt SHA256: 463b7ef02632bba07dc53f8919264d8fb2da31c6600275b9f88ea9380b3da449
+input SHA256:  d762de2fa644d7b8d5a46444b08c473ad55105051667133a7e9d5f924494eab1
+output SHA256: 218209ddf746b2ace7f9475bae861a63887e58ed5f0ca4421a90fc510fc17408
+```
+
+Compiler commit `7a693dc` (`수정: 허용 capsule citation 쌍 분리`) splits only one exact `", "`
+delimiter into exactly two IDs, validates each against that reducer's allowed set, and retains the
+original citation plus each normalized ID in audit data. Unallowed IDs, extra IDs, and spacing or
+delimiter variants remain rejected. The prior narrow U+2009 rule in commit `35fe4e5` remains unchanged.
+On compiler HEAD `7a693dc`, Ruff passed, Mypy passed for 139 source files, and full pytest passed:
+1,955 passed, 1,514 warnings, 298.27 seconds.
+
+At 14:28 KST, after the writer exited, a read-only target DB check found `reduce_nodes=725` and no row
+for failed node `REDUCE-f35170f769e30e97e97f`; no DuckDB WAL or build writer was present. A new process
+scan at 14:34 KST found no same-compile writer, the progress ledger was unchanged, and the WAL remained
+absent. The previous resumed run's 7,513 map traces were all `checkpoint_hit`, with zero fresh map
+provider calls. Import and embedding were not repeated.
+
+Next action: resume the same `OFFLINE-COMPILE-0dd9198ac9ef79215ab1` only after rechecking live process
+identity and WAL. Preserve source manifest SHA
+`6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576`, record root, sealed 1,868-node
+plan, target DB, and checkpoint directory; use `gpt-6.1-sol/high` and reuse only exact compatible
+`gpt-5.6-sol/xhigh` checkpoints. Do not repeat source import, embedding, or fresh map work. Verify the
+failed checkpoint hit and map cache hits in the next traces. The complete execution request and
+post-compile daily/package/evaluation/release acceptance criteria are in
+`docs/operations/codex_goal_finish_brain_and_daily_csv.md`. At this snapshot the DAG, V2 package,
+daily CSV path, formal evaluation, and release verification are still incomplete; production remains
+HOLD.
