@@ -210,6 +210,7 @@ class SemanticReduceCitationNormalization(StrictModel):
         "allowed_capsule_id_plus_exact_english_phrase_suffix",
         "allowed_capsule_id_plus_exact_ellipsis_a_suffix",
         "allowed_capsule_id_plus_exact_thin_space_suffix",
+        "allowed_capsule_id_plus_exact_slash_right_double_quote_suffix",
         "allowed_capsule_ids_joined_by_exact_comma_space",
     ] = (
         "allowed_capsule_id_plus_single_unicode_letter_suffix"

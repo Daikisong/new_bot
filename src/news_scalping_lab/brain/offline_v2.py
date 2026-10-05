@@ -4013,6 +4013,24 @@ def _normalize_reduce_claim_citations(
                             )
                         )
                         continue
+                # Strip only the exact slash/right-double-quote artifact verified in a checkpoint.
+                exact_slash_right_double_quote_suffix = " /\u201d"
+                if original_value.endswith(exact_slash_right_double_quote_suffix):
+                    prefix = original_value[: -len(exact_slash_right_double_quote_suffix)]
+                    if prefix in allowed_capsule_ids:
+                        normalized_ids.append(prefix)
+                        normalizations.append(
+                            SemanticReduceCitationNormalization(
+                                claim_index=claim_index,
+                                field=field_name,
+                                original_value=original_value,
+                                normalized_capsule_id=prefix,
+                                rule=(
+                                    "allowed_capsule_id_plus_exact_slash_right_double_quote_suffix"
+                                ),
+                            )
+                        )
+                        continue
                 prefix, separator, suffix = original_value.partition(" ")
                 if not (
                     separator
