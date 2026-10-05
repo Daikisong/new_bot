@@ -1,7 +1,7 @@
 # Goal: 일회성 두뇌 컴파일 완료 및 장전 CSV 판단 흐름 검증
 
-문서 갱신: 2026-10-05 09:19 KST
-상태 스냅샷: 기존 build session 41212는 exit 1로 끝났다. 300초 executor join 경고 후 stale progress 및 무출력으로 재확인된 해당 build의 Codex child만 종료했고 Python/wrapper도 terminal임을 확인했다. WAL이 없어 read-only DB 대조를 마쳤다. 두 번째 citation 오류의 허용 prefix가 실제 child evidence 집합에 있음을 확인해 최소 수정·전체 gate를 통과했고, 이제 동일 compile identity를 재개한다. 새 writer 시작 직전 다시 single-writer 검사를 한다.
+문서 갱신: 2026-10-05 09:34 KST
+상태 스냅샷: 같은 compile ID/session 14734가 09:23 KST부터 재개되어 현재 offline_reduce 진행 중이다. 09:33:32 KST 기준 426/1,868, 현재 node REDUCE-d0577d1d8e9bb3b7fbb1, 남은 1,442다. 새 build를 띄우지 않으며 live writer 동안 target DuckDB를 열지 않는다.
 
 ## 최종 목표
 
@@ -63,7 +63,13 @@
 
 ## 현재 검증된 상태
 
-2026-10-05 09:19 KST 기준:
+2026-10-05 09:39 KST 기준:
+
+- 현재 권위 있는 상태는 session 14734 / Python PID 60928이다. 2026-10-05T09:38:54.290550+09:00 업데이트에서 phase offline_reduce, closure 439/1,868, remaining 1,429, current node REDUCE-118b768511a5e95ecd1e다. 23.5%는 DAG ledger 진행률이지 record coverage나 의미 이해도가 아니다.
+- resume 이후 새 checkpoint 파일 27개가 생겼고 전부 status ok, gpt-6.1-sol/high identity다. prompt token estimate 합계 3,854,307, completion token estimate 합계 53,157이다. ledger는 411에서 439로 28개 증가했다. provider output status와 node validation closure를 동일시하지 말고 terminal 때 정확히 대조한다.
+- 실패 reducer는 기존 checkpoint_hit trace TRACE-5208c051b465로 재사용됐다. map 단계도 resume 중 checkpoint_hit trace가 관측됐고 fresh/reuse 전체 집계는 terminal audit에서 확인한다.
+- Python private memory 약 3.8GB, working set 약 3.1GB, free RAM 약 20GB, C: free 약 233GB다. representative/distribution 복원 중 일시적으로 약 5.8GB까지 올랐지만 reduce phase에서 약 3.8GB로 내려왔다.
+- 아래의 09:19/08:59 상태 항목은 복구 이력이며 현재 process/progress 상태가 아니다.
 
 - 이전 build session 41212는 child 정리 후 exit code 1로 terminal 처리됐다. 09:19 기준 compile ID/worktree/target DB를 쓰는 writer는 없고 `.duckdb.wal`도 없다. 새 실행을 시작하기 전에도 process tree를 재검사한다.
 - `progress.json`의 마지막 값은 `2026-10-05T08:46:06.272609+09:00`이다. phase는 `offline_reduce`, ledger closure는 411/1,868, remaining은 1,457, last current node는 `REDUCE-d409b3dd3ed7424b0ade`다. 이는 약 22.0%의 DAG ledger 진행이지 record coverage, LLM 노출률, 두뇌 이해도, ETA가 아니다.
@@ -211,4 +217,4 @@ python -m pytest
 
 ## 다음 실행 요청
 
-실행 요청이 오면 먼저 저장소 AGENTS.md·skill과 이 문서의 timestamped snapshot을 대조하고, 현재 process/session/ledger/trace/receipt/manifest/WAL를 다시 확인한다. 이 snapshot 작성 때는 동일 writer가 없고 WAL도 없어 같은 compile identity를 재개할 준비가 됐다. 실제 실행 시 writer가 이미 있으면 중복 build를 금지하고 그 세션만 관찰한다. 동일 worktree/source/manifest/compile ID/target/checkpoint 경로를 유지하고 import·embedding·map·planner를 반복하지 않는다. provider는 Codex CLI OAuth gpt-6.1-sol/high, 호환되는 기존 gpt-5.6-sol/xhigh checkpoint만 재사용한다. 현재 수정된 validator로 저장된 실패 checkpoint를 검증하면서 고정 DAG를 재개한다. 고정 DAG/package 감사, 실제 daily smoke, 같은 architecture blind 평가, release binding, tests, Korean commit/push와 외부 리뷰용 보고까지 진행한다. 등록 품질 gate와 승인이 없으면 production activation은 HOLD한다. 진행률은 매번 closed / 1,868, remaining, provider-fresh, exact checkpoint reuse, local validation/carry, failed, running을 분리해 보고하고 근거 없는 ETA는 제시하지 않는다.
+현재 live session 14734/Python 60928만 관찰하고 중복 build를 시작하지 않는다. 다음 turn 시작 시 AGENTS.md·skill과 goal snapshot, process/session/ledger/trace/receipt/manifest/WAL를 재확인한다. 같은 worktree/source/manifest/compile ID/target/checkpoint를 유지하고 import·embedding·map·planner를 반복하지 않는다. 이후 session이 terminal이면 exit code와 1,868-node ledger, checkpoint lineage, persisted DB rows를 대조한 뒤 남은 오류를 최소 수정하고 같은 compile identity로 재개한다. offline V2 package audit, 실제 pre-open CSV daily smoke, 같은 architecture blind evaluation, release binding, Ruff/Mypy/pytest, Korean commit/push와 external-review report까지 완료한다. 등록 quality gate와 승인이 없으면 production activation은 HOLD한다. 모든 보고에서 closed/1,868, remaining, provider-fresh, exact checkpoint reuse, local carry/validation, failed, running을 분리하고 근거 없는 ETA를 만들지 않는다.
