@@ -207,6 +207,7 @@ class SemanticReduceCitationNormalization(StrictModel):
         "allowed_capsule_id_plus_soft_hyphen_em_dash_suffix",
         "allowed_capsule_id_plus_exact_arabic_word_suffix",
         "allowed_capsule_id_plus_exact_right_single_quote_suffix",
+        "allowed_capsule_id_plus_exact_english_phrase_suffix",
     ] = (
         "allowed_capsule_id_plus_single_unicode_letter_suffix"
     )
