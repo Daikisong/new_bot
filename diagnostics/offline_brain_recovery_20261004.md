@@ -1138,3 +1138,33 @@ Compiler fix `9ff03ff` was pushed to `origin/codex/v5-gpt61-high-offline`. Categ
 Verification in the compiler worktree: focused citation regressions passed; Ruff passed; Mypy passed for 139 source files; full pytest passed (`1,964 passed`, 1,586 warnings, 325.49 seconds). This includes category retry, world retry, failed correction stopping after exactly one attempt, and preservation of all non-citation draft content.
 
 After confirmed process termination, executor exit code 1, and settled target work root with no WAL, read-only DuckDB reconciliation found `reduce_nodes=1,005`, failed node row `0`, `semantic_capsules=52,644`, and `semantic_unit_assignments=823,279`. The failed `REDUCE-7299554f42e527ca3ba4` node was therefore not persisted; all earlier closed nodes are present. At 18:15 KST no matching writer or WAL was found. The same source manifest, compile ID, 1,868-node plan/topology, DB, and checkpoint directory remain in place. Re-verify these conditions immediately before resuming with the pushed compiler fix; do not repeat import, embedding, planning, or fresh map work.
+
+## 2026-10-05 18:19-18:47 KST: bounded citation repair and same-compile continuation
+
+The prior terminal reconciliation above remains the latest database audit: `1,005` persisted reducer nodes, `52,644` capsules, and `823,279` assignments. After that terminal state, the fixed compile was resumed once with the pushed compiler worktree at `codex/v5-gpt61-high-offline`, HEAD `9ff03ff`, using the same source project and manifest SHA, record root, compile ID, 1,868-node plan/topology, target DB, and checkpoint directory. The wrapper started at `18:19:10 KST`; its Python writer PID `13716` started at `18:19:11 KST` under PowerShell PID `33952`. The invocation uses Codex OAuth `gpt-6.1-sol/high`, concurrency 4, compatible checkpoint identity `gpt-5.6-sol/xhigh`, and `--continue-after-map-plan`. No import, real embedding, planner, or map stage was restarted.
+
+### Map usage reconciliation
+
+The immutable map usage ledger was re-read without opening the live DuckDB/WAL. Its path is `brain/.work/OFFLINE-COMPILE-0dd9198ac9ef79215ab1/map_stage_checkpoint_usage.jsonl`; SHA-256 is `36a92c903b7315e78ce4c36f676a6d98a69ba9ac31a06fc8e53af6b5b6282f3b`. It has 7,513 rows: 7,498 compatible checkpoint hits and 15 fresh outputs. All 15 fresh outputs used `gpt-6.1-sol/high`. Model-config totals are 7,462 rows for `gpt-5.6-sol/xhigh` and 51 for `gpt-6.1-sol/high`. This is the authoritative map accounting and corrects the earlier goal-document wording that incorrectly said 7,513 hits and zero fresh calls. The map stage is complete and must not be repeated.
+
+### Citation repair evidence
+
+The original failed checkpoint `LLMCKPT-6f9f18fe5209a78e` remains unchanged. The bounded correction request produced `LLMCKPT-a0a69c78021fc16e`:
+
+```text
+purpose: offline_semantic_reduce.REDUCE-7299554f42e527ca3ba4.citation_repair.v1.REDUCE-7299554f42e527ca3ba4
+status: ok
+provider: CodexOAuthProvider
+model / reasoning: gpt-6.1-sol / high
+input SHA-256: 506163c19c08ab5ff5112f5bebee6c32ea42b2177e27f8aec236061f392c7249
+output SHA-256: 278c5b898a992db789b12f7b3d634073d2932057dd5381f614aef63cb4674506
+checkpoint mtime: 2026-10-05 18:25:31 KST
+```
+
+The resumed writer then advanced through later reducer nodes. As of `2026-10-05T18:46:43.089569+09:00`, the safe live progress ledger reports phase `offline_reduce`, `1,045/1,868` nodes, `823` remaining, and current node `REDUCE-17dc32da2ea1657fd3c1`. This is 55.94% of the fixed task DAG, not record coverage or semantic understanding. The live DB/WAL was not inspected, so persisted closure of the correction node and all later progress must still be reconciled after terminal process exit and WAL settle.
+
+A safe checkpoint-directory metadata scan observed 35 stable checkpoint JSON files modified after the 18:19 resume and at least 15 seconds before the scan. All 35 report `status=ok`, `CodexOAuthProvider`, `gpt-6.1-sol/high`; exactly one has the `.citation_repair.v1.` purpose. This is a checkpoint-file count, not the final fresh-call/cache-hit total. Reconcile invocation traces and cache provenance at terminal completion before publishing final call counts.
+
+At the 18:46 KST resource sample, Python PID `13716` was still alive with private memory `4,145,012,736` bytes, working set `3,377,778,688` bytes, cumulative CPU `257.75` seconds, and 275 handles. Free physical RAM was about 15.72 GiB and C: free space about 234.31 GiB. Samples since 18:29 show private memory and working set essentially stable, with no observed unbounded growth. These are observations, not a reason to stop or an ETA basis. Continue waiting on the one writer; do not launch a duplicate. While it or a WAL is live, do not open/hash/audit the DuckDB or WAL.
+
+The remaining goal is unchanged: terminal fixed-DAG and lineage reconciliation, immutable Offline Semantic Brain V2 package finalization and deep/provenance/citation/coverage/real-HNSW audits, real eligible pre-open CSV smoke through `analyze-daily`, then same-architecture formal gate and release/rollback review. No eligible real CSV or registered gate is proven by this continuation snapshot; re-search when the package is ready. Until requirements are met, daily-flow verification remains pending, formal quality remains unapproved if the gate is absent, and production remains HOLD.
