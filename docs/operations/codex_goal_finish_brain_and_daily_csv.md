@@ -1,7 +1,7 @@
 # Goal: 일회성 두뇌 컴파일 완료 및 장전 CSV 판단 흐름 검증
 
-문서 갱신: 2026-10-05 16:37 KST
-현재 handoff 기준: 동일 compile `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`은 citation fix commit `7bb1b40` 이후 2026-10-05 15:58:49 KST 재개되어 계속 실행 중이다. executor session `48993` / Python PID `20864`는 실행 시 다시 확인할 단서일 뿐이다. progress 원장은 `2026-10-05T16:36:50.012612+09:00`, `offline_reduce`, `881/1,868` closed, `987` remaining, current pointer `REDUCE-ea8fef5106c2916a5077`다. 이는 fixed-DAG closure만 뜻한다. writer와 WAL이 live인 동안 target DB/WAL을 열지 않는다. 재개 직전 terminal/read-only audit는 `reduce_nodes=812`, failed node row 0, capsules 52,644, assignment rows 823,279로 progress와 일치했다.
+문서 갱신: 2026-10-05 16:40 KST
+현재 handoff 기준: 동일 compile `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`은 citation fix commit `7bb1b40` 이후 2026-10-05 15:58:49 KST 재개되어 계속 실행 중이다. executor session `48993` / Python PID `20864`는 실행 시 다시 확인할 단서일 뿐이다. progress 원장은 `2026-10-05T16:39:57.365253+09:00`, `offline_reduce`, `888/1,868` closed, `980` remaining, current pointer `REDUCE-bc3a3927d8d0d32b408e`다. 이는 fixed-DAG closure만 뜻한다. writer와 WAL이 live인 동안 target DB/WAL을 열지 않는다. 재개 직전 terminal/read-only audit는 `reduce_nodes=812`, failed node row 0, capsules 52,644, assignment rows 823,279로 progress와 일치했다.
 
 최신 실패 `REDUCE-e6c11b4aee1b4a8e62f1` / `TRACE-ee9c6faf94ed` / `LLMCKPT-45d46e52818e8fba`를 production builder로 재구성했다. Claim 3 citation 원문은 `CAP-cd066b07b85b5b40551a /”`; 다섯 child leaf의 정확한 allowed evidence set은 19개이며 base ID가 허용 집합에 있었다. 재생성 prompt는 checkpoint의 142,133자 및 SHA-256 `77dd0155b66f074f2dfeb90b6f54c4f6a2dab2aea47c8c241f7fce6aff572a33`와 일치했다. 접미부는 정확히 space + slash + U+201D였다. 새 normalizer는 해당 exact suffix만 allowed ID에 붙었을 때 citation field에서만 제거하고 원문·normalized ID·rule을 감사 row에 보존한다. 실제 checkpoint 응답을 새 코드에 read-only로 넣었을 때 네 claim이 검증되고 단 한 citation만 정규화되는 것을 확인했다.
 
@@ -74,7 +74,7 @@ Compiler 수정은 `7bb1b40`으로 원격 `codex/v5-gpt61-high-offline`에 push�
 2026-10-05 15:58:49 KST에 동일 compile을 재개했다. 현재 session `48993` / Python PID `20864`가 live이며 WAL이 존재한다. 따라서 진행 중 DB에는 접근하지 않는다. 재개 직전 terminal/read-only DB 대조는 812 persisted node와 failed node row 0을 확인했다.
 
 - 고정 compile identity: `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`; source manifest, record root, worktree, target DB, plan/topology, checkpoint 경로를 그대로 사용한다.
-- 최신 ledger: `881/1,868` closed, `987` remaining (47.11% fixed-DAG progress), phase `offline_reduce`, current pointer `REDUCE-ea8fef5106c2916a5077`, updated `2026-10-05T16:36:50.012612+09:00`.
+- 최신 ledger: `888/1,868` closed, `980` remaining (47.54% fixed-DAG progress), phase `offline_reduce`, current pointer `REDUCE-bc3a3927d8d0d32b408e`, updated `2026-10-05T16:39:57.365253+09:00`.
 - source `processed_record_count=823279`와 `record_progress_ratio=1.0`은 input accounting일 뿐 semantic compile이나 brain 완성을 뜻하지 않는다. Daily brain decision, package, blind evaluation은 아직 완료되지 않았다.
 - 현재 writer는 Python PID `20864`, executor session `48993`이다. 살아 있는 동안 새 writer를 시작하지 않는다. DAG 결과가 terminal일 때만 process/session, progress, exit code, WAL과 DB를 대조한다.
 - 최신 citation incident는 allowed set·prompt·checkpoint까지 증명했고 commit `7bb1b40`으로 수정·push했다. 실행 중에는 새 runtime trace를 확인할 수 있지만 DB row나 WAL을 읽지 않는다. failed node의 persisted closure 여부와 checkpoint-hit trace는 terminal audit에서 확정한다.
@@ -164,7 +164,7 @@ goal 실행 직전 반드시 위 상태를 다시 확인한다. 다른 task가 b
 - repair 완료 research의 production import 및 record accounting
 - 실임베딩 생성과 semantic index의 기존 기반 데이터
 - record assignment 및 기존 map stage/receipt
-- 과거 411·725·770·812·867 closure 수치는 historical snapshot이다. 812는 이번 resume 직전 terminal DB/read-only 대조값이며, 현재 writer가 시작된 뒤의 DB는 아직 읽지 않는다. 최신 진행은 아래 권위 있는 handoff의 `881/1,868` progress ledger를 사용한다. full plan/receipt/DB/checkpoint lineage는 terminal 이후 대조한다.
+- 과거 411·725·770·812·867·881 closure 수치는 historical snapshot이다. 812는 이번 resume 직전 terminal DB/read-only 대조값이며, 현재 writer가 시작된 뒤의 DB는 아직 읽지 않는다. 최신 진행은 아래 권위 있는 handoff의 `888/1,868` progress ledger를 사용한다. full plan/receipt/DB/checkpoint lineage는 terminal 이후 대조한다.
 
 새 input identity가 실제로 달라졌다는 증거와 별도 승인이 없는 한 import, embedding, map, planner, compile ID를 다시 만들지 않는다. 실패 시 이미 저장된 closure와 checkpoint를 보존한다.
 
@@ -280,9 +280,9 @@ python -m pytest
 
 ## 다음 실행 요청
 
-### 최신 handoff (2026-10-05 16:37 KST)
+### 최신 handoff (2026-10-05 16:40 KST)
 
-최신 progress ledger는 `2026-10-05T16:36:50.012612+09:00`, `offline_reduce`, `881/1,868` closed, `987` remaining, pointer `REDUCE-ea8fef5106c2916a5077`이다. 같은 compile writer는 마지막 확인 시 executor session `48993` / Python PID `20864`로 live였다. 수치는 fixed-DAG closure일 뿐이며 실행 시 process, ledger와 WAL을 새로 확인한다. writer/WAL live 동안 DB/WAL은 열지 않는다. Compiler fix `7bb1b40`은 push됐고 Ruff, Mypy 139 files, pytest 1,960 passed다. Python private memory는 `3,939,270,656` bytes(약 3.67 GiB), working set은 `3,178,217,472` bytes(약 2.96 GiB), 동시성 상한은 4다.
+최신 progress ledger는 `2026-10-05T16:39:57.365253+09:00`, `offline_reduce`, `888/1,868` closed, `980` remaining, pointer `REDUCE-bc3a3927d8d0d32b408e`이다. 같은 compile writer는 마지막 확인 시 executor session `48993` / Python PID `20864`로 live였다. 수치는 fixed-DAG closure일 뿐이며 실행 시 process, ledger와 WAL을 새로 확인한다. writer/WAL live 동안 DB/WAL은 열지 않는다. Compiler fix `7bb1b40`은 push됐고 Ruff, Mypy 139 files, pytest 1,960 passed다. Python private memory의 마지막 표본은 `3,939,270,656` bytes(약 3.67 GiB), working set은 `3,178,217,472` bytes(약 2.96 GiB), 동시성 상한은 4였다.
 
 ### 현재 전달할 실행 요청
 
@@ -292,7 +292,7 @@ python -m pytest
 >
 > 이후 immutable Offline Semantic Brain V2 package, 실제 production analyze-daily pre-open CSV flow, provenance/cutoff/citation, bounded blind gate, release binding/rollback을 차례로 검증한다. Daily path는 cutoff-safe brain과 CSV를 첫 final decision 요청에 함께 넣고 logical LLM call 1회, structured repair 최대 1회, CSV_MEMORY_ONLY_STRICT, no web/no D-day or outcome leakage를 지킨다. 등록된 formal gate/sealed input이 없으면 NOT_RUN_GATE_MISSING, predictive quality 미승인, production HOLD로 기록한다. Forensic-only 379-pack은 사용하지 말고 승인 없이 production을 활성화하지 않는다.
 >
-> 추가 실행 조건: 위 session/PID 숫자는 handoff snapshot일 뿐이므로 지금 ledger와 process를 다시 읽어 최신 값으로 보고해. 이 문서 갱신 시점에는 881/1,868, remaining 987, ledger time `2026-10-05T16:36:50.012612+09:00`다. 새 session에서 이 문서를 실행하더라도 먼저 같은 compile의 live writer를 찾아 관찰하고, 이미 살아 있으면 두 번째 writer를 만들지 마. 1,868/1,868 terminal closure 전에는 package build, daily smoke, formal evaluation을 먼저 시작하지 않는다.
+> 추가 실행 조건: 위 session/PID 숫자는 handoff snapshot일 뿐이므로 지금 ledger와 process를 다시 읽어 최신 값으로 보고해. 이 문서 갱신 시점에는 888/1,868, remaining 980, ledger time `2026-10-05T16:39:57.365253+09:00`다. 새 session에서 이 문서를 실행하더라도 먼저 같은 compile의 live writer를 찾아 관찰하고, 이미 살아 있으면 두 번째 writer를 만들지 마. 1,868/1,868 terminal closure 전에는 package build, daily smoke, formal evaluation을 먼저 시작하지 않는다.
 >
 > 이후 단계에서는 실제 repository-supported release binding과 rollback을 확인한다. 적격한 실제 pre-open CSV가 없으면 가짜 CSV로 성공을 꾸미지 말고 input 누락을 기록하거나 사용자에게 필요한 CSV를 요청한다. formal gate 또는 sealed blind input이 없으면 임의 평가를 만들지 말고 `NOT_RUN_GATE_MISSING`과 production HOLD를 유지한다. 완료 보고는 구조적 record coverage와 실제 LLM semantic exposure/claim citations를 별도 표로 구분하고, 10년치 완전성이나 backtest 성능을 증거 없이 주장하지 않는다.
 
@@ -332,4 +332,4 @@ python -m pytest
 6. 동일 daily architecture의 package audit, 실제 CSV smoke, bounded blind evaluation, release binding/rollback을 순서대로 수행한다. 평가 gate나 physically sealed input이 빠졌으면 그 단계는 `NOT_RUN_GATE_MISSING`으로 끝내고 production을 HOLD로 둔다. legacy exhaustive나 forensic artifact로 우회하지 않는다.
 7. 결과·한계·필요 승인을 goal/recovery 문서 및 Downloads본에 기록한다. 외부 리뷰용으로 compile closure와 모델별 fresh/reused 호출, package roots, 실제 coverage/exposure/citations, daily CSV/date/cutoff/call 수/latency, evaluation gate, release 상태를 구분해 보고한다. 관련 소스/문서만 한국어 commit/push하고 원격 반영을 검증한다.
 
-모든 진행 보고는 `closed/1,868`, `remaining`, provider-fresh valid output, 정확한 checkpoint hit, local carry/validation, failed, running을 분리한다. 현재 handoff snapshot은 881/1,868, remaining 987이다. 실행 시 최신 ledger로 갱신한다. 1,868은 고정된 DAG 작업 수이며 record·연도·의미 이해 비율이 아니다. 신뢰할 처리량 근거가 없으면 ETA를 만들지 않는다. 기술 완료, predictive-quality 승인, production 활성화는 각각 별도 상태로 보고한다.
+모든 진행 보고는 `closed/1,868`, `remaining`, provider-fresh valid output, 정확한 checkpoint hit, local carry/validation, failed, running을 분리한다. 현재 handoff snapshot은 888/1,868, remaining 980이다. 실행 시 최신 ledger로 갱신한다. 1,868은 고정된 DAG 작업 수이며 record·연도·의미 이해 비율이 아니다. 신뢰할 처리량 근거가 없으면 ETA를 만들지 않는다. 기술 완료, predictive-quality 승인, production 활성화는 각각 별도 상태로 보고한다.
