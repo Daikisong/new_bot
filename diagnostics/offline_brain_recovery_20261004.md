@@ -877,3 +877,58 @@ with the build and was not opened. The 07:31:37 KST progress ledger reports `376
 nodes than the 07:22 checkpoint. It does not mean 20% of records were newly read or that 20% of semantic quality
 is achieved. Record accounting remains 823,279/823,279. Python private memory at the same sample was about
 4.11 GB, consistent with recent samples; the build remains active and no other build was started.
+
+### 10:02-10:35 KST: exact citation artifact and same-compile resume
+
+The compiler session `14734` exited with code 1 at `493 / 1,868`. Post-exit checks found no writer and no DuckDB WAL;
+read-only `reduce_nodes` count was 493, matching progress. The progress pointer was not treated as the failed node
+because reducer work is concurrent.
+
+The failed result was identified in checkpoint `LLMCKPT-8c7cc93bedf7c776`:
+
+```text
+node/purpose:     REDUCE-8becf902cac9db24b9ee
+status:           ok provider output; validator had not accepted the node
+model:            Codex OAuth gpt-6.1-sol/high
+checkpoint file:  a4159dc8003e597fe508801ffcfb709e5c972048c9e4d6bb3917786ef501f5ef
+input SHA256:     24fe52fd814482b1b8a3de4cdf0061d5e2a802d6242e737267e7adc9ce1a3332
+output SHA256:    bcaed98cc9056d7ad2cb4ac4d3bc5089004524e524570708efaa9903807fbae8
+prompt SHA256:    f2294f470dbd7974068083dc549b0a7596a1bb0d39c2790b12f088a74f31b904
+```
+
+The original claim-3 supporting citation was `CAP-e3f1c1efc61d5c29ca67 ... a`. The production leaf builder,
+evidence selector, and prompt builder were rerun read-only against the 52,644 persisted capsules. The exact three
+children were `LEAF-BUCKET-b44f52d4219c942b7b20` (12 capsules),
+`LEAF-BUCKET-1b292e6eed64c24ce472` (11), and `LEAF-BUCKET-ece1f9d19774454d1207` (12). Their 12 allowed
+evidence IDs were:
+
+```text
+CAP-bce0b9bf5b53649fb7fb  CAP-c3398eeeb79dfe6375bf
+CAP-d3775cda69779754a021  CAP-d6bb4dfb81aecff8d44e
+CAP-dd242ddfff0fb1b0fa0e  CAP-e3f1c1efc61d5c29ca67
+CAP-f4d921030e3dcfb0002f  CAP-fc1122ffa3444a9bdba7
+CAP-02f96d44c55c53b5d887  CAP-1c83edfa98363b00d74e
+CAP-2313783095bd9503a237  CAP-3163c389f5c90715f150
+```
+
+The base capsule ID was allowed; only the exact trailing ` ... a` caused validation failure. Rebuilt prompt SHA,
+character length (145,137), UTF-8 byte length (165,498), and canonical output SHA all matched checkpoint metadata.
+The failed node had no persisted `reduce_nodes` row. This was not a missing source capsule or grounds for loosening
+membership checks generally.
+
+Compiler commit `2c05062` adds only exact ` ... a` normalization when the prefix is in that node's allowed set.
+The original citation, normalized ID, and named rule are retained in audit data. Tests reject unallowed IDs,
+` ... b`, ` ... ab`, and appended extra IDs. Focused tests: 19 passed. Full gates:
+
+```text
+python -m ruff check .                 PASS
+python -m mypy src/news_scalping_lab  PASS, 139 source files
+python -m pytest                       PASS, 1,946 passed, 1,433 warnings, 295.81 seconds
+```
+
+The Korean code commit was pushed to `origin/codex/v5-gpt61-high-offline`. The same compile/source/manifest/record
+root/plan/topology/target/checkpoint identity was resumed; import, embedding, map, and planner were not repeated.
+At 10:35:06 KST, session `1524` / Python PID `58140` / parent PowerShell PID `58132` reported `501 / 1,868`
+closed (26.8%), `1,367` remaining, phase `offline_reduce`, pointer `REDUCE-cca8b11e69dd22324c7c`. This passes
+the formerly failed node, but exact fresh-output versus checkpoint-hit totals await terminal reconciliation. A
+10:35 sample showed about 3.9 GB private memory and 19.6 GB available RAM. Do not inspect the live DB/WAL.

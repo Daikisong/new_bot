@@ -1,9 +1,11 @@
 # Goal: 일회성 두뇌 컴파일 완료 및 장전 CSV 판단 흐름 검증
 
-문서 갱신: 2026-10-05 10:08 KST
-현재 상태 기준시각: progress 원장 2026-10-05 10:02:10 KST. 기존 session 14734 / Python PID 60928은 `offline_reduce` 중 실패해 exit code 1로 종료했다. 직전 원장은 493/1,868, 남은 1,375, `current_model_node_id=REDUCE-c74a73797806b99d3155`였다. 종료 후 같은 DB writer가 없고 WAL도 없음을 확인했으며, read-only `reduce_nodes` count 493이 원장과 일치했다. 종료 오류는 `semantic reduce claim cited an unavailable capsule: claim_index=3 field=supporting_capsule_ids citation='CAP-e3f1c1efc61d5c29ca67 ... a' allowed_capsule_count=12`다. 오류 trace/checkpoint와 정확한 failed node를 아직 매핑하지 않았다. 26.4%는 DAG 원장 비율이지 record coverage나 의미 이해도 비율이 아니다. 원인을 밝히기 전 같은 compile을 무조건 재실행하거나 citation을 제거/완화하지 않는다.
+문서 갱신: 2026-10-05 10:36 KST
+현재 상태 기준시각: progress 원장 2026-10-05 10:35:06 KST. 같은 compile의 session 1524 / Python PID 58140 / parent PowerShell PID 58132가 `offline_reduce` 실행 중이며 501/1,868 closed, 1,367 remaining, 최근 node `REDUCE-cca8b11e69dd22324c7c`다. 약 26.8%는 고정 DAG 진행률이다. writer가 살아 있으므로 새 build를 시작하지 않고 target DuckDB/WAL을 열거나 검사하지 않는다.
 
-다음 실행 요청은 이 문서의 **다음 실행 요청**에 적힌 문구를 사용한다. 지금은 기존 compile이 실패 종료했으므로 먼저 새 citation 오류를 trace/checkpoint와 실제 allowed capsule 집합에 연결하고, 검증된 최소 수정만 한 뒤 같은 compile을 재개한다. import·embedding·map·planner는 다시 하지 않는다. 이 goal은 1,868개 고정 node의 나머지를 닫은 뒤 실제 brain package와 장전 CSV 경로를 검증하는 유한한 작업이다. package 생성만으로 GPT 가중치 학습, backtest 통과 또는 production 승인을 주장하지 않는다.
+직전 실패 node `REDUCE-8becf902cac9db24b9ee`는 checkpoint `LLMCKPT-8c7cc93bedf7c776`에서 원인이 입증되어 최소 수정했다. `CAP-e3f1c1efc61d5c29ca67`는 해당 세 child leaf의 12개 allowed evidence 중 하나였고, checkpoint 응답은 ID 뒤에 정확히 ` ... a`를 붙였다. production leaf/prompt를 다시 구성한 prompt SHA와 checkpoint SHA, output SHA가 각각 일치했다. 이 exact suffix만 정규화하고 audit에 보존하는 code commit `2c05062`를 push했다. focused regression 19개, Ruff, Mypy(139 files), full pytest(1,946 passed)가 통과했다. 같은 compile이 재개된 뒤 ledger는 501까지 진행해 실패 node를 지나갔다. terminal 후 DB/receipt/checkpoint parity로 이를 최종 확인한다.
+
+다음 turn은 이미 실행 중인 session 1524만 관찰한다. import·embedding·map·planner를 반복하지 않는다. 이 goal은 1,868개 고정 node의 나머지를 닫은 뒤 실제 brain package와 장전 CSV 경로를 검증하는 유한한 작업이다. package 생성만으로 GPT 가중치 학습, backtest 통과 또는 production 승인을 주장하지 않는다.
 
 ## 최종 목표
 
@@ -67,15 +69,23 @@
 
 ### 권위 있는 현재 상태
 
-2026-10-05 10:02:10 KST progress 원장, session 14734의 exit code 1, 종료 후 process/WAL 상태를 확인했다. 같은 compile writer가 없고 WAL이 없어 read-only 대조를 허용했다. `reduce_nodes`는 493행으로 progress 원장의 493과 일치했다.
+2026-10-05 10:35:06 KST progress 원장과 session 1524 / Python PID 58140을 확인했다. Build는 `offline_reduce`에서 실행 중이며 이 동안 target DB/WAL을 읽지 않는다.
 
-- 마지막 실행: tool session 14734 / Python PID 60928 / parent PowerShell PID 24324, phase `offline_reduce`, terminal exit code 1.
-- 고정 compile identity: `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`; worktree, source manifest, target DB, checkpoint 경로는 위 고정 identity를 유지한다.
-- 마지막 ledger: 493/1,868 closed, 1,375 remaining (26.4% DAG progress); progress field의 current node는 `REDUCE-c74a73797806b99d3155`. 동시 reducer 실행 중 발생한 validator 오류이므로 이 field만으로 failed node를 확정하지 말고 trace/checkpoint에서 실제 node를 찾아야 한다.
-- 미해결 오류: `semantic reduce claim cited an unavailable capsule: claim_index=3 field=supporting_capsule_ids citation='CAP-e3f1c1efc61d5c29ca67 ... a' allowed_capsule_count=12`. 이 citation이 허용 ID에 붙은 정규화 가능한 출력인지, 허용되지 않은 ID인지 현재 미판정이다. 기존 suffix fix를 넓히거나 claim/citation을 버리는 조치를 금지한다.
-- 종료 직후 같은 compile writer 없음, target `.duckdb.wal` 없음, `reduce_nodes` 493행과 progress 493이 일치함을 확인했다. 재개 전 이 조건을 다시 확인하고 문제 출력이 persisted row인지 checkpoint인지 trace인지 분리해서 확인한다.
-- `processed_record_count=823279`와 `record_progress_ratio=1.0`은 입력 record accounting만 뜻한다. offline synthesis node, payload exposure, brain package, daily decision이 완료됐다는 뜻이 아니다.
-- 실행 재개 시 process/ledger/DB/WAL 상태를 다시 읽는다. 아래 과거 수치들은 복구 경위만을 위한 기록이며 현재 진행률로 인용하지 않는다.
+- 고정 compile identity: `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`; source manifest, record root, worktree, target DB, plan/topology, checkpoint 경로를 그대로 사용한다.
+- 최신 ledger: 501/1,868 closed, 1,367 remaining (26.8% fixed-DAG progress), phase `offline_reduce`, latest completed node pointer `REDUCE-cca8b11e69dd22324c7c`.
+- source `processed_record_count=823279`와 `record_progress_ratio=1.0`은 input accounting일 뿐 semantic compile이나 brain 완성을 뜻하지 않는다. Daily brain decision, package, blind evaluation은 아직 완료되지 않았다.
+- 새 provider output과 exact checkpoint reuse 수는 실행 중 추정하지 않는다. Terminal trace/checkpoint/DB reconciliation에서 fresh, hit, local reuse, failed를 각각 집계한다.
+- 현재 Python private memory 약 3.9 GB, working set 약 3.2 GB, available RAM 약 19.6 GB다. 직전 local resume phase에서 private memory가 약 4.8 GB에 이르렀다가 reducer phase에서 내려왔고 CPU/ledger도 진행했다. 이는 관측 표본이지 leak 부재 증명이 아니다.
+- 실행 재개/중단 후에는 process tree, exit code, ledger, writer/WAL, source/plan/checkpoint identity를 다시 확인한다. 아래 과거 수치들은 복구 경위로만 보존한다.
+
+#### 방금 해결한 citation checkpoint
+
+- Failed node: `REDUCE-8becf902cac9db24b9ee`; purpose는 checkpoint와 동일하다. Checkpoint `LLMCKPT-8c7cc93bedf7c776`, status `ok`, model `gpt-6.1-sol/high` via Codex OAuth, input SHA-256 `24fe52fd814482b1b8a3de4cdf0061d5e2a802d6242e737267e7adc9ce1a3332`, output SHA-256 `bcaed98cc9056d7ad2cb4ac4d3bc5089004524e524570708efaa9903807fbae8`; checkpoint file SHA-256 `a4159dc8003e597fe508801ffcfb709e5c972048c9e4d6bb3917786ef501f5ef`.
+- Three exact children are leaves `LEAF-BUCKET-b44f52d4219c942b7b20`, `LEAF-BUCKET-1b292e6eed64c24ce472`, `LEAF-BUCKET-ece1f9d19774454d1207` with 12, 11, and 12 capsules. Production `_capsule_leaf_nodes`, `_leaf_reduce_evidence_ids`, and `_reduce_prompt` rebuilt the allowed set and prompt. Prompt SHA-256 `f2294f470dbd7974068083dc549b0a7596a1bb0d39c2790b12f088a74f31b904`, chars 145,137, UTF-8 bytes 165,498 all match checkpoint input; canonical output SHA also matches checkpoint.
+- The 12 allowed evidence IDs include `CAP-e3f1c1efc61d5c29ca67` from the second child leaf. Raw claim 3 supporting citation was exactly `CAP-e3f1c1efc61d5c29ca67 ... a`. The failed node had no persisted row after the failed attempt.
+- Code now strips only exact suffix ` ... a` and only when the exact prefix belongs to that reducer's allowed set; raw value, normalized ID, and rule are retained in citation normalization audit. Rejected cases include unallowed base ID, ` ... b`, ` ... ab`, and extra appended IDs.
+- Compiler commit `2c05062` was pushed to `origin/codex/v5-gpt61-high-offline`. Focused tests: 19 passed. Ruff PASS, Mypy PASS for 139 source files, full pytest PASS: 1,946 passed, 1,433 warnings, 295.81 seconds.
+- Same compile was resumed under tool session 1524 / Python PID 58140 / PowerShell PID 58132. Its ledger progressed from 493 to 501 and passed the formerly failing node. Because the writer is live, persisted database parity and final checkpoint-hit accounting remain for terminal audit.
 
 ### 복구 및 과거 진행 스냅샷
 
@@ -247,17 +257,16 @@ python -m pytest
 
 ## 다음 실행 요청
 
-문서를 실행시킬 때 사용자 요청은 아래 한 문장으로 충분하다. session/PID 숫자는 문서 작성 시점의 관측치이므로 실행 시 다시 확인한다.
+다음 실행 요청은 이미 돌아가는 session 1524를 이어 관찰하는 것이다. tool session과 PID는 다음 turn에 반드시 재확인한다.
 
-> 최신 goal 문서 `C:\Users\eorb9\Downloads\codex_goal_nslab_finish_brain_and_daily_csv.md`대로 지금부터 끝까지 진행해. 시작 시 같은 compile ID의 process/session, progress, writer 및 WAL 상태를 다시 확인해. 마지막 session 14734는 exit code 1로 끝났고 `CAP-e3f1c1efc61d5c29ca67 ... a` citation 검증 오류가 있었으니, 먼저 해당 오류를 실제 failed node, trace/checkpoint, prompt의 exact allowed capsule 집합에 연결해 원인을 입증해. 허용된 ID의 정확한 출력 artifact임이 확인되기 전에는 suffix normalization을 넓히거나 claim/citation을 삭제하지 마. writer가 살아 있으면 새로 띄우지 말고 그 작업만 모니터링하고, terminal이면 writer 종료와 WAL 부재를 확인한 뒤에만 read-only audit해. 최소 수정과 회귀 테스트 후 같은 source/manifest/compile ID/target/checkpoint identity로 남은 DAG를 재개해. 연구 import, embedding, map, planner와 이미 완료된 단계는 반복하지 마. 고정 DAG 종료 후 Offline Semantic Brain V2 audit, 실제 package를 쓰는 pre-open `analyze-daily` smoke, 같은 일일 architecture의 blind evaluation, release binding/rollback, Ruff·Mypy·pytest, 한국어 commit/push 및 외부 리뷰용 보고서까지 진행해. 각 단계의 증거와 남은 일을 문서화하고, 등록 quality gate와 필요한 승인이 없으면 production 활성화는 하지 말고 HOLD로 보고해.
+> 활성 goal과 최신 goal 문서대로 끝까지 진행해. 먼저 session 1524 및 동일 compile ID의 실제 process tree와 progress를 다시 확인해. writer가 살아 있으면 중복 build를 띄우지 말고 그 session만 관찰해. 현재 확인된 501/1,868 다음부터 이어가고, import·embedding·map·planner는 재실행하지 마. 직전 failed reducer `REDUCE-8becf902cac9db24b9ee`의 ` ... a` 오류는 checkpoint `LLMCKPT-8c7cc93bedf7c776` 및 실제 allowed evidence로 검증했고 exact suffix fix `2c05062`를 같은 compile에서 재검증 중이니 이미 완료된 수정은 반복하지 마. live writer 중 DuckDB/WAL을 열지 말고, terminal 뒤에만 plan/receipt/checkpoint/persisted rows/WAL을 전수 대조해 DAG를 마쳐. 이후 Offline Semantic Brain V2 audit, 실제 package로 pre-open `analyze-daily` smoke, 같은 architecture blind evaluation, release/rollback, Ruff·Mypy·pytest, 한국어 commit/push와 외부 리뷰 보고를 끝내. 단계별 증거와 남은 일을 기록하고, 등록 quality gate와 필요한 승인이 없으면 production 활성화는 하지 말고 HOLD로 보고해.
 
 실행 시 순서:
 
-1. AGENTS.md, news-scalping-lab skill, 본 goal, 실제 process ancestry, progress 원장, trace/receipt/manifest identity를 다시 읽는다. 마지막 관측 session 14734 / Python PID 60928의 exit 1 및 새 citation 오류를 기록과 대조한다. 화면 세션이 끊겼다는 이유만으로 중복 실행하지 않는다.
-2. 같은 build writer가 실행 중이면 그 writer만 관찰한다. terminal이면 exit code, 고정 plan, ledger, checkpoint lineage, DB rows를 대조한다. 동일 DuckDB writer나 WAL이 남아 있는 동안 그 DB를 열지 않는다. 새 오류의 실제 failed node는 progress field로 추정하지 말고 trace와 checkpoint에서 특정한다.
-3. 새 citation 오류에서 exact allowed capsule membership을 child lineage로 재구성한다. 원문·codepoint·claim field/index·input/prompt/schema/compiler identity와 output/checkpoint SHA를 보존한다. 이 exact base ID가 allowed set에 있고 suffix가 제거 가능한 출력 artifact임이 증명될 때만 좁은 normalization을 추가하고, raw/normalized 값과 규칙을 감사 데이터에 남긴다. 아니면 잘못된 citation으로 거부하고 유효한 checkpoint/요청만 재시도한다. 허용 집합 검증 없이 claim/citation을 버리거나 validator를 약화하지 않는다.
-4. 미완료 또는 실패 node만 좁게 처리해 같은 source/manifest/compile ID/plan/target/checkpoint identity로 1,868-node DAG를 완료한다. 최소 수정에 대한 focused test, Ruff, Mypy, full pytest를 통과시킨다. 기존 input·embedding·map/planner를 재생성하지 않는다.
-5. immutable Offline Semantic Brain V2 package audit, 실제 장전 CSV smoke, 같은 daily architecture의 formal blind evaluation, release/rollback binding을 차례로 검증한다. 각 단계가 실패하면 legacy exhaustive 경로나 forensic-only artifact로 우회하지 않는다.
-6. 필요한 테스트를 통과시키고, 문서와 Downloads 실행본을 동기화하며, 관련 문서/코드만 한국어 commit으로 push한다. 연구 원본·DB·checkpoint·대형 run output은 commit하지 않는다.
+1. AGENTS.md, news-scalping-lab skill, 본 goal, progress 원장과 현재 process ancestry를 다시 읽는다. 마지막 관측 session 1524 / Python PID 58140 / PowerShell PID 58132가 같은 compile인지 확인한다. 화면 응답이 없다는 이유만으로 중복 실행하지 않는다.
+2. writer가 살아 있으면 해당 session만 관찰하고 live DuckDB/WAL을 읽거나 hash하지 않는다. terminal이면 exit code, fixed plan, ledger, source/manifest, checkpoint, DB rows, WAL 부재를 대조한다.
+3. 현재 501/1,868에서 같은 identity로 DAG를 끝낸다. 새 오류가 재발할 경우에만 실제 failed node를 trace/checkpoint로 특정하고 child lineage의 exact allowed set을 재구성한다. 기존 ` ... a` fix를 반복 적용하거나 다른 suffix로 넓히지 않는다. 각 fresh result와 verified checkpoint hit를 분리한다.
+4. immutable Offline Semantic Brain V2 package audit, 실제 장전 CSV smoke, 같은 daily architecture의 formal blind evaluation, release/rollback binding을 검증한다. 각 단계가 실패하면 legacy exhaustive 경로나 forensic-only artifact로 우회하지 않는다.
+5. 필요한 테스트를 통과시키고, 문서와 Downloads 실행본을 동기화하며, 관련 문서/코드만 한국어 commit으로 push한다. 연구 원본·DB·checkpoint·대형 run output은 commit하지 않는다.
 
 모든 상태 보고에서 고정 진행률 `closed/1,868`, `remaining`, provider-fresh 성공, 정확한 checkpoint 재사용, local carry/validation, failed, running을 나눠 보고한다. record accounting을 compile 완료율로 바꾸지 않는다. ETA는 충분한 실제 처리량 근거와 가정을 함께 제시할 때만 범위로 말한다. 기술 검증과 production activation을 구분하고, 등록 quality gate/요구 승인이 확인되지 않으면 production 상태는 계속 HOLD다.
