@@ -1,13 +1,22 @@
 # Goal: 일회성 두뇌 컴파일 완료 및 장전 CSV 판단 흐름 검증
 
-문서 갱신: 2026-10-05 08:41 KST
-상태 스냅샷: 08:41 KST에 compiler session/process와 progress를 재확인했다. 동일 build가 살아 있으므로 target DuckDB는 열지 않았고, terminal 이후 read-only 재감사를 한다.
+문서 갱신: 2026-10-05 08:59 KST
+상태 스냅샷: 08:59 KST에 동일 compiler process/session을 재확인했다. progress는 08:46:06 KST의 411/1,868에서 멈춰 있고 citation validation 오류 뒤 Python build process와 Codex 자식이 아직 살아 있다. DuckDB는 process가 살아 있는 동안 열지 않는다. 다음 실행은 새 build를 시작하지 말고 현재 process의 terminal/고착 여부부터 확인한다.
 
 ## 최종 목표
 
 이미 수집·repair·import·실임베딩·기초 분류한 연구자료를 다시 처음부터 처리하지 않고, 남은 고정 오프라인 합성을 이어서 검증된 Offline Semantic Brain V2 패키지로 만든다. 그 패키지를 실제 장전 CSV 흐름에 연결해, CSV와 cutoff-safe 두뇌 지식이 첫 GPT 판단 요청부터 함께 제공되고 섹터·종목 후보, 근거, 불확실성, 출처가 나오는지 확인한다.
 
 이것은 GPT 기반 모델의 가중치를 새로 학습하는 일이 아니다. 기존 GPT 추론 모델이 사용할 수 있도록 연구에서 cutoff-safe 세계·카테고리 지식, 연결된 claims, 검색 인덱스, provenance를 한 번 만들어 고정하는 작업이다. 두뇌가 완성된 뒤 매일 원자료를 다시 해석하거나 record마다 LLM을 호출하지 않는다.
+
+## 단위와 완료 의미
+
+- 823,279 records는 고정 input manifest의 record accounting 수치다. 모든 record의 의미를 GPT가 직접 읽었다는 뜻은 아니다.
+- 52,644 semantic units는 컴파일러가 묶은 semantic 입력 단위 수다. 연도 수, 요약 수, LLM 호출 수, 완전한 의미 소화량이 아니다.
+- 1,868 DAG nodes는 현재 고정 offline compile plan의 유한한 model-task 수다. 이 goal의 컴파일 진행률 분모는 이것 하나뿐이다. `closed / 1,868`만 보고한다.
+- 날짜 범위 2018-01-03~2026-06-19는 약 8년 반의 달력 범위다. 10년 전체 거래일·시장 구간을 채웠다고 추정하지 말고 날짜/연도/거래일 coverage audit로 확인한다.
+- 여기서 말하는 두뇌는 GPT 가중치를 튜닝한 새 모델이 아니라, GPT가 매일 함께 읽을 수 있도록 한 번 구축·검증해 보존하는 brain package와 검색 인덱스다.
+- 기술적 목표는 고정 compile/package와 intended daily CSV flow를 검증하는 것이다. 정식 quality gate가 통과하기 전에는 production 활성화를 뜻하지 않는다.
 
 ## 제품 계약
 
@@ -54,20 +63,22 @@
 
 ## 현재 검증된 상태
 
-2026-10-05 08:41 KST 기준:
+2026-10-05 08:59 KST 기준:
 
-- 동일 compile ID build session 41212와 Python PID 29156이 08:31:29 KST부터 살아 있다. 중복 writer는 시작하지 않는다.
-- progress.json은 08:40:30.042481+09:00에 갱신됐으며 phase는 offline_reduce, closure는 402/1,868, remaining은 1,466, 현재 node 표시는 REDUCE-4ba6be6a3744820d38e3이다. DAG closure는 21.52%다. 이는 record coverage, LLM 노출률, ETA가 아니다.
-- live writer 동안 target DuckDB/WAL을 열거나 hash/parity 검사하지 않는다. 종료 후에만 read-only로 재감사한다.
+- 동일 compile ID build session 41212와 Python PID 29156이 08:31:29 KST부터 살아 있다. 같은 build의 Codex CLI child PID 48760도 살아 있으며, process ancestry의 command line은 이 compile ID/worktree를 가리킨다. 다른 writer를 시작하지 않는다.
+- `progress.json`은 08:46:06.272609+09:00 이후 갱신되지 않았다. phase는 `offline_reduce`, ledger closure는 411/1,868, ledger remaining은 1,457, 현재 node 표시는 `REDUCE-d409b3dd3ed7424b0ade`다. 411/1,868은 약 22.0%의 DAG ledger 진행일 뿐 record coverage, LLM 노출률, 두뇌 이해도, ETA가 아니다. 실행 process는 08:59에도 살아 있지만 이 ledger가 갱신되지 않아 진행 중으로 간주하지 않는다.
+- Python PID 29156은 08:59 관측에서 private memory 약 3.77 GB, working set 약 2.99 GB였다. Codex child PID 48760은 시작 후 CPU 약 10.83초, private memory 약 81 MB였고 `last-message.txt`는 없었다. compiler 로그에는 두 번째 citation 오류와 executor가 300초 안에 thread join을 마치지 못했다는 경고가 있었다. 이 자료만으로 모델 응답이 정상 진행 중이라고 단정하지 않는다.
+- 08:59 시점 `.duckdb.wal`은 없었으나 compiler Python process가 살아 있다. WAL 부재만으로 DuckDB read 권한을 추정하지 않는다. target DuckDB의 read, hash, parity 검사는 process tree가 전부 terminal이고 WAL이 없는 것을 확인한 후에만 한다.
 - 직전 오류 trace는 TRACE-c4e74376ecbc, checkpoint는 LLMCKPT-1ec9f0633e3c15f0이다. 목적은 REDUCE-0703331bc02f14ce3512, input SHA-256은 4dc293455d62a60a7bed27a064252a57ba3f3a4f1d63af7b0e21285d16acf543, output SHA-256은 75c9beb1f435019cd6d09a62ba38c6bd770c4d7e0e5586cb60a19fd9a895dd98이다. trace와 checkpoint hash가 일치하고 모델 identity는 gpt-6.1-sol/high다.
 - 실패 citation은 CAP-4a7e8b51c6643343aeec 뒤에 U+2019 RIGHT SINGLE QUOTATION MARK가 붙은 값이었다. 컴파일러의 실제 leaf builder로 허용 evidence 집합 8개를 재구성했고, suffix를 뺀 정확한 ID가 집합에 있음을 확인했다. 잘못된 ID는 허용하지 않는다.
 - 좁은 U+2019 suffix normalization, 별도 감사 rule, 실패 진단의 claim index/field/escaped citation, 허용되지 않은 ID 및 유사 구두점 거부 테스트를 추가했다. compiler branch commit fa81f2c가 push됐고 Ruff PASS, Mypy 139 files PASS, pytest 1,937 passed다.
-- 동일 compile을 session 41212로 재개했다. 실패했던 reducer는 이제 기존 checkpoint의 checkpoint_hit으로 닫혔고, 재개 초기에 관측된 leaf-map trace도 checkpoint_hit이었다. 이들은 새 provider 합성이 아니라 기존 응답 재사용이다. 새 reducer의 model identity는 gpt-6.1-sol/high다.
-- Python private memory는 08:35~08:41 관측에서 약 4.2 GB로 대체로 안정적이었다. 짧은 표본만으로 누수 여부를 단정하지 않고 추이를 계속 본다.
+- 같은 compile을 session 41212로 재개한 뒤 첫 실패 reducer와 재개 초기에 관측된 leaf-map trace는 정확한 기존 checkpoint hit으로 재사용됐다. 두 번째 실패 reducer의 checkpoint도 provider 응답 `status=ok`를 보존하지만, citation validator가 실패했으므로 node closure가 아니다. cache 응답 성공과 compile task 성공을 혼동하지 않는다. 새로운 reducer 출력의 지정 identity는 gpt-6.1-sol/high다.
+- 두 번째 실패는 `REDUCE-9a0ce8212e283ebc7228`, trace `TRACE-6a20db7c6c15`, checkpoint `LLMCKPT-776f66ab880dbbb4`다. checkpoint의 provider response는 `gpt-6.1-sol/high`, `status=ok`, 완료 시각 `2026-10-05T08:47:17.103687+09:00`이다. `claims[2].supporting_capsule_ids`의 값 하나가 `CAP-57902ba14ee7543a0f12 so keep going?`로 저장되어 validator가 unavailable citation으로 거부했다. 이 ID가 이 node의 exact allowed evidence 집합에 실제 포함되는지는 아직 확인하지 않았다. prefix가 허용된다고 확인하기 전에는 문구를 제거하거나 예외 처리하지 않는다.
+- Python memory의 앞선 08:35~08:41 표본은 약 4.2 GB였고 현재 08:59 표본은 약 3.77 GB private였다. 짧은 표본만으로 누수 여부를 단정하지 않고, 진행·CPU·memory·child output 변화를 같이 본다.
 - 기존 root branch codex/quality-full-pr126의 release-binding 변경은 별도 commit 3fff4c4이며 당시 Ruff, Mypy(139 files), pytest(1,906 passed)가 통과했다. 이후 변경이 있으면 해당 worktree에서도 최종 gate를 다시 실행한다.
 - 완성된 full-corpus V2 package, 실제 package로 실행한 장전 daily smoke, 같은 architecture의 정식 blind 평가, 최종 release binding은 아직 입증되지 않았다. Production 활성화는 HOLD다.
 
-재개 직전 반드시 위 상태를 다시 확인한다. 다른 task가 build를 재개했거나 WAL이 생겼으면 새 writer를 시작하지 않는다. progress가 갱신됐으면 그 최신 증거로 본 절을 수정한다.
+goal 실행 직전 반드시 위 상태를 다시 확인한다. 다른 task가 build를 재개했거나 동일 writer가 살아 있으면 새 writer를 시작하지 않는다. progress가 갱신됐으면 그 최신 증거로 본 절을 수정한다. process가 살아 있다는 사실만으로 progress 중이라 판단하지 말고 progress timestamp, stdout/stderr, Codex child의 command line/CPU/output, resource trend를 확인한다. 현재 stale snapshot을 이유로 DuckDB를 열거나 같은 compile을 병렬로 시작하지 않는다.
 
 ## 이미 끝난 단계: 다시 하지 말 것
 
@@ -76,7 +87,7 @@
 - repair 완료 research의 production import 및 record accounting
 - 실임베딩 생성과 semantic index의 기존 기반 데이터
 - record assignment 및 기존 map stage/receipt
-- 고정 plan의 앞선 402개 progress closure와 검증된 정확 일치 checkpoint. 실행 중 DB row 수는 terminal 후 read-only로 대조한다.
+- progress ledger의 앞선 411개 closure 기록과 검증된 정확 일치 checkpoint. 이 수는 live DB row count와 아직 대조되지 않았다. terminal 후 read-only로 plan/receipt/DB/checkpoint를 대조해 persisted closure만 최종 인정한다.
 
 새 input identity가 실제로 달라졌다는 증거와 별도 승인이 없는 한 import, embedding, map, planner, compile ID를 다시 만들지 않는다. 실패 시 이미 저장된 closure와 checkpoint를 보존한다.
 
@@ -98,10 +109,12 @@
 - 응답이 checkpoint에 있으면 input SHA, model, prompt/schema/compiler identity가 정확히 맞는 경우만 읽는다. 어떤 output이 실패를 냈는지 확인할 수 없으면 코드/trace에서 실패 값을 보존하는 진단을 추가한 후 재현한다.
 - plan과 child reducer의 evidence_capsule_ids로 이 node의 exact allowed capsule 집합을 재구성한다.
 - 잘못된 citation 원문/code point, claim index, 허용 집합과의 차이를 기록한다.
+- 현재 미해결 오류 `REDUCE-9a0ce8212e283ebc7228` / `TRACE-6a20db7c6c15` / `LLMCKPT-776f66ab880dbbb4`를 먼저 다룬다. response의 세 번째 supporting citation은 `CAP-57902ba14ee7543a0f12 so keep going?`다. exact allowed set에 prefix가 들어 있는지 확인하기 전에는 이것을 단순 suffix로 처리하지 않는다. prefix가 허용되면 관측된 이 exact suffix만 좁게 정규화할 수 있는지 계약과 prompt 원인을 검토하고, raw/normalized 값을 trace에 보존하는 회귀 테스트를 만든다. prefix가 허용되지 않거나 다른 구조 문제면 citation을 버리지 말고 원인을 고쳐야 한다.
 - 입력에 실제로 허용된 capsule ID에 특정 출력 suffix만 붙은 것이 확인되는 경우에만 그 exact normalization을 허용한다. 임의 ID, 근사 일치, 비슷한 suffix, 다른 node로 확장하지 않는다. 정규화 전·후 값과 사유는 감사 trace에 남긴다.
 - 원문과 정규화 값, 허용 set membership, 임의 ID 거부를 검증하는 focused regression test를 추가한다. 전체 경로에 validator를 약하게 만들지 않는다.
 - 변경은 compiler worktree에서 하고 Ruff, Mypy, 관련 테스트와 pytest 전체를 통과시킨다. code/diff를 이해하고 필요한 Korean commit/push를 한다. 사용자 소유 변경과 untracked output은 건드리거나 되돌리지 않는다.
 - 원인이 특정되지 않거나 허용 집합 검증이 불가능하면 이 지점에서 멈춰 추가 증거를 수집한다. 단순히 예외를 무시하거나 해당 claim을 버리고 진행하지 않는다.
+- 현재처럼 오류 뒤에도 process가 살아 있으면, full command line/ancestry로 이 compile의 Codex child임을 재확인하고 직전 progress timestamp, CPU 변화, child output, 연결 상태를 다시 측정한다. output/progress가 재개되면 건드리지 않는다. 오류가 반환됐고 300초 executor join 경고 이후에도 같은 node/ledger에서 child가 새 output 없이 고착된 사실이 반복 확인될 때만 그 정확한 stranded child 하나를 종료한 뒤 parent/session이 terminal인지 확인한다. 관련 없는 process나 Python writer를 먼저 죽이지 않는다. terminal과 WAL 부재를 확인한 다음에만 read-only DB 검사를 한다.
 
 ### 3. 동일 compile을 이어서 완료
 
@@ -198,4 +211,4 @@ python -m pytest
 
 ## 다음 실행 요청
 
-실행 요청이 오면 먼저 저장소 AGENTS.md·skill과 이 문서의 상태를 대조하고, 현재 process/session/ledger/trace/receipt/manifest/WAL를 다시 확인한다. live process가 있으면 중복 시작하지 않고 관찰한다. terminal 상태면 exact failed citation을 먼저 진단하고 최소 수정한 다음, 같은 compile identity를 재개한다. 검증된 import·embedding·map과 durable DAG closure를 재생성하지 않는다. package audit, 실제 daily smoke, 동일 architecture blind 평가, release binding, tests, Korean commit/push와 외부 리뷰용 보고까지 진행한다. 등록 품질 gate와 승인이 없으면 production activation은 HOLD한다.
+실행 요청이 오면 먼저 저장소 AGENTS.md·skill과 이 문서의 timestamped snapshot을 대조하고, 현재 process/session/ledger/trace/receipt/manifest/WAL를 다시 확인한다. 같은 writer가 살아 있으면 중복 build를 금지한다. 현재 second citation failure와 executor warning 이후 progress가 stale한 상태이므로, 먼저 해당 session/child가 실제 진행 중인지 확인하고 문서의 guarded recovery 절차대로만 고착된 exact child를 처리한다. process tree가 terminal이고 WAL이 없어진 뒤 second failure의 exact allowed citation set을 재구성해 최소 수정·회귀 테스트를 한다. 그런 다음 같은 compile identity로만 재개한다. 검증된 import·embedding·map과 durable DAG closure를 재생성하지 않는다. fixed DAG/package 감사, 실제 daily smoke, 같은 architecture blind 평가, release binding, tests, Korean commit/push와 외부 리뷰용 보고까지 진행한다. 등록 품질 gate와 승인이 없으면 production activation은 HOLD한다. 진행률은 매번 `closed / 1,868`, remaining, provider-fresh, exact checkpoint reuse, local validation/carry, failed, running을 분리해 보고하고 근거 없는 ETA는 제시하지 않는다.
