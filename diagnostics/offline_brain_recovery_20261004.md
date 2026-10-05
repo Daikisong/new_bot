@@ -981,3 +981,49 @@ post-compile daily/package/evaluation/release acceptance criteria are in
 `docs/operations/codex_goal_finish_brain_and_daily_csv.md`. At this snapshot the DAG, V2 package,
 daily CSV path, formal evaluation, and release verification are still incomplete; production remains
 HOLD.
+
+## 2026-10-05 14:43-15:06 KST: same-compile resume underway
+
+The exact fixed compile was resumed after a fresh process scan found no writer, the target WAL was
+absent, compiler worktree `codex/v5-gpt61-high-offline` was clean at HEAD `7a693dc`, and that HEAD
+matched the remote branch. A read-only DB check before the new writer started reconfirmed:
+
+```text
+compile_id:                    OFFLINE-COMPILE-0dd9198ac9ef79215ab1
+source manifest SHA256:        6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576
+record corpus root:            2d25581cdc98d89cb0f1d2fa00bec917442171ee279c001edfc764e2941f6d75
+reduce plan SHA256:            6a3c78d89c55233afd66ef556eeb4cfba88c51047e140cccc268f95d5d51fc97
+topology SHA256:               0663df89a0805c91f8526fc8a5126da004b06a20bbf0b7ac8ecb1978daa78ed5
+reduce_nodes:                  725
+failed node rows:              0
+semantic capsules / units:     52,644 / 52,644
+semantic unit assignments:     823,279
+embedding identity:            sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2, real production provider
+```
+
+The build used the existing source project, manifest, compile ID, work DB, 1,868-node plan,
+checkpoint directory, Codex OAuth `gpt-6.1-sol/high`, compatible `gpt-5.6-sol/xhigh` checkpoints,
+and concurrency cap 4. It did not repeat production import or record embedding. The CLI locally
+reconstructed/revalidated existing representative/distribution and reduce topology before resuming
+the reducer DAG; it did not start a new map-only planner call.
+
+At the latest observed progress snapshot, `2026-10-05T15:06:23.225705+09:00`, ledger phase is
+`offline_reduce`, `770 / 1,868` closed (41.2%), `1,098` remaining, current pointer
+`REDUCE-2d465024fb2f149b4d3e`. The live executor session is `34127`, Python PID `40148`, started at
+14:43:06 KST. Its private memory sample was about 4.16 GiB and remained stable over repeated
+observations. The target WAL exists while this writer is live, so no independent DB read/parity/hash
+has been run since startup.
+
+Forty-four new checkpoint files had appeared since this resume; all were `status=ok`, provider
+`CodexOAuthProvider`, model `gpt-6.1-sol/high`, and purpose `offline_semantic_reduce`. They are fresh
+provider outputs, not an independently reconciled count of valid DAG node closures. Progress grew
+from 725 to 770, so one closure beyond those 44 outputs must not be assigned to checkpoint reuse or
+local validation without the terminal trace/receipt/DB reconciliation. No new map-purpose checkpoint
+was observed. The preceding complete map trace set was 7,513/7,513 checkpoint hits with zero fresh map
+provider calls; the current invocation's complete trace set remains to be reconciled after the writer
+terminates.
+
+The exact continuation command and the remaining package, daily CSV, formal evaluation, and release
+acceptance criteria remain in `docs/operations/codex_goal_finish_brain_and_daily_csv.md`. This build is
+still active; do not launch a duplicate or read the live DuckDB/WAL. Production remains HOLD pending
+the later required gates and authorization.
