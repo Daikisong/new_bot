@@ -3896,6 +3896,25 @@ def _normalize_reduce_claim_citations(
                 if original_value in allowed_capsule_ids:
                     normalized_ids.append(original_value)
                     continue
+                # Split only the observed pair when both IDs are independently allowed.
+                joined_ids = original_value.split(", ")
+                if len(joined_ids) == 2 and all(
+                    capsule_id in allowed_capsule_ids for capsule_id in joined_ids
+                ):
+                    for capsule_id in joined_ids:
+                        normalized_ids.append(capsule_id)
+                        normalizations.append(
+                            SemanticReduceCitationNormalization(
+                                claim_index=claim_index,
+                                field=field_name,
+                                original_value=original_value,
+                                normalized_capsule_id=capsule_id,
+                                rule=(
+                                    "allowed_capsule_ids_joined_by_exact_comma_space"
+                                ),
+                            )
+                        )
+                    continue
                 # Accept only the observed soft-hyphen/em-dash artifact after an allowed ID.
                 exact_formatting_suffix = "\u00ad\u2014"
                 if original_value.endswith(exact_formatting_suffix):

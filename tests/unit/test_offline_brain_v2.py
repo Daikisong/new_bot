@@ -1343,6 +1343,62 @@ async def test_reduce_normalizes_only_explicit_suffixes_on_allowed_capsule_ids(
 
 
 @pytest.mark.asyncio
+async def test_reduce_splits_exact_pair_of_allowed_capsule_ids(tmp_path: Path) -> None:
+    raw_value = "CAP-a, CAP-c"
+    compiler = OfflineSemanticBrainCompiler(
+        Settings(project_root=tmp_path / "compiler"),
+        llm=ReduceCitationSuffixLLM(", CAP-c", capsule_id="CAP-a"),
+    )
+
+    result = await compiler._reduce_node(
+        category="fixture",
+        level=0,
+        children=_fixture_reduce_children(),
+        review=False,
+    )
+
+    assert result.claims[0].supporting_capsule_ids == ["CAP-a", "CAP-c"]
+    assert [row.normalized_capsule_id for row in result.citation_normalizations] == [
+        "CAP-a",
+        "CAP-c",
+    ]
+    assert all(row.original_value == raw_value for row in result.citation_normalizations)
+    assert all(
+        row.rule == "allowed_capsule_ids_joined_by_exact_comma_space"
+        for row in result.citation_normalizations
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        ", CAP-not-in-child-tree",
+        ",  CAP-c",
+        " , CAP-c",
+        ", CAP-c, CAP-not-in-child-tree",
+        ",CAP-c",
+    ],
+)
+async def test_reduce_rejects_unverified_comma_joined_capsule_ids(
+    tmp_path: Path,
+    suffix: str,
+) -> None:
+    compiler = OfflineSemanticBrainCompiler(
+        Settings(project_root=tmp_path / "compiler"),
+        llm=ReduceCitationSuffixLLM(suffix, capsule_id="CAP-a"),
+    )
+
+    with pytest.raises(ValueError, match="cited an unavailable capsule"):
+        await compiler._reduce_node(
+            category="fixture",
+            level=0,
+            children=_fixture_reduce_children(),
+            review=False,
+        )
+
+
+@pytest.mark.asyncio
 async def test_reduce_still_rejects_an_omitted_child_node(tmp_path: Path) -> None:
     compiler = OfflineSemanticBrainCompiler(
         Settings(project_root=tmp_path / "compiler"),
