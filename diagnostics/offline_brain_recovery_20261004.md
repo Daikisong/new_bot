@@ -1118,3 +1118,23 @@ The active run command retains the pinned source manifest SHA `6c05dcf49b301997d
 Current targeted filename search found no candidate daily CSV under repository `data`/`session_packs`, Downloads, or the immutable staging project's raw CSVs; the only staged dates previously inspected are not eligible for the post-build-cutoff smoke. A question requesting the user's actual post-2026-08-21 pre-open CSV path is pending. Do not create a synthetic CSV. The only current runtime selection found in staging is `QSEL-16352cbccb703547c2ba`, whose blind manifest contains three `CALIBRATION` cases and no HOLDOUT evidence; this is not a registered formal gate for the deployable daily architecture. Recheck the registry and sealed files at evaluation time; if absent, use `NOT_RUN_GATE_MISSING`, predictive quality `UNAPPROVED`, production `HOLD`.
 
 Next action: keep observing the one verified writer. Only after it is terminal and the WAL has settled may the same compile's DB/checkpoint lineage be audited read-only. Do not resume a live writer or run package finalization, daily smoke, or formal evaluation ahead of fixed-DAG terminal closure.
+
+## 2026-10-05 17:37-18:15 KST: malformed reducer capsule ID and bounded correction retry
+
+The existing executor session `48993` terminated with exit code 1 after the last persisted progress entry remained `1,005/1,868`. Its exact provider validation error was:
+
+```text
+semantic reduce claim cited an unavailable capsule:
+claim_index=0 field=supporting_capsule_ids
+citation='CAP-e4bdc33b27d7cec422f' allowed_capsule_count=12
+```
+
+The response lineage is preserved as trace `TRACE-1b059c2cb747` and checkpoint `LLMCKPT-6f9f18fe5209a78e`. It is Codex OAuth `gpt-6.1-sol/high`, purpose `offline_semantic_reduce.REDUCE-7299554f42e527ca3ba4`, and returned node `REDUCE-7299554f42e527ca3ba4`. Trace/checkpoint input SHA-256 is `7d83b2429e1cdc815639c5fca7f323362d9a671659ff29bff46a61e4f8ceb0c5`; output SHA-256 is `5428f1aade3c9fcf3ae9f4441c0fb338e704cc179fe78d4d21d69cb104fac2c6`.
+
+Read-only reconstruction through the compiler worktree's production `_capsule_leaf_nodes`, `_leaf_reduce_evidence_ids`, and `_reduce_prompt` exactly reproduced the checkpoint prompt SHA-256 `69b3555eae1c23713774da4c5293704e4dffeef1c8956fd4517507db9f8147e3`, prompt length 124,371 characters, its 12-ID allowlist, and the local validation result. The provider emitted `CAP-e4bdc33b27d7cec422f`; that exact ID does not exist in `semantic_capsules`. The unique one-character insertion candidate in the node's allowlist is `CAP-e4bdc33b27d7dcec422f`. This is a model-generated malformed/nonexistent citation, not a punctuation suffix or compiler mismatch. The strict validator correctly rejected it. The identifier was not rewritten, the claim was not dropped, and the existing checkpoint was not edited or deleted.
+
+Compiler fix `9ff03ff` was pushed to `origin/codex/v5-gpt61-high-offline`. Category and world reducers now make at most one additional content-addressed correction request only for this exact unavailable-capsule validation failure. The original response and validation error are included for correction; corrected output must keep node/child identity, every non-citation field, claim count/order, and citation-list cardinalities unchanged. Every returned citation still passes the original exact allowed-set validator. The correction has a distinct `.citation_repair.v1.<node_id>` purpose/checkpoint identity. If it remains invalid or changes claim content, the build still fails closed. The original invalid checkpoint remains intact and can be hit locally on resume before the bounded correction checkpoint is produced; successful prior task outputs remain reusable and the fixed denominator stays 1,868.
+
+Verification in the compiler worktree: focused citation regressions passed; Ruff passed; Mypy passed for 139 source files; full pytest passed (`1,964 passed`, 1,586 warnings, 325.49 seconds). This includes category retry, world retry, failed correction stopping after exactly one attempt, and preservation of all non-citation draft content.
+
+After confirmed process termination, executor exit code 1, and settled target work root with no WAL, read-only DuckDB reconciliation found `reduce_nodes=1,005`, failed node row `0`, `semantic_capsules=52,644`, and `semantic_unit_assignments=823,279`. The failed `REDUCE-7299554f42e527ca3ba4` node was therefore not persisted; all earlier closed nodes are present. At 18:15 KST no matching writer or WAL was found. The same source manifest, compile ID, 1,868-node plan/topology, DB, and checkpoint directory remain in place. Re-verify these conditions immediately before resuming with the pushed compiler fix; do not repeat import, embedding, planning, or fresh map work.

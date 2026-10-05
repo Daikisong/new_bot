@@ -1,6 +1,6 @@
 # Goal: 일회성 두뇌 컴파일 완료 및 장전 CSV 판단 검증
 
-문서 갱신: 2026-10-05 17:36 KST
+문서 갱신: 2026-10-05 18:15 KST
 
 ## 목표
 
@@ -41,15 +41,17 @@ Build cutoff inherited from the current memory snapshot is `2026-08-21T18:52:07.
 
 ## 현재 handoff 상태
 
-At 2026-10-05 17:36 KST, the same compile writer was verified alive:
+Latest compile snapshot is `2026-10-05T17:36:16.975546+09:00`; the executor subsequently exited with code 1. At 18:15 KST, a new process scan found no matching writer and the target work root had no WAL:
 
 - Python PID `20864`, created `2026-10-05 15:58:49 KST`
-- Command is the existing `news_scalping_lab.cli brain build-offline ... --continue-after-map-plan` invocation for the fixed source and compile identity.
+- The existing `news_scalping_lab.cli brain build-offline ... --continue-after-map-plan` invocation terminated. Executor session `48993` returned exit code 1.
 - Latest safe ledger update: `2026-10-05T17:36:16.975546+09:00`
 - Phase `offline_reduce`; `1,005/1,868` closed; `863` remaining; current node `REDUCE-f7c895812e8e1be3e57c`.
 - Latest resource sample: private memory `3,942,232,064` bytes (about 3.67 GiB), working set `194,793,472` bytes (about 0.18 GiB), cumulative CPU `234.30` seconds.
-- Verified process chain: Python PID `20864`, wrapper PowerShell PID `74512`, `NSLAB_MAX_CONCURRENCY=4`, Codex OAuth `gpt-6.1-sol/high`; three direct Codex CLI child processes were in flight at the snapshot. These PIDs are evidence for this snapshot only.
-- The writer is live. Do not start another writer, read/hash/parity-scan its DuckDB or WAL, or treat the last process/session number as future truth. Re-discover the process ancestry and read the lightweight progress ledger on every resume.
+- At the snapshot, Python PID `20864` was under wrapper PowerShell PID `74512`, with `NSLAB_MAX_CONCURRENCY=4`, Codex OAuth `gpt-6.1-sol/high`, and three direct Codex CLI child calls. These PIDs only identify that historical run.
+- Terminal error: `semantic reduce claim cited an unavailable capsule`, node `REDUCE-7299554f42e527ca3ba4`, trace `TRACE-1b059c2cb747`, checkpoint `LLMCKPT-6f9f18fe5209a78e`. The original checkpoint is preserved. Do not rewrite or delete it.
+- Narrow correction commit `9ff03ff` is pushed to `origin/codex/v5-gpt61-high-offline`; Ruff PASS, Mypy 139 files PASS, pytest `1,964 passed`. It permits one content-addressed correction request only after an exact unavailable-citation validation error, keeps non-citation draft fields and citation-list lengths unchanged, and still fails closed if the corrected response is invalid.
+- At 18:15 KST no matching writer or `.wal` was present. Read-only reconciliation confirmed `reduce_nodes=1,005`, the failed node is not persisted, `semantic_capsules=52,644`, and `semantic_unit_assignments=823,279`. Re-discover process ancestry and WAL state before any resume; do not trust this snapshot as current later.
 
 Existing source import, real embeddings, and map phase are not to be repeated. The prior map trace set contained 7,513 exact checkpoint hits and zero fresh map provider calls; verify the current run's traces at safe checkpoints/terminal and report any unexpected fresh work. Compiler citation fix `7bb1b40` is already pushed and passed focused regressions, Ruff, Mypy (139 source files), and pytest (`1,960 passed`, `1,559 warnings`). Do not reapply it. Earlier citation-recovery evidence and exact validator changes are preserved in [offline_brain_recovery_20261004.md](../../diagnostics/offline_brain_recovery_20261004.md).
 
@@ -132,7 +134,7 @@ Do not collapse these into one “done” label. If the compiler and package are
 
 아래 요청으로 이 문서의 목표를 실행한다. 현재 live writer를 재사용할 것이며, 문서의 handoff 수치는 실행 직전에 다시 확인한다.
 
-> 저장소 `AGENTS.md`, `.agents/skills/news-scalping-lab/SKILL.md`, `docs/operations/codex_goal_finish_brain_and_daily_csv.md`, `diagnostics/offline_brain_recovery_20261004.md`를 먼저 읽고 이 문서의 제품 계약과 완료 판정을 그대로 따라 진행해. 우선 현재 process command line/ancestry와 progress ledger를 다시 확인해. 지금 기록된 같은 compile은 `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`, PID `20864`, 마지막 ledger `1,005/1,868` (863 remaining; `2026-10-05T17:36:16.975546+09:00`)지만 이 값은 handoff일 뿐이니 현재 사실로 가정하지 마. 이 writer가 살아 있으면 그 하나만 관찰하고, 절대로 중복 build를 시작하지 마. writer/WAL live 중 DuckDB/WAL read, hash, parity scan을 금지하고 progress/process/resource만 관찰해. Healthy provider child를 임의 시간 기준으로 종료하지 마. process/session이 사라지면 exit code, ancestry, ledger, WAL로 terminal을 증명한 뒤에만 DB를 읽어.
+> 저장소 `AGENTS.md`, `.agents/skills/news-scalping-lab/SKILL.md`, `docs/operations/codex_goal_finish_brain_and_daily_csv.md`, `diagnostics/offline_brain_recovery_20261004.md`를 먼저 읽고 이 문서의 제품 계약과 완료 판정을 그대로 따라 진행해. 우선 현재 process command line/ancestry와 progress ledger를 다시 확인해. 같은 compile `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`은 마지막으로 `1,005/1,868` closed, `863` remaining (`2026-10-05T17:36:16.975546+09:00`)에서 exit code 1로 멈췄고, citation correction fix `9ff03ff`가 원격에 push돼 있다. 이 수치는 handoff일 뿐이니 현재 사실로 가정하지 마. 새 writer를 만들기 전에 matching process, WAL, ledger, branch/HEAD를 확인해. matching writer가 살아 있으면 그 하나만 관찰하고 절대로 duplicate를 시작하지 마. writer/WAL live 중 DuckDB/WAL read, hash, parity scan을 금지하고 progress/process/resource만 관찰해. process/session이 사라지면 exit code, ancestry, ledger, WAL로 terminal을 증명한 뒤에만 DB를 읽어. terminal + settled WAL + consistent DB를 확인한 경우에만 동일 source/manifest/plan/target/checkpoint identity, Codex OAuth `gpt-6.1-sol/high`, concurrency 4로 `--continue-after-map-plan` 재개해. 이미 완료한 import, embedding, planner, map work와 valid checkpoints는 반복하지 마.
 >
 > 기존 import, real embedding, map 및 완료된 checkpoint를 재실행하지 말고, fixed source manifest/record root/compile ID/1,868-node topology/target/checkpoint identity를 유지해. Fresh synthesis는 지정된 Codex OAuth `gpt-6.1-sol/high`를 사용하고 기존 정확히 호환되는 `gpt-5.6-sol/xhigh` checkpoint는 재사용하되, trace별 실제 model/provider를 구분해 보고해. fixed DAG의 progress만 `closed/1,868`로 표현하고 record/unit count나 그 비율을 뇌의 의미 이해율로 부르지 마. Compile이 닫힐 때까지 기다린 다음 persisted closure와 lineage를 대조하고, immutable V2 package, real HNSW/provenance/citation/coverage audit를 수행해.
 >
