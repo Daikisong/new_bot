@@ -1,6 +1,6 @@
 # Goal: 일회성 두뇌 컴파일 완료 및 장전 CSV 판단 검증
 
-문서 갱신: 2026-10-05 17:19 KST
+문서 갱신: 2026-10-05 17:36 KST
 
 ## 목표
 
@@ -15,8 +15,8 @@
 | 원료 record | 823,279 | 고정 source manifest의 구조적 입력 회계 수. 각 record를 GPT가 직접 읽었다는 뜻은 아님 |
 | semantic unit | 52,644 | 컴파일 입력을 묶은 단위 수. 연도, 요약, LLM 호출 수가 아님 |
 | 고정 model-task DAG | 1,868 | 이번 compile plan에 이미 정해진 유한 작업 노드 수. reducer 1,858, category review 9, world root 1 |
-| 최신 완료 노드 | 970 / 1,868 | 2026-10-05 17:19:24 KST progress ledger 기준, fixed-DAG closure 51.93% |
-| 최신 잔여 노드 | 898 | 1,868 - 970. 이 goal에서 합성 진행률로 사용할 분모는 1,868뿐 |
+| 최신 완료 노드 | 1,005 / 1,868 | 2026-10-05 17:36:16 KST progress ledger 기준, fixed-DAG closure 53.80% |
+| 최신 잔여 노드 | 863 | 1,868 - 1,005. 이 goal에서 합성 진행률로 사용할 분모는 1,868뿐 |
 
 `823,279` 또는 `52,644`를 완료율 분모로 바꾸거나, 이를 보고 “10년치 의미를 모두 GPT가 읽었다”고 말하지 않는다. 입력 record coverage, 날짜·연도·거래일 coverage, LLM payload exposure, claim citation coverage, DAG closure는 각각 별도 지표로 검증하고 보고한다. 현재 기록된 원료 날짜 범위 `2018-01-03`~`2026-06-19`는 약 8년 반의 달력 범위다. 10년 전체 또는 모든 거래일을 채웠다는 주장은 audit 증거 없이 하지 않는다.
 
@@ -41,13 +41,14 @@ Build cutoff inherited from the current memory snapshot is `2026-08-21T18:52:07.
 
 ## 현재 handoff 상태
 
-At 2026-10-05 17:16 KST, the same compile writer was verified alive:
+At 2026-10-05 17:36 KST, the same compile writer was verified alive:
 
 - Python PID `20864`, created `2026-10-05 15:58:49 KST`
 - Command is the existing `news_scalping_lab.cli brain build-offline ... --continue-after-map-plan` invocation for the fixed source and compile identity.
-- Latest safe ledger update: `2026-10-05T17:19:24.283242+09:00`
-- Phase `offline_reduce`; `970/1,868` closed; `898` remaining; current node `REDUCE-0fff3b548b321b6f760b`.
-- Latest resource sample: private memory `3,941,879,808` bytes (about 3.67 GiB), working set `260,587,520` bytes (about 0.24 GiB), cumulative CPU `233.47` seconds.
+- Latest safe ledger update: `2026-10-05T17:36:16.975546+09:00`
+- Phase `offline_reduce`; `1,005/1,868` closed; `863` remaining; current node `REDUCE-f7c895812e8e1be3e57c`.
+- Latest resource sample: private memory `3,942,232,064` bytes (about 3.67 GiB), working set `194,793,472` bytes (about 0.18 GiB), cumulative CPU `234.30` seconds.
+- Verified process chain: Python PID `20864`, wrapper PowerShell PID `74512`, `NSLAB_MAX_CONCURRENCY=4`, Codex OAuth `gpt-6.1-sol/high`; three direct Codex CLI child processes were in flight at the snapshot. These PIDs are evidence for this snapshot only.
 - The writer is live. Do not start another writer, read/hash/parity-scan its DuckDB or WAL, or treat the last process/session number as future truth. Re-discover the process ancestry and read the lightweight progress ledger on every resume.
 
 Existing source import, real embeddings, and map phase are not to be repeated. The prior map trace set contained 7,513 exact checkpoint hits and zero fresh map provider calls; verify the current run's traces at safe checkpoints/terminal and report any unexpected fresh work. Compiler citation fix `7bb1b40` is already pushed and passed focused regressions, Ruff, Mypy (139 source files), and pytest (`1,960 passed`, `1,559 warnings`). Do not reapply it. Earlier citation-recovery evidence and exact validator changes are preserved in [offline_brain_recovery_20261004.md](../../diagnostics/offline_brain_recovery_20261004.md).
@@ -131,7 +132,7 @@ Do not collapse these into one “done” label. If the compiler and package are
 
 아래 요청으로 이 문서의 목표를 실행한다. 현재 live writer를 재사용할 것이며, 문서의 handoff 수치는 실행 직전에 다시 확인한다.
 
-> 저장소 `AGENTS.md`, `.agents/skills/news-scalping-lab/SKILL.md`, `docs/operations/codex_goal_finish_brain_and_daily_csv.md`, `diagnostics/offline_brain_recovery_20261004.md`를 먼저 읽고 이 문서의 제품 계약과 완료 판정을 그대로 따라 진행해. 우선 현재 process command line/ancestry와 progress ledger를 다시 확인해. 지금 기록된 같은 compile은 `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`, PID `20864`, 마지막 ledger `970/1,868` (898 remaining; `2026-10-05T17:19:24.283242+09:00`)지만 이 값은 handoff일 뿐이니 현재 사실로 가정하지 마. 이 writer가 살아 있으면 그 하나만 관찰하고, 절대로 중복 build를 시작하지 마. writer/WAL live 중 DuckDB/WAL read, hash, parity scan을 금지하고 progress/process/resource만 관찰해. Healthy provider child를 임의 시간 기준으로 종료하지 마. process/session이 사라지면 exit code, ancestry, ledger, WAL로 terminal을 증명한 뒤에만 DB를 읽어.
+> 저장소 `AGENTS.md`, `.agents/skills/news-scalping-lab/SKILL.md`, `docs/operations/codex_goal_finish_brain_and_daily_csv.md`, `diagnostics/offline_brain_recovery_20261004.md`를 먼저 읽고 이 문서의 제품 계약과 완료 판정을 그대로 따라 진행해. 우선 현재 process command line/ancestry와 progress ledger를 다시 확인해. 지금 기록된 같은 compile은 `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`, PID `20864`, 마지막 ledger `1,005/1,868` (863 remaining; `2026-10-05T17:36:16.975546+09:00`)지만 이 값은 handoff일 뿐이니 현재 사실로 가정하지 마. 이 writer가 살아 있으면 그 하나만 관찰하고, 절대로 중복 build를 시작하지 마. writer/WAL live 중 DuckDB/WAL read, hash, parity scan을 금지하고 progress/process/resource만 관찰해. Healthy provider child를 임의 시간 기준으로 종료하지 마. process/session이 사라지면 exit code, ancestry, ledger, WAL로 terminal을 증명한 뒤에만 DB를 읽어.
 >
 > 기존 import, real embedding, map 및 완료된 checkpoint를 재실행하지 말고, fixed source manifest/record root/compile ID/1,868-node topology/target/checkpoint identity를 유지해. Fresh synthesis는 지정된 Codex OAuth `gpt-6.1-sol/high`를 사용하고 기존 정확히 호환되는 `gpt-5.6-sol/xhigh` checkpoint는 재사용하되, trace별 실제 model/provider를 구분해 보고해. fixed DAG의 progress만 `closed/1,868`로 표현하고 record/unit count나 그 비율을 뇌의 의미 이해율로 부르지 마. Compile이 닫힐 때까지 기다린 다음 persisted closure와 lineage를 대조하고, immutable V2 package, real HNSW/provenance/citation/coverage audit를 수행해.
 >
