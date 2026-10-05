@@ -9,6 +9,7 @@ from pydantic import Field, field_validator, model_validator
 
 from news_scalping_lab.contracts.models import BlindPrediction, StrictModel
 
+MAX_SEMANTIC_REDUCE_DRAFT_JSON_BYTES = 12_000
 CompactDigestText = Annotated[str, Field(min_length=1, max_length=120)]
 ReduceFactText = Annotated[str, Field(min_length=1, max_length=192)]
 ReduceClaimText = Annotated[str, Field(min_length=1, max_length=384)]
@@ -286,8 +287,14 @@ class SemanticReduceDraft(StrictModel):
 
     @model_validator(mode="after")
     def validate_bounded_serialized_size(self) -> Self:
-        if len(self.model_dump_json().encode("utf-8")) > 12_000:
-            raise ValueError("semantic reduce output exceeds 12000-byte contract")
+        if (
+            len(self.model_dump_json().encode("utf-8"))
+            > MAX_SEMANTIC_REDUCE_DRAFT_JSON_BYTES
+        ):
+            raise ValueError(
+                "semantic reduce output exceeds "
+                f"{MAX_SEMANTIC_REDUCE_DRAFT_JSON_BYTES}-byte contract"
+            )
         return self
 
 

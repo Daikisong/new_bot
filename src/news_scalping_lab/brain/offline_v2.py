@@ -20,11 +20,12 @@ from uuid import uuid4
 import duckdb
 import numpy as np
 import numpy.typing as npt
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from news_scalping_lab.brain.compiler import CATEGORY_RECORD_TYPE_ROUTES
 from news_scalping_lab.config import Settings
 from news_scalping_lab.contracts.offline_brain import (
+    MAX_SEMANTIC_REDUCE_DRAFT_JSON_BYTES,
     BrainPackageManifest,
     BrainPackagePointer,
     CompiledBrainGuidance,
@@ -48,6 +49,7 @@ from news_scalping_lab.contracts.offline_brain import (
     SynthesizedMechanismClaim,
 )
 from news_scalping_lab.llm.base import LLMProvider, count_provider_tokens
+from news_scalping_lab.llm.codex_oauth_provider import CodexOAuthError
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.retrieval.production_embedding import (
@@ -79,7 +81,8 @@ MAX_LONG_PAYLOAD_BATCH_BYTES = 170_000
 MAX_LONG_PAYLOAD_DIGEST_BUDGET_BYTES = 8_000
 MAX_REDUCE_PROMPT_BYTES = 180_000
 MAX_REDUCE_CHILDREN = 10
-MAX_REDUCE_NODE_OUTPUT_BYTES = 12_000
+MAX_REDUCE_NODE_OUTPUT_BYTES = MAX_SEMANTIC_REDUCE_DRAFT_JSON_BYTES
+MAX_REDUCE_SIZE_REPAIR_TARGET_BYTES = 10_000
 MAX_REDUCE_NODE_PAYLOAD_RESERVE_BYTES = 1_024
 MAX_REDUCE_LEAF_BYTES = 60_000
 OFFLINE_DUCKDB_MEMORY_LIMIT = "4GB"
@@ -1555,10 +1558,10 @@ class OfflineSemanticBrainCompiler:
                 if review
                 else f"offline_semantic_reduce.{node_id}"
             )
-            draft = await self._call_structured(
+            draft = await self._call_reduce_draft(
                 prompt=prompt,
-                response_model=SemanticReduceDraft,
                 purpose=purpose,
+                node_id=node_id,
             )
             self._recompiled_reduce_node_count += 1
             allowed_capsule_ids = {
@@ -1669,10 +1672,10 @@ class OfflineSemanticBrainCompiler:
             result = previous
             self._reused_reduce_node_count += 1
         else:
-            draft = await self._call_structured(
+            draft = await self._call_reduce_draft(
                 prompt=prompt,
-                response_model=SemanticReduceDraft,
                 purpose="offline_world_model",
+                node_id=node_id,
             )
             self._recompiled_reduce_node_count += 1
             expected_children = [row.node_id for row in children]
@@ -1749,6 +1752,69 @@ class OfflineSemanticBrainCompiler:
                 current_model_node_id=node_id,
             )
         return result
+
+    async def _call_reduce_draft(
+        self,
+        *,
+        prompt: str,
+        purpose: str,
+        node_id: str,
+    ) -> SemanticReduceDraft:
+        if isinstance(self.llm, TracingLLMProvider):
+            failed_checkpoint = self.llm.read_matching_error_checkpoint_for_structured(
+                prompt=prompt,
+                response_model=SemanticReduceDraft,
+                purpose=purpose,
+            )
+            if failed_checkpoint is not None and _is_reduce_size_checkpoint_failure(
+                failed_checkpoint
+            ):
+                return await self._call_reduce_size_repair(
+                    prompt=prompt,
+                    purpose=purpose,
+                    node_id=node_id,
+                )
+
+        try:
+            return await self._call_structured(
+                prompt=prompt,
+                response_model=SemanticReduceDraft,
+                purpose=purpose,
+            )
+        except (CodexOAuthError, ValidationError, ValueError) as exc:
+            if not _is_reduce_size_contract_error(exc):
+                raise
+        return await self._call_reduce_size_repair(
+            prompt=prompt,
+            purpose=purpose,
+            node_id=node_id,
+        )
+
+    async def _call_reduce_size_repair(
+        self,
+        *,
+        prompt: str,
+        purpose: str,
+        node_id: str,
+    ) -> SemanticReduceDraft:
+        repair_prompt = _reduce_size_repair_prompt(prompt)
+        repair_purpose = f"{purpose}.size_repair.v1.{node_id}"
+        if isinstance(self.llm, TracingLLMProvider):
+            failed_checkpoint = self.llm.read_matching_error_checkpoint_for_structured(
+                prompt=repair_prompt,
+                response_model=SemanticReduceDraft,
+                purpose=repair_purpose,
+            )
+            if failed_checkpoint is not None:
+                raise RuntimeError(
+                    "semantic reduce size-repair checkpoint already failed; "
+                    f"refusing a second recovery request for {node_id}"
+                )
+        return await self._call_structured(
+            prompt=repair_prompt,
+            response_model=SemanticReduceDraft,
+            purpose=repair_purpose,
+        )
 
     async def _validate_reduce_draft_citations(
         self,
@@ -3961,6 +4027,116 @@ def _leaf_reduce_evidence_ids(capsule_ids: Sequence[str]) -> list[str]:
         return ordered
     indices = (0, len(ordered) // 3, (2 * len(ordered)) // 3, len(ordered) - 1)
     return _unique(ordered[index] for index in indices)
+
+
+def _reduce_size_repair_prompt(prompt: str) -> str:
+    marker = "\n---OFFLINE_SEMANTIC_REDUCE---\n"
+    try:
+        header, payload = prompt.split(marker, 1)
+    except ValueError as exc:
+        raise ValueError("semantic reduce size-repair prompt marker is missing") from exc
+    repair_prompt = (
+        header
+        + "\n---OFFLINE_SEMANTIC_SIZE_REPAIR---\n"
+        + "The previous SemanticReduceDraft response exceeded the strict serialized "
+        + f"output contract of {MAX_REDUCE_NODE_OUTPUT_BYTES} UTF-8 bytes. Its rejected "
+        + "raw response is unavailable, so create a complete compact replacement from "
+        + "the original source payload below. Keep the node ID and every child node ID "
+        + "exactly as listed and in the listed order. Preserve every distinct supported "
+        + "mechanism, condition, boundary, failure mode, contradiction, and material claim; "
+        + "merge only duplicates and use concise wording. Keep every citation character-for-"
+        + "character from available_evidence_capsule_ids; do not invent or abbreviate IDs. "
+        + "Return only a complete schema-valid JSON object with no markdown. Target at most "
+        + f"{MAX_REDUCE_SIZE_REPAIR_TARGET_BYTES} UTF-8 bytes after JSON serialization, "
+        + "leaving margin under the hard 12,000-byte validator.\n"
+        + marker
+        + payload
+    )
+    if len(repair_prompt.encode("utf-8")) > MAX_REDUCE_PROMPT_BYTES:
+        raise ValueError("semantic reduce size-repair prompt exceeds byte contract")
+    return repair_prompt
+
+
+def _is_reduce_size_contract_error(error: BaseException) -> bool:
+    pending = [error]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, ValidationError):
+            details = current.errors(
+                include_url=False,
+                include_input=False,
+                include_context=False,
+            )
+            if _is_exact_reduce_size_validation_details(details):
+                return True
+        elif (
+            type(current) is ValueError
+            and str(current)
+            == (
+                "semantic reduce output exceeds "
+                f"{MAX_REDUCE_NODE_OUTPUT_BYTES}-byte contract"
+            )
+        ) or (
+            isinstance(current, CodexOAuthError)
+            and _is_codex_size_validation_message(str(current))
+        ):
+            return True
+        cause = current.__cause__
+        context = current.__context__
+        original = getattr(current, "original", None)
+        pending.extend(
+            candidate
+            for candidate in (cause, context, original)
+            if isinstance(candidate, BaseException)
+        )
+    return False
+
+
+def _is_reduce_size_checkpoint_failure(checkpoint: Mapping[str, Any]) -> bool:
+    error = checkpoint.get("error")
+    if not isinstance(error, Mapping):
+        return False
+    error_type = error.get("type")
+    message = error.get("message")
+    if not isinstance(message, str):
+        return False
+    if error_type == "CodexOAuthError":
+        return _is_codex_size_validation_message(message)
+    return error_type == "ValueError" and message == (
+        "semantic reduce output exceeds "
+        f"{MAX_REDUCE_NODE_OUTPUT_BYTES}-byte contract"
+    )
+
+
+def _is_codex_size_validation_message(message: str) -> bool:
+    prefix = "Codex structured output failed schema validation: "
+    if not message.startswith(prefix):
+        return False
+    try:
+        details = json.loads(message[len(prefix) :])
+    except json.JSONDecodeError:
+        return False
+    return _is_exact_reduce_size_validation_details(details)
+
+
+def _is_exact_reduce_size_validation_details(details: Any) -> bool:
+    if not isinstance(details, list) or len(details) != 1:
+        return False
+    row = details[0]
+    return (
+        isinstance(row, Mapping)
+        and row.get("loc") == []
+        and row.get("msg")
+        == (
+            "Value error, semantic reduce output exceeds "
+            f"{MAX_REDUCE_NODE_OUTPUT_BYTES}-byte contract"
+        )
+        and row.get("type") == "value_error"
+    )
 
 
 def _reduce_citation_repair_prompt(

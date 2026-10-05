@@ -175,13 +175,7 @@ class TracingLLMProvider:
 
     async def generate_structured(self, *, prompt: str, response_model: type[T], purpose: str) -> T:
         started_at = now_kst()
-        input_payload = {
-            "prompt_sha256": sha256_text(prompt),
-            "prompt_chars": len(prompt),
-            "prompt_utf8_bytes": len(prompt.encode("utf-8")),
-            "prompt_tokens_counted": self.count_tokens(prompt),
-            "response_model": response_model.__name__,
-        }
+        input_payload = self._structured_input_payload(prompt, response_model)
         checkpoint = self._read_ok_checkpoint(
             operation="generate_structured",
             purpose=purpose,
@@ -292,6 +286,61 @@ class TracingLLMProvider:
             retry_errors=retry_errors,
         )
         return provider_output
+
+    def read_matching_error_checkpoint_for_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[T],
+        purpose: str,
+    ) -> dict[str, Any] | None:
+        """Read only an error checkpoint for this exact request identity."""
+        if not self.resume_from_checkpoints:
+            return None
+        operation = "generate_structured"
+        input_payload = self._structured_input_payload(prompt, response_model)
+        model_config = dict(self.model_config)
+        path = self._checkpoint_path(
+            operation=operation,
+            purpose=purpose,
+            input_payload=input_payload,
+            model_config=model_config,
+        )
+        if not path.is_file():
+            return None
+        try:
+            payload = read_json(path)
+        except (OSError, ValueError, TypeError):
+            return None
+        expected_metadata = self._metadata_for_model_config(purpose, model_config)
+        if (
+            not isinstance(payload, dict)
+            or payload.get("status") != "error"
+            or payload.get("checkpoint_id") != path.stem
+            or payload.get("operation") != operation
+            or payload.get("purpose") != purpose
+            or payload.get("input") != input_payload
+            or payload.get("input_sha256") != sha256_text(canonical_json(input_payload))
+            or payload.get("model_config") != model_config
+            or payload.get("metadata") != expected_metadata
+            or payload.get("output") is not None
+            or payload.get("output_sha256") is not None
+        ):
+            return None
+        return payload
+
+    def _structured_input_payload(
+        self,
+        prompt: str,
+        response_model: type[T],
+    ) -> dict[str, Any]:
+        return {
+            "prompt_sha256": sha256_text(prompt),
+            "prompt_chars": len(prompt),
+            "prompt_utf8_bytes": len(prompt.encode("utf-8")),
+            "prompt_tokens_counted": self.count_tokens(prompt),
+            "response_model": response_model.__name__,
+        }
 
     async def embed(self, *, texts: list[str], purpose: str) -> list[list[float]]:
         started_at = now_kst()

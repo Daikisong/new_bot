@@ -51,6 +51,7 @@ from news_scalping_lab.contracts.offline_brain import (
     SynthesizedMechanismClaim,
 )
 from news_scalping_lab.inference.thin_daily import _validate_brain_context_as_of
+from news_scalping_lab.llm.codex_oauth_provider import CodexOAuthError
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.utils import (
@@ -59,6 +60,7 @@ from news_scalping_lab.utils import (
     file_sha256,
     read_json,
     sha256_text,
+    stable_id,
     write_json,
 )
 
@@ -201,6 +203,49 @@ class ReduceCitationRepairLLM(DeterministicMockLLMProvider):
                     status="supported",
                 )
             ],
+        )
+
+
+class ReduceSizeRepairLLM(DeterministicMockLLMProvider):
+    def __init__(self, *, fail_size_repair: bool = False) -> None:
+        super().__init__()
+        self.fail_size_repair = fail_size_repair
+        self.prompts: list[str] = []
+        self.purposes: list[str] = []
+        self.outputs: list[SemanticReduceDraft] = []
+
+    async def generate_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[Any],
+        purpose: str,
+    ) -> Any:
+        if response_model is not SemanticReduceDraft:
+            return await super().generate_structured(
+                prompt=prompt,
+                response_model=response_model,
+                purpose=purpose,
+            )
+        self.prompts.append(prompt)
+        self.purposes.append(purpose)
+        if "---OFFLINE_SEMANTIC_SIZE_REPAIR---" not in prompt or self.fail_size_repair:
+            raise self._size_error()
+        payload = json.loads(prompt.split("---OFFLINE_SEMANTIC_REDUCE---\n", 1)[1])
+        output = SemanticReduceDraft(
+            node_id=payload["node_id"],
+            child_node_ids=payload["required_child_node_ids"],
+            synthesis="compact fixture reduction",
+        )
+        self.outputs.append(output)
+        return output
+
+    @staticmethod
+    def _size_error() -> CodexOAuthError:
+        return CodexOAuthError(
+            "Codex structured output failed schema validation: "
+            '[{"loc":[],"msg":"Value error, semantic reduce output exceeds '
+            '12000-byte contract","type":"value_error"}]'
         )
 
 
@@ -1307,6 +1352,176 @@ async def test_reduce_retries_invalid_citation_once_without_changing_claim_conte
     marker = "---OFFLINE_SEMANTIC_REDUCE---\n"
     assert provider.prompts[0].split(marker, 1)[1] == provider.prompts[1].split(marker, 1)[1]
     assert "CAP-not-in-child-tree" in provider.prompts[1]
+
+
+@pytest.mark.asyncio
+async def test_reduce_size_contract_uses_one_compact_recovery_request(
+    tmp_path: Path,
+) -> None:
+    provider = ReduceSizeRepairLLM()
+    compiler = OfflineSemanticBrainCompiler(
+        Settings(project_root=tmp_path / "compiler"),
+        llm=provider,
+    )
+    children = _fixture_reduce_children()
+
+    result = await compiler._reduce_node(
+        category="fixture",
+        level=0,
+        children=children,
+        review=False,
+    )
+
+    marker = "---OFFLINE_SEMANTIC_REDUCE---\n"
+    assert len(provider.prompts) == 2
+    assert "---OFFLINE_SEMANTIC_SIZE_REPAIR---" not in provider.prompts[0]
+    assert "---OFFLINE_SEMANTIC_SIZE_REPAIR---" in provider.prompts[1]
+    assert provider.prompts[0].split(marker, 1)[1] == provider.prompts[1].split(
+        marker, 1
+    )[1]
+    assert "Target at most 10000 UTF-8 bytes" in provider.prompts[1]
+    assert provider.purposes[1] == (
+        f"{provider.purposes[0]}.size_repair.v1.{result.node_id}"
+    )
+    assert provider.outputs[0].node_id == result.node_id
+    assert provider.outputs[0].child_node_ids == [row.node_id for row in children]
+    assert (
+        len(provider.outputs[0].model_dump_json().encode("utf-8"))
+        <= offline_v2.MAX_REDUCE_SIZE_REPAIR_TARGET_BYTES
+    )
+    assert compiler._logical_llm_call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_world_reduce_uses_the_same_bounded_size_recovery(
+    tmp_path: Path,
+) -> None:
+    provider = ReduceSizeRepairLLM()
+    compiler = OfflineSemanticBrainCompiler(
+        Settings(project_root=tmp_path / "compiler"),
+        llm=provider,
+    )
+
+    result = await compiler._reduce_world(
+        {"fixture": _fixture_reduce_children()[0]},
+    )
+
+    assert len(provider.prompts) == 2
+    assert provider.purposes[1] == (
+        f"offline_world_model.size_repair.v1.{result.node_id}"
+    )
+    assert result.child_node_ids == ["LEAF-fixture-a"]
+
+
+@pytest.mark.asyncio
+async def test_size_recovery_reuses_matching_failed_original_checkpoint(
+    tmp_path: Path,
+) -> None:
+    provider = ReduceSizeRepairLLM()
+    compiler = OfflineSemanticBrainCompiler(
+        Settings(project_root=tmp_path / "compiler"),
+        llm=provider,
+    )
+    children = _fixture_reduce_children()
+    child_ids = [row.node_id for row in children]
+    node_id = stable_id("REDUCE", "fixture", 0, child_ids, length=20)
+    prompt = offline_v2._reduce_prompt(
+        node_id=node_id,
+        category="fixture",
+        children=children,
+        review=False,
+    )
+    purpose = f"offline_semantic_reduce.{node_id}"
+    input_payload = compiler.llm._structured_input_payload(
+        prompt,
+        SemanticReduceDraft,
+    )
+    error = ReduceSizeRepairLLM._size_error()
+    compiler.llm._write_checkpoint(
+        operation="generate_structured",
+        purpose=purpose,
+        status="error",
+        input_payload=input_payload,
+        error=error,
+        retries=1,
+        retry_errors=[{"type": type(error).__name__, "message": str(error)}],
+    )
+
+    result = await compiler._reduce_node(
+        category="fixture",
+        level=0,
+        children=children,
+        review=False,
+    )
+
+    assert len(provider.prompts) == 1
+    assert "---OFFLINE_SEMANTIC_SIZE_REPAIR---" in provider.prompts[0]
+    assert provider.purposes == [f"{purpose}.size_repair.v1.{result.node_id}"]
+
+
+@pytest.mark.asyncio
+async def test_size_recovery_fails_closed_after_one_failed_recovery_across_resume(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(project_root=tmp_path / "compiler")
+    first_provider = ReduceSizeRepairLLM(fail_size_repair=True)
+    first_compiler = OfflineSemanticBrainCompiler(settings, llm=first_provider)
+    children = _fixture_reduce_children()
+
+    with pytest.raises(CodexOAuthError, match="12000-byte contract"):
+        await first_compiler._reduce_node(
+            category="fixture",
+            level=0,
+            children=children,
+            review=False,
+        )
+
+    assert len(first_provider.prompts) == 2
+    resumed_provider = ReduceSizeRepairLLM()
+    resumed_compiler = OfflineSemanticBrainCompiler(settings, llm=resumed_provider)
+    with pytest.raises(RuntimeError, match="refusing a second recovery request"):
+        await resumed_compiler._reduce_node(
+            category="fixture",
+            level=0,
+            children=children,
+            review=False,
+        )
+    assert resumed_provider.prompts == []
+
+
+@pytest.mark.asyncio
+async def test_reduce_does_not_retry_non_size_structured_validation_errors(
+    tmp_path: Path,
+) -> None:
+    class OtherValidationFailureLLM(ReduceSizeRepairLLM):
+        async def generate_structured(
+            self,
+            *,
+            prompt: str,
+            response_model: type[Any],
+            purpose: str,
+        ) -> Any:
+            self.prompts.append(prompt)
+            self.purposes.append(purpose)
+            raise CodexOAuthError("unrelated structured validation failure")
+
+    provider = OtherValidationFailureLLM()
+    compiler = OfflineSemanticBrainCompiler(
+        Settings(project_root=tmp_path / "compiler"),
+        llm=provider,
+    )
+
+    with pytest.raises(CodexOAuthError, match="unrelated structured validation failure"):
+        await compiler._reduce_node(
+            category="fixture",
+            level=0,
+            children=_fixture_reduce_children(),
+            review=False,
+        )
+
+    assert len(provider.prompts) == 1
+    assert "---OFFLINE_SEMANTIC_SIZE_REPAIR---" not in provider.prompts[0]
+    assert compiler._logical_llm_call_count == 1
 
 
 @pytest.mark.asyncio
