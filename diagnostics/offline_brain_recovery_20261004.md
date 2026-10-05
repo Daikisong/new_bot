@@ -1027,3 +1027,60 @@ The exact continuation command and the remaining package, daily CSV, formal eval
 acceptance criteria remain in `docs/operations/codex_goal_finish_brain_and_daily_csv.md`. This build is
 still active; do not launch a duplicate or read the live DuckDB/WAL. Production remains HOLD pending
 the later required gates and authorization.
+
+## 2026-10-05 15:24-15:34 KST: third citation validation failure, terminal audit
+
+The resumed executor session `34127` / Python PID `40148` ended with exit code 1 after its final progress
+ledger write at `2026-10-05T15:24:29.704335+09:00`. The ledger was in `offline_reduce` at
+`812 / 1,868` closed nodes, `1,056` remaining, pointer `REDUCE-ba980a1a1418ba00f0ed`. This is fixed-DAG
+closure only, not record coverage or semantic completeness.
+
+The provider returned `status=ok` for node `REDUCE-e6c11b4aee1b4a8e62f1`, but the validator rejected
+claim index 3, `supporting_capsule_ids[2]`, with:
+
+```text
+semantic reduce claim cited an unavailable capsule: claim_index=3 field=supporting_capsule_ids citation='CAP-cd066b07b85b5b40551a /”' allowed_capsule_count=19
+```
+
+Checkpoint and trace identity:
+
+```text
+trace:         TRACE-ee9c6faf94ed
+checkpoint:    LLMCKPT-45d46e52818e8fba
+purpose:       offline_semantic_reduce.REDUCE-e6c11b4aee1b4a8e62f1
+provider/model: CodexOAuthProvider / gpt-6.1-sol/high
+input SHA256:  42c21b2c59722a667f1ecdc4745494856ca85a9aa42832a78bebf57b36097b3b
+output SHA256: e6b1ae6b74a724aea9a4837f1ef0343d69baf6c1382d64355d90033e082db867
+prompt SHA256: 77dd0155b66f074f2dfeb90b6f54c4f6a2dab2aea47c8c241f7fce6aff572a33
+prompt chars:  142133
+prompt tokens estimate: 171921
+```
+
+The checkpoint is a successful provider response, not a closed DAG node. The base ID's membership in
+this reducer's exact allowed evidence set has not yet been independently reconstructed. No code change
+for this third incident has been made. Do not normalize `/”` based on appearance alone, broaden citation
+validation, or discard the checkpoint.
+
+After terminal status, a fresh process scan found no Python writer for this compile and the target
+DuckDB WAL was absent. A read-only DuckDB audit confirmed:
+
+```text
+reduce_nodes:      812
+failed node rows:  0
+semantic capsules: 52,644
+assignment rows:   823,279
+```
+
+Thus the persisted reducer count matches the last progress ledger, and the failed node is not persisted.
+At this observation the compiler worktree remained clean at `codex/v5-gpt61-high-offline`, HEAD and
+upstream `7a693dc`; the root worktree remained at `codex/quality-full-pr126`, HEAD `9dc0edd`, with its
+pre-existing untracked diagnostic/run files preserved.
+
+Next step: read-only reconstruct the exact task children, allowed evidence IDs, production prompt, and
+Unicode code points using the production leaf/evidence/prompt builders; match prompt/input/output hashes
+to the sealed plan and trace. Only if the citation's base ID is an allowed ID with a provable exact suffix
+artifact should a narrowly scoped citation normalization and positive/negative tests be considered. Run
+the full code gates and push the fix before resuming the identical compile. Do not repeat import,
+embedding, map, or planner work. The fixed source, record root, compile ID, plan/topology, target DB and
+checkpoint directory remain unchanged. Production remains HOLD; package, daily CSV smoke, formal
+evaluation and release verification are still incomplete.
