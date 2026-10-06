@@ -86,3 +86,7 @@ Therefore `analyze-daily` was not run. The next required input is the user's act
 ## Next Action
 
 No compile, import, embedding build, or package-lineage re-audit is due. Continue when the user supplies an eligible pre-open CSV or makes the authenticated transport available. Until then, keep this goal active with daily smoke `BLOCKED_INPUT_REQUIRED`, predictive quality `UNAPPROVED`, and production `HOLD`.
+
+## Supplemental CSV Search (2026-10-06 20:18 KST)
+
+A follow-up filename scan also covered the user's Desktop, Documents, OneDrive, and project worktrees. The newest `news_YYYYMMDD.csv` name in these locations remained `news_20260624.csv`; copies were found under `OneDrive\바탕 화면\KiwoomTools\뉴스모음` and the `news_bot_quota_guardfix` worktree. These are older than the package cutoff `2026-08-21T18:52:07.302105+09:00` and are not valid point-in-time smoke inputs for this package. No later-dated pre-open CSV was found in the added locations. The daily smoke remains `BLOCKED_INPUT_REQUIRED` pending the user's actual eligible CSV.

@@ -1,6 +1,6 @@
 # Goal: 검증된 두뇌 패키지로 장전 CSV 판단 완성
 
-문서 갱신: 2026-10-06 20:01 KST
+문서 갱신: 2026-10-06 20:18 KST
 
 ## 이 Goal의 목적
 
@@ -103,3 +103,7 @@ source manifest pointer의 SHA가 낡았지만, pinned memory snapshot의 실제
 5. **Production:** 별도 사용자 승인·release binding·rollback proof와 quality PASS 전에는 계속 `HOLD`이며 활성화하지 않는다.
 
 이 Goal의 끝은 컴파일을 반복하는 것이 아니다. 기존 한 번의 빌드를 감사하고, 가능한 경우 실제 장전 CSV 연결을 검증하며, 실제 한계와 다음 입력을 외부 검토 가능한 문서로 남기는 것이다.
+
+## 2026-10-06 20:18 KST 추가 CSV 검색
+
+바탕화면·문서·OneDrive·프로젝트 워크트리까지 파일명 기준으로 다시 검색했다. 추가 위치에서 확인된 최신 `news_YYYYMMDD.csv`도 `news_20260624.csv` 사본이며, Offline Brain V2 cutoff인 `2026-08-21T18:52:07.302105+09:00`보다 앞선 자료다. 이를 사용하면 cutoff 이후에 만들어진 brain 지식이 과거 거래일 판단에 들어갈 수 있으므로 smoke 입력으로 사용하지 않는다. 추가 검색에서도 적격 장전 CSV는 발견되지 않았다. 따라서 daily smoke는 계속 `BLOCKED_INPUT_REQUIRED`, predictive quality는 `UNAPPROVED`, production은 `HOLD`다.
