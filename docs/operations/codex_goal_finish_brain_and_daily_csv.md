@@ -1,6 +1,6 @@
 # Goal: 검증된 두뇌 패키지로 장전 CSV 판단 완성
 
-문서 갱신: 2026-10-06 20:18 KST
+문서 갱신: 2026-10-06 20:22 KST
 
 ## 이 Goal의 목적
 
@@ -107,3 +107,7 @@ source manifest pointer의 SHA가 낡았지만, pinned memory snapshot의 실제
 ## 2026-10-06 20:18 KST 추가 CSV 검색
 
 바탕화면·문서·OneDrive·프로젝트 워크트리까지 파일명 기준으로 다시 검색했다. 추가 위치에서 확인된 최신 `news_YYYYMMDD.csv`도 `news_20260624.csv` 사본이며, Offline Brain V2 cutoff인 `2026-08-21T18:52:07.302105+09:00`보다 앞선 자료다. 이를 사용하면 cutoff 이후에 만들어진 brain 지식이 과거 거래일 판단에 들어갈 수 있으므로 smoke 입력으로 사용하지 않는다. 추가 검색에서도 적격 장전 CSV는 발견되지 않았다. 따라서 daily smoke는 계속 `BLOCKED_INPUT_REQUIRED`, predictive quality는 `UNAPPROVED`, production은 `HOLD`다.
+
+## 2026-10-06 20:22 KST daily architecture 테스트
+
+`python -m pytest tests/unit/test_thin_daily.py tests/unit/test_offline_brain_v2.py::test_daily_reader_uses_only_precompiled_package -q --durations=10` 실행 결과 17개 targeted unit test가 통과했다. mock/fixture 기준으로 brain을 첫 LLM 요청 전에 로드하고, `final_market_decision` 정상 호출은 하나이며 structured repair 포함 최대 두 번인 점, record/cluster 수에 비례해 LLM 호출이 늘지 않는 점, precompiled fixture package 조회를 검증했다. 실제 19.8GB 패키지와 장전 CSV 또는 live provider를 실행한 증거가 아니고 predictive-quality gate도 아니다. 이번에는 전체 pytest/Ruff/mypy를 다시 실행하지 않았다.

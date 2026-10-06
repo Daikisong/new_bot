@@ -90,3 +90,7 @@ No compile, import, embedding build, or package-lineage re-audit is due. Continu
 ## Supplemental CSV Search (2026-10-06 20:18 KST)
 
 A follow-up filename scan also covered the user's Desktop, Documents, OneDrive, and project worktrees. The newest `news_YYYYMMDD.csv` name in these locations remained `news_20260624.csv`; copies were found under `OneDrive\바탕 화면\KiwoomTools\뉴스모음` and the `news_bot_quota_guardfix` worktree. These are older than the package cutoff `2026-08-21T18:52:07.302105+09:00` and are not valid point-in-time smoke inputs for this package. No later-dated pre-open CSV was found in the added locations. The daily smoke remains `BLOCKED_INPUT_REQUIRED` pending the user's actual eligible CSV.
+
+## Daily Architecture Unit Tests (2026-10-06 20:22 KST)
+
+The focused command `python -m pytest tests/unit/test_thin_daily.py tests/unit/test_offline_brain_v2.py::test_daily_reader_uses_only_precompiled_package -q --durations=10` passed all 17 tests. These deterministic mock/fixture tests cover the single `final_market_decision` call, brain context loaded before that request, bounded repair (at most two provider invocations), call count independent of large record/cluster counts, and reading a precompiled fixture package. They do not exercise the audited 19.8 GB package with a real daily CSV or live model/provider, and they are not a predictive-quality gate. Full `pytest`, Ruff, and mypy were not rerun.
