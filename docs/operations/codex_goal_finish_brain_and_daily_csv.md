@@ -1,6 +1,6 @@
 # Goal: 검증된 두뇌 패키지로 장전 CSV 판단 완성
 
-문서 갱신: 2026-10-06 19:39 KST
+문서 갱신: 2026-10-06 20:01 KST
 
 ## 이 Goal의 목적
 
@@ -18,8 +18,8 @@
 | 입력 identity | source manifest SHA-256 `6c05dcf49b301997dde3483b97f46668b5fb3f29fc2ea5fe67dc2c3e13fd4576`; record root `2d25581cdc98d89cb0f1d2fa00bec917442171ee279c001edfc764e2941f6d75`; memory snapshot `MEMIDX-1e64a1b6e6ba7b07b799` | source project는 `production/staging/P9IMPORT-3D770A7DD72457C97098/project`다. |
 | 입력 규모 | 823,279 records, 52,644 semantic capsules, 1,868 DAG nodes | 서로 다른 단위다. 52,644는 연도 수도, 원문별 GPT 요약 수나 개별 GPT 호출 수도 아니다. |
 | 의미 payload 노출 | 181,979 / 823,279 records, 22.104% 직접 노출; 641,300은 직접 미노출 | 모든 record는 compiler 모집단·할당 회계에 포함됐지만, 모든 원문을 GPT가 직접 읽은 것은 아니다. 이것만으로 두뇌가 쓸모없다거나 예측력이 입증됐다고 결론 내리지 않는다. |
-| coverage / claims | assignment coverage 100%, unassigned 0, duplicate primary 0, rare outlier 8,297/8,297; mechanism claims 40, citation edges 111 (support 105, contradict 6) | 정확한 task·leaf·claim 연결의 전수 계보 감사는 아래 남은 작업이다. |
-| 검색기 | 독립 `ensure_ready()` 검증 통과, semantic capsule·mechanism claim 양쪽 query plan에서 DuckDB HNSW 사용 확인 | 패키지 root 전체 재계산과 read-only load를 통과했다. 남은 전수 lineage 검증을 대신하지 않는다. |
+| coverage / claims | assignment coverage 100%, unassigned 0, duplicate primary 0, rare outlier 8,297/8,297; mechanism claims 40, citation edges 111 (support 105, contradict 6) | 2026-10-06 전수 plan·leaf·assignment·claim/citation 대조 PASS. 세부 root와 결과는 closeout 문서에 기록한다. |
+| 검색기 | 독립 `ensure_ready()` 재검증 통과, package root 재계산과 semantic capsule·mechanism claim 양쪽 DuckDB HNSW query plan 통과 | 검색기/패키지 감사 PASS. 실제 장전 CSV 사용성 smoke를 대신하지 않는다. |
 | LLM 실행 기록 | 총 7,980 logical attempts = checkpoint hit 7,513 + fresh 성공 465 + 오류 2; output ledger 7,978행과 2건 차이는 size-contract 오류 trace로 설명되며 bounded repair 뒤 성공 | fresh 출력은 `gpt-6.1-sol/high`; 재사용 checkpoint에는 과거 `gpt-5.6-sol/xhigh` 등도 있다. 전체 결과를 6.1이 새로 작성했다고 표현하지 않는다. |
 | build cutoff | `2026-08-21T18:52:07.302105+09:00` | 이 시각 뒤의 적격 CSV가 있어야 full compiled brain 경로를 실제 smoke할 수 있다. |
 | 현재 activation | manifest의 `production_eligible=false`, `production_activated=false` | production HOLD 상태를 유지한다. |
@@ -30,32 +30,38 @@ LLM trace의 `prompt_token_count_reported=1,296,623,760`은 실제 토큰 수나
 
 source manifest pointer의 SHA가 낡았지만, pinned memory snapshot의 실제 manifest SHA는 위 externally attested SHA와 일치한다. compile manifest는 pointer drift를 기록하고 실제 SHA override를 attested 처리했다. 이 차이를 숨기거나 manifest를 임의 수정하지 않는다.
 
+## 최신 실행 상태: 2026-10-06 20:01 KST
+
+| 단계 | 상태 | 현재 근거 |
+|---|---|---|
+| 고정 1회성 compile | `COMPLETE`; 다시 실행 금지 | `OFFLINE-COMPILE-0dd9198ac9ef79215ab1`, package version/root/hash는 위 표. package 34 files, 19,791,364,549 bytes; DuckDB 18,426,376,192 bytes. |
+| package·DAG 계보 감사 | `PASS` | plan SHA `6a3c78d89c55233afd66ef556eeb4cfba88c51047e140cccc268f95d5d51fc97`, topology SHA `0663df89a0805c91f8526fc8a5126da004b06a20bbf0b7ac8ecb1978daa78ed5`, DB와 1,868 task ID/child topology exact. 4,969 leaf closure와 world coverage root `15d9e8c7bf2f339a2a119952fe46f01fe2cf9f56c1e8a8750ec3a0d1f9d27c18`가 일치한다. |
+| assignment/capsule/claim 계보 | `PASS` | leaf와 capsule 52,644개 exact; assignment ledger와 DB 823,279행 exact, membership root `dd51591eeab66636cedfe0ac14af14d13d2a0a5c43ee00eaff30675f5ffbb401`; capsule·centroid·member count mismatch 0. claim payload 40개와 citation edge 111개(지원 105, 반례 6) parity exact. |
+| 직접 payload exposure | `PASS / PARTIAL EXPOSURE` | 181,979개 고유 record(22.104%)의 exposure root `0d402ea2aa50c9c4cf8a5048ec9739fe19cca2e2495d5184da6aad4a61a48072`가 manifest와 일치, truncation 0. 641,300개는 GPT에 직접 payload 미노출이다. |
+| 실제 장전 CSV smoke | `BLOCKED_INPUT_REQUIRED` | 최신 로컬 검색에서 package cutoff 이후 적격 news CSV 없음. 지정 Vercel health/CSV transport는 Vercel 로그인 HTML을 반환했고 기존 Chrome에서도 로그인 페이지였다. 인증 정보는 입력하거나 다루지 않았다. |
+| 정식 품질 gate | `NOT_RUN_GATE_MISSING`; predictive quality `UNAPPROVED` | root `QSEL-19b3...` artifact 없음, 준비 보고서도 actual run `NOT_RUN`. staging의 `QSEL-16352...`는 3-case blind/outcome artifact 쌍뿐이며 HOLDOUT/paired prediction/score 증거가 없다. |
+| production | `HOLD` | package manifest `production_eligible=false`, `production_activated=false`; 품질 gate, 별도 사용자 승인, release binding 및 rollback proof가 없다. |
+
+전수 대조 보고서는 [offline_brain_v2_daily_csv_closeout_20261006.md](offline_brain_v2_daily_csv_closeout_20261006.md)다. 동일 package audit을 반복하지 말고, 실제 미완료 작업은 적격 CSV를 확보해 daily smoke를 수행하는 것이다.
+
 ## 다음 실행에서 할 일
 
 ### 1. 작업 상태와 고정 산출물 재확인
 
 - 현재 저장소의 `AGENTS.md`, `.agents/skills/news-scalping-lab/SKILL.md`, 본 문서를 다시 읽고 product intent를 우선한다.
-- compile ID와 package path를 기준으로 writer/process가 남아 있는지 확인한다. compile은 이미 완료됐으므로 정상적인 후속 작업은 read-only audit와 daily smoke뿐이다.
-- 현재 package manifest SHA와 package root가 위 identity와 일치하는지 확인한다. 불일치하면 선택·수정·재빌드하지 말고 정확한 차이를 보고한다.
+- 마지막 확인(2026-10-06 20:01 KST)에서 compile writer는 없고 package는 terminal output으로 존재한다. 다음 실행에서는 process가 다시 생겼는지만 확인하고 compile/build를 실행하지 않는다.
+- package manifest SHA가 기록된 값과 일치하는지, 파일 metadata가 바뀌었는지만 빠르게 확인한다. 전체 package root와 18GB DB를 다시 읽는 `ensure_ready()`는 이번 Goal에서 이미 통과했으므로 파일 변경이 관측되지 않는 한 반복하지 않는다. identity가 다르면 선택·수정·재빌드하지 말고 정확한 차이를 보고한다.
 - 기존 원료, source DB, package, checkpoint, WAL, logs, 그리고 사용자가 만든 출력은 보존한다. 기존 untracked `diagnostics/offline_reduce_dag_preflight_existing_capsules_20261004.json`, `runs/offline_v5_gpt61_high_20261004/`, `runs/resource_logs/`를 수정·이동·삭제·커밋하지 않는다.
 
-### 2. 패키지 계보 및 무결성 감사 마무리
+### 2. 패키지 계보 및 무결성 감사: 완료
 
-컴파일러 worktree `C:\Users\eorb9\projects\news_bot_resume_clean_7198b6b`에서 지원되는 read-only verifier와 ledger를 사용한다. package identity를 바꾸거나 synthesis를 재실행하지 않는다.
-
-- 고정 reduce DAG plan의 1,868 task ID 집합과 DB의 실제 node ID 집합이 정확히 같은지 비교한다. 단순 row count나 `1,858 + 9 + 1` prefix count만으로 닫힘을 선언하지 않는다.
-- parent/child closure와 각 category/world node의 입력 범위를 plan에 대조한다.
-- `semantic_reduce_leaf_coverage.jsonl`을 capsule 및 52,644 semantic unit assignment와 양방향 대조한다. DB node payload의 `covered_capsule_ids`가 저장 공간 절약을 위해 비어 있을 수 있으므로 그것만으로 coverage 누락을 판정하지 않는다.
-- record assignment, centroid, capsule, mechanism claim 및 claim-citation edge의 orphan·누락·중복을 확인하고 가능한 경우 claim payload의 citation ID/role과 edge ledger도 대조한다.
-- source manifest SHA, record root, compile ID, topology SHA, package root, HNSW 인덱스 및 embedding identity를 한 감사 결과에 묶는다. 실제 embedding은 고정된 `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` identity다.
-- trace의 7,980 logical attempts, 7,513 checkpoint hit, 465 fresh 성공, 2 size-contract 오류와 bounded recovery, 7,978 output-ledger rows를 서로 대조해 설명한다. 오류 trace 외의 provider 원문을 읽었다고 주장하지 않는다.
-- 개별 검증이 실패하면 원인을 격리해 보고한다. coverage/schema/citation 검증을 느슨하게 하거나 evidence를 버려 통과시키지 않는다. 증거가 있는 코드 결함이 발견될 때에만 별도 수정 범위를 제시하고 전체 `ruff`, `mypy`, `pytest`를 실행한다.
-
-현재 read-only 예비 대조에서는 `reduce_nodes=1,868`, capsules=52,644, assignments=823,279, missing assignment-to-centroid=0, capsule-to-centroid=0, claims without edges=0, orphan claim/capsule edges=0을 확인했다. 다만 exact task ID closure, leaf coverage ledger, claim payload-citation parity는 아직 남은 검증으로 취급한다.
+- 2026-10-06 20:01 KST 전수 read-only 대조에서 고정 plan, DB, leaf coverage, capsule ledger, assignments, claims/citation, influence manifest가 모두 일치했다. 1,868 plan task ID/child topology exact, 4,969 leaves와 52,644 capsules closure exact, 823,279 assignment 원장/DB 행별 exact, 40 claims/111 citation edges parity exact였고 orphan/mismatch는 0이다.
+- package root 재계산, read-only package load, 실제 capsule 및 mechanism-claim DuckDB HNSW query plan도 통과했다. 재현 가능한 전체 수치와 hashes는 `offline_brain_v2_daily_csv_closeout_20261006.md`에 있다.
+- 이 단계는 완료됐으므로 동일 package identity가 유지되는 한 audit을 반복하거나 코드를 고치지 않는다. 검증 후 새로 발견된 구체적 결함이 있을 때만 그 결함을 격리해 별도 범위를 정한다. 검증을 느슨하게 해 통과시키지 않는다.
 
 ### 3. 실제 장전 CSV로 daily smoke
 
-- 저장소 fixtures, `C:\Users\eorb9\Downloads`, `C:\Users\eorb9\Downloads\Downloads (2)`, 프로젝트 입력/staging에서 실제 원본 CSV 후보를 다시 검색한다. 이전 확인에서 저장소 `docs/csv`의 `news_*.csv`는 최대 `news_20260624.csv`여서 package cutoff보다 오래됐다. Downloads의 최근 수정 CSV들은 뉴스 입력이 아닌 자료가 다수였으므로 파일명이나 수정일만으로 후보를 고르지 않는다.
+- 2026-10-06 재검색 완료: 저장소 `docs/csv`의 가장 최신 `news_*.csv`는 `news_20260624.csv`로 build cutoff보다 오래됐다. Downloads 및 `Downloads (2)`에서 cutoff 이후 수정된 CSV를 훑었으나 발견된 파일은 블로그 keyword/backlink, 디스크 조사, 기타 자료이며 장전 뉴스 CSV가 아니다. staging CSV도 accepted research episode 자료였다. 동일 경로를 반복 검색하지 않는다. Vercel transport API 호출은 JSON 대신 `Login – Vercel` HTML을 반환했고 기존 Chrome에서도 같은 인증 화면을 확인했다.
 - build cutoff `2026-08-21T18:52:07.302105+09:00`보다 뒤 trade date에 해당하는, 실제 pre-open 시점의 미변형 CSV인지 확인한다. D-day 가격·결과, cutoff 후 기사/메타데이터, 임의 삭제·trim·합성 행이 섞인 파일은 사용하지 않는다.
 - 적격 CSV가 없으면 데이터를 만들지 말고 smoke를 `BLOCKED_INPUT_REQUIRED`로 기록한 뒤 실제 CSV를 사용자에게 요청한다. 그 상태를 smoke PASS나 제품 완성으로 표현하지 않는다.
 - 적격 CSV가 있으면 audited package를 별도 evaluation/test project에서 선택해 지원되는 `analyze-daily` 경로로 실행한다. `brain/current`의 production pointer를 바꾸거나 production을 활성화하지 않는다. Codex CLI OAuth session을 사용하고 credential 파일을 열거나 복사하지 않는다. 실 embedding provider의 fail-closed 동작을 유지한다.
@@ -65,7 +71,7 @@ source manifest pointer의 SHA가 낡았지만, pinned memory snapshot의 실제
 
 ### 4. 정식 blind quality와 production 상태 판정
 
-- 실행 시점의 registry와 sealed artifacts를 다시 확인해, 평가가 실제 deployable one-call `analyze-daily` architecture와 같은지 검증한다. 이전 기록만 믿지 않는다. 기존 `QSEL-19b3c80ba392db8564c9`는 report/anchor 외 selection artifact가 미확인이고, `QSEL-16352cbccb703547c2ba`는 calibration-only였으므로 HOLDOUT 및 일일 경로 통과의 증거로 간주하지 않는다.
+- 2026-10-06 registry/artifact 재검색 완료: root quality_full selection 경로와 QSEL-19b3c80ba392db8564c9 파일이 없다. 그 ID의 report는 준비 단계이며 actual prediction-to-score `NOT_RUN`으로 기록돼 있다. staging에 남은 QSEL-16352cbccb703547c2ba는 blind selection과 분리 outcome 파일 2개 및 3 case뿐이고, 같은 deployable one-call 경로의 HOLDOUT·paired prediction·score 또는 등록 gate는 찾지 못했다. 기존 `configs/evaluation.yaml`은 generic metric 목록이며 registered gate가 아니다. 이 증거가 바뀌기 전까지 gate 탐색/실행을 반복하지 않는다.
 - gate가 있더라도 새 gate를 임의로 만들거나, 전체 원료에 비례하는 긴 LLM fan-out으로 바꾸지 않는다. 정해진 registered bounded blind protocol과 physically separated outcome 절차만 따른다.
 - `QPRED-704f15cde6e4152b6931`와 379-pack ancestry는 `HALTED_MISALIGNED_DIAGNOSTIC_ONLY`; `QPRED-4ecc6155c077cb5b092c` ancestry는 invalidated다. 재개·채점·비교·승격·formal cache 입력으로 사용하지 않는다.
 - 같은 architecture의 유효한 registered gate/sealed input이 없으면 `NOT_RUN_GATE_MISSING`, predictive quality `UNAPPROVED`, production `HOLD`로 기록한다. smoke 성공으로 품질 승인을 대신하지 않는다.
@@ -75,7 +81,7 @@ source manifest pointer의 SHA가 낡았지만, pinned memory snapshot의 실제
 
 - `docs/operations/`에 compile/package 감사 결과와 daily smoke 상태를 담은 외부 검토용 closeout을 갱신한다. 민감한 credential은 포함하지 않고 재현 가능한 명령·artifact 경로·hash·검증 범위·제한·남은 blocker를 기록한다.
 - compile 완료, 구조적 record coverage, LLM 직접 payload exposure, semantic unit 수, claim/citation coverage, daily smoke, predictive quality, production activation을 서로 다른 상태/수치로 보고한다.
-- 위 문서와 closeout의 저장소 사본을 `C:\Users\eorb9\Downloads\codex_goal_nslab_finish_brain_and_daily_csv.md`와 동기화한다. 사용자가 남긴 변경과 untracked 산출물을 건드리지 않는다.
+- 이 Goal 문서는 `C:\Users\eorb9\Downloads\codex_goal_nslab_finish_brain_and_daily_csv.md`와 동기화하고, closeout은 별도 `C:\Users\eorb9\Downloads\offline_brain_v2_daily_csv_closeout_20261006.md` 사본으로 전달한다. 사용자가 남긴 변경과 untracked 산출물을 건드리지 않는다.
 - 문서/코드 변경을 검토하고 `git diff --check`를 실행한다. 코드 변경이 없다면 이번에 새로 전체 테스트를 통과했다고 말하지 않는다. 관련 문서만 한국어 commit message로 commit/push하고 remote 결과를 확인한다. 범위 밖 파일은 포함하지 않는다.
 - 마지막 응답에는 끝난 것, 미완료/blocked 항목, smoke와 quality gate 상태, production HOLD 여부, commit/push 결과를 간단히 분리해 보고한다. 입력 CSV가 없어 막혔다면 사용자가 제공할 정확한 파일 요건을 한 문장으로 요청한다.
 
