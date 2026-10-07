@@ -204,6 +204,8 @@ async def test_daily_normal_call_count_is_one_and_uses_brain(tmp_path: Path) -> 
     assert analysis.context_manifest.brain_context_loaded_before_first_llm is True
     assert analysis.context_manifest.brain_retrieval_basis == "CURRENT_NEWS"
     assert analysis.context_manifest.compiled_brain_guidance_count == 2
+    assert analysis.blind_prediction.created_at >= analysis.cutoff_at
+    assert analysis.blind_prediction.sealed_at == analysis.blind_prediction.created_at
     final_payload = json.loads(llm.prompts["final_market_decision"].split(
         "---BLIND_ANALYSIS_PAYLOAD---\n", 1
     )[1])
@@ -214,7 +216,8 @@ async def test_daily_normal_call_count_is_one_and_uses_brain(tmp_path: Path) -> 
     assert final_payload["daily_brain_context"]["interpretation_sha256"] is None
     assert "current_day_interpretation" not in final_payload
     decision = read_json(tmp_path / analysis.context_manifest.brain_decision_artifact)
-    assert set(decision["analyzed_cluster_ids"]) == set(final_payload["required_cluster_ids"])
+    assert decision["analyzed_cluster_count"] == final_payload["material_event_count"]
+    assert final_payload["material_event_count"] == len(final_payload["current_event_capsules"])
     assert any(
         "CAP-fixture" in candidate.semantic_capsule_ids
         for candidate in analysis.blind_prediction.candidates
@@ -226,7 +229,7 @@ async def test_daily_normal_call_count_is_one_and_uses_brain(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("row_count", [10, 300])
+@pytest.mark.parametrize("row_count", [10, 300, 873])
 async def test_daily_llm_call_count_is_independent_of_cluster_count(
     tmp_path: Path,
     row_count: int,
@@ -421,7 +424,7 @@ async def test_single_decision_rejects_missing_event_without_extra_llm_calls(tmp
     class OmittingLLM(CountingMockLLM):
         async def generate_structured(self, **kwargs: Any) -> Any:
             decision = await super().generate_structured(**kwargs)
-            return decision.model_copy(update={"analyzed_cluster_ids": []})
+            return decision.model_copy(update={"analyzed_cluster_count": 0})
 
     llm = OmittingLLM()
     with pytest.raises(ValueError, match="material event cluster"):

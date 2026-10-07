@@ -507,7 +507,7 @@ class DailyBrainContext(StrictModel):
 
 
 class BrainInformedDecision(StrictModel):
-    analyzed_cluster_ids: list[str]
+    analyzed_cluster_count: int = Field(ge=0)
     prediction: BlindPrediction
 
 

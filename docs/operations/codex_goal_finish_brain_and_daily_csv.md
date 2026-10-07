@@ -1,12 +1,14 @@
 # Goal: 검증된 두뇌 패키지로 장전 CSV 판단 완성
 
-문서 갱신: 2026-10-06 20:22 KST
+문서 갱신: 2026-10-08 KST
 
 ## 이 Goal의 목적
 
 이미 끝난 1회성 연구 두뇌 컴파일을 다시 돌리지 않는다. 존재하는 Offline Semantic Brain V2 패키지의 계보와 검색 경로 감사를 마치고, 실제 cutoff-safe 장전 뉴스 CSV를 production `analyze-daily`에 넣어 두뇌와 CSV가 첫 GPT 판단 요청부터 함께 쓰이는지 검증한다. 같은 구조의 정식 blind 품질 gate가 확인되면 그 상태도 판정하되, 품질 승인과 사용자 승인 없이 production을 활성화하지 않는다.
 
 최종 사용 흐름은 `장전 CSV + 이미 만들어진 두뇌/인덱스 -> GPT의 단일 판단 요청 -> 주도 섹터·종목 후보, 근거·인용·불확실성·출처`다. GPT 가중치를 fine-tune한 새 모델을 만드는 작업이 아니다. 원료 전체를 매일 재해석하거나 record·cluster·lane마다 GPT를 호출하지 않는다.
+
+현재 요약: 기존 Offline Brain V2 패키지는 재사용 가능하고, 2026-10-06 CSV의 격리 daily smoke는 기능 PASS다. 정식 blind predictive-quality gate는 미실행, 예측 품질은 `UNAPPROVED`, production은 `HOLD`다. 2026-10-07 CSV와 collection timestamp가 없고 월요일/휴장일 window 의미도 별도 검증이 필요하다.
 
 ## 이미 완료된 작업
 
@@ -103,6 +105,26 @@ source manifest pointer의 SHA가 낡았지만, pinned memory snapshot의 실제
 5. **Production:** 별도 사용자 승인·release binding·rollback proof와 quality PASS 전에는 계속 `HOLD`이며 활성화하지 않는다.
 
 이 Goal의 끝은 컴파일을 반복하는 것이 아니다. 기존 한 번의 빌드를 감사하고, 가능한 경우 실제 장전 CSV 연결을 검증하며, 실제 한계와 다음 입력을 외부 검토 가능한 문서로 남기는 것이다.
+
+## 2026-10-08 제공 CSV 및 실제 daily smoke
+
+사용자가 제공한 `C:\Users\eorb9\Downloads\123-20261007T194150Z-1-001\123`에는 CSV 32개, 총 42,909행이 있다. 파일 범위는 `news_20260824.csv`부터 `news_20261006.csv`이며 `news_20260821.csv`와 `news_20261007.csv`는 없다. 원본 파일은 수정하지 않았다.
+
+실제 smoke는 `news_20261006.csv`, 거래일 `2026-10-06`, cutoff `2026-10-06T08:59:59+09:00`으로 수행했다. 적용 시작 시각은 `2026-10-05T15:30:00+09:00`이고 911행 모두 cutoff 안에 있었다. 가장 늦은 게시시각은 `08:59:53`, 입력 SHA-256은 `0a4b3d15324fbdd65869b550eed286a2bb06c06ef6416e4de84ca3c063eb33ca`다. 단, CSV에 `collected_at` 필드가 없으므로 각 기사가 cutoff 전에 실제 수집됐다는 점까지 독립 증명되지는 않는다.
+
+실제 실행은 고정 brain `brain-v2-993b42487c557ca1` 및 root `b3dc694131b41c1553817ca7b2e00747391e79f95170ad856ae7054c120165dd`를 사용했다. 911행은 873개 material event capsule로 묶였다. 모델은 10개 compiled guidance, 24개 semantic memory capsule과 24개 exact witness를 함께 받았고, mechanism claim은 0개 선택됐다. 이전 package 전체를 재compile/import/re-embed하지 않았다. 당일 raw research map, brain rebuild, web call, full corpus scan은 각각 0이다.
+
+새 daily prompt architecture `one_time_brain_thin_daily.v3`로 Codex OAuth `gpt-5.6-sol/xhigh`에 `final_market_decision` 논리 호출 1회가 성공했고 structured repair는 0회였다. smoke 전체는 402.06초(6분 42초), provider 구간은 321.03초였다. prompt는 939,725자였고 Codex hard limit 1,048,576자 아래였다. 기록된 `1,258,259`는 UTF-8 byte 기반 conservative upper bound이며 실제 tokenizer가 센 token 수가 아니다.
+
+입력 압축 시 원본 capsule, 전체 row/event/source ID, timestamp, row disposition은 별도 artifact로 보존한다. 모델 prompt의 capsule 키는 크기를 줄인 compact format이다. 모델 응답의 `analyzed_cluster_count=873`은 응답 스키마 검증과 artifact ledger의 행 수 일치 확인이지, 모델의 의미적 주의집중을 독립 증명하는 값은 아니다. LLM에 보낸 것은 911개 원문 본문 전체가 아니라 dedup된 873개 current-event capsule이다. Prompt SHA-256은 `9e59e1977e29c3dd952449b7bafc05683d98ccc737e9371b8771d1b781de2ddf`다.
+
+결과 파일은 `runs/daily_csv_smoke_20261008_compact/outputs/THINRUN-1e092dd16b3be82ec275/` 아래에 있다. 6개 후보 및 sector report가 만들어졌지만 이 파일은 10월 8일에 실행한 과거 날짜 smoke다. 예측 성능을 채점하지 않았고 training이나 정식 blind 결과로 쓰지 않는다. Smoke 당시 모델이 `BlindPrediction.created_at`을 cutoff 시각으로 반환한 점을 발견해, 현재 코드는 sealing 시각을 실제 현재 시각으로 덮어쓰도록 고쳤다. 기존 smoke artifact는 수정하지 않고 forensic 자료로 보존한다.
+
+32개 전체 날짜 감사에서는 9,380행이 앱의 기본 window 시작 전으로 제외됐고 cutoff 이후 게시행은 0이었다. 월요일 파일에도 기본 시작시각을 직전 달력일 15:30으로 적용하므로 금요일 장 마감 뒤부터 일요일 15:30 전까지의 뉴스가 제외될 수 있다. 이번 화요일 smoke는 주말/휴장일 window 정확성을 검증하지 않았다. 월요일·휴장일 평가 전에 이전 실제 거래 세션을 기준으로 window를 정하고 테스트해야 한다.
+
+실제 smoke 성공은 일일 연결 경로의 기능 확인일 뿐이다. 정식 same-architecture blind quality gate는 아직 `NOT_RUN_GATE_MISSING`, predictive quality는 `UNAPPROVED`, production은 계속 `HOLD`다. 기존 `2026-10-06` canonical prediction/report와 production pointer는 쓰지 않았다. 10월 7일 CSV가 폴더에 없으므로 그 날짜는 아직 검증되지 않았다.
+
+코드 gate 결과: `ruff check .` 통과, `mypy src/news_scalping_lab` 통과, 전체 `pytest` 1,907개 통과. 이번 smoke에서 확인된 총 6분 42초는 제공된 CSV 한 건의 측정값이지 다른 날짜/장비/서비스의 보장치가 아니다. 수정의 핵심은 Codex 요청 1,048,576자 hard limit보다 낮은 1,000,000자 사전검사, 반복 키를 줄인 capsule payload, 응답의 긴 cluster ID 나열을 count 확인으로 대체한 점이다. 정식 평가는 이 v3 daily architecture 그대로 수행해야 한다.
 
 ## 2026-10-06 20:18 KST 추가 CSV 검색
 

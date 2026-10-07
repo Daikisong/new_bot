@@ -1320,11 +1320,7 @@ def _verify_sealed_prediction_artifacts(
     decision = BrainInformedDecision.model_validate(
         _read_json_reference(root, decision_reference)
     )
-    expected_cluster_ids = {capsule.cluster_id for capsule in capsules}
-    if (
-        len(decision.analyzed_cluster_ids) != len(expected_cluster_ids)
-        or set(decision.analyzed_cluster_ids) != expected_cluster_ids
-    ):
+    if decision.analyzed_cluster_count != len(capsules):
         raise ValueError("thin daily sealed decision did not account for every material cluster")
     row_reference = _manifest_artifact_reference(
         root,

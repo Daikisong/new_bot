@@ -53,9 +53,10 @@ from news_scalping_lab.utils import (
     write_json,
 )
 
-FINAL_MARKET_DECISION_PROMPT_VERSION = "thin_daily.final_market_decision.v2"
-THIN_DAILY_ARCHITECTURE_VERSION = "one_time_brain_thin_daily.v2"
-MAX_CURRENT_EVENT_PROMPT_BYTES = 180_000
+FINAL_MARKET_DECISION_PROMPT_VERSION = "thin_daily.final_market_decision.v3"
+THIN_DAILY_ARCHITECTURE_VERSION = "one_time_brain_thin_daily.v3"
+MAX_CURRENT_EVENT_PROMPT_BYTES = 900_000
+MAX_CODEX_INPUT_CHARS = 1_000_000
 MAX_EXACT_WITNESSES = 24
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?:[.!?]\s+|[\r\n]+)")
@@ -271,16 +272,26 @@ class ThinDailyAnalyzer:
             brain_context=brain_context,
             d_minus_one_context=d_minus_one_context,
         )
+        if len(final_prompt) > MAX_CODEX_INPUT_CHARS:
+            prompt_capsules = project_current_event_capsules(capsules, max_bytes=500_000)
+            final_prompt = _build_final_market_decision_prompt(
+                trade_date=trade_date,
+                cutoff_at=cutoff_at,
+                capsules=prompt_capsules,
+                brain_context=brain_context,
+                d_minus_one_context=d_minus_one_context,
+            )
+        if len(final_prompt) > MAX_CODEX_INPUT_CHARS:
+            raise ValueError(
+                "daily prompt exceeds the Codex CLI safe input limit; no model request was sent "
+                f"({len(final_prompt)} > {MAX_CODEX_INPUT_CHARS} characters)"
+            )
         decision = await self.llm.generate_structured(
             prompt=final_prompt,
             response_model=BrainInformedDecision,
             purpose="final_market_decision",
         )
-        expected_clusters = {row.cluster_id for row in capsules}
-        if (
-            len(decision.analyzed_cluster_ids) != len(expected_clusters)
-            or set(decision.analyzed_cluster_ids) != expected_clusters
-        ):
+        if decision.analyzed_cluster_count != len(capsules):
             raise ValueError("daily decision omitted, duplicated, or added a material event cluster")
         prediction = _validate_and_seal_prediction(
             decision.prediction,
@@ -338,9 +349,7 @@ class ThinDailyAnalyzer:
             current_event_capsule_bytes=len(
                 canonical_json([row.model_dump(mode="json") for row in capsules]).encode("utf-8")
             ),
-            current_event_prompt_bytes=len(
-                canonical_json([row.model_dump(mode="json") for row in prompt_capsules]).encode("utf-8")
-            ),
+            current_event_prompt_bytes=_capsule_bytes(prompt_capsules),
             daily_brain_context_bytes=len(canonical_json(brain_context.model_dump(mode="json")).encode("utf-8")),
             historical_raw_witness_count=len(brain_context.exact_witnesses),
             logical_llm_call_count=1,
@@ -359,7 +368,7 @@ class ThinDailyAnalyzer:
             brain_context_loaded_before_first_llm=True,
             brain_retrieval_basis="CURRENT_NEWS",
             compiled_brain_guidance_count=len(brain_context.compiled_brain_guidance),
-            analyzed_cluster_count=len(decision.analyzed_cluster_ids),
+            analyzed_cluster_count=decision.analyzed_cluster_count,
             brain_decision_artifact=relative_to_root(decision_path, self.root),
             brain_decision_sha256=file_sha256(decision_path),
             current_event_capsules_artifact=relative_to_root(capsules_path, self.root),
@@ -535,11 +544,14 @@ def _build_final_market_decision_prompt(
         "schema": FINAL_MARKET_DECISION_PROMPT_VERSION,
         "trade_date": trade_date.isoformat(),
         "cutoff_at": cutoff_at.isoformat(),
-        "event_ids": sorted({event_id for row in capsules for event_id in row.event_ids}),
-        "source_row_ids": sorted({row_id for row in capsules for row_id in row.source_row_ids}),
-        "current_news": [row.representative_title for row in capsules],
-        "current_event_capsules": [row.model_dump(mode="json") for row in capsules],
-        "required_cluster_ids": [row.cluster_id for row in capsules],
+        "material_event_count": len(capsules),
+        "current_event_capsule_format": (
+            "c=cluster_id,r=source_row_ids,e=event_ids,t=representative_title,"
+            "p=predicate_exact_sentences,i=issuer_company_literals,k=ticker_literals,"
+            "q=counterparty_literals,n=numeric_unit_literals,m=modality_literals,"
+            "d=exact_duplicate_count,s=semantic_duplicate_count,x=conflict_flags"
+        ),
+        "current_event_capsules": [_prompt_capsule_payload(row) for row in capsules],
         "daily_brain_context": brain_context.model_dump(mode="json"),
         "d_minus_one_safe_context": d_minus_one_context,
         "retrieved_record_ids": record_ids,
@@ -559,8 +571,9 @@ def _build_final_market_decision_prompt(
         "allowed_mechanism_claim_ids": claim_ids,
     }
     return (
-        "Return BrainInformedDecision with every required cluster ID exactly once in "
-        "analyzed_cluster_ids and the final BlindPrediction in prediction, in one call. "
+        "Return BrainInformedDecision with analyzed_cluster_count exactly equal to "
+        "material_event_count and the final BlindPrediction in prediction, in one call. "
+        "Review every current event capsule supplied before selecting candidates. "
         "Interpret every current event using the supplied cutoff-safe precompiled brain context, "
         "mechanisms, applicable conditions, failures, and counterexamples from the outset. "
         "Compare current facts with those conditions; distinguish facts from hypotheses. "
@@ -649,16 +662,18 @@ def _validate_and_seal_prediction(
         cited_brain_ids.update(sector.mechanism_claim_ids)
     if (allowed_capsules or allowed_claims) and not cited_brain_ids:
         raise ValueError("final decision did not cite the selected offline brain")
+    sealed_at = now_kst()
     normalized = prediction.model_copy(
         update={
             "trade_date": trade_date,
             "cutoff_at": cutoff_at,
+            "created_at": sealed_at,
             "context_manifest_id": run_id,
             "sealed_at": None,
             "blind_artifact_sha256": None,
         }
     )
-    sealed = normalized.model_copy(update={"sealed_at": now_kst()})
+    sealed = normalized.model_copy(update={"sealed_at": sealed_at})
     digest = sha256_text(canonical_json(sealed.model_dump(mode="json")))
     return sealed.model_copy(update={"blind_artifact_sha256": digest})
 
@@ -819,7 +834,30 @@ def _render_thin_daily_report(
 
 
 def _capsule_bytes(capsules: Sequence[CurrentEventCapsule]) -> int:
-    return len(canonical_json([row.model_dump(mode="json") for row in capsules]).encode("utf-8"))
+    return len(canonical_json([_prompt_capsule_payload(row) for row in capsules]).encode("utf-8"))
+
+
+def _prompt_capsule_payload(capsule: CurrentEventCapsule) -> dict[str, Any]:
+    payload = capsule.model_dump(mode="json")
+    # Full source IDs and publication timestamps remain in the sealed event and
+    # row-disposition artifacts; compact aliases keep complete news coverage under
+    # the Codex CLI request-size limit without repeating long schema names per row.
+    aliases = {
+        "cluster_id": "c",
+        "source_row_ids": "r",
+        "event_ids": "e",
+        "representative_title": "t",
+        "predicate_exact_sentences": "p",
+        "issuer_company_literals": "i",
+        "ticker_literals": "k",
+        "counterparty_literals": "q",
+        "numeric_unit_literals": "n",
+        "modality_literals": "m",
+        "exact_duplicate_count": "d",
+        "semantic_duplicate_count": "s",
+        "conflict_flags": "x",
+    }
+    return {short: payload[name] for name, short in aliases.items()}
 
 
 def _unique(values: Sequence[str] | Any) -> list[str]:

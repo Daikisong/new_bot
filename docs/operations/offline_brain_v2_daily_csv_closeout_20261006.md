@@ -1,7 +1,7 @@
 # Offline Brain V2 and Daily CSV Closeout
 
-Audit snapshot: 2026-10-06 20:01 KST
-Result: one-time package compile and lineage audit pass; real daily CSV smoke is blocked on input; predictive quality is unapproved; production remains on HOLD.
+Audit snapshot: 2026-10-08 KST
+Result: one-time package compile and lineage audit pass; one historical daily smoke passed functionally; predictive quality is unapproved; production remains on HOLD.
 
 ## Status
 
@@ -14,7 +14,7 @@ Result: one-time package compile and lineage audit pass; real daily CSV smoke is
 | Assignments and centroids | `PASS` | 823,279 assignment export rows match DB rows exactly. Membership root matches `dd51591eeab66636cedfe0ac14af14d13d2a0a5c43ee00eaff30675f5ffbb401`. Assignment-to-centroid, capsule-to-centroid/category/member-count mismatches are all 0. |
 | Mechanism claim citations | `PASS` | 40 claim payloads match between JSONL and DB. Their 111 support/contradiction edges match payload IDs and roles exactly: 105 supporting, 6 contradicting; no orphan or duplicate edges. |
 | Payload exposure accounting | `PASS / PARTIAL EXPOSURE` | 181,979 unique records (22.104%) have a full payload exposure entry. Exposure root `0d402ea2aa50c9c4cf8a5048ec9739fe19cca2e2495d5184da6aad4a61a48072` matches both manifests; truncation count is 0. The other 641,300 records were not directly payload-exposed to the LLM. |
-| Actual `analyze-daily` smoke | `BLOCKED_INPUT_REQUIRED` | No eligible post-build-cutoff pre-open CSV was found in the searched local locations. The temporary Vercel transport returned a Vercel login page. No prediction was run. |
+| Actual daily analyzer smoke | `PASS (functional, historical single-day)` | A real Codex OAuth `ThinDailyAnalyzer` run used 2026-10-06 CSV with the fixed package, one logical decision request, zero repair, and isolated outputs. This is not a scored prediction or quality gate. |
 | Predictive quality gate | `NOT_RUN_GATE_MISSING` | No registered bounded gate with matching one-call architecture and HOLDOUT/paired score closure was found. Predictive quality is `UNAPPROVED`. |
 | Production activation | `HOLD` | Package flags are `production_eligible=false`, `production_activated=false`. No pointer switch or production activation was performed. |
 
@@ -85,7 +85,7 @@ Therefore `analyze-daily` was not run. The next required input is the user's act
 
 ## Next Action
 
-No compile, import, embedding build, or package-lineage re-audit is due. Continue when the user supplies an eligible pre-open CSV or makes the authenticated transport available. Until then, keep this goal active with daily smoke `BLOCKED_INPUT_REQUIRED`, predictive quality `UNAPPROVED`, and production `HOLD`.
+No compile, historical-corpus import, embedding build, or package-lineage re-audit is due. The next evaluation must bind a registered same-architecture v3 gate to eligible CSVs and cutoff-safe outcomes, while separately resolving missing `collected_at` evidence and Monday/holiday window semantics. The folder's `news_20261007.csv` is absent. Keep predictive quality `UNAPPROVED` and production `HOLD` until the registered gate and release requirements pass.
 
 ## Supplemental CSV Search (2026-10-06 20:18 KST)
 
@@ -94,3 +94,21 @@ A follow-up filename scan also covered the user's Desktop, Documents, OneDrive, 
 ## Daily Architecture Unit Tests (2026-10-06 20:22 KST)
 
 The focused command `python -m pytest tests/unit/test_thin_daily.py tests/unit/test_offline_brain_v2.py::test_daily_reader_uses_only_precompiled_package -q --durations=10` passed all 17 tests. These deterministic mock/fixture tests cover the single `final_market_decision` call, brain context loaded before that request, bounded repair (at most two provider invocations), call count independent of large record/cluster counts, and reading a precompiled fixture package. They do not exercise the audited 19.8 GB package with a real daily CSV or live model/provider, and they are not a predictive-quality gate. Full `pytest`, Ruff, and mypy were not rerun.
+
+## Daily Smoke With User CSV (2026-10-08)
+
+The user supplied `C:\Users\eorb9\Downloads\123-20261007T194150Z-1-001\123`: 32 CSVs, 42,909 rows, from `news_20260824.csv` through `news_20261006.csv`. `news_20260821.csv` and `news_20261007.csv` are absent. Source files were not modified. None of the CSVs has a `collected_at` column, so publication times can be checked against cutoff but collection-before-cutoff is not independently evidenced.
+
+The isolated historical functional smoke used `news_20261006.csv`, trade date `2026-10-06`, cutoff `2026-10-06T08:59:59+09:00`, and default window start `2026-10-05T15:30:00+09:00`. All 911 rows were inside that window; latest publication was `08:59:53`. Input SHA-256: `0a4b3d15324fbdd65869b550eed286a2bb06c06ef6416e4de84ca3c063eb33ca`.
+
+The selected package remained `brain-v2-993b42487c557ca1`, package root `b3dc694131b41c1553817ca7b2e00747391e79f95170ad856ae7054c120165dd`. The run formed 873 material event capsules from 911 rows and loaded 10 compiled guidance artifacts, 24 semantic memory capsules, and 24 exact witnesses (0 mechanism claims selected). It did not re-import, re-embed the historical corpus, or rebuild the one-time brain. It did compute local embeddings for current-event clustering and retrieval queries. Daily import, daily rebuild, web calls, online full-corpus scans, and future-record exposure were all 0.
+
+The `one_time_brain_thin_daily.v3` path made one successful `final_market_decision` logical Codex OAuth call using `gpt-5.6-sol/xhigh`; structured repair retries were 0. End-to-end time was 402.06 seconds (6m42s), provider interval 321.03 seconds. The prompt was 939,725 characters, below the Codex CLI hard limit of 1,048,576; the recorded 1,258,259 is a conservative UTF-8 byte upper bound, not tokenizer usage. Prompt SHA-256: `9e59e1977e29c3dd952449b7bafc05683d98ccc737e9371b8771d1b781de2ddf`.
+
+To stay below the provider request limit, the prompt uses compact capsule field aliases and validates the returned `analyzed_cluster_count`, while the full capsule, source identity, timestamps, and row disposition remain in separately hashed artifacts. That count is a model self-report checked against the artifact count; it is not independent proof of semantic attention. The LLM received the 873 deduplicated current-event capsules, not all 911 full article bodies. The isolated output is under `runs/daily_csv_smoke_20261008_compact/outputs/THINRUN-1e092dd16b3be82ec275/`; it was generated on October 8 for a historical October 6 cutoff and is not a formal prediction, scored result, or training input. Canonical predictions/reports and the production pointer were not written.
+
+The folder-wide parser audit found 9,380 rows before the app's default window and 0 after-cutoff rows. Since the default start is the previous calendar day at 15:30, Monday/holiday runs can omit Friday-after-close and weekend news before Sunday 15:30. The Tuesday October 6 smoke does not validate weekend/holiday window semantics; a trading-session-aware start needs explicit definition and tests before those dates enter formal evaluation. The absent October 7 file also remains untested.
+
+The first real prompt attempt was safely rejected before model generation because its 1,198,258 characters exceeded the Codex 1,048,576-character limit. Daily prompt architecture v3 now compacts repeated capsule keys and does not require the model to echo hundreds of long cluster IDs. The successful run returned six candidates, but no market outcomes were opened and no quality score was computed. `NOT_RUN_GATE_MISSING`, predictive quality `UNAPPROVED`, and production `HOLD` remain unchanged. A timestamp audit also found that the historical model response supplied `created_at` equal to cutoff; the sealing code now overwrites created/sealed timestamps with the actual run time. The original smoke artifact is preserved unchanged for forensics.
+
+Verification after the code changes: `python -m ruff check .` passed; `python -m mypy src/news_scalping_lab` passed for 139 source files; full `python -m pytest` passed 1,907 tests (350.92 seconds). These gates do not constitute the missing predictive-quality evaluation.

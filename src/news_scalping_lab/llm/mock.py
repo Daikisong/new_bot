@@ -86,7 +86,7 @@ class DeterministicMockLLMProvider:
         if response_model is BrainInformedDecision:
             payload = self._marked_payload(prompt, "---BLIND_ANALYSIS_PAYLOAD---")
             decision = BrainInformedDecision(
-                analyzed_cluster_ids=[str(value) for value in payload["required_cluster_ids"]],
+                analyzed_cluster_count=int(payload["material_event_count"]),
                 prediction=self._blind_prediction(prompt),
             )
             return decision  # type: ignore[return-value]
@@ -464,6 +464,30 @@ class DeterministicMockLLMProvider:
         cutoff_at = self._payload_datetime(payload, "cutoff_at") or created_at
         current_news = self._payload_string_list(payload, "current_news")
         event_ids = self._payload_string_list(payload, "event_ids")
+        raw_capsules = payload.get("current_event_capsules")
+        current_capsules = raw_capsules if isinstance(raw_capsules, list) else []
+        if not current_news:
+            current_news = [
+                str(row.get("t") or row.get("representative_title"))
+                for row in current_capsules
+                if isinstance(row, dict)
+                and isinstance(row.get("t") or row.get("representative_title"), str)
+            ]
+        if not event_ids:
+            capsule_event_ids: list[str] = []
+            for row in current_capsules:
+                if not isinstance(row, dict):
+                    continue
+                row_event_ids = row.get("e")
+                if not isinstance(row_event_ids, list):
+                    row_event_ids = row.get("event_ids")
+                if isinstance(row_event_ids, list):
+                    capsule_event_ids.extend(
+                        str(event_id)
+                        for event_id in row_event_ids
+                        if isinstance(event_id, str)
+                    )
+            event_ids = self._dedupe_strings(capsule_event_ids)
         prior_positive_cases = self._dedupe_strings(
             self._payload_string_list(payload, "retrieved_episode_ids")
         )[:3]
@@ -492,9 +516,20 @@ class DeterministicMockLLMProvider:
         mechanisms = self._payload_string_list(payload, "first_pass_mechanisms")
         if not mechanisms:
             mechanisms = self.infer_mechanisms("\n---NEWS---\n".join(current_news) or prompt)
+        raw_source_row_ids = payload.get("source_row_ids")
+        if not isinstance(raw_source_row_ids, list):
+            raw_source_row_ids = []
+            for row in current_capsules:
+                if not isinstance(row, dict):
+                    continue
+                row_source_ids = row.get("r")
+                if not isinstance(row_source_ids, list):
+                    row_source_ids = row.get("source_row_ids")
+                if isinstance(row_source_ids, list):
+                    raw_source_row_ids.extend(row_source_ids)
         source_row_ids = [
             int(value)
-            for value in payload.get("source_row_ids", [])
+            for value in raw_source_row_ids
             if isinstance(value, int) and not isinstance(value, bool)
         ][:8]
         semantic_capsule_ids = self._payload_string_list(
