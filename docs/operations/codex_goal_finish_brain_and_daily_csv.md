@@ -179,3 +179,17 @@ XKRX calendar 기준으로 2026-09-24, 2026-09-25, 2026-10-05는 비거래일 �
 이 변경에서 후보 `event_ids`가 현재 전체 CSV 어디엔가 존재하는지만 보던 validator를 보강해, 각 후보의 `source_row_ids`와 겹치는 capsule에 실제 포함된 event ID만 허용한다. 섹터 검증을 후보 loop 밖으로 분리해 후보가 0개여도 검사를 생략하지 않게 했다. 회귀 테스트를 추가했고 현재 전체 gate는 Ruff PASS, mypy 139 files PASS, pytest `1913 passed`다.
 
 일일 경로의 한 날짜 기능 smoke는 PASS지만 정식 same-architecture blind quality gate는 여전히 `NOT_RUN_GATE_MISSING` / `UNAPPROVED`다. `news_20261007.csv`, 수집시각 provenance, 등록된 bounded blind gate, 별도 사용자 release 승인이 남아 있으므로 production은 `HOLD`다.
+
+## 2026-10-08 CSV 전달 재확인 및 formal evaluator 감사
+
+사용자가 다시 전달한 `C:\Users\eorb9\Downloads\123-20261007T194150Z-1-001\123`를 재귀 확인했다. 새 하위 폴더나 압축 파일은 없고 기존과 같은 32 CSV/42,909행이다. XKRX 거래일은 29개/39,898행, 비거래일 파일은 3개/3,011행이다. 파일 범위는 8월 24일~10월 6일이며 10월 7일 파일은 아직 없다.
+
+`trade_date`는 파일명의 날짜, 일일 cutoff는 그 날짜 `08:59:59 KST`다. 사용자가 별도 시각을 더 제공할 필요는 없다. 장전 window는 직전 XKRX 거래 세션 15:30부터 cutoff까지이며, 29개 거래일 행은 이 범위 안에 있고 cutoff 이후 게시 행은 없다. CSV에 `collected_at`은 없어 원본이 실제 cutoff 전에 수집됐다는 점은 입증되지 않는다. `news_20260821.csv` 부재는 post-build 평가를 막지 않는다. Offline Brain V2 build cutoff는 8월 21일 18:52:07 KST이므로 같은 날 08:59:59 cutoff의 입력은 두뇌 build보다 앞서 있어 post-build 검증 자료로 쓸 수 없다. 8월 24일이 첫 적격 거래일이다.
+
+이 29일을 각각 `analyze-daily`로 호출하면 한 건당 452.55초였던 한 번의 smoke를 단순 곱한 선형 추정은 약 3시간 38분 44초다. 이는 실측이 아닌 단일 샘플 기반 산술 추정이며 정확도 점수가 아니라 경로/운영 일관성만 확인한다. 기존 9월 28일 full CLI smoke가 이미 기능 경로를 한 번 입증했으므로 이번에는 29회 LLM 호출을 시작하지 않았다.
+
+Formal evaluator 코드를 확인했다. A/B/C는 같은 `ThinDailyAnalyzer` 일일 one-call 경로에서 각각 과거 두뇌 없음, 기존 category-brain baseline, Offline V2 brain을 비교한다. 정식 실행은 전체 sealed split, cutoff-safe D-1 문맥, BUILD-only V2 package가 필요하고 모든 예측 seal 및 citation closure가 끝난 뒤에만 물리적으로 분리된 outcome을 열어 점수화한다. 제공된 raw CSV 폴더만으로는 이 selection/outcome 계약을 충족하지 않는다. 현재 root에 `runs/semantic_brain_upgrade/quality_full` 실행 결과가 없고 registered quality gate도 없다. 따라서 29일 CSV는 운영 경로 검증 입력이지 그 자체로 공식 성능 gate가 아니다.
+
+Evaluator 감사 중 점수기 citation closure가 후보의 event ID와 source row ID가 각각 입력 전체에 존재하는지만 확인하고 둘이 같은 capsule에서 연결되는지는 확인하지 않는 결함을 찾았다. `_citation_closure_passed`를 운영 daily validator와 같은 row-to-event 관계 검사로 보강하고 회귀 테스트를 추가했다. 이번 검증은 targeted pytest 11개 PASS, 변경 파일 Ruff PASS, mypy 139 source files PASS, 전체 pytest `1914 passed`다. 이 수정은 과거 예측 점수화나 새 model call을 수행하지 않았다.
+
+현재 상태는 한 날짜 historical daily CLI smoke `PASS`, formal predictive quality `NOT_RUN_GATE_MISSING` / `UNAPPROVED`, production `HOLD`다. 10월 7일 CSV, 독립 수집시각 provenance, registered bounded quality gate, 별도 사용자 release 승인은 확보되지 않았다. One-time brain은 재빌드하지 않았다.

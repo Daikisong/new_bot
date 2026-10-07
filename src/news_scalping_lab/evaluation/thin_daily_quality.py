@@ -1449,9 +1449,16 @@ def _citation_closure_passed(
     }
     cited_brain_ids: set[str] = set()
     for candidate in prediction.candidates:
+        candidate_rows = set(candidate.source_row_ids)
+        row_matched_events = {
+            event_id
+            for capsule in capsules
+            if candidate_rows.intersection(capsule.source_row_ids)
+            for event_id in capsule.event_ids
+        }
         if (
             not candidate.source_row_ids
-            or not set(candidate.event_ids).issubset(allowed_events)
+            or not set(candidate.event_ids).issubset(row_matched_events)
             or not set(candidate.source_row_ids).issubset(allowed_rows)
             or not set(candidate.semantic_capsule_ids).issubset(allowed_capsules)
             or not set(candidate.mechanism_claim_ids).issubset(allowed_claims)

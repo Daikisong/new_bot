@@ -6,6 +6,7 @@ from datetime import date, datetime
 import pytest
 from pydantic import ValidationError
 
+from news_scalping_lab.contracts.models import BlindAnalysis, BlindPrediction, Candidate
 from news_scalping_lab.contracts.offline_brain import (
     CurrentEventCapsule,
     DailyBrainContext,
@@ -19,6 +20,7 @@ from news_scalping_lab.contracts.quality_evaluation import (
 )
 from news_scalping_lab.evaluation.thin_daily_quality import (
     NoHistoricalBrainContextProvider,
+    _citation_closure_passed,
     _render_score_markdown,
     _validate_build_only_record_membership,
     _validate_build_only_v2_package,
@@ -65,6 +67,54 @@ def _runtime_case(episode_id: str, split: str, trade_date: date) -> BlindRuntime
         d_minus_one_candidate_universe_root_sha256=digest,
         d_minus_one_snapshot_root_sha256=digest,
         d_minus_one_source_revision_sha256=digest,
+    )
+
+
+def test_quality_citation_closure_binds_candidate_event_to_its_source_rows() -> None:
+    cutoff = datetime(2026, 1, 2, 8, 59, 59, tzinfo=KST)
+    capsule = _capsule()
+    unrelated = CurrentEventCapsule(
+        cluster_id="CLUSTER-2",
+        source_row_ids=[2],
+        event_ids=["EVENT-2"],
+        source_ids=["SOURCE-2"],
+        representative_title="A different news event",
+        published_times=[datetime(2026, 1, 2, 7, 30, tzinfo=KST)],
+    )
+    context = DailyBrainContext(
+        brain_version="brain-v2-test",
+        brain_package_root="a" * 64,
+        brain_build_cutoff=datetime(2026, 1, 1, tzinfo=KST),
+        retrieval_basis="CURRENT_NEWS",
+        current_event_capsules_sha256="b" * 64,
+    )
+
+    def prediction(event_ids: list[str]) -> BlindPrediction:
+        return BlindPrediction(
+            prediction_id="PRED-test",
+            trade_date=cutoff.date(),
+            cutoff_at=cutoff,
+            created_at=cutoff,
+            blind_analysis=BlindAnalysis(summary="Current-news analysis"),
+            candidates=[
+                Candidate(
+                    rank=1,
+                    ticker="005930",
+                    company_name="Samsung Electronics",
+                    path_type="SINGLE_EVENT",
+                    event_ids=event_ids,
+                    thesis="A supported thesis",
+                    why_now="A current news catalyst",
+                    source_row_ids=[1],
+                )
+            ],
+        )
+
+    assert _citation_closure_passed(prediction(["EVENT-1"]), context, [capsule, unrelated])
+    assert not _citation_closure_passed(
+        prediction(["EVENT-2"]),
+        context,
+        [capsule, unrelated],
     )
 
 
