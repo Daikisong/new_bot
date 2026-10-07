@@ -191,6 +191,7 @@
           "type": "array"
         },
         "event_ids": {
+          "description": "Exact event IDs identifying news evidence for this candidate; copy from the supplied source/context without inventing or paraphrasing.",
           "items": {
             "type": "string"
           },
@@ -453,6 +454,7 @@
           "type": "array"
         },
         "triggering_events": {
+          "description": "Exact current-news event IDs copied from current-event capsule event lists.",
           "items": {
             "type": "string"
           },
@@ -742,6 +744,11 @@
           "default": "nslab.thin_daily_run_manifest.v2",
           "title": "Schema Version",
           "type": "string"
+        },
+        "structured_repair_count": {
+          "default": 0,
+          "title": "Structured Repair Count",
+          "type": "integer"
         },
         "token_counts": {
           "additionalProperties": {

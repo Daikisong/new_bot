@@ -9,7 +9,11 @@ from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
 from news_scalping_lab.llm.openai_provider import OpenAIResponsesProvider
 
 
-def create_llm_provider(settings: Settings) -> LLMProvider:
+def create_llm_provider(
+    settings: Settings,
+    *,
+    structured_repair_retries: int | None = None,
+) -> LLMProvider:
     provider = settings.llm_provider.strip().lower()
     if provider == "mock":
         return DeterministicMockLLMProvider(
@@ -33,6 +37,10 @@ def create_llm_provider(settings: Settings) -> LLMProvider:
                 settings.llm.reasoning_effort or settings.codex_reasoning_effort
             ),
             max_output_tokens=settings.llm.max_output_tokens,
-            structured_repair_retries=settings.llm.max_retries,
+            structured_repair_retries=(
+                settings.llm.max_retries
+                if structured_repair_retries is None
+                else structured_repair_retries
+            ),
         )
     raise ValueError(f"unsupported LLM provider: {settings.llm_provider}")

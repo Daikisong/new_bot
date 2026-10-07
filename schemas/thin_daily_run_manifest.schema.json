@@ -202,6 +202,11 @@
       "title": "Schema Version",
       "type": "string"
     },
+    "structured_repair_count": {
+      "default": 0,
+      "title": "Structured Repair Count",
+      "type": "integer"
+    },
     "token_counts": {
       "additionalProperties": {
         "type": "integer"

@@ -6,9 +6,12 @@ import hashlib
 import json
 import re
 from datetime import UTC, date, datetime, time, timedelta
+from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
+
+from exchange_calendars import get_calendar  # type: ignore[import-untyped]
 
 KST = ZoneInfo("Asia/Seoul")
 
@@ -43,8 +46,23 @@ def combine_kst(day: date, value: str) -> datetime:
     return datetime.combine(day, time(hour, minute, second), tzinfo=KST)
 
 
+@lru_cache(maxsize=1)
+def _krx_calendar() -> Any:
+    return get_calendar("XKRX", start="1990-01-01", end="2050-12-31")
+
+
+def is_krx_trading_day(day: date) -> bool:
+    return bool(_krx_calendar().is_session(day.isoformat()))
+
+
 def default_news_window_start(trade_date: date) -> datetime:
-    return combine_kst(trade_date - timedelta(days=1), "15:30:00")
+    calendar = _krx_calendar()
+    session_date = trade_date.isoformat()
+    if calendar.is_session(session_date):
+        previous_session = calendar.previous_session(session_date)
+    else:
+        previous_session = calendar.date_to_session(session_date, direction="previous")
+    return combine_kst(cast(date, previous_session.date()), "15:30:00")
 
 
 def next_calendar_day(day: date) -> date:
@@ -52,10 +70,13 @@ def next_calendar_day(day: date) -> date:
 
 
 def next_trading_day(day: date) -> date:
-    next_day = next_calendar_day(day)
-    while next_day.weekday() >= 5:
-        next_day = next_calendar_day(next_day)
-    return next_day
+    calendar = _krx_calendar()
+    session_date = day.isoformat()
+    if calendar.is_session(session_date):
+        next_session = calendar.next_session(session_date)
+    else:
+        next_session = calendar.date_to_session(session_date, direction="next")
+    return cast(date, next_session.date())
 
 
 def sha256_bytes(data: bytes) -> str:

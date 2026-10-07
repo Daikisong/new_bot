@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from news_scalping_lab.config import Settings
+from news_scalping_lab.contracts.models import DominantSectorHypothesis
 from news_scalping_lab.contracts.offline_brain import (
     CompiledBrainGuidance,
     CurrentDayInterpretation,
@@ -36,6 +37,7 @@ class CountingMockLLM(DeterministicMockLLMProvider):
         super().__init__()
         self.calls: list[str] = []
         self.prompts: dict[str, str] = {}
+        self.prompt_history: list[str] = []
 
     async def generate_structured(
         self,
@@ -46,11 +48,122 @@ class CountingMockLLM(DeterministicMockLLMProvider):
     ) -> Any:
         self.calls.append(purpose)
         self.prompts[purpose] = prompt
+        self.prompt_history.append(prompt)
         return await super().generate_structured(
             prompt=prompt,
             response_model=response_model,
             purpose=purpose,
         )
+
+
+class InvalidSectorEventThenValidLLM(CountingMockLLM):
+    def __init__(self) -> None:
+        super().__init__()
+        self.valid_response: Any | None = None
+
+    async def generate_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[Any],
+        purpose: str,
+    ) -> Any:
+        if self.calls:
+            self.calls.append(purpose)
+            self.prompts[purpose] = prompt
+            self.prompt_history.append(prompt)
+            assert self.valid_response is not None
+            return self.valid_response
+        result = await super().generate_structured(
+            prompt=prompt,
+            response_model=response_model,
+            purpose=purpose,
+        )
+        self.valid_response = result
+        invalid_sector = DominantSectorHypothesis(
+            name="Fixture sector",
+            triggering_events=["descriptive event text is not an event id"],
+            formation_mechanism="fixture event -> direct exposure",
+            expected_breadth="narrow",
+        )
+        invalid_candidate = result.prediction.candidates[0].model_copy(
+            update={"event_ids": ["EVT-unsupported-fixture"]}
+        )
+        prediction = result.prediction.model_copy(
+            update={
+                "candidates": [invalid_candidate, *result.prediction.candidates[1:]],
+                "dominant_sectors": [invalid_sector],
+            }
+        )
+        return result.model_copy(update={"prediction": prediction})
+
+
+class InvalidSectorWithoutCandidatesLLM(CountingMockLLM):
+    async def generate_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[Any],
+        purpose: str,
+    ) -> Any:
+        result = await super().generate_structured(
+            prompt=prompt,
+            response_model=response_model,
+            purpose=purpose,
+        )
+        invalid_sector = DominantSectorHypothesis(
+            name="Fixture sector",
+            triggering_events=["descriptive event text is not an event id"],
+            formation_mechanism="fixture event -> direct exposure",
+            expected_breadth="narrow",
+        )
+        prediction = result.prediction.model_copy(
+            update={"candidates": [], "dominant_sectors": [invalid_sector]}
+        )
+        return result.model_copy(update={"prediction": prediction})
+
+
+class MisalignedCandidateEventThenValidLLM(CountingMockLLM):
+    def __init__(self) -> None:
+        super().__init__()
+        self.valid_response: Any | None = None
+
+    async def generate_structured(
+        self,
+        *,
+        prompt: str,
+        response_model: type[Any],
+        purpose: str,
+    ) -> Any:
+        if self.calls:
+            self.calls.append(purpose)
+            self.prompts[purpose] = prompt
+            self.prompt_history.append(prompt)
+            assert self.valid_response is not None
+            return self.valid_response
+        result = await super().generate_structured(
+            prompt=prompt,
+            response_model=response_model,
+            purpose=purpose,
+        )
+        self.valid_response = result
+        payload = json.loads(prompt.split("---BLIND_ANALYSIS_PAYLOAD---\n", 1)[1])
+        candidate = result.prediction.candidates[0]
+        candidate_rows = set(candidate.source_row_ids)
+        foreign_capsule = next(
+            row
+            for row in payload["current_event_capsules"]
+            if not candidate_rows.intersection(row["r"])
+        )
+        mismatched_candidate = candidate.model_copy(
+            update={"event_ids": [foreign_capsule["e"][0]]}
+        )
+        prediction = result.prediction.model_copy(
+            update={
+                "candidates": [mismatched_candidate, *result.prediction.candidates[1:]]
+            }
+        )
+        return result.model_copy(update={"prediction": prediction})
 
 
 class FixtureBrainContextProvider:
@@ -229,6 +342,95 @@ async def test_daily_normal_call_count_is_one_and_uses_brain(tmp_path: Path) -> 
 
 
 @pytest.mark.asyncio
+async def test_daily_repairs_invalid_sector_event_citation_once(tmp_path: Path) -> None:
+    news_path = _write_news_csv(tmp_path / "news.csv", row_count=10)
+    llm = InvalidSectorEventThenValidLLM()
+    settings = Settings(project_root=tmp_path)
+    settings.llm.max_retries = 1
+    analysis = await ThinDailyAnalyzer(
+        settings,
+        llm=llm,
+        brain_context_provider=FixtureBrainContextProvider(),
+    ).analyze(
+        news_csv=news_path,
+        trade_date=date(2026, 1, 2),
+        cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
+    )
+
+    assert llm.calls == ["final_market_decision", "final_market_decision"]
+    assert len(llm.prompt_history) == 2
+    assert "---STRUCTURED_REPAIR---" in llm.prompt_history[1]
+    assert "Validation error:" in llm.prompt_history[1]
+    assert "Candidate.event_ids" in llm.prompt_history[1]
+    assert "DominantSectorHypothesis.triggering_events" in llm.prompt_history[1]
+    assert "EVT-unsupported-fixture" in llm.prompt_history[1]
+    assert analysis.context_manifest.logical_llm_call_count == 1
+    assert analysis.context_manifest.maximum_live_agent_call_count == 2
+    assert analysis.context_manifest.structured_repair_count == 1
+
+
+@pytest.mark.asyncio
+async def test_daily_validates_sector_event_citation_without_candidates(tmp_path: Path) -> None:
+    news_path = _write_news_csv(tmp_path / "news.csv", row_count=10)
+    llm = InvalidSectorWithoutCandidatesLLM()
+    settings = Settings(project_root=tmp_path)
+    settings.llm.max_retries = 0
+
+    with pytest.raises(ValueError, match="sector 'Fixture sector' triggering_events"):
+        await ThinDailyAnalyzer(
+            settings,
+            llm=llm,
+            brain_context_provider=FixtureBrainContextProvider(),
+        ).analyze(
+            news_csv=news_path,
+            trade_date=date(2026, 1, 2),
+            cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
+        )
+
+
+@pytest.mark.asyncio
+async def test_daily_repairs_candidate_event_outside_its_source_rows(tmp_path: Path) -> None:
+    news_path = _write_news_csv(tmp_path / "news.csv", row_count=10)
+    llm = MisalignedCandidateEventThenValidLLM()
+    settings = Settings(project_root=tmp_path)
+    settings.llm.max_retries = 1
+    analysis = await ThinDailyAnalyzer(
+        settings,
+        llm=llm,
+        brain_context_provider=FixtureBrainContextProvider(),
+    ).analyze(
+        news_csv=news_path,
+        trade_date=date(2026, 1, 2),
+        cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
+    )
+
+    assert llm.calls == ["final_market_decision", "final_market_decision"]
+    assert analysis.context_manifest.structured_repair_count == 1
+    assert "exact current IDs matching those rows" in llm.prompt_history[1]
+
+
+@pytest.mark.asyncio
+async def test_daily_rejects_krx_holiday_before_loading_brain_or_news(tmp_path: Path) -> None:
+    llm = CountingMockLLM()
+    brain = FixtureBrainContextProvider()
+    analyzer = ThinDailyAnalyzer(
+        Settings(project_root=tmp_path),
+        llm=llm,
+        brain_context_provider=brain,
+    )
+
+    with pytest.raises(ValueError, match="not a KRX trading session: 2026-10-05"):
+        await analyzer.analyze(
+            news_csv=tmp_path / "missing.csv",
+            trade_date=date(2026, 10, 5),
+            cutoff_at=datetime(2026, 10, 5, 8, 59, 59, tzinfo=KST),
+        )
+
+    assert llm.calls == []
+    assert brain.calls == 0
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("row_count", [10, 300, 873])
 async def test_daily_llm_call_count_is_independent_of_cluster_count(
     tmp_path: Path,
@@ -365,7 +567,15 @@ def test_no_daily_llm_call_inside_historical_record_or_memory_loop() -> None:
         and node.func.attr in {"generate_structured", "generate_text"}
     ]
     assert loop_calls == []
-    assert source.count("self.llm.generate_structured") == 1
+    assert source.count("_generate_and_validate_daily_decision(") == 1
+    decision_helper = textwrap.dedent(
+        inspect.getsource(ThinDailyAnalyzer.analyze.__globals__["_generate_and_validate_daily_decision"])
+    )
+    assert decision_helper.count("llm.generate_structured(") == 2
+    assert not any(
+        isinstance(node, (ast.For, ast.AsyncFor, ast.While))
+        for node in ast.walk(ast.parse(decision_helper))
+    )
     assert "build_runtime_evidence_memos" not in source
 
 

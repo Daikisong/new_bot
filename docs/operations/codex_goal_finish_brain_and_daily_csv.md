@@ -8,7 +8,7 @@
 
 최종 사용 흐름은 `장전 CSV + 이미 만들어진 두뇌/인덱스 -> GPT의 단일 판단 요청 -> 주도 섹터·종목 후보, 근거·인용·불확실성·출처`다. GPT 가중치를 fine-tune한 새 모델을 만드는 작업이 아니다. 원료 전체를 매일 재해석하거나 record·cluster·lane마다 GPT를 호출하지 않는다.
 
-현재 요약: 기존 Offline Brain V2 패키지는 재사용 가능하고, 2026-10-06 CSV의 격리 daily smoke는 기능 PASS다. 정식 blind predictive-quality gate는 미실행, 예측 품질은 `UNAPPROVED`, production은 `HOLD`다. 2026-10-07 CSV와 collection timestamp가 없고 월요일/휴장일 window 의미도 별도 검증이 필요하다.
+현재 요약: 기존 Offline Brain V2 패키지와 계보 감사는 PASS이며 재컴파일하지 않는다. XKRX 거래일 달력으로 장전 window를 고쳤고, 전달 폴더의 거래일 CSV 29개(39,898행)는 새 window 안에 있으며 cutoff 이후 게시 행은 0이다. 9월 28일 CSV로 격리 프로젝트에서 현재 코드의 전체 `analyze-daily` CLI를 실행했다. 고정 brain root를 로드하고 1,627행을 1,568개 capsule로 분석했으며, `gpt-5.6-sol/xhigh` 1회 판단 요청·repair 0회로 9개 후보와 5개 섹터를 만들었다. Web/import/rebuild/full-corpus scan은 모두 0이고, 후보·섹터 event IDs 및 후보 source-row 연결 검증이 통과했다. 전체 소요는 452.55초였다. 이는 10월 8일에 실행한 historical functional smoke이지 실시간 prediction이나 예측 성능 평가가 아니다. 정식 blind quality gate는 `NOT_RUN_GATE_MISSING`, 예측 품질은 `UNAPPROVED`, production은 `HOLD`다. 폴더에 `news_20261007.csv`가 없고 CSV에 `collected_at` 필드도 없다.
 
 ## 이미 완료된 작업
 
@@ -106,7 +106,9 @@ source manifest pointer의 SHA가 낡았지만, pinned memory snapshot의 실제
 
 이 Goal의 끝은 컴파일을 반복하는 것이 아니다. 기존 한 번의 빌드를 감사하고, 가능한 경우 실제 장전 CSV 연결을 검증하며, 실제 한계와 다음 입력을 외부 검토 가능한 문서로 남기는 것이다.
 
-## 2026-10-08 제공 CSV 및 실제 daily smoke
+## 2026-10-08 제공 CSV 및 구 v3 daily smoke 기록
+
+이 절은 10월 6일 CSV를 사용한 과거 v3 실행 기록이다. 휴장일 window와 event citation 결함을 확인한 뒤속 상태는 문서 끝의 `2026-10-08 KRX window 및 citation 후속` 절이 우선한다.
 
 사용자가 제공한 `C:\Users\eorb9\Downloads\123-20261007T194150Z-1-001\123`에는 CSV 32개, 총 42,909행이 있다. 파일 범위는 `news_20260824.csv`부터 `news_20261006.csv`이며 `news_20260821.csv`와 `news_20261007.csv`는 없다. 원본 파일은 수정하지 않았다.
 
@@ -120,7 +122,7 @@ source manifest pointer의 SHA가 낡았지만, pinned memory snapshot의 실제
 
 결과 파일은 `runs/daily_csv_smoke_20261008_compact/outputs/THINRUN-1e092dd16b3be82ec275/` 아래에 있다. 6개 후보 및 sector report가 만들어졌지만 이 파일은 10월 8일에 실행한 과거 날짜 smoke다. 예측 성능을 채점하지 않았고 training이나 정식 blind 결과로 쓰지 않는다. Smoke 당시 모델이 `BlindPrediction.created_at`을 cutoff 시각으로 반환한 점을 발견해, 현재 코드는 sealing 시각을 실제 현재 시각으로 덮어쓰도록 고쳤다. 기존 smoke artifact는 수정하지 않고 forensic 자료로 보존한다.
 
-32개 전체 날짜 감사에서는 9,380행이 앱의 기본 window 시작 전으로 제외됐고 cutoff 이후 게시행은 0이었다. 월요일 파일에도 기본 시작시각을 직전 달력일 15:30으로 적용하므로 금요일 장 마감 뒤부터 일요일 15:30 전까지의 뉴스가 제외될 수 있다. 이번 화요일 smoke는 주말/휴장일 window 정확성을 검증하지 않았다. 월요일·휴장일 평가 전에 이전 실제 거래 세션을 기준으로 window를 정하고 테스트해야 한다.
+당시 32개 파일 감사에서 구버전의 달력일 기준 window가 9,380행을 제외하는 문제가 드러났다. 월요일·연휴 직후에는 직전 달력일이 아니라 이전 실제 거래 세션의 15:30을 사용해야 한다. 해당 결함과 수정 후 전체 날짜 통계는 아래 후속 절에 기록한다.
 
 실제 smoke 성공은 일일 연결 경로의 기능 확인일 뿐이다. 정식 same-architecture blind quality gate는 아직 `NOT_RUN_GATE_MISSING`, predictive quality는 `UNAPPROVED`, production은 계속 `HOLD`다. 기존 `2026-10-06` canonical prediction/report와 production pointer는 쓰지 않았다. 10월 7일 CSV가 폴더에 없으므로 그 날짜는 아직 검증되지 않았다.
 
@@ -133,3 +135,47 @@ source manifest pointer의 SHA가 낡았지만, pinned memory snapshot의 실제
 ## 2026-10-06 20:22 KST daily architecture 테스트
 
 `python -m pytest tests/unit/test_thin_daily.py tests/unit/test_offline_brain_v2.py::test_daily_reader_uses_only_precompiled_package -q --durations=10` 실행 결과 17개 targeted unit test가 통과했다. mock/fixture 기준으로 brain을 첫 LLM 요청 전에 로드하고, `final_market_decision` 정상 호출은 하나이며 structured repair 포함 최대 두 번인 점, record/cluster 수에 비례해 LLM 호출이 늘지 않는 점, precompiled fixture package 조회를 검증했다. 실제 19.8GB 패키지와 장전 CSV 또는 live provider를 실행한 증거가 아니고 predictive-quality gate도 아니다. 이번에는 전체 pytest/Ruff/mypy를 다시 실행하지 않았다.
+
+## 2026-10-08 KRX window 및 citation 후속
+
+### 입력 범위 및 point-in-time 한계
+
+사용자 폴더 `C:\Users\eorb9\Downloads\123-20261007T194150Z-1-001\123`에는 `news_*.csv` 32개, 42,909행이 있다. 파일명 범위는 `news_20260824.csv`~`news_20261006.csv`; 요청한 `news_20260821.csv`와 `news_20261007.csv`는 없다. CSV header는 `page,row,date,time,title,body`이고 `collected_at`은 없다. 따라서 본문 게시 시각은 cutoff-safe로 검사할 수 있지만, 원본이 해당 cutoff 전에 수집됐다는 점은 독립 증명할 수 없다.
+
+XKRX calendar 기준으로 2026-09-24, 2026-09-25, 2026-10-05는 비거래일 파일이다(861, 579, 1,571행; 합계 3,011행). 이 날짜에는 `analyze-daily` 예측을 만들지 않는다. 나머지 29 거래일 CSV는 39,898행이며, production loader로 검사했을 때 모두 해당 거래일 cutoff `08:59:59 KST` 이내이자 이전 실제 거래 세션 `15:30 KST` 이후였다. 새 window 밖 0행, cutoff 이후 0행이다.
+
+`news_20260928.csv`는 1,627행이다. XKRX상 직전 세션은 추석 휴장 전 9월 23일이므로 올바른 시작은 `2026-09-23T15:30:00+09:00`이다. 본문 날짜별 행은 9월 25일 276, 9월 26일 462, 9월 27일 556, 9월 28일 333이며 모두 포함된다. 구 calendar-day window `2026-09-27T15:30:00+09:00`라면 1,088행이 잘못 제외된다. `news_20261006.csv`는 911행이며 올바른 시작은 `2026-10-02T15:30:00+09:00`; 이 파일은 10월 5일 휴장일 434행과 10월 6일 477행만 포함하므로 구 window에서도 행 차이가 우연히 드러나지 않았다.
+
+### Calendar implementation
+
+`exchange-calendars`의 XKRX session calendar를 사용하도록 `default_news_window_start`, `next_trading_day`를 고쳤고 `is_krx_trading_day`를 추가했다. 휴장일 `analyze-daily`는 CSV/package를 읽기 전에 fail-closed한다. 테스트는 9월 28일 window `9월 23일 15:30`, 10월 6일 window `10월 2일 15:30`, 10월 5일 비거래일을 고정한다. 이 변경은 기사 분류나 후보를 소스코드에 hardcode하지 않는다.
+
+### Citation failure and repair
+
+- 실제 package-backed 9월 28일 첫 실행은 Codex OAuth `gpt-5.6-sol/xhigh`, architecture/prompt v3로 1회 호출됐지만 sector `triggering_events`에 event ID 대신 문장을 넣어 post-validation에서 거부됐다. Trace `production/staging/P9IMPORT-3D770A7DD72457C97098/project/runs/traces/TRACE-f61c675c082d.json`; 예측/manifest/canonical 결과는 승인되지 않았다.
+- 새 v4 repair를 시험한 re-clustered run은 1,627행을 1,568개 capsule로 묶었다. 첫 응답은 `Candidate.event_ids`에 현재 뉴스에 없는 ID를 넣었고, repair 응답은 candidate와 sector 필드 모두에서 허용되지 않은 ID를 사용해 validator가 거부했다. Trace `TRACE-6bfbf8fa582e.json`, `TRACE-688c7f3b8e0d.json`; 확인된 invalid IDs는 `EVT-6cf0c10d552e`, `EVT-e21a88f37126f`다. 첫 validation 오류가 후보 ID였는데 repair 안내가 sector 필드 위주였던 점이 수정 계기다.
+- prompt를 `thin_daily.final_market_decision.v5`로 올리고 Candidate/sector schema description과 main/repair prompt에 `current_event_capsules[].e`만 사용하도록 명시했다. 후보의 `source_row_ids`가 겹치는 capsule의 정확한 event ID를 validation 오류에도 포함한다. 1회 retry 뒤에도 validation은 fail-closed한다.
+- v5 live decision replay는 방금 재생성한 동일 1,568개 capsule artifact와 이전 실제 package retrieval이 만든 동일 brain context를 hash 대조해 재사용했다. GPT의 첫 요청에는 현재 뉴스와 cutoff-safe brain context가 함께 있었다. `gpt-5.6-sol/xhigh`, prompt 944,204자, provider wall time 280.137초, 후보 10·섹터 3, structured repair 0, citations validation `PASS`. Output: `production/staging/P9IMPORT-3D770A7DD72457C97098/project/runs/daily_csv_smoke_calendar_v5_decision_replay_20261008/THINREPLAY-72d78b0aeb01e69033bc/`. News SHA-256 `59365528d7a303dc539abd8b1489a6b4e8caea06d06704ca7e03b7b90a09d07c`; package root remains `b3dc694131b41c1553817ca7b2e00747391e79f95170ad856ae7054c120165dd`. Canonical predictions/reports와 production pointer는 쓰지 않았다.
+- 최초 v5 decision replay는 frozen context를 재사용했으므로 그 실행만으로는 full CLI 검증이 아니었다. 후속으로 아래 `Full v5 analyze-daily CLI Smoke`에서 package selection/load부터 prediction/report까지 전체 경로를 성공적으로 실행했다. 과거 10월 6일 v3 full smoke는 forensic 기능 증거로만 보존한다.
+
+재실행 자원 관측에서 Python private memory는 약 3.05GB로 안정됐고, Codex 응답 대기 중 CPU time 증가 없이 시스템 가용 RAM은 약 17.6GB였다. Torch/local embedding worker pool은 131개 thread로 관측됐다. 무한 증가나 memory leak 증거는 없지만, 이는 단일 Windows 측정이며 운영 latency 보장은 아니다.
+
+### Verification and remaining status
+
+최종 코드 상태에서 `python -m ruff check .` 통과, `python -m mypy src/news_scalping_lab` 통과(139 files), `python -m pytest` 1,911 passed (304.50s). Tracked JSON schemas는 공식 exporter로 다시 생성해 contract parity를 확인했다.
+
+현재 package compile/lineage는 `COMPLETE/PASS`; 일일 경로는 `SMOKE_PASS_ONE_HISTORICAL_DATE`(전체 v5 CLI 경로 통과, 아래 기록); formal predictive quality는 `NOT_RUN_GATE_MISSING` / `UNAPPROVED`; production은 `HOLD`다. `news_20261007.csv`와 `collected_at` 증거가 없고 같은 architecture의 registered blind gate도 없다. One-time compile은 재실행하지 않는다.
+
+## 2026-10-08 Full v5 `analyze-daily` CLI Smoke
+
+`news_20260928.csv`는 package build cutoff 뒤의 거래일이며 추석 연휴 직후 달력 경계도 검증하는 입력이다. trade date `2026-09-28`, cutoff `2026-09-28T08:59:59+09:00`, 올바른 이전 세션 window 시작 `2026-09-23T15:30:00+09:00`을 적용했다. 입력 SHA-256은 `59365528d7a303dc539abd8b1489a6b4e8caea06d06704ca7e03b7b90a09d07c`이고 1,627행 모두 window 안에 있었다.
+
+이전 19.8 GB brain package는 변경하지 않고, 검증 프로젝트 `runs/daily_csv_smoke_v5_cli_eval_20261008/`에서 34개 파일의 hardlink로 재사용했다. 프로젝트 전용 package pointer는 `production_activated=false`다. 선택 package version/root/manifest SHA는 각각 `brain-v2-993b42487c557ca1`, `b3dc694131b41c1553817ca7b2e00747391e79f95170ad856ae7054c120165dd`, `3286247ce9271064455f702d1e44f8fdda4eb3659455f14e44517937da048378`로 고정됐다. package 재컴파일, source/import/repair, historical re-embedding은 하지 않았다.
+
+산출물 run ID는 `THINRUN-46d70c9550d63b790a40`이다. 1,568개 current-event capsule, 10개 compiled brain guidance, 24개 semantic capsule, 24개 exact witness를 첫 요청 전에 불러왔다. provider는 Codex OAuth `gpt-5.6-sol/xhigh`, prompt `thin_daily.final_market_decision.v5`; 단일 logical call 1회, structured repair 0회, 최대 허용 호출 2회였다. blind web 0, daily import 0, daily brain rebuild 0, online full-corpus scan 0, future record 0. 결과는 9 candidates와 5 sectors다. CLI 정상 종료 뒤 저장 결과를 현재의 stricter row-level validator로 재검증해 후보 event citation 31개가 각 candidate source rows와 일치하고, sector event citation 38개가 모두 현재 CSV capsule ID임을 확인했다.
+
+전체 `analyze-daily` wall time은 `452.54972`초(약 7분 33초), 실제 provider 구간은 `276.056837`초, prompt 길이는 944,310자였다. 이 한 번의 Windows historical replay에서 측정한 값으로 운영 SLA를 보장하지 않는다. 결과는 격리 프로젝트 내부 prediction/report/context manifest에만 저장됐다. 본 프로젝트의 canonical prediction이나 production pointer는 바꾸지 않았고, D-day 결과·outcome을 열거나 scoring/training을 하지 않았다. 원본 CSV에는 `collected_at`이 없으므로 기사 게시시각이 cutoff 전이라는 것은 확인했지만 당시 수집된 원본이라는 점까지 독립 증명하지는 못한다.
+
+이 변경에서 후보 `event_ids`가 현재 전체 CSV 어디엔가 존재하는지만 보던 validator를 보강해, 각 후보의 `source_row_ids`와 겹치는 capsule에 실제 포함된 event ID만 허용한다. 섹터 검증을 후보 loop 밖으로 분리해 후보가 0개여도 검사를 생략하지 않게 했다. 회귀 테스트를 추가했고 현재 전체 gate는 Ruff PASS, mypy 139 files PASS, pytest `1913 passed`다.
+
+일일 경로의 한 날짜 기능 smoke는 PASS지만 정식 same-architecture blind quality gate는 여전히 `NOT_RUN_GATE_MISSING` / `UNAPPROVED`다. `news_20261007.csv`, 수집시각 provenance, 등록된 bounded blind gate, 별도 사용자 release 승인이 남아 있으므로 production은 `HOLD`다.

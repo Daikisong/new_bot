@@ -534,6 +534,7 @@ class ThinDailyRunManifest(StrictModel):
     historical_raw_witness_count: int
     logical_llm_call_count: int
     maximum_live_agent_call_count: int
+    structured_repair_count: int = 0
     historical_raw_daily_map_call_count: int
     daily_import_call_count: int
     daily_brain_rebuild_call_count: int
@@ -578,6 +579,8 @@ class ThinDailyRunManifest(StrictModel):
             raise ValueError("thin daily inference must use exactly one logical LLM call")
         if self.maximum_live_agent_call_count not in (1, 2):
             raise ValueError("thin daily inference allows one call and at most one structured repair")
+        if self.structured_repair_count not in (0, 1):
+            raise ValueError("thin daily inference allows at most one structured repair")
         forbidden = (
             self.historical_raw_daily_map_call_count,
             self.daily_import_call_count,

@@ -128,7 +128,13 @@ class Candidate(StrictModel):
     ticker: str
     company_name: str
     path_type: PathType
-    event_ids: list[str] = Field(default_factory=list)
+    event_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Exact event IDs identifying news evidence for this candidate; copy from the supplied "
+            "source/context without inventing or paraphrasing."
+        ),
+    )
     claimed_theme_id: str | None = None
     claims_news_cause: bool = False
     thesis: str
@@ -384,7 +390,10 @@ class FinalSynthesisContextArtifact(StrictModel):
 
 class DominantSectorHypothesis(StrictModel):
     name: str
-    triggering_events: list[str] = Field(default_factory=list)
+    triggering_events: list[str] = Field(
+        default_factory=list,
+        description="Exact current-news event IDs copied from current-event capsule event lists.",
+    )
     formation_mechanism: str
     expected_breadth: str
     direct_beneficiaries: list[str] = Field(default_factory=list)

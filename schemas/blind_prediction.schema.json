@@ -99,6 +99,7 @@
           "type": "array"
         },
         "event_ids": {
+          "description": "Exact event IDs identifying news evidence for this candidate; copy from the supplied source/context without inventing or paraphrasing.",
           "items": {
             "type": "string"
           },
@@ -361,6 +362,7 @@
           "type": "array"
         },
         "triggering_events": {
+          "description": "Exact current-news event IDs copied from current-event capsule event lists.",
           "items": {
             "type": "string"
           },

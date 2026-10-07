@@ -1,7 +1,7 @@
 # Offline Brain V2 and Daily CSV Closeout
 
 Audit snapshot: 2026-10-08 KST
-Result: one-time package compile and lineage audit pass; one historical daily smoke passed functionally; predictive quality is unapproved; production remains on HOLD.
+Result: one-time package compile and lineage audit pass; corrected XKRX window and v5 citation validation pass; full current-version `analyze-daily` CLI smoke passed on one historical date in an isolated evaluation project. Predictive quality is unapproved; production remains on HOLD.
 
 ## Status
 
@@ -14,7 +14,7 @@ Result: one-time package compile and lineage audit pass; one historical daily sm
 | Assignments and centroids | `PASS` | 823,279 assignment export rows match DB rows exactly. Membership root matches `dd51591eeab66636cedfe0ac14af14d13d2a0a5c43ee00eaff30675f5ffbb401`. Assignment-to-centroid, capsule-to-centroid/category/member-count mismatches are all 0. |
 | Mechanism claim citations | `PASS` | 40 claim payloads match between JSONL and DB. Their 111 support/contradiction edges match payload IDs and roles exactly: 105 supporting, 6 contradicting; no orphan or duplicate edges. |
 | Payload exposure accounting | `PASS / PARTIAL EXPOSURE` | 181,979 unique records (22.104%) have a full payload exposure entry. Exposure root `0d402ea2aa50c9c4cf8a5048ec9739fe19cca2e2495d5184da6aad4a61a48072` matches both manifests; truncation count is 0. The other 641,300 records were not directly payload-exposed to the LLM. |
-| Actual daily analyzer smoke | `PASS (functional, historical single-day)` | A real Codex OAuth `ThinDailyAnalyzer` run used 2026-10-06 CSV with the fixed package, one logical decision request, zero repair, and isolated outputs. This is not a scored prediction or quality gate. |
+| Actual daily path | `SMOKE_PASS_ONE_HISTORICAL_DATE` | Full v5 `analyze-daily` CLI passed for 2026-09-28 in `runs/daily_csv_smoke_v5_cli_eval_20261008/`, including package selection/load, local production embeddings, current-news clustering, brain retrieval, Codex OAuth decision, sealing, and report output. This is one historical functional smoke, not a blind quality result. |
 | Predictive quality gate | `NOT_RUN_GATE_MISSING` | No registered bounded gate with matching one-call architecture and HOLDOUT/paired score closure was found. Predictive quality is `UNAPPROVED`. |
 | Production activation | `HOLD` | Package flags are `production_eligible=false`, `production_activated=false`. No pointer switch or production activation was performed. |
 
@@ -66,7 +66,7 @@ The compile manifest's `prompt_token_count=1,296,623,760` is not a verified toke
 
 The source record dates span `2018-01-03` through `2026-06-19` across 1,542 distinct trade dates, about 8.5 calendar years. This does not prove a full 10 years or every exchange session. This package is compiled knowledge for an existing GPT inference model, not a newly fine-tuned GPT model.
 
-## Daily CSV Search and Blocker
+## Daily CSV Search (2026-10-06 Snapshot)
 
 The required daily smoke must use an original, unmodified pre-open CSV whose trade date/cutoff follows package build cutoff `2026-08-21T18:52:07.302105+09:00`. It must contain no D-day prices/outcomes, after-cutoff rows or metadata, synthetic rows, or rows removed to force acceptance.
 
@@ -74,7 +74,7 @@ Searches on 2026-10-06 covered repository `docs/csv`, `production/staging`, `dat
 
 The configured health endpoint was queried read-only and returned Vercel login HTML rather than JSON. The temporary Chrome tab likewise showed `Login – Vercel`; the Browser Use machine preflight returned exit code `1` with no output, so CDP was used to confirm the same login response. No account credential was entered or retrieved. The transport CSV was not downloaded.
 
-Therefore `analyze-daily` was not run. The next required input is the user's actual pre-open CSV with trade date later than 2026-08-21, plus its intended trade date and cutoff if not encoded in the filename/rows. Once available, bind the audited package in a separate evaluation/test project and verify the one-call, brain-loaded, zero-web path. Do not set the production pointer.
+At this 2026-10-06 search snapshot, `analyze-daily` was not run. Later, the user supplied a date range with 29 session files after the package build cutoff; see the 2026-10-08 full CLI smoke section below. Do not set the production pointer.
 
 ## Quality Gate and Release Boundary
 
@@ -85,7 +85,7 @@ Therefore `analyze-daily` was not run. The next required input is the user's act
 
 ## Next Action
 
-No compile, historical-corpus import, embedding build, or package-lineage re-audit is due. The next evaluation must bind a registered same-architecture v3 gate to eligible CSVs and cutoff-safe outcomes, while separately resolving missing `collected_at` evidence and Monday/holiday window semantics. The folder's `news_20261007.csv` is absent. Keep predictive quality `UNAPPROVED` and production `HOLD` until the registered gate and release requirements pass.
+No compile, historical-corpus import, embedding build, or package-lineage re-audit is due. A clean full v5 `analyze-daily` CLI smoke has passed for one historical date. Remaining evidence is `news_20261007.csv` if that date is in scope, reliable collection-time provenance for blind evaluation, and a registered bounded same-architecture quality gate with physically separated outcomes. The current architecture is `one_time_brain_thin_daily.v4` with prompt `thin_daily.final_market_decision.v5`. Keep predictive quality `UNAPPROVED` and production `HOLD` until the gate and separate release requirements pass.
 
 ## Supplemental CSV Search (2026-10-06 20:18 KST)
 
@@ -95,7 +95,7 @@ A follow-up filename scan also covered the user's Desktop, Documents, OneDrive, 
 
 The focused command `python -m pytest tests/unit/test_thin_daily.py tests/unit/test_offline_brain_v2.py::test_daily_reader_uses_only_precompiled_package -q --durations=10` passed all 17 tests. These deterministic mock/fixture tests cover the single `final_market_decision` call, brain context loaded before that request, bounded repair (at most two provider invocations), call count independent of large record/cluster counts, and reading a precompiled fixture package. They do not exercise the audited 19.8 GB package with a real daily CSV or live model/provider, and they are not a predictive-quality gate. Full `pytest`, Ruff, and mypy were not rerun.
 
-## Daily Smoke With User CSV (2026-10-08)
+## Historical v3 Smoke With User CSV (2026-10-08)
 
 The user supplied `C:\Users\eorb9\Downloads\123-20261007T194150Z-1-001\123`: 32 CSVs, 42,909 rows, from `news_20260824.csv` through `news_20261006.csv`. `news_20260821.csv` and `news_20261007.csv` are absent. Source files were not modified. None of the CSVs has a `collected_at` column, so publication times can be checked against cutoff but collection-before-cutoff is not independently evidenced.
 
@@ -109,6 +109,46 @@ To stay below the provider request limit, the prompt uses compact capsule field 
 
 The folder-wide parser audit found 9,380 rows before the app's default window and 0 after-cutoff rows. Since the default start is the previous calendar day at 15:30, Monday/holiday runs can omit Friday-after-close and weekend news before Sunday 15:30. The Tuesday October 6 smoke does not validate weekend/holiday window semantics; a trading-session-aware start needs explicit definition and tests before those dates enter formal evaluation. The absent October 7 file also remains untested.
 
-The first real prompt attempt was safely rejected before model generation because its 1,198,258 characters exceeded the Codex 1,048,576-character limit. Daily prompt architecture v3 now compacts repeated capsule keys and does not require the model to echo hundreds of long cluster IDs. The successful run returned six candidates, but no market outcomes were opened and no quality score was computed. `NOT_RUN_GATE_MISSING`, predictive quality `UNAPPROVED`, and production `HOLD` remain unchanged. A timestamp audit also found that the historical model response supplied `created_at` equal to cutoff; the sealing code now overwrites created/sealed timestamps with the actual run time. The original smoke artifact is preserved unchanged for forensics.
+The first real prompt attempt was safely rejected before model generation because its 1,198,258 characters exceeded the Codex 1,048,576-character limit. Daily prompt architecture v3 compacted repeated capsule keys and did not require the model to echo hundreds of long cluster IDs. The successful 2026-10-06 run returned six candidates, but no market outcomes were opened and no quality score was computed. This is a historical functional smoke, not proof that the later 2026-09-28 holiday-window/citation path passed. A timestamp audit also found that the historical model response supplied `created_at` equal to cutoff; the sealing code now overwrites created/sealed timestamps with the actual run time. The original smoke artifact is preserved unchanged for forensics.
 
-Verification after the code changes: `python -m ruff check .` passed; `python -m mypy src/news_scalping_lab` passed for 139 source files; full `python -m pytest` passed 1,907 tests (350.92 seconds). These gates do not constitute the missing predictive-quality evaluation.
+Verification at that historical point: `python -m ruff check .` passed; `python -m mypy src/news_scalping_lab` passed for 139 source files; full `python -m pytest` passed 1,907 tests (350.92 seconds). Current post-follow-up test totals are recorded below. Neither test set is a predictive-quality evaluation.
+
+## XKRX Window and v5 Citation Follow-Up (2026-10-08)
+
+### Input Audit
+
+The supplied folder `C:\Users\eorb9\Downloads\123-20261007T194150Z-1-001\123` contains 32 CSVs and 42,909 rows, from `news_20260824.csv` through `news_20261006.csv`. It has no `news_20260821.csv` or `news_20261007.csv`. The header is `page,row,date,time,title,body`; there is no `collected_at`. Publication time is available for cutoff checks, but actual pre-cutoff collection cannot be independently established.
+
+The XKRX calendar identifies `2026-09-24`, `2026-09-25`, and `2026-10-05` as non-sessions. Their 3,011 rows are not analyzed as daily predictions. The other 29 session files total 39,898 rows; using the corrected previous-session close and `08:59:59 KST` cutoff, 39,898 rows are in-window, zero are before the window, and zero are after cutoff.
+
+For `news_20260928.csv` (SHA-256 `59365528d7a303dc539abd8b1489a6b4e8caea06d06704ca7e03b7b90a09d07c`), the previous XKRX session is September 23 because the exchange was closed September 24-25. The correct window begins `2026-09-23T15:30:00+09:00`; all 1,627 rows are inside it. The file rows by publication date are September 25: 276, September 26: 462, September 27: 556, September 28: 333. The former calendar-day start of September 27 at 15:30 would incorrectly omit 1,088 rows. For October 6, the correct previous session is October 2; its 911 rows include October 5 holiday 434 and October 6 477.
+
+The code now uses `exchange-calendars` XKRX sessions for `default_news_window_start`, `next_trading_day`, and non-session rejection. Unit tests cover the September 28/October 6 start times and rejection of October 5. No ticker, theme, or beneficiary mapping was added to code.
+
+### Citation Failure and Repair
+
+The package-backed September 28 v3 call returned schema-valid JSON but failed post-validation because sector `triggering_events` contained prose instead of exact event IDs. Trace: `production/staging/P9IMPORT-3D770A7DD72457C97098/project/runs/traces/TRACE-f61c675c082d.json`. No prediction or canonical output was accepted.
+
+A later v4 re-cluster run recreated 1,568 capsules from the 1,627-row CSV and hash-matched the already retrieved brain context. Its two real responses still contained unsupported event IDs; strict citation validation rejected both. Traces: `TRACE-6bfbf8fa582e.json` and `TRACE-688c7f3b8e0d.json`. The first failure was in candidate `event_ids`; the repair wording did not adequately distinguish current IDs from IDs or strings in brain context.
+
+The correction raised the prompt to `thin_daily.final_market_decision.v5`, added schema descriptions for `Candidate.event_ids` and sector `triggering_events`, and made both main and repair prompts require exact IDs from current capsule `e` arrays. Candidate repair errors now include the allowed event IDs from capsules whose `r` rows overlap the candidate's source rows. Repair remains bounded to one; a second invalid answer fails closed.
+
+The v5 live decision replay used the newly reclustered capsules and their exact prevalidated brain context, avoiding a repeated 19.8 GB package audit. The first GPT request contained current news and cutoff-safe brain context together. It used Codex OAuth `gpt-5.6-sol/xhigh`, prompt SHA-256 `269d94455d3f40a1db5a9786a12bde85acad17bb08290e26d1efa9690723493a`, 944,204 characters, and 280.137 seconds. It returned 10 candidates and 3 sectors, needed no repair, and passed citation validation. Output: `production/staging/P9IMPORT-3D770A7DD72457C97098/project/runs/daily_csv_smoke_calendar_v5_decision_replay_20261008/THINREPLAY-72d78b0aeb01e69033bc/`. Package root remained `b3dc694131b41c1553817ca7b2e00747391e79f95170ad856ae7054c120165dd`. The replay manifest explicitly says it reused prevalidated brain context; it is not a new end-to-end CLI/package initialization run. Canonical predictions/reports and production pointer were not written.
+
+During the cached-context re-cluster run, Python private memory stabilized at about 3.05 GB, process working set peaked around 2.77 GB, and available system RAM was about 17.6 GB. About 131 local embedding worker threads were present; CPU time did not continue increasing while Codex was waiting. No leak or unbounded growth was observed, but this is one Windows measurement and not a production latency guarantee.
+
+### Current Gates
+
+After the final source/schema changes, `python -m ruff check .` passed, `python -m mypy src/news_scalping_lab` passed for 139 files, and full `python -m pytest` passed 1,913 tests in 309.63 seconds. The tracked schemas match the official exporter. The one-time brain package and lineage remain `COMPLETE/PASS`. Current daily path is `SMOKE_PASS_ONE_HISTORICAL_DATE`; predictive quality remains `NOT_RUN_GATE_MISSING` / `UNAPPROVED`; production remains `HOLD`.
+
+## Full v5 Analyze-Daily CLI Smoke (2026-10-08)
+
+Trade date `2026-09-28`, cutoff `2026-09-28T08:59:59+09:00`, XKRX prior-session window `2026-09-23T15:30:00+09:00`. The unmodified `news_20260928.csv` has 1,627 rows and SHA-256 `59365528d7a303dc539abd8b1489a6b4e8caea06d06704ca7e03b7b90a09d07c`.
+
+The full CLI ran in isolated evaluation project `runs/daily_csv_smoke_v5_cli_eval_20261008/`; it reused the immutable 34-file package through NTFS hardlinks rather than copying its 19.8 GB payload. The project-local pointer has `production_activated=false`. Package identity remained brain `brain-v2-993b42487c557ca1`, root `b3dc694131b41c1553817ca7b2e00747391e79f95170ad856ae7054c120165dd`, manifest SHA `3286247ce9271064455f702d1e44f8fdda4eb3659455f14e44517937da048378`.
+
+Run `THINRUN-46d70c9550d63b790a40` formed 1,568 capsules and loaded 10 compiled guidance artifacts, 24 semantic memory capsules, and 24 exact witnesses before the first decision call. The live provider was Codex OAuth `gpt-5.6-sol/xhigh`, prompt `thin_daily.final_market_decision.v5`, with 1 logical call and 0 structured repairs. It returned 9 candidates and 5 sectors. Daily import, brain rebuild, web calls, online full-corpus scans, and future-record exposure were 0. Wall time was `452.54972` seconds; the provider interval was `276.056837` seconds. This is a single historical Windows measurement, not an SLA.
+
+Evidence files are `runs/manifests/THINRUN-46d70c9550d63b790a40.json`, `runs/traces/TRACE-33ac424bb135.json`, and `runs/thin_daily/THINRUN-46d70c9550d63b790a40/`. The prompt SHA-256 is `fdbaedb70d5c8c152aec96b261cc85ce001f31ae9ad82b2948b3d214ea72b6bd`; the sealed prediction SHA-256 is `3dd8949e47e85cfba1d675358ec93366ef271f9d93a6ba707f1215a4a178f756`. The trace status is `ok`. The saved prediction's created/sealed time is the actual run time, `2026-10-08T07:08:55.820616+09:00`, not the historical cutoff.
+
+Post-run strict validation passed: all 31 candidate event citations map to capsules overlapping that candidate's cited source rows; all 38 sector event citations exist in the current-news capsules. The prediction, report, traces, and manifests are confined to the evaluation project. No D-day outcomes were read or scored and no training data was created. Because the CSV lacks `collected_at`, pre-cutoff publication timestamps do not prove it had actually been collected by that cutoff. This result proves daily-path functionality for one historical sample only, not predictive quality or production readiness.

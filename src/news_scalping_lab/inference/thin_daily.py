@@ -36,6 +36,7 @@ from news_scalping_lab.ingest.news import (
     load_news_csv,
 )
 from news_scalping_lab.llm.base import LLMProvider, count_provider_tokens
+from news_scalping_lab.llm.codex_oauth_provider import CodexOAuthError
 from news_scalping_lab.llm.factory import create_llm_provider
 from news_scalping_lab.llm.tracing import TracingLLMProvider
 from news_scalping_lab.memory.runtime import production_embedding_method
@@ -46,6 +47,7 @@ from news_scalping_lab.utils import (
     canonical_json,
     default_news_window_start,
     file_sha256,
+    is_krx_trading_day,
     now_kst,
     relative_to_root,
     sha256_text,
@@ -53,8 +55,8 @@ from news_scalping_lab.utils import (
     write_json,
 )
 
-FINAL_MARKET_DECISION_PROMPT_VERSION = "thin_daily.final_market_decision.v3"
-THIN_DAILY_ARCHITECTURE_VERSION = "one_time_brain_thin_daily.v3"
+FINAL_MARKET_DECISION_PROMPT_VERSION = "thin_daily.final_market_decision.v5"
+THIN_DAILY_ARCHITECTURE_VERSION = "one_time_brain_thin_daily.v4"
 MAX_CURRENT_EVENT_PROMPT_BYTES = 900_000
 MAX_CODEX_INPUT_CHARS = 1_000_000
 MAX_EXACT_WITNESSES = 24
@@ -151,7 +153,12 @@ class ThinDailyAnalyzer:
         except ValueError as exc:
             raise ValueError("thin daily output root must remain inside the project root") from exc
         self.write_canonical_outputs = write_canonical_outputs
-        base_llm = llm or create_llm_provider(settings)
+        base_llm = llm or create_llm_provider(settings, structured_repair_retries=0)
+        if (
+            getattr(base_llm, "provider_name", None) == "codex-oauth"
+            and getattr(base_llm, "structured_repair_retries", 0) != 0
+        ):
+            raise ValueError("analyze-daily owns the single bounded Codex structured repair")
         self.llm_model_config = _llm_model_config(settings, base_llm)
         self.llm = _trace_daily_llm(settings, base_llm, self.llm_model_config)
         self.embedding_provider = embedding_provider or create_configured_embedding_provider(
@@ -178,6 +185,8 @@ class ThinDailyAnalyzer:
         cutoff_at: datetime,
         d_minus_one_context_path: Path | None = None,
     ) -> ThinDailyAnalysis:
+        if not is_krx_trading_day(trade_date):
+            raise ValueError(f"analyze-daily trade date is not a KRX trading session: {trade_date}")
         started = monotonic()
         ensure_ready = getattr(self.brain_context_provider, "ensure_ready", None)
         if callable(ensure_ready):
@@ -286,20 +295,15 @@ class ThinDailyAnalyzer:
                 "daily prompt exceeds the Codex CLI safe input limit; no model request was sent "
                 f"({len(final_prompt)} > {MAX_CODEX_INPUT_CHARS} characters)"
             )
-        decision = await self.llm.generate_structured(
+        decision, prediction, structured_repair_count = await _generate_and_validate_daily_decision(
+            self.llm,
             prompt=final_prompt,
-            response_model=BrainInformedDecision,
-            purpose="final_market_decision",
-        )
-        if decision.analyzed_cluster_count != len(capsules):
-            raise ValueError("daily decision omitted, duplicated, or added a material event cluster")
-        prediction = _validate_and_seal_prediction(
-            decision.prediction,
             run_id=run_id,
             trade_date=trade_date,
             cutoff_at=cutoff_at,
             capsules=capsules,
             brain_context=brain_context,
+            allow_structured_repair=self.settings.llm.max_retries == 1,
         )
 
         prediction_path = output_root / "blind_prediction.json"
@@ -354,6 +358,7 @@ class ThinDailyAnalyzer:
             historical_raw_witness_count=len(brain_context.exact_witnesses),
             logical_llm_call_count=1,
             maximum_live_agent_call_count=1 + self.settings.llm.max_retries,
+            structured_repair_count=structured_repair_count,
             historical_raw_daily_map_call_count=0,
             daily_import_call_count=0,
             daily_brain_rebuild_call_count=0,
@@ -584,11 +589,111 @@ def _build_final_market_decision_prompt(
         "continuation, ranking, and red-team reasoning together. Do not launch subcalls. "
         "Every cited event, source row, semantic capsule, mechanism claim, population root, "
         "and record must come from the payload. Cite capsule IDs for summarized evidence and "
-        "record IDs only for exact witnesses or capsule provenance. Do not use web or D-day "
+        "record IDs only for exact witnesses or capsule provenance. In each sector's "
+        "`Candidate.event_ids` and `DominantSectorHypothesis.triggering_events`, copy exact "
+        "current-news event ID strings from `current_event_capsules` `e` arrays only. For each "
+        "candidate, use only event IDs from capsules whose `r` source rows overlap that "
+        "candidate's `source_row_ids`. Never use historical IDs from `daily_brain_context`, "
+        "abbreviate IDs, or invent IDs. Do not put event descriptions or prose in these fields. "
+        "Do not use web or D-day "
         "outcomes.\n"
         "---BLIND_ANALYSIS_PAYLOAD---\n"
         f"{canonical_json(payload)}"
     )
+
+
+def _build_daily_decision_repair_prompt(original_prompt: str, error: Exception) -> str:
+    error_summary = " ".join(str(error).split())[:500]
+    return (
+        f"{original_prompt}\n\n"
+        "---STRUCTURED_REPAIR---\n"
+        "The previous response failed daily application validation. Return a corrected complete "
+        "BrainInformedDecision; preserve the full schema and all citation boundaries. For "
+        "both Candidate.event_ids and DominantSectorHypothesis.triggering_events, use only exact "
+        "IDs copied from current_event_capsules `e` arrays; never use historical IDs from "
+        "daily_brain_context. For candidates, match their source_row_ids against capsule `r` "
+        "rows and copy only the corresponding `e` IDs. Do not abbreviate, paraphrase, or invent "
+        "IDs.\n"
+        f"Validation error: {error_summary}\n"
+    )
+
+
+def _is_repairable_daily_decision_error(error: Exception) -> bool:
+    if isinstance(error, ValueError):
+        return True
+    return isinstance(error, CodexOAuthError) and str(error).startswith(
+        "Codex structured output failed schema validation:"
+    )
+
+
+async def _generate_and_validate_daily_decision(
+    llm: LLMProvider,
+    *,
+    prompt: str,
+    run_id: str,
+    trade_date: date,
+    cutoff_at: datetime,
+    capsules: Sequence[CurrentEventCapsule],
+    brain_context: DailyBrainContext,
+    allow_structured_repair: bool,
+) -> tuple[BrainInformedDecision, BlindPrediction, int]:
+    repair_error: Exception | None = None
+    try:
+        decision = await llm.generate_structured(
+            prompt=prompt,
+            response_model=BrainInformedDecision,
+            purpose="final_market_decision",
+        )
+    except CodexOAuthError as exc:
+        if not _is_repairable_daily_decision_error(exc):
+            raise
+        repair_error = exc
+    else:
+        try:
+            if decision.analyzed_cluster_count != len(capsules):
+                raise ValueError(
+                    "daily decision omitted, duplicated, or added a material event cluster"
+                )
+            prediction = _validate_and_seal_prediction(
+                decision.prediction,
+                run_id=run_id,
+                trade_date=trade_date,
+                cutoff_at=cutoff_at,
+                capsules=capsules,
+                brain_context=brain_context,
+            )
+        except ValueError as exc:
+            repair_error = exc
+        else:
+            return decision, prediction, 0
+
+    if repair_error is None:
+        raise AssertionError("daily decision repair was requested without a validation error")
+    if not allow_structured_repair or not _is_repairable_daily_decision_error(repair_error):
+        raise repair_error
+    repair_prompt = _build_daily_decision_repair_prompt(prompt, repair_error)
+    if len(repair_prompt) > MAX_CODEX_INPUT_CHARS:
+        raise ValueError(
+            "daily structured repair prompt exceeds the Codex CLI safe input limit; "
+            "no repair request was sent"
+        ) from repair_error
+
+    decision = await llm.generate_structured(
+        prompt=repair_prompt,
+        response_model=BrainInformedDecision,
+        purpose="final_market_decision",
+    )
+    if decision.analyzed_cluster_count != len(capsules):
+        raise ValueError("daily repair omitted, duplicated, or added a material event cluster")
+    prediction = _validate_and_seal_prediction(
+        decision.prediction,
+        run_id=run_id,
+        trade_date=trade_date,
+        cutoff_at=cutoff_at,
+        capsules=capsules,
+        brain_context=brain_context,
+    )
+    return decision, prediction, 1
 
 
 def _validate_and_seal_prediction(
@@ -625,10 +730,22 @@ def _validate_and_seal_prediction(
     for candidate in prediction.candidates:
         if not candidate.source_row_ids:
             raise ValueError("every final candidate must cite current source rows")
-        if not set(candidate.event_ids).issubset(allowed_events):
-            raise ValueError("final decision cited an event outside current capsules")
-        if not set(candidate.source_row_ids).issubset(allowed_rows):
+        candidate_rows = set(candidate.source_row_ids)
+        if not candidate_rows.issubset(allowed_rows):
             raise ValueError("final decision cited an unknown source row")
+        row_matched_events = {
+            event_id
+            for capsule in capsules
+            if candidate_rows.intersection(capsule.source_row_ids)
+            for event_id in capsule.event_ids
+        }
+        invalid_event_ids = sorted(set(candidate.event_ids) - row_matched_events)
+        if invalid_event_ids:
+            raise ValueError(
+                f"candidate rank {candidate.rank} event_ids do not match its cited source rows: "
+                f"{invalid_event_ids}; exact current IDs matching those rows are "
+                f"{sorted(row_matched_events)}"
+            )
         if not set(candidate.semantic_capsule_ids).issubset(allowed_capsules):
             raise ValueError("final decision cited an unselected semantic capsule")
         if not set(candidate.mechanism_claim_ids).issubset(allowed_claims):
@@ -645,8 +762,12 @@ def _validate_and_seal_prediction(
         cited_brain_ids.update(candidate.semantic_capsule_ids)
         cited_brain_ids.update(candidate.mechanism_claim_ids)
     for sector in prediction.dominant_sectors:
-        if not set(sector.triggering_events).issubset(allowed_events):
-            raise ValueError("sector decision cited an event outside current capsules")
+        invalid_triggering_events = sorted(set(sector.triggering_events) - allowed_events)
+        if invalid_triggering_events:
+            raise ValueError(
+                f"sector {sector.name!r} triggering_events contain unsupported IDs "
+                f"{invalid_triggering_events}; use only exact current capsule event IDs"
+            )
         if not set(sector.semantic_capsule_ids).issubset(allowed_capsules):
             raise ValueError("sector decision cited an unselected semantic capsule")
         if not set(sector.mechanism_claim_ids).issubset(allowed_claims):
