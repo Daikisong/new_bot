@@ -221,6 +221,7 @@ class FixtureBrainContextProvider:
             ],
             available_from=available_from,
             provenance_root="4" * 64,
+            embedding=[0.125] * 384,
         )
         claim = SynthesizedMechanismClaim(
             claim_id="MCLAIM-fixture",
@@ -237,6 +238,7 @@ class FixtureBrainContextProvider:
             available_from=available_from,
             confidence="medium",
             status="supported",
+            embedding=[0.25] * 384,
         )
         return DailyBrainContext(
             brain_version="brain-v2-fixture",
@@ -308,6 +310,7 @@ async def test_daily_normal_call_count_is_one_and_uses_brain(tmp_path: Path) -> 
     assert llm.calls == ["final_market_decision"]
     assert brain.calls == 1
     assert analysis.context_manifest.logical_llm_call_count == 1
+    assert analysis.context_manifest.candidate_event_id_correction_count == 0
     assert analysis.context_manifest.historical_raw_daily_map_call_count == 0
     assert analysis.context_manifest.daily_import_call_count == 0
     assert analysis.context_manifest.daily_brain_rebuild_call_count == 0
@@ -328,6 +331,16 @@ async def test_daily_normal_call_count_is_one_and_uses_brain(tmp_path: Path) -> 
     assert "candidate allowlist" in llm.prompts["final_market_decision"]
     assert final_payload["daily_brain_context"]["interpretation_sha256"] is None
     assert "current_day_interpretation" not in final_payload
+    prompt_capsule = final_payload["daily_brain_context"]["selected_semantic_capsules"][0]
+    prompt_claim = final_payload["daily_brain_context"]["selected_mechanism_claims"][0]
+    assert "embedding" not in prompt_capsule
+    assert "embedding" not in prompt_claim
+    assert prompt_capsule["event_or_mechanism_summary"] == "A bounded fixture mechanism."
+    stored_context = read_json(
+        tmp_path / analysis.context_manifest.daily_brain_context_artifact
+    )
+    assert len(stored_context["selected_semantic_capsules"][0]["embedding"]) == 384
+    assert len(stored_context["selected_mechanism_claims"][0]["embedding"]) == 384
     decision = read_json(tmp_path / analysis.context_manifest.brain_decision_artifact)
     assert decision["analyzed_cluster_count"] == final_payload["material_event_count"]
     assert final_payload["material_event_count"] == len(final_payload["current_event_capsules"])
@@ -363,7 +376,7 @@ async def test_daily_repairs_invalid_sector_event_citation_once(tmp_path: Path) 
     assert "Validation error:" in llm.prompt_history[1]
     assert "Candidate.event_ids" in llm.prompt_history[1]
     assert "DominantSectorHypothesis.triggering_events" in llm.prompt_history[1]
-    assert "EVT-unsupported-fixture" in llm.prompt_history[1]
+    assert "sector 'Fixture sector' triggering_events" in llm.prompt_history[1]
     assert analysis.context_manifest.logical_llm_call_count == 1
     assert analysis.context_manifest.maximum_live_agent_call_count == 2
     assert analysis.context_manifest.structured_repair_count == 1
@@ -389,7 +402,7 @@ async def test_daily_validates_sector_event_citation_without_candidates(tmp_path
 
 
 @pytest.mark.asyncio
-async def test_daily_repairs_candidate_event_outside_its_source_rows(tmp_path: Path) -> None:
+async def test_daily_corrects_candidate_event_ids_from_source_rows(tmp_path: Path) -> None:
     news_path = _write_news_csv(tmp_path / "news.csv", row_count=10)
     llm = MisalignedCandidateEventThenValidLLM()
     settings = Settings(project_root=tmp_path)
@@ -404,9 +417,20 @@ async def test_daily_repairs_candidate_event_outside_its_source_rows(tmp_path: P
         cutoff_at=datetime(2026, 1, 2, 8, 0, tzinfo=KST),
     )
 
-    assert llm.calls == ["final_market_decision", "final_market_decision"]
-    assert analysis.context_manifest.structured_repair_count == 1
-    assert "exact current IDs matching those rows" in llm.prompt_history[1]
+    assert llm.calls == ["final_market_decision"]
+    assert analysis.context_manifest.structured_repair_count == 0
+    assert analysis.context_manifest.candidate_event_id_correction_count > 0
+    capsule_set = read_json(
+        tmp_path / analysis.context_manifest.current_event_capsules_artifact
+    )
+    for candidate in analysis.blind_prediction.candidates:
+        matched_events = {
+            event_id
+            for capsule in capsule_set["items"]
+            if set(candidate.source_row_ids).intersection(capsule["source_row_ids"])
+            for event_id in capsule["event_ids"]
+        }
+        assert set(candidate.event_ids).issubset(matched_events)
 
 
 @pytest.mark.asyncio

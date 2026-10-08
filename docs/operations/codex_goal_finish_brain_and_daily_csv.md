@@ -8,7 +8,7 @@
 
 최종 사용 흐름은 `장전 CSV + 이미 만들어진 두뇌/인덱스 -> GPT의 단일 판단 요청 -> 주도 섹터·종목 후보, 근거·인용·불확실성·출처`다. GPT 가중치를 fine-tune한 새 모델을 만드는 작업이 아니다. 원료 전체를 매일 재해석하거나 record·cluster·lane마다 GPT를 호출하지 않는다.
 
-현재 요약: 기존 Offline Brain V2 패키지와 계보 감사는 PASS이며 재컴파일하지 않는다. XKRX 거래일 달력으로 장전 window를 고쳤고, 전달 폴더의 거래일 CSV 29개(39,898행)는 새 window 안에 있으며 cutoff 이후 게시 행은 0이다. 9월 28일 CSV로 격리 프로젝트에서 현재 코드의 전체 `analyze-daily` CLI를 실행했다. 고정 brain root를 로드하고 1,627행을 1,568개 capsule로 분석했으며, `gpt-5.6-sol/xhigh` 1회 판단 요청·repair 0회로 9개 후보와 5개 섹터를 만들었다. Web/import/rebuild/full-corpus scan은 모두 0이고, 후보·섹터 event IDs 및 후보 source-row 연결 검증이 통과했다. 전체 소요는 452.55초였다. 이는 10월 8일에 실행한 historical functional smoke이지 실시간 prediction이나 예측 성능 평가가 아니다. 정식 blind quality gate는 `NOT_RUN_GATE_MISSING`, 예측 품질은 `UNAPPROVED`, production은 `HOLD`다. 폴더에 `news_20261007.csv`가 없고 CSV에 `collected_at` 필드도 없다.
+현재 요약(2026-10-08): 기존 Offline Brain V2 package root `b3dc694131b41c1553817ca7b2e00747391e79f95170ad856ae7054c120165dd`를 고정해, 전달된 32개 CSV의 XKRX 거래일 29개(39,898행)를 모두 현재 production `analyze-daily` 경로로 replay했다. 신규 28일은 `gpt-5.6-sol/xhigh`로 각 1회 논리 판단했고, 기존 9월 28일 full CLI smoke는 해시 검증 후 재사용했다. 구조화 repair 6회, 후보 249개, 평균 430.17초/일(중앙값 397.32초, 범위 300.20~794.42초)이었다. 검증된 결과의 web/import/rebuild/full-corpus scan/future record는 모두 0이며, 29개 날짜의 artifact가 봉인됐다. 모든 SHA와 날짜별 수치는 [외부 검토 closeout](offline_brain_v2_daily_csv_closeout_20261006.md)에 기록했다. 이는 historical OOT runtime/function 검증이지 예측 성능 gate가 아니다. 사후 가격/outcome은 열지 않았다. 정식 blind quality gate는 `NOT_RUN_GATE_MISSING`, 예측 품질은 `UNAPPROVED`, production은 `HOLD`다. `news_20261007.csv`가 없고 CSV에 `collected_at` 필드도 없어 실제 수집시각의 cutoff 준수는 독립 입증되지 않는다.
 
 ## 이미 완료된 작업
 
@@ -32,7 +32,7 @@ LLM trace의 `prompt_token_count_reported=1,296,623,760`은 실제 토큰 수나
 
 source manifest pointer의 SHA가 낡았지만, pinned memory snapshot의 실제 manifest SHA는 위 externally attested SHA와 일치한다. compile manifest는 pointer drift를 기록하고 실제 SHA override를 attested 처리했다. 이 차이를 숨기거나 manifest를 임의 수정하지 않는다.
 
-## 최신 실행 상태: 2026-10-06 20:01 KST
+## 최신 실행 상태: 2026-10-08 11:56 KST
 
 | 단계 | 상태 | 현재 근거 |
 |---|---|---|
@@ -40,13 +40,15 @@ source manifest pointer의 SHA가 낡았지만, pinned memory snapshot의 실제
 | package·DAG 계보 감사 | `PASS` | plan SHA `6a3c78d89c55233afd66ef556eeb4cfba88c51047e140cccc268f95d5d51fc97`, topology SHA `0663df89a0805c91f8526fc8a5126da004b06a20bbf0b7ac8ecb1978daa78ed5`, DB와 1,868 task ID/child topology exact. 4,969 leaf closure와 world coverage root `15d9e8c7bf2f339a2a119952fe46f01fe2cf9f56c1e8a8750ec3a0d1f9d27c18`가 일치한다. |
 | assignment/capsule/claim 계보 | `PASS` | leaf와 capsule 52,644개 exact; assignment ledger와 DB 823,279행 exact, membership root `dd51591eeab66636cedfe0ac14af14d13d2a0a5c43ee00eaff30675f5ffbb401`; capsule·centroid·member count mismatch 0. claim payload 40개와 citation edge 111개(지원 105, 반례 6) parity exact. |
 | 직접 payload exposure | `PASS / PARTIAL EXPOSURE` | 181,979개 고유 record(22.104%)의 exposure root `0d402ea2aa50c9c4cf8a5048ec9739fe19cca2e2495d5184da6aad4a61a48072`가 manifest와 일치, truncation 0. 641,300개는 GPT에 직접 payload 미노출이다. |
-| 실제 장전 CSV smoke | `BLOCKED_INPUT_REQUIRED` | 최신 로컬 검색에서 package cutoff 이후 적격 news CSV 없음. 지정 Vercel health/CSV transport는 Vercel 로그인 HTML을 반환했고 기존 Chrome에서도 로그인 페이지였다. 인증 정보는 입력하거나 다루지 않았다. |
+| 실제 장전 CSV 경로 | `PASS_HISTORICAL_OOT_29_SESSIONS` | 사용자 제공 CSV 29거래일을 모두 current v5 `analyze-daily`로 봉인했다(신규 실행 28일 + 9/28 기존 smoke 재사용 1일). 날짜별 seal/hash는 closeout에 있다. 수집 timestamp 부재 때문에 원본 수집시각 provenance는 미입증이다. |
 | 정식 품질 gate | `NOT_RUN_GATE_MISSING`; predictive quality `UNAPPROVED` | root `QSEL-19b3...` artifact 없음, 준비 보고서도 actual run `NOT_RUN`. staging의 `QSEL-16352...`는 3-case blind/outcome artifact 쌍뿐이며 HOLDOUT/paired prediction/score 증거가 없다. |
 | production | `HOLD` | package manifest `production_eligible=false`, `production_activated=false`; 품질 gate, 별도 사용자 승인, release binding 및 rollback proof가 없다. |
 
-전수 대조 보고서는 [offline_brain_v2_daily_csv_closeout_20261006.md](offline_brain_v2_daily_csv_closeout_20261006.md)다. 동일 package audit을 반복하지 말고, 실제 미완료 작업은 적격 CSV를 확보해 daily smoke를 수행하는 것이다.
+전수 대조와 2026-10-08 29-session replay 결과는 [offline_brain_v2_daily_csv_closeout_20261006.md](offline_brain_v2_daily_csv_closeout_20261006.md)에 기록했다. 동일 package audit이나 daily smoke를 반복하지 않는다. 남은 핵심 단계는 별도 registered same-architecture blind quality gate와 release 승인이다.
 
 ## 다음 실행에서 할 일
+
+이 체크리스트는 2026-10-06 시점에 작성됐다. 2026-10-08에 사용자가 CSV를 제공해 29-session OOT daily replay를 완료했으므로, 아래 3번의 입력 대기/실행 지시와 그 시점의 `BLOCKED_INPUT_REQUIRED` 상태는 역사 기록이다. 동일 29일을 다시 실행하지 않는다. 최신 결과는 문서 끝의 `2026-10-08 전체 CSV 날짜별 OOT daily replay 완료`가 우선한다.
 
 ### 1. 작업 상태와 고정 산출물 재확인
 
@@ -70,6 +72,7 @@ source manifest pointer의 SHA가 낡았지만, pinned memory snapshot의 실제
 - 입력 trade date와 cutoff를 명시하고 production BLIND 정책 `CSV_MEMORY_ONLY_STRICT`를 지킨다. Web, D-day 가격·성과, outcome, cutoff 후 정보, 레거시 exhaustive `analyze`, point-in-time mode로 brain guidance를 생략하는 우회, mock LLM을 사용하지 않는다.
 - 실행 manifest/context manifest가 위 package와 memory/index identity에 묶이는지, 처음이자 유일한 logical LLM call site `final_market_decision`에 뉴스와 brain guidance가 함께 있는지 확인한다. structured repair는 필요한 경우 최대 1회만 허용한다. 매 record/cluster/lane 호출은 금지다.
 - 출력 후보·근거·불확실성·citations가 존재하고 citations가 실제 brain/CSV evidence에 해소되는지, cutoff/no-web 경계가 지켜지는지, 실제 provider/model, 호출 수, repair 여부, elapsed time 및 산출 경로를 기록한다. smoke는 작동 확인이지 predictive quality나 백테스트 성공 증명이 아니다.
+- 최신 실행: 2026-10-08 CSV replay가 29개 거래일 모두 PASS/sealed다(신규 28일, 9월 28일 검증된 기존 smoke 1일 재사용). 추가 smoke를 반복하지 말고 formal quality gate와 release boundary만 진행한다.
 
 ### 4. 정식 blind quality와 production 상태 판정
 
@@ -193,3 +196,17 @@ Formal evaluator 코드를 확인했다. A/B/C는 같은 `ThinDailyAnalyzer` 일
 Evaluator 감사 중 점수기 citation closure가 후보의 event ID와 source row ID가 각각 입력 전체에 존재하는지만 확인하고 둘이 같은 capsule에서 연결되는지는 확인하지 않는 결함을 찾았다. `_citation_closure_passed`를 운영 daily validator와 같은 row-to-event 관계 검사로 보강하고 회귀 테스트를 추가했다. 이번 검증은 targeted pytest 11개 PASS, 변경 파일 Ruff PASS, mypy 139 source files PASS, 전체 pytest `1914 passed`다. 이 수정은 과거 예측 점수화나 새 model call을 수행하지 않았다.
 
 현재 상태는 한 날짜 historical daily CLI smoke `PASS`, formal predictive quality `NOT_RUN_GATE_MISSING` / `UNAPPROVED`, production `HOLD`다. 10월 7일 CSV, 독립 수집시각 provenance, registered bounded quality gate, 별도 사용자 release 승인은 확보되지 않았다. One-time brain은 재빌드하지 않았다.
+
+## 2026-10-08 전체 CSV 날짜별 OOT daily replay 완료
+
+사용자가 제공한 `C:\Users\eorb9\Downloads\123-20261007T194150Z-1-001\123`의 32개 CSV(총 42,909행)를 확인했다. XKRX 거래일 29개/39,898행 중 28일은 신규 historical `analyze-daily` 실행으로 처리했고, 2026-09-28은 기존 full CLI smoke `THINRUN-46d70c9550d63b790a40`를 원본 prediction/manifest SHA 검증 후 재사용했다. 비거래일 2026-09-24, 2026-09-25, 2026-10-05의 3개 파일/3,011행은 제외했다. 새 source CSV는 수정하지 않았다.
+
+29개 거래일 결과가 모두 sealed다. 신규 28일은 Codex OAuth `gpt-5.6-sol/xhigh`에서 각각 `final_market_decision` logical call 1회로 실행했고, 구조화 응답 repair 6회가 추가로 사용됐다(총 fresh provider invocation 34회). 신규 run들의 후보 합계는 249개, 날짜별 wall-time 평균 430.17초/중앙값 397.32초/최소 300.20초/최대 794.42초였다. 이는 28개 날짜의 누적 run wall-time 합 12,044.75초이며 단일 장전 실행시간이나 운영 SLA가 아니다. 9월 28일 기존 smoke는 452.55초였고 재실행하지 않았다.
+
+같은 immutable Offline Brain V2 package root `b3dc694131b41c1553817ca7b2e00747391e79f95170ad856ae7054c120165dd`를 사용했다. run별 prediction/report/manifest의 SHA-256 재대조 불일치 0, package root mismatch 0, 미래 record 0, blind web 0, daily import/rebuild 0, online full-corpus scan 0이었다. `candidate_event_id_correction_count` 합계는 3이며, candidate rank/company/source rows를 바꾸지 않고 source-row와 연결되지 않은 event citation만 결정적으로 제거/보정했다. 결과가 완결될 때까지 `outcomes_opened=false`; 성과 scoring, training, production pointer 변경/activation은 하지 않았다. 복사한 package pointer도 `production_activated=false`다.
+
+격리 project는 `runs/daily_csv_oot_replay_20261008/project/`이고 재개용 state는 `runs/daily_csv_oot_replay_20261008/project/runs/daily_csv_oot_replay/oot_batch_state.json`이다. package 34개 파일은 hardlink로 재사용해 19.8GB 복제본을 만들지 않았다. 결과와 SHA 대조표는 [외부 검토 closeout](offline_brain_v2_daily_csv_closeout_20261006.md)을 참조한다. 작업 중 Python post-GC RSS 최대 관측치는 2,018.3MB였고 단조 증가 누수는 관측되지 않았다.
+
+작업 중 확인된 daily runtime 결함은 selected mechanism claim의 capsule/record closure 검증, LLM prompt에서 읽을 수 없는 retrieval embedding vector 제거(검색 package에는 유지), candidate event citation의 source-row closure와 correction count 기록으로 보강했다. 전체 gate는 Ruff PASS, mypy PASS(139 source files), pytest `1915 passed`(1,253 warnings)다. 이 결과는 offline research corpus의 전면 LLM 재해석이나 예측 정확도 증명이 아니라, 동일한 daily architecture가 날짜별 CSV와 고정 brain을 함께 읽어 제한된 호출로 결과를 봉인하는 기능/OOT 경로 검증이다.
+
+남은 제한은 그대로다. `news_20261007.csv`는 폴더에 없으며 CSV에 `collected_at`이 없어 실제 수집시각이 cutoff 전인지 입증할 수 없다. registered same-architecture blind quality gate와 독립 release 승인은 여전히 없다. 따라서 정식 predictive quality는 `NOT_RUN_GATE_MISSING` / `UNAPPROVED`, production은 `HOLD`다. 이 29일 replay를 quality score로 부르거나 outcome을 열어 점수화하지 않는다.

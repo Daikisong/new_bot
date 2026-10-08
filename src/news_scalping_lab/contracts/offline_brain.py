@@ -535,6 +535,7 @@ class ThinDailyRunManifest(StrictModel):
     logical_llm_call_count: int
     maximum_live_agent_call_count: int
     structured_repair_count: int = 0
+    candidate_event_id_correction_count: int = Field(default=0, ge=0)
     historical_raw_daily_map_call_count: int
     daily_import_call_count: int
     daily_brain_rebuild_call_count: int

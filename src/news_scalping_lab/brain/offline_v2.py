@@ -1133,6 +1133,18 @@ class BrainPackageDailyContextProvider:
             selected_claims = _selected_claims(
                 connection,
                 selected_capsule_ids=set(selected_ids),
+                selected_record_ids={
+                    record_id
+                    for capsule in selected_capsules
+                    for record_id in [
+                        *capsule.supporting_record_ids,
+                        *capsule.contradicting_record_ids,
+                        *capsule.near_miss_record_ids,
+                        *capsule.counterexample_record_ids,
+                        *capsule.newsless_or_unexplained_record_ids,
+                        *capsule.error_record_ids,
+                    ]
+                },
                 claim_scores=claim_scores,
                 limit=DAILY_MAX_CLAIMS,
                 available_before=cutoff_at if point_in_time_projection else None,
@@ -2733,6 +2745,7 @@ def _selected_claims(
     connection: duckdb.DuckDBPyConnection,
     *,
     selected_capsule_ids: set[str],
+    selected_record_ids: set[str],
     claim_scores: dict[str, float],
     limit: int,
     available_before: datetime | None = None,
@@ -2770,7 +2783,18 @@ def _selected_claims(
     ]
     if available_before is not None:
         claims = [claim for claim in claims if claim.available_from <= available_before]
-    return claims[:limit]
+    return [
+        claim
+        for claim in claims
+        if {
+            *claim.supporting_capsule_ids,
+            *claim.contradicting_capsule_ids,
+        }.issubset(selected_capsule_ids)
+        and {
+            *claim.supporting_record_ids,
+            *claim.contradicting_record_ids,
+        }.issubset(selected_record_ids)
+    ][:limit]
 
 
 def _daily_query_texts(

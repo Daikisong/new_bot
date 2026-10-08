@@ -588,6 +588,12 @@
           "title": "Brain Version",
           "type": "string"
         },
+        "candidate_event_id_correction_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Candidate Event Id Correction Count",
+          "type": "integer"
+        },
         "compiled_brain_guidance_count": {
           "title": "Compiled Brain Guidance Count",
           "type": "integer"

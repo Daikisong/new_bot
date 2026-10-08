@@ -15,6 +15,7 @@ from news_scalping_lab.brain.offline_v2 import (
     OfflineSemanticBrainCompiler,
     _claims_from_reduce_node,
     _materialize_long_payload_chunk_digest,
+    _selected_claims,
     _split_semantic_stratum,
     _utf8_chunks,
     _VectorRow,
@@ -32,6 +33,7 @@ from news_scalping_lab.contracts.offline_brain import (
     SemanticInfluenceManifest,
     SemanticMemoryCapsule,
     SemanticReduceNode,
+    SynthesizedMechanismClaim,
 )
 from news_scalping_lab.inference.thin_daily import _validate_brain_context_as_of
 from news_scalping_lab.llm.mock import DeterministicMockLLMProvider
@@ -47,6 +49,73 @@ class Embedding384:
             vector[sum(text.encode("utf-8")) % 8] = 1.0
             vectors.append(vector.tolist())
         return vectors
+
+
+def test_daily_claim_selection_requires_complete_capsule_and_record_closure() -> None:
+    connection = duckdb.connect(":memory:")
+    connection.execute(
+        "CREATE TABLE mechanism_claim_capsules (claim_id VARCHAR, capsule_id VARCHAR, role VARCHAR)"
+    )
+    connection.execute(
+        "CREATE TABLE mechanism_claims (claim_id VARCHAR, payload_json VARCHAR)"
+    )
+    available_from = datetime(2026, 1, 1, tzinfo=KST)
+    claims = [
+        SynthesizedMechanismClaim(
+            claim_id="closed",
+            category="single_event",
+            statement="A closed claim.",
+            mechanism="event -> exposure",
+            supporting_capsule_ids=["CAP-A"],
+            supporting_record_ids=["REC-A"],
+            available_from=available_from,
+            confidence="high",
+            status="supported",
+        ),
+        SynthesizedMechanismClaim(
+            claim_id="unselected-capsule",
+            category="single_event",
+            statement="A claim with an unselected capsule.",
+            mechanism="event -> exposure",
+            supporting_capsule_ids=["CAP-A"],
+            contradicting_capsule_ids=["CAP-B"],
+            supporting_record_ids=["REC-A"],
+            available_from=available_from,
+            confidence="high",
+            status="mixed",
+        ),
+        SynthesizedMechanismClaim(
+            claim_id="unselected-record",
+            category="single_event",
+            statement="A claim with an unselected record.",
+            mechanism="event -> exposure",
+            supporting_capsule_ids=["CAP-A"],
+            supporting_record_ids=["REC-B"],
+            available_from=available_from,
+            confidence="high",
+            status="supported",
+        ),
+    ]
+    for claim in claims:
+        connection.execute(
+            "INSERT INTO mechanism_claim_capsules VALUES (?, ?, ?)",
+            [claim.claim_id, "CAP-A", "SUPPORTING"],
+        )
+        connection.execute(
+            "INSERT INTO mechanism_claims VALUES (?, ?)",
+            [claim.claim_id, canonical_json(claim.model_dump(mode="json"))],
+        )
+    try:
+        selected = _selected_claims(
+            connection,
+            selected_capsule_ids={"CAP-A"},
+            selected_record_ids={"REC-A"},
+            claim_scores={"unselected-capsule": 0.9, "unselected-record": 0.8, "closed": 0.7},
+            limit=3,
+        )
+    finally:
+        connection.close()
+    assert [claim.claim_id for claim in selected] == ["closed"]
 
 
 class ReduceCoverageMismatchLLM(DeterministicMockLLMProvider):

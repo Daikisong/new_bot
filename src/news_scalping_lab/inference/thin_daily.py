@@ -295,7 +295,12 @@ class ThinDailyAnalyzer:
                 "daily prompt exceeds the Codex CLI safe input limit; no model request was sent "
                 f"({len(final_prompt)} > {MAX_CODEX_INPUT_CHARS} characters)"
             )
-        decision, prediction, structured_repair_count = await _generate_and_validate_daily_decision(
+        (
+            decision,
+            prediction,
+            structured_repair_count,
+            candidate_event_id_correction_count,
+        ) = await _generate_and_validate_daily_decision(
             self.llm,
             prompt=final_prompt,
             run_id=run_id,
@@ -359,6 +364,7 @@ class ThinDailyAnalyzer:
             logical_llm_call_count=1,
             maximum_live_agent_call_count=1 + self.settings.llm.max_retries,
             structured_repair_count=structured_repair_count,
+            candidate_event_id_correction_count=candidate_event_id_correction_count,
             historical_raw_daily_map_call_count=0,
             daily_import_call_count=0,
             daily_brain_rebuild_call_count=0,
@@ -557,7 +563,7 @@ def _build_final_market_decision_prompt(
             "d=exact_duplicate_count,s=semantic_duplicate_count,x=conflict_flags"
         ),
         "current_event_capsules": [_prompt_capsule_payload(row) for row in capsules],
-        "daily_brain_context": brain_context.model_dump(mode="json"),
+        "daily_brain_context": _daily_brain_prompt_payload(brain_context),
         "d_minus_one_safe_context": d_minus_one_context,
         "retrieved_record_ids": record_ids,
         "positive_record_ids": record_ids,
@@ -602,6 +608,15 @@ def _build_final_market_decision_prompt(
     )
 
 
+def _daily_brain_prompt_payload(context: DailyBrainContext) -> dict[str, Any]:
+    payload = context.model_dump(mode="json")
+    # Embeddings are retrieval machinery, not readable evidence for the decision model.
+    for collection in ("selected_semantic_capsules", "selected_mechanism_claims"):
+        for row in payload[collection]:
+            row.pop("embedding", None)
+    return payload
+
+
 def _build_daily_decision_repair_prompt(original_prompt: str, error: Exception) -> str:
     error_summary = " ".join(str(error).split())[:500]
     return (
@@ -636,7 +651,7 @@ async def _generate_and_validate_daily_decision(
     capsules: Sequence[CurrentEventCapsule],
     brain_context: DailyBrainContext,
     allow_structured_repair: bool,
-) -> tuple[BrainInformedDecision, BlindPrediction, int]:
+) -> tuple[BrainInformedDecision, BlindPrediction, int, int]:
     repair_error: Exception | None = None
     try:
         decision = await llm.generate_structured(
@@ -649,6 +664,7 @@ async def _generate_and_validate_daily_decision(
             raise
         repair_error = exc
     else:
+        decision, correction_count = _normalize_candidate_event_ids(decision, capsules)
         try:
             if decision.analyzed_cluster_count != len(capsules):
                 raise ValueError(
@@ -665,7 +681,7 @@ async def _generate_and_validate_daily_decision(
         except ValueError as exc:
             repair_error = exc
         else:
-            return decision, prediction, 0
+            return decision, prediction, 0, correction_count
 
     if repair_error is None:
         raise AssertionError("daily decision repair was requested without a validation error")
@@ -683,6 +699,7 @@ async def _generate_and_validate_daily_decision(
         response_model=BrainInformedDecision,
         purpose="final_market_decision",
     )
+    decision, correction_count = _normalize_candidate_event_ids(decision, capsules)
     if decision.analyzed_cluster_count != len(capsules):
         raise ValueError("daily repair omitted, duplicated, or added a material event cluster")
     prediction = _validate_and_seal_prediction(
@@ -693,7 +710,44 @@ async def _generate_and_validate_daily_decision(
         capsules=capsules,
         brain_context=brain_context,
     )
-    return decision, prediction, 1
+    return decision, prediction, 1, correction_count
+
+
+def _normalize_candidate_event_ids(
+    decision: BrainInformedDecision,
+    capsules: Sequence[CurrentEventCapsule],
+) -> tuple[BrainInformedDecision, int]:
+    # Source rows are authoritative; derive only their current-event citations.
+    normalized_candidates = []
+    correction_count = 0
+    for candidate in decision.prediction.candidates:
+        candidate_rows = set(candidate.source_row_ids)
+        row_matched_events = {
+            event_id
+            for capsule in capsules
+            if candidate_rows.intersection(capsule.source_row_ids)
+            for event_id in capsule.event_ids
+        }
+        normalized_event_ids = [
+            event_id
+            for event_id in candidate.event_ids
+            if event_id in row_matched_events
+        ]
+        if candidate.event_ids and not normalized_event_ids and row_matched_events:
+            normalized_event_ids = sorted(row_matched_events)
+        if normalized_event_ids != candidate.event_ids:
+            correction_count += 1
+            normalized_candidates.append(
+                candidate.model_copy(update={"event_ids": normalized_event_ids})
+            )
+        else:
+            normalized_candidates.append(candidate)
+    if correction_count == 0:
+        return decision, 0
+    normalized_prediction = decision.prediction.model_copy(
+        update={"candidates": normalized_candidates}
+    )
+    return decision.model_copy(update={"prediction": normalized_prediction}), correction_count
 
 
 def _validate_and_seal_prediction(
