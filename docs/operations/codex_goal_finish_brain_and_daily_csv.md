@@ -210,3 +210,5 @@ Evaluator 감사 중 점수기 citation closure가 후보의 event ID와 source 
 작업 중 확인된 daily runtime 결함은 selected mechanism claim의 capsule/record closure 검증, LLM prompt에서 읽을 수 없는 retrieval embedding vector 제거(검색 package에는 유지), candidate event citation의 source-row closure와 correction count 기록으로 보강했다. 전체 gate는 Ruff PASS, mypy PASS(139 source files), pytest `1915 passed`(1,253 warnings)다. 이 결과는 offline research corpus의 전면 LLM 재해석이나 예측 정확도 증명이 아니라, 동일한 daily architecture가 날짜별 CSV와 고정 brain을 함께 읽어 제한된 호출로 결과를 봉인하는 기능/OOT 경로 검증이다.
 
 남은 제한은 그대로다. `news_20261007.csv`는 폴더에 없으며 CSV에 `collected_at`이 없어 실제 수집시각이 cutoff 전인지 입증할 수 없다. registered same-architecture blind quality gate와 독립 release 승인은 여전히 없다. 따라서 정식 predictive quality는 `NOT_RUN_GATE_MISSING` / `UNAPPROVED`, production은 `HOLD`다. 이 29일 replay를 quality score로 부르거나 outcome을 열어 점수화하지 않는다.
+
+2026-10-09 보강: 새 장전 CSV를 받아 고정 brain으로 섹터/종목 보고서를 생성하는 수동 실행기를 추가했다. 실행 명령, 분리 data-project 설정, 덮어쓰기 방지, 산출물 및 research-only 분류는 [daily brain 운영/가격검증 상태](daily_brain_manual_use_and_outcome_status_20261009.md)에 기록했다. 실제 사후 가격은 feed 부재로 `SKIPPED_INPUT_MISSING`이며, 이 제한은 daily report 생성을 block하지 않는다.

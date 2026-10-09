@@ -1423,6 +1423,13 @@ def analyze_daily(
     news: Annotated[Path, typer.Option("--news")],
     trade_date: Annotated[str, typer.Option("--trade-date")],
     cutoff: Annotated[str, typer.Option("--cutoff")],
+    project_root: Annotated[
+        Path | None,
+        typer.Option(
+            "--project-root",
+            help="Data project containing the selected brain package and daily outputs.",
+        ),
+    ] = None,
     d_minus_one_context: Annotated[
         Path | None,
         typer.Option("--d-minus-one-context"),
@@ -1430,7 +1437,11 @@ def analyze_daily(
 ) -> None:
     """Run the single-call product path over an offline BrainPackage."""
 
-    settings = load_settings()
+    settings = (
+        load_settings(project_root=project_root, dotenv_root=Path.cwd())
+        if project_root is not None
+        else load_settings()
+    )
     parsed_trade_date = _parse_date(trade_date)
     parsed_cutoff = _parse_cutoff(cutoff)
     try:

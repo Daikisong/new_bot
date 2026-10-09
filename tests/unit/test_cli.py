@@ -86,6 +86,62 @@ def _cli_brain_record(record_id: str = "BRAIN-CLI") -> BrainRecordEnvelope:
     )
 
 
+def test_analyze_daily_cli_uses_separate_data_project_and_repo_dotenv(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_root = tmp_path / "daily-project"
+    repo_root = tmp_path / "repo"
+    project_root.mkdir()
+    repo_root.mkdir()
+    settings = Settings(project_root=project_root)
+    received: dict[str, Any] = {}
+
+    def fake_load_settings(
+        project_root: Path | None = None,
+        *,
+        resolve_production: bool = True,
+        dotenv_root: Path | None = None,
+    ) -> Settings:
+        received["project_root"] = project_root
+        received["resolve_production"] = resolve_production
+        received["dotenv_root"] = dotenv_root
+        return settings
+
+    class _DailyAnalyzer:
+        def __init__(self, actual_settings: Settings) -> None:
+            assert actual_settings is settings
+
+        async def analyze(self, **kwargs: Any) -> _AnalysisResult:
+            received["analysis_kwargs"] = kwargs
+            return _AnalysisResult(mode="daily")
+
+    monkeypatch.chdir(repo_root)
+    monkeypatch.setattr(cli_module, "load_settings", fake_load_settings)
+    monkeypatch.setattr(cli_module, "ThinDailyAnalyzer", _DailyAnalyzer)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "analyze-daily",
+            "--project-root",
+            str(project_root),
+            "--news",
+            str(tmp_path / "news_20300110.csv"),
+            "--trade-date",
+            "2030-01-10",
+            "--cutoff",
+            "2030-01-10T08:59:59+09:00",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["mode"] == "daily"
+    assert received["project_root"] == project_root
+    assert received["dotenv_root"] == repo_root
+    assert received["analysis_kwargs"]["trade_date"] == date(2030, 1, 10)
+
+
 def test_memory_search_cells_cli_does_not_scan_source_records(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
